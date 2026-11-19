@@ -177,6 +177,39 @@ link against x264's compiled `cavlc.c` (the repo's extractor has no CAVLC unit
 yet). No 8x8 (64-coefficient) category: `cavlc_residual.glsl` is a 16-sample
 block writer. No byte-exact claim beyond the covered block categories.
 
+## Parity gate in CTest / docs (issue #9, Rem)
+
+Sub-PR `rem/9-parity-gate-ctest`. Infra only: no encoder or shader behaviour change.
+
+- **`Vk264/vulkan/CMakeLists.txt`**: four new CTest entries, registered only
+  when FFmpeg was found at configure time, each invoking
+  `harness/parity_check.py` with an absolute vk264 path and a unique
+  `--out-dir` under `build/parity-gate/` (so `ctest -j` is safe):
+  `x264_parity_ultrafast_flat_16x16`, `_ultrafast_flat_64x64`,
+  `_ultrafast_noise_32x32`, `_fast_flat_16x16`. `parity_check.py` exits 0 only
+  on `BYTE-EXACT MATCH`, so breaking an exact case fails `ctest`.
+- **`README.md`**: documents the gate, how to run it, and how to interpret
+  `BYTE-EXACT MATCH` vs "first mismatch at offset N".
+- Baseline 48 -> 52 CTest entries, all green.
+
+Evidence (2026-11-19):
+```
+ctest --test-dir build -C Release -R x264_parity_ --output-on-failure -> 4/4 passed (1.39 s)
+ctest --test-dir build -C Release --output-on-failure -> 52/52 passed (15.82 s)
+```
+Each of the four cases was also run manually and printed
+`BYTE-EXACT MATCH (ignoring encoder-identity SEI)`.
+
+### How to update this file (PROGRESS.dm)
+
+This document is the single source of truth. When changing parity behaviour:
+1. Add a dated section at the top with a one-line scope, the files changed, and
+   actual pasted command output (ctest + `parity_check.py`), never a paraphrase.
+2. State limitations honestly; `BYTE-EXACT MATCH` is the only parity proof.
+3. If a byte-exact case becomes exact or regresses, add/remove its CTest gate
+   entry in `Vk264/vulkan/CMakeLists.txt` and update README accordingly.
+4. Keep this file in the same PR as the code so evidence and status stay together.
+
 ## Preset-by-preset parity (2026-11-19, third session)
 
 Directive: work from ultrafast upward until all presets are byte-exact with x264.
