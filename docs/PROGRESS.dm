@@ -138,6 +138,45 @@ Evidence:
   diverges from default x264 (B-frames/POC); the N-slot GPU motion ABI and
   per-MB older-reference selection remain open (sub-PRs C/D in the design doc).
 
+## CAVLC residual byte-exact fixture (issue #7, Rem)
+
+Sub-PR `rem/7-cavlc-residual-fixture`.
+
+- **Test shader** (`cavlc_residual_test.comp`): standalone buffer-to-buffer
+  harness that includes the *same* `cavlc_residual.glsl` the resident CAVLC
+  encoder uses, with `x264CavlcCodes[]` (732 VLC codewords generated from
+  x264's own tables) passed as the tables prefix. Each fixture record carries
+  16 coefficients, nc, count, chromaDc and the emitted 32-bit words.
+- **Host reference** (`dct_parity.cpp::verifyCavlcResidual`): scalar
+  `x264CavlcBlockResidual` transcribed from x264
+  `encoder/cavlc.c::cavlc_block_residual_internal` (coeff_token, trailing
+  signs, level escape/suffix transitions, total_zeros, run_before), driven by
+  the same x264-derived VLC codewords. Compares emitted words and bit length
+  byte-for-byte against the shader.
+- **Coverage**: 2327 cases — all-zero / single-coefficient (all 16 positions),
+  all-ones, all-minus-ones, ±32768 extremes, nc 0..3, block counts 16 (luma 4x4
+  AC), 15 (intra AC/DC) and 4 (chroma DC), plus randomized sparse/dense blocks.
+- New CTest `x264_cavlc_residual_parity`; suite 47 -> 48 green. No production
+  shader or encoder path changed.
+
+Evidence (2026-11-19):
+```
+cmake --build build --config Release                 -> OK
+dct_parity cavlc_residual build/Vk264/vulkan/cavlc_residual_test.spv
+  2327 CAVLC residual sequences matched x264-derived VLC codes and bit writer bytes.
+ctest --test-dir build -C Release --output-on-failure -> 48/48 passed (15.80 s)
+python harness/parity_check.py --preset ultrafast --pattern flat --width 16 --height 16 --frames 1 --gop 1
+  BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+python harness/parity_check.py --preset fast --pattern flat --width 16 --height 16 --frames 1 --gop 1
+  BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+```
+
+Honest limitation: the host reference is a scalar transcription of x264's
+CAVLC residual algorithm driven by x264-generated VLC codewords, not a literal
+link against x264's compiled `cavlc.c` (the repo's extractor has no CAVLC unit
+yet). No 8x8 (64-coefficient) category: `cavlc_residual.glsl` is a 16-sample
+block writer. No byte-exact claim beyond the covered block categories.
+
 ## Preset-by-preset parity (2026-11-19, third session)
 
 Directive: work from ultrafast upward until all presets are byte-exact with x264.

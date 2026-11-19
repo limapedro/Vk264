@@ -160,6 +160,14 @@ add_custom_command(OUTPUT "${cavlc_frame}"
             "${CMAKE_CURRENT_SOURCE_DIR}/cavlc_frame.comp" -o "${cavlc_frame}"
     DEPENDS cavlc_frame.comp cavlc_residual.glsl macroblock4_order.glsl mv_predict_math.glsl VERBATIM)
 list(APPEND shaders "${cavlc_frame}")
+# Standalone byte-exact CAVLC residual fixture (issue #7). Uses the same
+# cavlc_residual.glsl as the resident encoder so the shader itself is tested.
+set(cavlc_residual_test "${CMAKE_CURRENT_BINARY_DIR}/cavlc_residual_test.spv")
+add_custom_command(OUTPUT "${cavlc_residual_test}"
+    COMMAND Vulkan::glslc --target-env=vulkan1.1 -O "-I${CMAKE_CURRENT_BINARY_DIR}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/cavlc_residual_test.comp" -o "${cavlc_residual_test}"
+    DEPENDS cavlc_residual_test.comp cavlc_residual.glsl VERBATIM)
+list(APPEND shaders "${cavlc_residual_test}")
 foreach(stage IN ITEMS intra16 inter8x8 intra_chroma)
     set(shader "${CMAKE_CURRENT_BINARY_DIR}/${stage}_frame.spv")
     add_custom_command(OUTPUT "${shader}"
@@ -240,6 +248,8 @@ add_test(NAME x264_reference_frame_parity
          COMMAND dct_parity reference_frame "${reference_frame}")
 add_test(NAME x264_cabac_refidx_parity
          COMMAND dct_parity cabac_refidx "${CMAKE_CURRENT_BINARY_DIR}/cabac.spv")
+add_test(NAME x264_cavlc_residual_parity
+         COMMAND dct_parity cavlc_residual "${CMAKE_CURRENT_BINARY_DIR}/cavlc_residual_test.spv")
 add_test(NAME x264_deblock_frame_tiled_parity
          COMMAND dct_parity deblock_frame_tiled "${CMAKE_CURRENT_BINARY_DIR}/deblock_frame_tiled.spv")
 add_test(NAME x264_deblock_frame_subgroup_parity

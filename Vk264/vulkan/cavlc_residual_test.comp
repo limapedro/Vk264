@@ -1,0 +1,65 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Standalone byte-exact fixture for the CAVLC residual bit writer. Includes
+// the very same cavlc_residual.glsl the resident CAVLC encoder uses, so the
+// GPU implementation is exercised directly against x264-derived VLC codes.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 64) in;
+
+layout(std430, binding = 0) buffer Corpus {
+    uint codes[732];
+    uint data[];
+};
+
+// Each fixture record is 84 uints: 16 coefficients, nc, count, chromaDc,
+// emitted bit length, then up to 64 emitted 32-bit words.
+const uint recordWords = 84u, bytesOffset = 20u, byteCapacity = 64u;
+
+uint dest, limit, wordCount, pending, accumulator;
+bool overflow;
+
+void beginBits(uint offset, uint capacity) {
+    dest = offset;
+    limit = capacity;
+    wordCount = pending = accumulator = 0u;
+    overflow = false;
+}
+
+void bits(uint value, int count) {
+    while (count > 0) {
+        uint take = min(32u-pending, uint(count));
+        count -= int(take);
+        uint mask = take == 32u ? ~0u : (1u << take)-1u;
+        accumulator |= ((value >> count) & mask) << (32u-pending-take);
+        pending += take;
+        if (pending == 32u) {
+            if (wordCount < limit) data[dest+wordCount] = accumulator;
+            else overflow = true;
+            ++wordCount;
+            pending = accumulator = 0u;
+        }
+    }
+}
+
+uint finishBits() {
+    if (pending != 0u) {
+        if (wordCount < limit) data[dest+wordCount] = accumulator;
+        else overflow = true;
+    }
+    return overflow ? 0xffffffffu : 32u*wordCount+pending;
+}
+
+// vlc() and encodeLevel() are provided by cavlc_residual.glsl below.
+#include "cavlc_residual.glsl"
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (index*recordWords >= data.length()) return;
+    uint base = index*recordWords;
+    int values[16];
+    for (int i = 0; i < 16; ++i) values[i] = int(data[base+uint(i)]);
+    int nc = int(data[base+16u]), count = int(data[base+17u]), chromaDc = int(data[base+18u]);
+    beginBits(base+bytesOffset, byteCapacity);
+    writeCavlcResidual(values, nc, count, chromaDc != 0);
+    data[base+19u] = finishBits();
+}
