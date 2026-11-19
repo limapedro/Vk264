@@ -5121,7 +5121,7 @@ ResidentFrameResult encodeResidentCabacFrame(const std::filesystem::path& shader
                                              int width, int height, int qp, int chromaQp,
                                              const motionSearchCorpus::Fixture& search,
                                              bool inter, int pictureIndex, bool readReconstruction, bool inter8x8 = true,
-                                              bool x264ModeSelection = false) {
+                                              bool x264ModeSelection = false, bool longStart = false) {
     const char* stageName = inter ? "resident_cabac_p_frame" : "resident_cabac_idr_frame";
     const HostTimer phase(stageName);
     auto& context = computeContext();
@@ -5451,7 +5451,7 @@ ResidentFrameResult encodeResidentCabacFrame(const std::filesystem::path& shader
             payload.push_back(static_cast<std::uint8_t>(sliceWords[i]));
         }
     }
-    auto packet = packAnnexB(payload, 3, inter ? 1u : 5u, false);
+    auto packet = packAnnexB(payload, static_cast<std::uint32_t>(header.nalRef), inter ? 1u : 5u, longStart);
     if (context.profiling) {
         auto& stats = context.profile[stageName];
         ++stats.calls;
@@ -5479,6 +5479,21 @@ ResidentFrameResult encodeResidentCabacFrame(const std::filesystem::path& shader
     return {std::move(packet), static_cast<std::uint32_t>(macroblocks)};
 }
 
+// x264 common/base.c::x264_param_default() + param_apply_preset(): B-frame count
+// and pyramid mode a preset targets. Only presets with bframes>0 need POC type 0
+// and reorder slots (encoder/set.c::x264_sps_init). Kept local to parameter
+// construction so no shared preset table is touched (issue #4 groundwork).
+struct BFrameConfig { int frames, pyramid; };
+static BFrameConfig x264BFrameConfig(const char* preset) {
+    if (!preset) return {0, 0};
+    // x264 defaults: i_bframe=3, i_bframe_pyramid=X264_B_PYRAMID_NORMAL(2).
+    // ultrafast is the only accepted preset that disables B-frames; veryslow
+    // and placebo raise the default count.
+    if (std::strcmp(preset, "ultrafast") == 0) return {0, 0};
+    if (std::strcmp(preset, "veryslow") == 0) return {8, 2};
+    if (std::strcmp(preset, "placebo") == 0) return {16, 2};
+    return {3, 2};
+}
 
 x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const char* sliceShader, const char* macroblockShader,
                      const char* chromaShader, const char* motionShader, const char* predictorShader,
@@ -5511,10 +5526,13 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
     // x264 set.c::x264_sps_init() uses i_frame_reference (the per-preset ref
     // budget) for both SPS max_num_ref_frames and level DPB selection. Consume
     // the value already transcribed in x264_presets.hpp instead of hard-coding 1.
-    int referenceBudget = 1;
+    // x264 set.c::x264_sps_init() uses i_frame_reference (the per-preset ref
+    // budget) for max_num_ref_frames and level DPB selection. Reconciled with
+    // the B-frame header work (issue #4): one refBudget feeds both intents.
+    int refBudget = 1;
     if (options && options->preset) {
         if (const auto* preset = x264_vulkan::presets::find(options->preset))
-            referenceBudget = std::max(1, preset->referenceBudget);
+            refBudget = std::max(1, preset->referenceBudget);
     }
     constexpr int chromaQpMap[52] = {
         0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,
@@ -5546,7 +5564,7 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
         levelIn.mbsPerFrame = macroblocks;
         levelIn.widthInMbs = widthInMbs;
         levelIn.heightInMbs = heightInMbs;
-        levelIn.maxDecFrameBuffering = gop == 1 ? 1 : referenceBudget;
+        levelIn.maxDecFrameBuffering = gop == 1 ? 1 : refBudget;
         levelIn.fpsNum = options ? options->fpsNumerator : 60000;
         levelIn.fpsDen = options ? options->fpsDenominator : 1001;
         if (options && options->targetBits > 0) {
@@ -5559,15 +5577,45 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
             : x264_levels::selectLevel(levelIn);
     }
     sps.i_chroma_format_idc = CHROMA_420;
+    // x264 encoder/set.c::x264_sps_init(): presets with B-frames switch to POC
+    // type 0, enlarge the DPB and signal reorder slots. This groundwork emits
+    // the headers only; B-slices / DPB reordering remain outstanding (issue #4).
+    // Gate on a real inter-GOP CABAC clip so every byte-exact path (gop==1,
+    // ultrafast/CAVLC, synthetic fixtures) is untouched.
+    const BFrameConfig bframes = x264BFrameConfig(options ? options->preset : nullptr);
+    const bool bFrameHeaders = clip && gop > 1 && bframes.frames > 0 &&
+                               (options == nullptr || options->cavlcCodes == nullptr);
     sps.i_log2_max_frame_num = 4;
-    sps.i_poc_type = 2;
-    // x264 set.c::x264_sps_init(): with B-frames disabled (the resident path
-    // today, i_num_reorder_frames = 0), max_num_ref_frames is the preset's
-    // i_frame_reference for inter streams and 0 for intra-only streams.
-    // Verified against x264 with bframes=0: faster/fast (ref=2) emit 2 here.
-    // When B-frames land this formula also needs the reorder/b-pyramid DPB
-    // slots from set.c:150-158 (see docs/multi-reference-design.md).
-    sps.i_num_ref_frames = gop == 1 ? 0 : referenceBudget;
+    // Reconciled SPS-init block (Subaru's PR #11 review): Ram's refBudget
+    // (preset i_frame_reference, #10) and the B-frame bFrameHeaders formula
+    // (#11) are one set.c::x264_sps_init()-faithful expression. All existing
+    // byte-exact paths (gop==1, ultrafast/CAVLC, bframes==0, fixtures) keep
+    // their single-ref behaviour; only bframes>0 && gop>1 gets the DPB slots.
+    sps.i_poc_type = bFrameHeaders ? 0 : 2;
+    if (sps.i_poc_type == 0) {
+        const int maxDeltaPoc = (bframes.frames + 2) * (bframes.pyramid ? 2 : 1) * 2;
+        sps.i_log2_max_poc_lsb = 4;
+        while ((1 << sps.i_log2_max_poc_lsb) <= maxDeltaPoc * 2) ++sps.i_log2_max_poc_lsb;
+    }
+    // x264 set.c::x264_sps_init(): intra-only streams have zero references.
+    if (gop == 1) {
+        sps.i_num_ref_frames = 0;
+        sps.vui.i_num_reorder_frames = 0;
+        sps.vui.i_max_dec_frame_buffering = 0;
+    } else if (bFrameHeaders) {
+        sps.vui.i_num_reorder_frames = bframes.pyramid ? 2 : (bframes.frames ? 1 : 0);
+        sps.i_num_ref_frames = std::min(X264_REF_MAX, std::max({refBudget,
+            1 + sps.vui.i_num_reorder_frames, bframes.pyramid ? 4 : 1, 0}));
+        sps.vui.i_max_dec_frame_buffering = sps.i_num_ref_frames;
+        const int maxFrameNum = sps.vui.i_max_dec_frame_buffering * (bframes.pyramid ? 2 : 1) + 1;
+        sps.i_log2_max_frame_num = 4;
+        while ((1 << sps.i_log2_max_frame_num) <= maxFrameNum) ++sps.i_log2_max_frame_num;
+    } else {
+        // No B-frames (or fixture): max_num_ref_frames is the preset budget.
+        sps.i_num_ref_frames = refBudget;
+        sps.vui.i_num_reorder_frames = 0;
+        sps.vui.i_max_dec_frame_buffering = refBudget;
+    }
     // x264's x264_sps_init(): intra-only streams (keyint==1) with High profile
     // set constraint_set3, which in turn suppresses VUI bitstream_restriction.
     sps.b_constraint_set3 = (gop == 1 && sps.i_profile_idc >= PROFILE_HIGH) ? 1 : 0;
@@ -5607,8 +5655,12 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
         const int mvLog2 = lvl ? x264_levels::mvLengthLog2(lvl->mv_range) : 9;
         sps.vui.i_log2_max_mv_length_horizontal = mvLog2;
         sps.vui.i_log2_max_mv_length_vertical = mvLog2;
-        sps.vui.i_num_reorder_frames = 0;
-        sps.vui.i_max_dec_frame_buffering = sps.i_num_ref_frames;
+        // bFrameHeaders already set the x264 reorder/buffering values above;
+        // only single-ref streams use the legacy defaults here.
+        if (!bFrameHeaders) {
+            sps.vui.i_num_reorder_frames = 0;
+            sps.vui.i_max_dec_frame_buffering = sps.i_num_ref_frames;
+        }
     }
 
     const bool baselineProfile = sps.i_profile_idc == PROFILE_BASELINE;
@@ -5625,7 +5677,11 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
     // CABAC residual kernels emit 8x8 block syntax in the shipped pipeline.
     pps.b_transform_8x8_mode = clip != nullptr && !x264Baseline;
     pps.i_num_slice_groups = 1;
-    pps.i_num_ref_idx_l0_default_active = 1;
+    // x264 encoder/set.c::x264_pps_init(): progressive streams leave
+    // bottom_field_pic_order off; l0 default active mirrors frame_reference
+    // while l1 stays at one.
+    pps.b_pic_order = 0;
+    pps.i_num_ref_idx_l0_default_active = bFrameHeaders ? std::max(1, refBudget) : 1;
     pps.i_num_ref_idx_l1_default_active = 1;
     pps.i_pic_init_qp = options && options->targetBits > 0 ? 26 : initialQp;
     pps.i_pic_init_qs = 26;
@@ -5634,8 +5690,11 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
     // offset by 2.  psy_trellis defaults to 0 and 4:2:0 adds nothing, so this
     // is the only adjustment for any preset.  Mirrors libx264's PPS exactly.
     pps.i_chroma_qp_index_offset = chromaQpOffset;
-    pps.b_weighted_pred = 0;
-    pps.b_weighted_bipred = 0;
+    // x264 encoder/set.c::x264_pps_init(): weighted_pred follows weightp>0 and
+    // weighted_bipred is 2 for the default b_weighted_bipred=1 (fast and above).
+    // The P-slice header writer already emits the matching all-zero pred table.
+    pps.b_weighted_pred = bFrameHeaders ? 1 : 0;
+    pps.b_weighted_bipred = bFrameHeaders ? 2 : 0;
     pps.b_deblocking_filter_control = 1;
 
     std::vector<parameterCorpus::Fixture> parameters(2);
@@ -5654,11 +5713,21 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
         sh.i_type = inter ? SLICE_TYPE_P : SLICE_TYPE_I;
         sh.i_idr_pic_id = inter ? -1 : (clip ? i/gop : i)%2;
         sh.i_frame_num = inter ? (clip ? i%gop : i-intraPictures+1) : 0;
+        // x264 encoder/encoder.c: with POC type 0 the slice carries
+        // pic_order_cnt_lsb = 2 * display index. Our scaffold is still P-only,
+        // so P slices override the PPS default down to one active ref exactly
+        // as x264-fast does when only one reference is available.
+        sh.i_poc = bFrameHeaders ? 2*sh.i_frame_num : 0;
+        sh.i_delta_poc_bottom = 0;
         sh.i_num_ref_idx_l0_active = 1;
+        sh.b_num_ref_idx_override = (bFrameHeaders && inter) ? 1 : 0;
         sh.i_qp_delta = qp - pps.i_pic_init_qp;
         sh.i_disable_deblocking_filter_idc = clip ? (baselineProfile ? 1 : 0) : 1;
         header.front() = {};
-        header.front().nalRef = 3;
+        // x264 encoder/encoder.c: IDR uses NAL_PRIORITY_HIGHEST (3), reference
+        // P/I pictures NAL_PRIORITY_HIGH (2). Gated with bFrameHeaders so the
+        // byte-exact single-frame/CAVLC paths keep their existing header.
+        header.front().nalRef = (bFrameHeaders && inter) ? 2 : 3;
         header.front().alignCabac = pps.b_cabac;
         sliceCorpus::store(header.front(), sh);
         execute(sliceShader, header);
@@ -5673,7 +5742,7 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
     // (refs + 1) slots so older frames can be retained once the resident GPU
     // path is extended to address them. For ref=1 this is identical to the
     // previous 2-slot modulo-2 ring; no behaviour change for single-ref.
-    const int referenceSlots = clip ? std::max(2, referenceBudget+1) : pictures;
+    const int referenceSlots = clip ? std::max(2, refBudget+1) : pictures;
     const int storedPictures = referenceSlots;
     const auto storageIndex = [clip, referenceSlots](int picture) {
         return clip ? picture%referenceSlots : picture;
@@ -6133,7 +6202,8 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
             } else {
                 auto encodedFrame = encodeResidentCabacFrame(std::filesystem::path(motionShader).parent_path(),
                     header.front(), reader->read(i), reconstructed[current], reconstructedChroma[current],
-                    width, height, qp, chromaQp(qp), motionSearchParameters(qp, options ? options->preset : nullptr), inter, i, reconstruction.is_open(), !baselineProfile, options && options->preset != nullptr);
+                    width, height, qp, chromaQp(qp), motionSearchParameters(qp, options ? options->preset : nullptr), inter, i, reconstruction.is_open(), !baselineProfile, options && options->preset != nullptr,
+                     bFrameHeaders && inter);
                 codedInter8x8 += encodedFrame.inter8x8;
                 bytes = std::move(encodedFrame.packet);
             }
@@ -6169,7 +6239,8 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
             bytes.pop_back();
             bytes.insert(bytes.end(), slice.bytes.begin(), slice.bytes.begin()+slice.position);
         }
-        if (!resident) nals.push_back({std::move(bytes), 1, 0, 3, inter ? 1u : 5u, 0, 0, 0});
+        if (!resident) nals.push_back({std::move(bytes), 1, 0,
+            static_cast<std::uint32_t>((bFrameHeaders && inter) ? 2 : 3), inter ? 1u : 5u, 0, 0, 0});
         entropy.finish();
         HostTimer pack("nal_pack_and_output");
         int pictureBytes = 0;
