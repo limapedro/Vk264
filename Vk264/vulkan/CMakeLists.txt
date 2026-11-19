@@ -285,6 +285,22 @@ if(FFMPEG_EXECUTABLE)
                          "${CMAKE_CURRENT_BINARY_DIR}/${artifact}-reconstructed.yuv"
                          ${smoke_probe} ${raw_option})
     endforeach()
+
+    # Byte-exact preset parity gate (issue #9). Each entry runs the exact same
+    # comparison agents invoke by hand; parity_check.py exits non-zero unless
+    # it prints BYTE-EXACT MATCH. Unique --out-dir per case keeps ctest -j safe.
+    function(add_preset_parity_test name preset pattern width height)
+        add_test(NAME x264_parity_${name}
+                 COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/../../harness/parity_check.py"
+                         --preset ${preset} --pattern ${pattern} --width ${width} --height ${height}
+                         --frames 1 --gop 1 --vk264 $<TARGET_FILE:vk264>
+                         --ffmpeg ${FFMPEG_EXECUTABLE}
+                         --out-dir "${CMAKE_BINARY_DIR}/parity-gate/${name}")
+    endfunction()
+    add_preset_parity_test(ultrafast_flat_16x16 ultrafast flat 16 16)
+    add_preset_parity_test(ultrafast_flat_64x64 ultrafast flat 64 64)
+    add_preset_parity_test(ultrafast_noise_32x32 ultrafast noise 32 32)
+    add_preset_parity_test(fast_flat_16x16 fast flat 16 16)
 endif()
 foreach(side IN ITEMS 4 8)
     foreach(group IN ITEMS 4 8 16)

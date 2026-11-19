@@ -53,6 +53,22 @@ python harness/parity_check.py --preset ultrafast --pattern flat --width 16 --he
 python harness/parity_check.py --preset superfast --pattern flat --width 16 --height 16 --frames 1 --gop 1
 ```
 
+`parity_check.py` exits `0` only on `BYTE-EXACT MATCH`, `1` on a byte mismatch (with the first offset), and `2` on invocation errors.
+
+### Automated parity gate (CTest)
+
+The known byte-exact cases are registered as CTest entries, so the same check that agents run by hand is part of the normal suite:
+
+```
+ctest --test-dir build -C Release -R x264_parity_ --output-on-failure
+  x264_parity_ultrafast_flat_16x16
+  x264_parity_ultrafast_flat_64x64
+  x264_parity_ultrafast_noise_32x32
+  x264_parity_fast_flat_16x16
+```
+
+They are gated on FFmpeg being available at configure time (the `find_program(FFMPEG_EXECUTABLE ffmpeg)` check in `Vk264/vulkan/CMakeLists.txt`); without FFmpeg they are not registered. Each case uses its own artifact directory under `build/parity-gate/`, so `ctest -j` is safe. A regression that breaks any exact case makes `ctest` fail. `BYTE-EXACT MATCH (ignoring encoder-identity SEI)` is the only acceptable result — a "first mismatch at offset N" line means the case is NOT exact and must not be claimed as parity.
+
 A `BYTE-EXACT MATCH` line means the SPS, PPS, slice header, entropy-coded macroblock data and deblocking all match libx264 byte-for-byte. Quality/speed comparison across real clips:
 
 ```powershell
