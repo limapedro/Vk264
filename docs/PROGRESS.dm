@@ -7,6 +7,74 @@ Vk264-Vulkan port: `Vk264/vulkan/*.comp`, shader SPIR-V shader pipelines registe
 fixture tests in `Vk264/vulkan/dct_parity.cpp` (the `verifyXxx` functions and the
 `x264_*_parity` CTest registrations).
 
+## Superfast I4x4 CABAC (issue #2 — Ram, 2026-11-19) — bin-level investigation, NOT byte-exact yet
+
+**Result of this session: no byte-exact superfast stream. The validated bin decoder
+tooling is added to `harness/`, and the divergence is localized to the residual
+syntax stage, but the exact x264 residual configuration was not identified.
+No shader/encoder code is changed.**
+
+### Reproduction (actual output)
+
+```
+python harness/parity_check.py --preset superfast --pattern flat --width 16 --height 16 --frames 1 --gop 1
+vk264 [... 00 00 01 65 88 84 3f fd af 4f 81 4b d9 15 aa 51 d8 32 d0 c7]
+x264 [... 00 00 01 65 88 84 3f ea 40 35 70 9b fe 0b 72 bf 3e 1a c9 b1 34 b4 31 81]
+first mismatch at offset 41
+```
+
+The host analysis model `dct_parity i4x4_decision` still passes its 256/256
+luma reconstruction assertion, and `dct_parity i4x4_cabac` emits:
+`88 84 3f ea 40 32 c1 bf ff f9 ff ef 92 fe 32 1e 51 4b` — the **first 5 bytes
+match x264**, then diverge at byte 5 (`32` vs `35`).
+
+### New reusable tooling (committed)
+
+- `harness/cabac_decoder.py`: syntax-aware CABAC bin decoder. Parses the four
+  x264 tables from `references/x264-master/common/tables.c` at runtime, decodes
+  decision/bypass bins in x264's write order (mb_type, transform_size, 16
+  intra4x4 pred modes, chroma mode, cbp luma/chroma, qp_delta, DCT_LUMA_4x4
+  residual cbf + sigmap + levels). Usage:
+  `python harness/cabac_decoder.py "ea 40 35 70 ..." 25`.
+- `harness/cabac_decoder_selftest.py`: independent encoder transcription used to
+  validate the decoder. Actual output:
+  `cabac_decoder round-trip OK: 60 streams, QP 0/25/51.`
+
+### Findings
+
+- Decoding both the emitted slice and x264's target produces an **identical
+  31-bin header prefix** through cbp/qp_delta (mb_type=I4x4, transform_size=0,
+  chroma mode 0, cbp_luma decoded 0xa, cbp_chroma 0). So the divergence begins
+  in the residual stage, not in modes/mb_type/chroma/flush.
+- Decoded x264 residual syntax (DCT_LUMA_4x4): nonzero blocks `{4,6,12,13,15}`
+  with DC absolute levels `{2,2,2,2,3}` and cbf context pattern
+  `93,94,93,94,...`. The emitter's host-model coefficients instead code a
+  different block set; feeding the decoded levels into x264's own
+  `x264_cabac_block_residual_c` did not reproduce the target bytes.
+- A bounded exhaustive search over cbp (0..15), nonzero-block masks (3..7
+  blocks), per-block levels (-2 with one optional -3), two mode sets, MB QP
+  24..27, and chroma/second-transform-size header variants — using x264's own
+  compiled CABAC functions — found **no configuration** producing the 21 target
+  bytes. This means at least one assumed syntax element (most likely the
+  intra4x4 pred-mode sequence or qp_delta) is still wrong; further work needs a
+  fully independent decoder of x264's own bitstream, not a guessed parameter.
+- x264's `encoder.c` emits a terminal bin before every MB except the first and
+  writes `cabac_intra_chroma_pred_mode` in the header; both are preserved in the
+  search. No bit value was guessed and no speculative shader change was kept.
+
+### Next steps (not done)
+
+1. Validate the decoder against a stream whose syntax is known from x264's C
+   encoder (round-trip validates raw bins, but the *syntax ordering* assumptions
+   need an independent check).
+2. Use x264's own `x264_macroblock_write_cabac` (needs a populated MB cache) to
+   dump the exact mode/cbp/coefficient set for this frame.
+3. Feed that set into `encodeI4x4Frame()`, then wire the `i_mbrd=0` path into
+   `encode()` for superfast/veryfast/faster.
+
+Gates on this branch: `ctest` 47/47 green; `ultrafast` and `fast` flat 16x16
+gop=1 both `BYTE-EXACT MATCH` (unchanged — no encoder code modified).
+
 ## CABAC slice-tail divergence at 64x64 (issue #8 — Ram, 2026-11-19) — characterized, NOT fixed
 
 **Result of this session: the issue's premise is not supported by the evidence.
