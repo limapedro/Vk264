@@ -22,8 +22,19 @@ Landed in this PR (safe, self-contained groundwork only):
   not move. This mirrors x264 `set.c:147-158` for the current no-B-frame path.
 - VUI `max_dec_frame_buffering` follows `i_num_ref_frames` automatically.
 - PPS `num_ref_idx_l0_default_active` is deliberately left at 1: raising it to
-  2 without emitting CABAC `ref_idx` bins makes the stream undecodable. Tracked
-  as sub-PR B in the design doc.
+  2 without emitting CABAC `ref_idx` bins makes the stream undecodable.
+- **Sub-PR B (landed):** `cabac.comp` gains a `refIdx` operation and
+  `cabac_syntax.glsl::encodeRefIdx()` emits the exact x264
+  `cabac_ref_internal()` (P path) bins — contexts `54+ctx`, `ctx=(ctx>>2)+4`
+  per '1' bin, terminating '0'. New `verifyCabacRefIdx()` fixture compares GPU
+  bytes/contexts/arithmetic state against x264's C coder over 1536 cases
+  (ref 0..15, left/top ref states, QP, CABAC model, flush variants), registered
+  as CTest `x264_cabac_refidx_parity`.
+- **Sub-PR C groundwork (landed):** the host reconstruction ring is sized to
+  `referenceBudget+1` slots (`storageIndex = picture % slots`); for ref=1 this
+  is byte-for-byte the old modulo-2 ring. The resident GPU reference is still
+  a single persistent slot (`referenceEnd`), so older frames are retained but
+  not yet selected by the production motion path.
 
 Evidence:
 - Baseline x264 (ffmpeg `-preset faster|fast -x264-params bframes=0`, 32x32,
@@ -33,12 +44,20 @@ Evidence:
 - After change, vk264 gop>1 SPS: `veryfast` (ref=1) `num_ref_frames=1`;
   `faster`/`fast` (ref=2) `num_ref_frames=2` — matches x264's SPS value.
   Stream still decodes: `ffmpeg -i ... -f null -` exit 0.
-- `ctest --test-dir build -C Release` → **46/46 passed** (14.02 s).
+- `ctest --test-dir build -C Release` → **47/47 passed** (was 46/46 before the
+  new refidx fixture; 15.36 s on the incremental build).
+  `dct_parity cabac_refidx build/Vk264/vulkan/cabac.spv` →
+  `1536 CABAC ref_idx sequences matched x264 cabac_ref_internal bytes, contexts and arithmetic state.`
 - Byte-exact regressions preserved:
   `parity_check --preset ultrafast --pattern flat --width 16 --height 16 --frames 1 --gop 1`
   and the same with `--preset fast` → both `BYTE-EXACT MATCH (ignoring encoder-identity SEI)`.
-- Honest limitation: no byte-exact ref>=2 parity is claimed. gop>1 still
-  diverges from default x264 (B-frames/POC), and PPS/CABAC DPB work remains.
+- After the ring change, gop>1 SPS still reports `num_ref_frames=2` for
+  `faster`, stream still decodes (`ffmpeg -f null -` exit 0).
+- Honest limitation: no byte-exact ref>=2 parity is claimed. The `refIdx` bins
+  are available but not wired into the resident whole-frame P path (doing so
+  before PPS active-refs is raised would desync a 1-ref stream). gop>1 still
+  diverges from default x264 (B-frames/POC); the N-slot GPU motion ABI and
+  per-MB older-reference selection remain open (sub-PRs C/D in the design doc).
 
 ## Preset-by-preset parity (2026-11-19, third session)
 

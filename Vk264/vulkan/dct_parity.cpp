@@ -5516,8 +5516,15 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
             throw std::runtime_error("Invalid aligned RBSP header length");
         return std::vector<std::uint8_t>(header.bytes.begin(), header.bytes.begin()+length);
     };
-    const int storedPictures = clip ? 2 : pictures;
-    const auto storageIndex = [clip](int picture) { return clip ? picture%2 : picture; };
+    // Issue #5 sub-PR C groundwork: size the host reconstruction ring to
+    // (refs + 1) slots so older frames can be retained once the resident GPU
+    // path is extended to address them. For ref=1 this is identical to the
+    // previous 2-slot modulo-2 ring; no behaviour change for single-ref.
+    const int referenceSlots = clip ? std::max(2, referenceBudget+1) : pictures;
+    const int storedPictures = referenceSlots;
+    const auto storageIndex = [clip, referenceSlots](int picture) {
+        return clip ? picture%referenceSlots : picture;
+    };
     std::vector<std::vector<std::uint8_t>> reconstructed(storedPictures, std::vector<std::uint8_t>(width*height));
     std::array<std::vector<std::uint8_t>, 2> chromaPlanes{
         std::vector<std::uint8_t>(width*height/4), std::vector<std::uint8_t>(width*height/4)};
