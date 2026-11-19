@@ -26,6 +26,8 @@ const int macroblockSkip = 12, mvdComponent = 13, inter16Macroblock = 14;
 // bank. The resident pipeline already leaves the bank in the layout the
 // per-macroblock operations read, so no host-built operation list is needed.
 const int wholeFrame = 15;
+// x264 cabac.c::cabac_ref_p: reference-index bins (contexts 54..65) for P slices.
+const int refIdx = 16;
 struct Operation {
     int kind, first, second;
 };
@@ -289,6 +291,7 @@ void encodeOperations(uint fixture) {
                                                                     op.first, op.second >> 1);
                 break;
             case inter16Macroblock: encodeInter16Macroblock(int(fixture), op.first, op.second); break;
+            case refIdx: encodeRefIdx(int(fixture), op.first, op.second); break;
             case wholeFrame: {
                 int width = (op.second >> 16) & 65535, count = op.second & 65535;
                 for (int mb = 0; mb < count; ++mb) {

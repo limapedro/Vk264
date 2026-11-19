@@ -2058,7 +2058,7 @@ constexpr int frameResidualBankSize = frameMaxOperations*macroblockWords;
 enum Kind {
     decision, bypass, ueBypass, terminal, residual, intraType, intra4x4Mode, intraChromaMode,
     intra16Macroblock, codedBlockPattern, qpDelta, transformSize, macroblockSkip, mvdComponent, inter16Macroblock,
-    wholeFrame
+    wholeFrame, refIdx
 };
 struct Operation {
     std::int32_t kind, first, second;
@@ -2350,6 +2350,70 @@ void verifyCabac(const char* shader) {
     std::cout << cases.size() << " CABAC sequences matched x264 bytes, contexts and arithmetic state, including "
               << residualCases << " residual, " << syntaxCases << " intra syntax and "
               << macroblockSyntaxCases << " coded-block, QP-delta, transform-size, skip and motion syntax sequences.\n";
+}
+
+// Issue #5 sub-PR B: verify the P-slice reference-index bin syntax against
+// x264 encoder/cabac.c::cabac_ref_internal (bframe == 0 path). The host side
+// calls x264's own decision coder with the exact contexts/bins from that
+// function; the GPU side runs the new refIdx operation.
+void verifyCabacRefIdx(const char* shader) {
+    using namespace cabacCorpus;
+    const auto tables = cabacTables();
+    std::vector<Fixture> cases;
+    for (int ref : {0, 1, 2, 3, 7, 15})
+        for (int left : {-1, 0, 1, 3})
+            for (int top : {-1, 0, 1, 3})
+                for (int qp : {0, 17, 34, 51})
+                    for (int model = 0; model < 4; ++model) {
+                        Fixture input{};
+                        input.qp = qp;
+                        input.model = model;
+                        input.chroma444 = 0;
+                        input.frame = static_cast<int>(cases.size() % 97);
+                        input.finish = static_cast<int>(cases.size() % 2);
+                        for (std::size_t b = 0; b < input.bytes.size(); ++b)
+                            input.bytes[b] = static_cast<std::uint32_t>((b*37+165) & 255);
+                        input.bytes[0] = 165; // slice-header byte preceding the arithmetic stream
+                        input.operations[input.count++] =
+                            {refIdx, ref, (left > 0 ? 1 : 0) | ((top > 0 ? 1 : 0) << 1)};
+                        cases.push_back(input);
+                    }
+    const auto inputs = cases;
+    execute(shader, cases, 1, tables);
+    x264_t encoder{};
+    encoder.chroma444 = true;
+    x264_cabac_init(&encoder);
+    for (std::size_t i = 0; i < cases.size(); ++i) {
+        const auto& input = inputs[i];
+        const auto& output = cases[i];
+        std::uint8_t bytes[maxBytes];
+        std::copy(input.bytes.begin(), input.bytes.end(), bytes);
+        x264_cabac_t coder{};
+        encoder.i_frame = input.frame;
+        encoder.chroma444 = false;
+        x264_cabac_context_init(&encoder, &coder, input.model == 0 ? SLICE_TYPE_I : 0,
+                                input.qp, input.model-1);
+        x264_cabac_encode_init(&coder, bytes+1, bytes+maxBytes);
+        // Verbatim translation of x264 cabac.c:246-258 for P slices (bframe=0).
+        const int left = (input.operations[0].second & 1) != 0;
+        const int top = (input.operations[0].second >> 1) & 1;
+        int ctx = left + 2*top;
+        for (int r = input.operations[0].first; r > 0; --r) {
+            x264_cabac_encode_decision_c(&coder, 54+ctx, 1);
+            ctx = (ctx >> 2)+4;
+        }
+        x264_cabac_encode_decision_c(&coder, 54+ctx, 0);
+        if (input.finish) x264_cabac_encode_flush(&encoder, &coder);
+        if (!matchesNativeBytes(output.bytes, bytes) ||
+            !matchesNativeBytes(output.context, coder.state) ||
+            output.low != coder.i_low || output.range != coder.i_range ||
+            output.queue != coder.i_queue || output.outstanding != coder.i_bytes_outstanding ||
+            output.position != coder.p-bytes ||
+            std::memcmp(output.operations.data(), input.operations.data(), sizeof(input.operations)) != 0)
+            throw std::runtime_error("CABAC ref_idx mismatch in fixture " + std::to_string(i));
+    }
+    std::cout << cases.size() << " CABAC ref_idx sequences matched x264 cabac_ref_internal bytes, contexts and "
+                 "arithmetic state.\n";
 }
 
 namespace mvPredictCorpus {
@@ -6328,6 +6392,7 @@ int runParityTests(int argc, char** argv) try {
     }
     else if (side == "deblock_strength") verifyDeblockStrength(argv[2]);
     else if (side == "cabac") verifyCabac(argv[2]);
+    else if (side == "cabac_refidx") verifyCabacRefIdx(argv[2]);
     else if (side == "mv_predict") verifyMvPrediction(argv[2]);
     else if (side == "motion_compensation") verifyMotionCompensation(argv[2]);
     else if (side == "reference_frame") verifyReferenceFrame(argv[2]);

@@ -88,6 +88,20 @@ void encodeTransformSize(int f, int neighbors, int size8x8) {
 void encodeMacroblockSkip(int f, int neighbors, bool bidirectional, int skip) {
     emitDecision(f, 11+neighbors+(bidirectional ? 13 : 0), skip);
 }
+// x264 encoder/cabac.c::cabac_ref_internal(), P-slice (bframe == 0) path.
+// `neighbors` packs: bit0 = left reference > 0, bit1 = top reference > 0.
+// Each nonzero reference emits a context-54+ctx '1' then advances ctx by
+// (ctx>>2)+4; the final terminating bin is '0'.
+void encodeRefIdx(int f, int ref, int neighbors) {
+    int ctx = 0;
+    if ((neighbors & 1) != 0) ++ctx;
+    if ((neighbors & 2) != 0) ctx += 2;
+    for (int i = ref; i > 0; --i) {
+        emitDecision(f, 54+ctx, 1);
+        ctx = (ctx >> 2)+4;
+    }
+    emitDecision(f, 54+ctx, 0);
+}
 int encodeMvdComponent(int f, int axis, int delta, int context) {
     int base = axis == 0 ? 40 : 47;
     emitDecision(f, base+context, int(delta != 0));
