@@ -3,9 +3,9 @@
 #pragma once
 //
 // Each entry transcribes the preset deltas from x264-vulkan/common/base.c
-// (param_apply_preset) into the knobs the Wx264 Vulkan CLI and the
+// (param_apply_preset) into the knobs the Vk264 Vulkan CLI and the
 // ResidentFrameResult backend understand. Where a knob exists (me, subpel,
-// references, me-range), the values mirror libx264 exactly. Knobs Wx264 does
+// references, me-range), the values mirror libx264 exactly. Knobs Vk264 does
 // not implement yet are listed in `unsupported`; accepting a preset without
 // enforcing those knobs would silently produce output that differs from
 // libx264.
@@ -24,12 +24,12 @@ struct Preset {
     Me          me;              // x264 analyse.i_me_method
     int         subpelRefine;    // x264 analyse.i_subpel_refine
     int         referenceBudget; // x264 i_frame_reference
-    int         satdCandidates;  // Wx264-only: SATD candidate count (no x264 analogue;
+    int         satdCandidates;  // Vk264-only: SATD candidate count (no x264 analogue;
                                  // parsed/logged by the CLI, not used by the resident ME shader)
     int         meRange;         // x264 i_me_range (default 16; veryslow/placebo 24)
     const char* unsupported;     // x264 knobs not implemented today; every delta this preset carries that
-                                 // Wx264 cannot apply yet. Empty == complete parity with libx264.
-    bool        supported;       // true iff Wx264 can match libx264's output intent
+                                 // Vk264 cannot apply yet. Empty == complete parity with libx264.
+    bool        supported;       // true iff Vk264 can match libx264's output intent
 };
 
 // Values mirror param_apply_preset() one-to-one. Presets above "fast" are

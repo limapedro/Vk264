@@ -1,7 +1,7 @@
 const int tileSamples = 688;
-shared int tile[tileSamples * WX_DEBLOCK_TILES];
+shared int tile[tileSamples * VK_DEBLOCK_TILES];
 shared uint thresholds[2];
-shared uint edgeThresholds[WX_DEBLOCK_TILES * 6];
+shared uint edgeThresholds[VK_DEBLOCK_TILES * 6];
 
 void prepareEdgeThreshold(uint mb, int edge, bool left, bool top) {
     int qp = mbQp(mb);

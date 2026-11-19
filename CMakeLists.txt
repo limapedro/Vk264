@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(Wx264 LANGUAGES CXX)
+project(Vk264 LANGUAGES CXX)
 
 find_package(Vulkan REQUIRED COMPONENTS glslc)
 
@@ -11,10 +11,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 set(X264_REFERENCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/x264-vulkan")
 
 include(CTest)
-add_subdirectory(Wx264)
+add_subdirectory(Vk264)
 
-option(WX_BUILD_OBS "Build the Windows x64 OBS encoder plugin" OFF)
-if(WX_BUILD_OBS)
+option(VK_BUILD_OBS "Build the Windows x64 OBS encoder plugin" OFF)
+if(VK_BUILD_OBS)
     enable_language(C)
     if(NOT WIN32 OR NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
         message(FATAL_ERROR "The OBS preview target requires a Windows x64 MSVC build")

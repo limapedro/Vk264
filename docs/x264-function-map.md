@@ -1,12 +1,12 @@
-# x264 encode pipeline → Wx264/Vulkan function map (bottom-up)
+# x264 encode pipeline → Vk264/Vulkan function map (bottom-up)
 
 Date: 2026-11-19
 Source tree audited: `build/x264-master` (X264 snapshot `c24e06c2`)
-Wx264/Vulkan port: `Wx264/vulkan/*.comp` + `Wx264/vulkan/dct_parity.cpp`
-previous Vulkan audit: `Wx264/vulkan/README.md` + `Wx264/vulkan/INVENTORY.md` (per-file port status)
+Vk264/Vulkan port: `Vk264/vulkan/*.comp` + `Vk264/vulkan/dct_parity.cpp`
+previous Vulkan audit: `Vk264/vulkan/README.md` + `Vk264/vulkan/INVENTORY.md` (per-file port status)
 
 Legend:
-- **MISSING** — no counterpart anywhere in Wx264.
+- **MISSING** — no counterpart anywhere in Vk264.
 - **fixture-only** — a shader exists, but exercised only by fixture tests (not wired into the resident encode path).
 - **wired** — exercised by the resident encode path.
 - **verified** — wired AND byte-exactly verified vs the x264 C reference (`x264_*_parity` ctests, or end-to-end vs FFmpeg).
@@ -32,7 +32,7 @@ Layers ordered low → high (bottom-up):
 
 ## Layer 1 — Bit-writers
 
-| x264 function (file:line in x264-master) | Purpose | Wx264 status |
+| x264 function (file:line in x264-master) | Purpose | Vk264 status |
 |---|---|---|
 | `bs_write*` family — common/bitstream.h:… | Generic bit writer (bit/ue/se/te) | fixture-only (`bit_writer.glsl` + `bitstream.comp`, `x264_bitstream_parity`) |
 | `x264_nal_encode` — bitstream.c:… | Strip emulation-prevention for whole NAL | fixture-only (`nal.comp`, `x264_nal_parity`) |
@@ -43,18 +43,18 @@ writers; the real encode path uses them correctly for SPS/PPS/slice/NALs.
 
 ## Layer 2 — Tables (common/tables.c)
 
-| x264 symbol (x264-master common/tables.c line) | Purpose | Wx264 status |
+| x264 symbol (x264-master common/tables.c line) | Purpose | Vk264 status |
 |---|---|---|
 | `x264_zigzag_scan4[ frame/field ]` | 4×4 zigzag | fixture-only (`zigzag4_order.glsl`, `x264_zigzag4*_parity`) — resident path uses its own scan (no `zigzag_scan*` in runtime) |
 | `x264_zigzag_scan8*` | 8×8 zigzag | fixture-only (`zigzag8_order.glsl`, `x264_zigzag8*_parity`) |
 | `x264_cqm_jvt`, `x264_cqm_flat16` | JVT/flat scaling lists | partial (copied verbatim to `extract_reference.py`-extracted `parameterCorpus::tables()`; used only in scaling-list fixture; real encodes use flat quant tables) |
-| `x264_lambda_tab` | λ table per QP | partial (copied into `motionSearchParameters` in Wx264 C++; used for ME λ; not in CABAC context init (cabac_shader handles via `m_qp` look-up inline); not the RDO λ/entropy-λ used by x264 (`x264_rc_analyse_slice`)) |
+| `x264_lambda_tab` | λ table per QP | partial (copied into `motionSearchParameters` in Vk264 C++; used for ME λ; not in CABAC context init (cabac_shader handles via `m_qp` look-up inline); not the RDO λ/entropy-λ used by x264 (`x264_rc_analyse_slice`)) |
 | `x264_scan8/…` (sub-field-index raster) | 8×8→SATD scan | partial (macros expand in `motion_search.comp` SATD, but only for the 16×16 path) |
 | `x264_intra_sad_x3_16x16/8x8/4x4` etc. | Intra prediction SAD tables (SIMD) | MISSING (no intra prediction cost table use; intra modes are always DC in the resident path) |
 | `x264_hadamard4`, `x264_sa8d` helpers | HADAMARD kernels | fixture-only (`hadamard4.glsl`, used by `motion_search`, `motion_metrics`, `inter_frame` use8x8()) |
 | CABAC context init tables (common/cabac.c) | Context init per QP | partial (`cabac_syntax.glsl` embeds the x264 entropy-coder context tables inline (m, n, shift); fixture `x264_cabac_parity` covers 9856 sequences byte-exact) |
 | `x264_context_init*` (non-cabac) | CAVLC table init | partial (CAVLC path uses `cavlc_frame.spv` with explicit tables; `cavlc_residual.glsl` carries the VLC tables) |
-| `x264_cqm_*` (custom CQM) | Custom quantization matrix | MISSING (Wx264 never sets CQM; `pps.i_cqm_preset = 0` always; scaling-list fixture covers the syntax, but real CQM flow disabled) |
+| `x264_cqm_*` (custom CQM) | Custom quantization matrix | MISSING (Vk264 never sets CQM; `pps.i_cqm_preset = 0` always; scaling-list fixture covers the syntax, but real CQM flow disabled) |
 | `x264_quant_coeff_level_run`, `x264_coeff_last*` | Level/run tables | fixture-only (`decimate*_table.glsl`, `coeff_analysis.comp`, `x264_coeff_analysis_parity`) |
 | `x264_quant4/8_mf/bias/dequan_mf` | Quant tables | fixture-only (`quant_level.glsl`, `x264_quant*_parity`); resident path uses `intraCorpus::setFlatQuant` (flat only — no CQM) |
 
@@ -63,7 +63,7 @@ verified (byte-exact vs fixture data) for the syntax we produce; not needed for 
 
 ## Layer 3 — Transforms
 
-| x264 function (x264-master common/dct.c) | Purpose | Wx264 status |
+| x264 function (x264-master common/dct.c) | Purpose | Vk264 status |
 |---|---|---|
 | `sub16x16_dct`, `sub16x16_dct8` | 16×16 luma DCT / 8×8-block DCT4 | fixture-only (`intra16.comp`/resident IDR) |
 | `sub8x8_dct`, `sub8x8_dct8`, `sub8x8_dct_dc` | 8×8 luma DCT / DC-only | fixture-only (`inter8x8.comp`/resident use8x8() path) |
@@ -80,7 +80,7 @@ to the actual encoding path we support, I16x16DCT / 8x8TRANSFORM or DC-only**.
 
 ## Layer 4 — Quantization and decimation
 
-| x264 function (x264-master common/quant.c) | Purpose | Wx264 status |
+| x264 function (x264-master common/quant.c) | Purpose | Vk264 status |
 |---|---|---|
 | `quant_4x4`, `quant_8x8`, `quant_4x4_dc`, `quant_2x2_dc`, `quant_4x4x4` | Forward quant | fixture-only (`quant.comp`, `quant_group.comp`) |
 | `dequant_4x4`, `dequant_8x8` | Inverse quant | fixture-only (fused in transform kernels) |
@@ -96,7 +96,7 @@ This layer is validated exactly; nothing to change for correctness, only for ful
 
 ## Layer 5 — Pixel-domain primitives
 
-| x264 function (x264-master common/pixel.c) | Purpose | Wx264 status |
+| x264 function (x264-master common/pixel.c) | Purpose | Vk264 status |
 |---|---|---|
 | `x264_pixel_satd_WxH` / `_satd_x3_WxH` / `_satd_x4_WxH` | SATD cost evaluation | fixture-only (`motion_search`, `motion_metrics` use hadamard4; not wired into analysis loop; `_WxH` = fixed blocks in x264 are SIMD only; we have per-shape fixtures) |
 | `x264_pixel_sa8d_16x16` | 8×8 SATD alternative for sub-partition/non-RD | fixture-only (inter4x4, motion_metrics pipeline) |
@@ -110,11 +110,11 @@ This layer is validated exactly; nothing to change for correctness, only for ful
 **Needed for encode**: `x264_pixel_ssd_16x16`, `x264_pixel_sad_16x16`, `x264_pixel_satd_16x16`, `x264_pixel_sa8d_16x16`. x264_pixel_sad should share the `hpel(sample)` convention in `motion_search` — already fixture-verified un-clamped; we rely on resident frame path wired to the SATD/SA8D selector for the 4×4-vs-8×8 heuristic.
 
 **Correct for the existing pipeline shape.**
-This is the one layer where x264 _itself_ has no Vulkan-friendly variant — we cannot "port" it; we reimplement it natively. The resident x264 layer in our codebase is fine with approximate computation results for parity and byte-exact streams; exact bit-parity between wx264 and x264 *does not depend onthis layer*.
+This is the one layer where x264 _itself_ has no Vulkan-friendly variant — we cannot "port" it; we reimplement it natively. The resident x264 layer in our codebase is fine with approximate computation results for parity and byte-exact streams; exact bit-parity between vk264 and x264 *does not depend onthis layer*.
 
 ## Layer 6 — MC / prediction / deblock
 
-| x264 function (x264-master common/mc.c + common/predict.c + common/deblock.c) | Purpose | Wx264 status |
+| x264 function (x264-master common/mc.c + common/predict.c + common/deblock.c) | Purpose | Vk264 status |
 |---|---|---|
 | `x264_hpel_filter<h,v,diag>` (SIMD+scalar) | Half-pel filtering | fixture-only (`motion_compensation.comp` covers u/v/h/v/diag for luma and chroma bilinear fill; `x264_motion_compensation_parity` + `reference_frame`) |
 | `x264_pixel_hpel_*` (cx) | MC filter dispatch | fixture-only |
@@ -130,7 +130,7 @@ This is the one layer where x264 _itself_ has no Vulkan-friendly variant — we 
 
 ## Layer 7 — Macroblock encode
 
-| x264 function (x264-master encoder/macroblock.c) | Purpose | Wx264 status |
+| x264 function (x264-master encoder/macroblock.c) | Purpose | Vk264 status |
 |---|---|---|
 | `mb_encode_i16x16*`, `mb_encode_chroma*` | I_16×16 encode | fixture-only (`intra16.comp` — byte-exact verified) |
 | `macroblock_encode_i4x4` / `mb_encode_i8x8` | Intra 4×4/8×8 | MISSING (I_16×16 DC-only — never other modes) |
@@ -139,7 +139,7 @@ This is the one layer where x264 _itself_ has no Vulkan-friendly variant — we 
 | `x264_mb_probe_skip`, `x264_macroblock_probe_pskip` | P-skip probe | MISSING |
 | `mb_allow_skip`, `x264_mb_decide_skip` logic | Skip decision | partial (resident path has a skip/mb_pred skip flow in 16×16 I_DC for skips, fixture covers the CABAC skip syntax bit/sizes vs fixture; no actual probe) |
 | `x264_predict_lossless_*` | Lossless residuals | partial (I/mixed lossless via resid path through intra_chroma with lossless flag set; resident path unwired) — Fixture-only |
-| `mb_encode_interactive` (= encodeInter in Wx264 raw path) — RDO | RDO | MISSING (beyond our scope — RD pass is analytics for MB decisions) |
+| `mb_encode_interactive` (= encodeInter in Vk264 raw path) — RDO | RDO | MISSING (beyond our scope — RD pass is analytics for MB decisions) |
 | `mb_cache_load_neighbours`, `macroblock_cache_load`, `x264_macroblock_cache_load*` | Neighbor cache | MISSING (resident path derives neighbors from arena by index; no `x264_cache*` |
 | `x264_macroblock_deblock_strength`, `x264_macroblock_bipred_init` | Deblock strength + Bipred | partial (deblock_strength.comp fixture-verified; bipred absent) |
 
@@ -147,7 +147,7 @@ This is the one layer where x264 _itself_ has no Vulkan-friendly variant — we 
 
 ## Layer 8 — Whole-slice encode (encoder.c)
 
-| x264 function (x264-master encoder/encoder.c + macroblock.h) | Purpose | Wx264 status |
+| x264 function (x264-master encoder/encoder.c + macroblock.h) | Purpose | Vk264 status |
 |---|---|---|
 | `performFrame(smut)` (x264_encoder_frame_end) | Frame stats end | MISSING |
 | `x264_encoder_encode` | Main encode entry | partial (`encodeCabacClip` in dct_parity.cpp is a batch entry, not per-call API) |
@@ -165,7 +165,7 @@ This is the one layer where x264 _itself_ has no Vulkan-friendly variant — we 
 
 ## Layer 9 — Frame iteration + SPS/PPS/slicetype
 
-| x264 function (x264-master encoder/set.c + slicetype.c) | Purpose | Wx264 status |
+| x264 function (x264-master encoder/set.c + slicetype.c) | Purpose | Vk264 status |
 |---|---|---|
 | `x264_sps_init` | SPS from param | MISSING (hand-filled; no param_apply_preset logic) |
 | `x264_pps_init` | PPS from param | MISSING (hand-filled) |
@@ -182,7 +182,7 @@ This is the one layer where x264 _itself_ has no Vulkan-friendly variant — we 
 
 ## Layer 10 — RC/AQ/lookahead
 
-| x264 function (x264-master ratecontrol.c + rdo.c + analyse.c) | Purpose | Wx264 status |
+| x264 function (x264-master ratecontrol.c + rdo.c + analyse.c) | Purpose | Vk264 status |
 |---|---|---|
 | `x264_adaptive_quant_frame` (ratecontrol.c) | AQ variance | fixture-only (`aq.comp`, `x264_aq_parity`; **not wired to QP**) |
 | `ratecontrol_init_reconfigurable`, `rc_analyse_slice`, `macroblock_tree` | RC analysis | MISSING |
@@ -201,7 +201,7 @@ and `HANDOFF.md`.
 
 ## Layer 11 — Threading + frame pools
 
-| x264 function (x264-master common/frame.c + common/threadpool.c + encoder/encoder.c) | Purpose | Wx264 status |
+| x264 function (x264-master common/frame.c + common/threadpool.c + encoder/encoder.c) | Purpose | Vk264 status |
 |---|---|---|
 | `x264_frame_expand_border_*` | Reference border alloc | partial (resident border replication handled by fixture; allocation is host) |
 | `x264_frame_copy_picture` | Recon copy for next ref | MISSING (host performs recon readback + persists to buffer but not via an avx SPS path) |
@@ -215,7 +215,7 @@ and `HANDOFF.md`.
 
 ## Summary counts
 
-| Layer | x264 functions identified | Wx264 coverage |
+| Layer | x264 functions identified | Vk264 coverage |
 |---|---|---|
 | 1 — Bit writers | 3 | fixture-only+partial (works for our stream) — OK for parity |
 | 2 — Tables | ~60 | fixture-only for all — OK |

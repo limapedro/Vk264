@@ -12,10 +12,10 @@ layout(push_constant) uniform Frame {
 
 layout(std430, binding=0) readonly buffer Source { uint source[]; };
 layout(std430, binding=1) readonly buffer Previous { uint previous[]; };
-#ifndef WX_RECONSTRUCTION_ACCESS
-#define WX_RECONSTRUCTION_ACCESS
+#ifndef VK_RECONSTRUCTION_ACCESS
+#define VK_RECONSTRUCTION_ACCESS
 #endif
-layout(std430, binding=2) WX_RECONSTRUCTION_ACCESS buffer Reconstruction { uint reconstructed[]; };
+layout(std430, binding=2) VK_RECONSTRUCTION_ACCESS buffer Reconstruction { uint reconstructed[]; };
 layout(std430, binding=3) buffer Residual { int coefficients[]; };
 layout(std430, binding=4) buffer SliceStorage { uint scratchWords[]; };
 layout(std430, binding=5) buffer SliceRecords { uvec2 slices[]; }; // words, offset
@@ -23,10 +23,10 @@ layout(std430, binding=6) buffer Output { uint outputWords[]; };  // 4 words of 
 layout(std430, binding=7) buffer RateState { int interQpOffset, bitDebt, idrQpOffset; } rc;
 layout(std430, binding=8) readonly buffer CodeTables { uint codes[]; };
 struct MotionMatch { ivec2 mv; uint cost; uint mode; };
-#ifndef WX_MOTION_ACCESS
-#define WX_MOTION_ACCESS
+#ifndef VK_MOTION_ACCESS
+#define VK_MOTION_ACCESS
 #endif
-layout(std430, binding=9) WX_MOTION_ACCESS buffer Motion { MotionMatch matches[]; };
+layout(std430, binding=9) VK_MOTION_ACCESS buffer Motion { MotionMatch matches[]; };
 layout(std430, binding=10) buffer HalfPel { uint halfPel[]; };
 layout(std430, binding=11) buffer QuarterLuma { uint quarterLuma[]; };
 layout(std430, binding=12) buffer MacroblockSyntax { uvec2 mbSyntax[]; }; // CBP/skip/QP, proposed QP then body bits

@@ -6,9 +6,9 @@ I aligned the Warzone decode and raw source by frame index and measured the abso
 
 | Warzone frame 30 | At rows 16, 48, … | At rows 32, 64, … | Eight pixels off boundary | PSNR-Y |
 |---|---:|---:|---:|---:|
-| Wx264 one-row baseline | 5.39 | 5.20 | 2.92 | 30.52 dB |
-| Wx264 two-row slices | 2.46 | 4.50 | 2.39 | 31.79 dB |
-| Wx264 two-row slices and SATD | 2.36 | 4.25 | 2.26 | 32.08 dB |
+| Vk264 one-row baseline | 5.39 | 5.20 | 2.92 | 30.52 dB |
+| Vk264 two-row slices | 2.46 | 4.50 | 2.39 | 31.79 dB |
+| Vk264 two-row slices and SATD | 2.36 | 4.25 | 2.26 | 32.08 dB |
 | x264 slow | 1.51 | 1.47 | 1.32 | 37.15 dB |
 
 With within-slice filtering, the two-row layout filtered every other horizontal macroblock boundary in P pictures. It also made the upper macroblock available for coefficient context and motion prediction. The encoder only emits P-skip when the decoder's inferred vector matches the chosen reconstruction and there is no coded residual. The experiment that penalized the largest local zero-motion skip error raised aggregate PSNR-Y by 0.02 dB on Warzone and stayed out of the default.

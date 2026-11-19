@@ -24,7 +24,7 @@ void rbspByte(uint value) {
 }
 
 void bits(uint value, int count) {
-#ifdef WX_MACROBLOCK_BODY
+#ifdef VK_MACROBLOCK_BODY
     while (count > 0) {
         uint take = min(32u - pendingBits, uint(count));
         count -= int(take);

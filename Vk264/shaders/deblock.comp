@@ -1,12 +1,12 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
-#define WX_RECONSTRUCTION_ACCESS coherent
+#define VK_RECONSTRUCTION_ACCESS coherent
 #include "layout.glsl"
 #include "transform.glsl"
 #include "deblock_tables.glsl"
 
 layout(local_size_x=32) in;
-#define WX_DEBLOCK_TILES 1
+#define VK_DEBLOCK_TILES 1
 #include "deblock_filter.glsl"
 
 void main() {
