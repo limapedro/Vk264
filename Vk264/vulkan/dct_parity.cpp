@@ -2058,7 +2058,7 @@ constexpr int frameResidualBankSize = frameMaxOperations*macroblockWords;
 enum Kind {
     decision, bypass, ueBypass, terminal, residual, intraType, intra4x4Mode, intraChromaMode,
     intra16Macroblock, codedBlockPattern, qpDelta, transformSize, macroblockSkip, mvdComponent, inter16Macroblock,
-    wholeFrame
+    wholeFrame, refIdx
 };
 struct Operation {
     std::int32_t kind, first, second;
@@ -2350,6 +2350,70 @@ void verifyCabac(const char* shader) {
     std::cout << cases.size() << " CABAC sequences matched x264 bytes, contexts and arithmetic state, including "
               << residualCases << " residual, " << syntaxCases << " intra syntax and "
               << macroblockSyntaxCases << " coded-block, QP-delta, transform-size, skip and motion syntax sequences.\n";
+}
+
+// Issue #5 sub-PR B: verify the P-slice reference-index bin syntax against
+// x264 encoder/cabac.c::cabac_ref_internal (bframe == 0 path). The host side
+// calls x264's own decision coder with the exact contexts/bins from that
+// function; the GPU side runs the new refIdx operation.
+void verifyCabacRefIdx(const char* shader) {
+    using namespace cabacCorpus;
+    const auto tables = cabacTables();
+    std::vector<Fixture> cases;
+    for (int ref : {0, 1, 2, 3, 7, 15})
+        for (int left : {-1, 0, 1, 3})
+            for (int top : {-1, 0, 1, 3})
+                for (int qp : {0, 17, 34, 51})
+                    for (int model = 0; model < 4; ++model) {
+                        Fixture input{};
+                        input.qp = qp;
+                        input.model = model;
+                        input.chroma444 = 0;
+                        input.frame = static_cast<int>(cases.size() % 97);
+                        input.finish = static_cast<int>(cases.size() % 2);
+                        for (std::size_t b = 0; b < input.bytes.size(); ++b)
+                            input.bytes[b] = static_cast<std::uint32_t>((b*37+165) & 255);
+                        input.bytes[0] = 165; // slice-header byte preceding the arithmetic stream
+                        input.operations[input.count++] =
+                            {refIdx, ref, (left > 0 ? 1 : 0) | ((top > 0 ? 1 : 0) << 1)};
+                        cases.push_back(input);
+                    }
+    const auto inputs = cases;
+    execute(shader, cases, 1, tables);
+    x264_t encoder{};
+    encoder.chroma444 = true;
+    x264_cabac_init(&encoder);
+    for (std::size_t i = 0; i < cases.size(); ++i) {
+        const auto& input = inputs[i];
+        const auto& output = cases[i];
+        std::uint8_t bytes[maxBytes];
+        std::copy(input.bytes.begin(), input.bytes.end(), bytes);
+        x264_cabac_t coder{};
+        encoder.i_frame = input.frame;
+        encoder.chroma444 = false;
+        x264_cabac_context_init(&encoder, &coder, input.model == 0 ? SLICE_TYPE_I : 0,
+                                input.qp, input.model-1);
+        x264_cabac_encode_init(&coder, bytes+1, bytes+maxBytes);
+        // Verbatim translation of x264 cabac.c:246-258 for P slices (bframe=0).
+        const int left = (input.operations[0].second & 1) != 0;
+        const int top = (input.operations[0].second >> 1) & 1;
+        int ctx = left + 2*top;
+        for (int r = input.operations[0].first; r > 0; --r) {
+            x264_cabac_encode_decision_c(&coder, 54+ctx, 1);
+            ctx = (ctx >> 2)+4;
+        }
+        x264_cabac_encode_decision_c(&coder, 54+ctx, 0);
+        if (input.finish) x264_cabac_encode_flush(&encoder, &coder);
+        if (!matchesNativeBytes(output.bytes, bytes) ||
+            !matchesNativeBytes(output.context, coder.state) ||
+            output.low != coder.i_low || output.range != coder.i_range ||
+            output.queue != coder.i_queue || output.outstanding != coder.i_bytes_outstanding ||
+            output.position != coder.p-bytes ||
+            std::memcmp(output.operations.data(), input.operations.data(), sizeof(input.operations)) != 0)
+            throw std::runtime_error("CABAC ref_idx mismatch in fixture " + std::to_string(i));
+    }
+    std::cout << cases.size() << " CABAC ref_idx sequences matched x264 cabac_ref_internal bytes, contexts and "
+                 "arithmetic state.\n";
 }
 
 namespace mvPredictCorpus {
@@ -5291,6 +5355,14 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
         if (const auto* preset = x264_vulkan::presets::find(options->preset))
             if (preset->subpelRefine >= 6) chromaQpOffset = -2;
     }
+    // x264 set.c::x264_sps_init() uses i_frame_reference (the per-preset ref
+    // budget) for both SPS max_num_ref_frames and level DPB selection. Consume
+    // the value already transcribed in x264_presets.hpp instead of hard-coding 1.
+    int referenceBudget = 1;
+    if (options && options->preset) {
+        if (const auto* preset = x264_vulkan::presets::find(options->preset))
+            referenceBudget = std::max(1, preset->referenceBudget);
+    }
     constexpr int chromaQpMap[52] = {
         0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,
         29,30,31,32,32,33,34,34,35,35,36,36,37,37,37,38,38,38,39,39,39,39,
@@ -5321,7 +5393,7 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
         levelIn.mbsPerFrame = macroblocks;
         levelIn.widthInMbs = widthInMbs;
         levelIn.heightInMbs = heightInMbs;
-        levelIn.maxDecFrameBuffering = 1;
+        levelIn.maxDecFrameBuffering = gop == 1 ? 1 : referenceBudget;
         levelIn.fpsNum = options ? options->fpsNumerator : 60000;
         levelIn.fpsDen = options ? options->fpsDenominator : 1001;
         if (options && options->targetBits > 0) {
@@ -5336,9 +5408,13 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
     sps.i_chroma_format_idc = CHROMA_420;
     sps.i_log2_max_frame_num = 4;
     sps.i_poc_type = 2;
-    sps.i_num_ref_frames = 1;
-    // x264's x264_sps_init(): intra-only streams have zero reference frames.
-    if (gop == 1) sps.i_num_ref_frames = 0;
+    // x264 set.c::x264_sps_init(): with B-frames disabled (the resident path
+    // today, i_num_reorder_frames = 0), max_num_ref_frames is the preset's
+    // i_frame_reference for inter streams and 0 for intra-only streams.
+    // Verified against x264 with bframes=0: faster/fast (ref=2) emit 2 here.
+    // When B-frames land this formula also needs the reorder/b-pyramid DPB
+    // slots from set.c:150-158 (see docs/multi-reference-design.md).
+    sps.i_num_ref_frames = gop == 1 ? 0 : referenceBudget;
     // x264's x264_sps_init(): intra-only streams (keyint==1) with High profile
     // set constraint_set3, which in turn suppresses VUI bitstream_restriction.
     sps.b_constraint_set3 = (gop == 1 && sps.i_profile_idc >= PROFILE_HIGH) ? 1 : 0;
@@ -5440,8 +5516,15 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
             throw std::runtime_error("Invalid aligned RBSP header length");
         return std::vector<std::uint8_t>(header.bytes.begin(), header.bytes.begin()+length);
     };
-    const int storedPictures = clip ? 2 : pictures;
-    const auto storageIndex = [clip](int picture) { return clip ? picture%2 : picture; };
+    // Issue #5 sub-PR C groundwork: size the host reconstruction ring to
+    // (refs + 1) slots so older frames can be retained once the resident GPU
+    // path is extended to address them. For ref=1 this is identical to the
+    // previous 2-slot modulo-2 ring; no behaviour change for single-ref.
+    const int referenceSlots = clip ? std::max(2, referenceBudget+1) : pictures;
+    const int storedPictures = referenceSlots;
+    const auto storageIndex = [clip, referenceSlots](int picture) {
+        return clip ? picture%referenceSlots : picture;
+    };
     std::vector<std::vector<std::uint8_t>> reconstructed(storedPictures, std::vector<std::uint8_t>(width*height));
     std::array<std::vector<std::uint8_t>, 2> chromaPlanes{
         std::vector<std::uint8_t>(width*height/4), std::vector<std::uint8_t>(width*height/4)};
@@ -6316,6 +6399,7 @@ int runParityTests(int argc, char** argv) try {
     }
     else if (side == "deblock_strength") verifyDeblockStrength(argv[2]);
     else if (side == "cabac") verifyCabac(argv[2]);
+    else if (side == "cabac_refidx") verifyCabacRefIdx(argv[2]);
     else if (side == "mv_predict") verifyMvPrediction(argv[2]);
     else if (side == "motion_compensation") verifyMotionCompensation(argv[2]);
     else if (side == "reference_frame") verifyReferenceFrame(argv[2]);
