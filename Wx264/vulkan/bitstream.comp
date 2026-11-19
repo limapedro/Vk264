@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Translated from common/bitstream.h. Copyright (C) 2003-2024 x264 project.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 64) in;
+
+const int maxOps = 96, capacity = 768;
+const int writeBits = 0, write32 = 1, write1 = 2, align0 = 3, align1 = 4, align10 = 5;
+const int realign = 6, flush = 7, unsignedGolomb = 8, unsignedGolombBig = 9, signedGolomb = 10;
+const int truncatedGolomb = 11, trailing = 12, sizeUe = 13, sizeUeBig = 14, sizeSe = 15, sizeTe = 16;
+struct Operation {
+    uint kind, a, b;
+};
+struct Fixture {
+    int start, count;
+    Operation operations[maxOps];
+    int observed[maxOps];
+    uint bytes[capacity];
+    int position, pointer, left;
+    uint curLow, curHigh;
+};
+layout(std430, binding = 0) buffer Corpus { Fixture fixtures[]; };
+
+#include "bit_writer.glsl"
+
+void main() {
+    uint f = gl_GlobalInvocationID.x;
+    if (f >= fixtures.length()) return;
+    int start = fixtures[f].start;
+    Writer writer = Writer(start & ~3, start, 64, 0u, 0u);
+    bsRealign(f, writer);
+    for (int i = 0; i < fixtures[f].count; ++i) {
+        Operation op = fixtures[f].operations[i];
+        int result = -1;
+        int pad = writer.left & 7;
+        switch (op.kind) {
+            case writeBits: bsWrite(f, writer, int(op.a), op.b); break;
+            case write32: bsWrite32(f, writer, op.a); break;
+            case write1: bsWrite1(f, writer, op.a); break;
+            case align0: bsWrite(f, writer, pad, 0u); bsFlush(f, writer); break;
+            case align1: bsWrite(f, writer, pad, (1u << pad)-1u); bsFlush(f, writer); break;
+            case align10:
+                if (pad != 0) bsWrite(f, writer, pad, 1u << (pad-1));
+                bsFlush(f, writer);
+                break;
+            case realign: bsRealign(f, writer); break;
+            case flush: bsFlush(f, writer); break;
+            case unsignedGolomb: bsWrite(f, writer, golombSize(op.a+1u), op.a+1u); break;
+            case unsignedGolombBig: bsWriteUeBig(f, writer, op.a); break;
+            case signedGolomb: bsWriteSe(f, writer, int(op.a)); break;
+            case truncatedGolomb:
+                if (op.a == 1u) bsWrite1(f, writer, 1u^op.b);
+                else bsWrite(f, writer, golombSize(op.b+1u), op.b+1u);
+                break;
+            case trailing: bsTrailing(f, writer); break;
+            case sizeUe:
+            case sizeUeBig: result = golombSize(op.a+1u); break;
+            case sizeSe: result = golombSize(signedCodeword(int(op.a))); break;
+            case sizeTe: result = op.a == 1u ? 1 : golombSize(op.b+1u); break;
+        }
+        fixtures[f].observed[i] = result < 0 ? bsPos(writer) : result;
+    }
+    fixtures[f].position = bsPos(writer);
+    fixtures[f].pointer = writer.pointer;
+    fixtures[f].left = writer.left;
+    fixtures[f].curLow = writer.low;
+    fixtures[f].curHigh = writer.high;
+}

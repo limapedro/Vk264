@@ -1,0 +1,38 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Translated from common/mc.c. Copyright (C) 2003-2024 x264 project.
+#version 450
+layout(local_size_x = 64) in;
+
+const int maxStride = 64;
+struct Fixture {
+    int stride;
+    uint pixels[maxStride];
+    uint integral[9*maxStride];
+    uint sum4h[maxStride], sum8h[maxStride];
+    uint sum4v[maxStride], sum8From4[maxStride], sum8v[maxStride];
+};
+layout(std430, binding = 0) buffer Corpus { Fixture fixtures[]; };
+
+void main() {
+    uint fixture = gl_WorkGroupID.x;
+    if (fixture >= fixtures.length()) return;
+    int x = int(gl_LocalInvocationIndex);
+    int stride = fixtures[fixture].stride;
+    if (x >= stride-4) return;
+
+    uint horizontal = fixtures[fixture].integral[x];
+    for (int i = 0; i < 4; ++i) horizontal += fixtures[fixture].pixels[x+i];
+    fixtures[fixture].sum4h[x] = horizontal & 65535u;
+    if (x >= stride-8) return;
+    for (int i = 4; i < 8; ++i) horizontal += fixtures[fixture].pixels[x+i];
+    fixtures[fixture].sum8h[x] = horizontal & 65535u;
+
+    uint row0 = fixtures[fixture].integral[x];
+    uint row4 = fixtures[fixture].integral[4*stride+x];
+    uint row8 = fixtures[fixture].integral[8*stride+x];
+    uint difference = row8 - row0;
+    uint right = fixtures[fixture].integral[8*stride+x+4] - fixtures[fixture].integral[x+4];
+    fixtures[fixture].sum4v[x] = (row4-row0) & 65535u;
+    fixtures[fixture].sum8From4[x] = (difference+right) & 65535u;
+    fixtures[fixture].sum8v[x] = difference & 65535u;
+}

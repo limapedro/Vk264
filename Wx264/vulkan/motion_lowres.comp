@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Translated from common/mc.c. Copyright (C) 2003-2024 x264 project.
+#version 450
+layout(local_size_x = 64) in;
+
+const int inputSize = 37*33, outputSize = 21*16;
+struct Fixture {
+    int width, height, srcStride, dstStride;
+    uint source[inputSize];
+    uint outputPlanes[4][outputSize];
+};
+layout(std430, binding = 0) buffer Corpus { Fixture fixtures[]; };
+
+uint roundedHalfSum(uint a, uint b) { return (a+b+1u) >> 1; }
+
+void main() {
+    uint fixture = gl_WorkGroupID.x;
+    if (fixture >= fixtures.length()) return;
+    int width = fixtures[fixture].width, height = fixtures[fixture].height;
+    int srcStride = fixtures[fixture].srcStride, dstStride = fixtures[fixture].dstStride;
+    for (int i = int(gl_LocalInvocationIndex); i < width*height; i += 64) {
+        int x = i%width, y = i/width;
+        int src = 2*y*srcStride + 2*x;
+        for (int phase = 0; phase < 4; ++phase) {
+            int p = src + (phase/2)*srcStride + phase%2;
+            uint left = roundedHalfSum(fixtures[fixture].source[p], fixtures[fixture].source[p+srcStride]);
+            uint right = roundedHalfSum(fixtures[fixture].source[p+1], fixtures[fixture].source[p+srcStride+1]);
+            fixtures[fixture].outputPlanes[phase][y*dstStride+x] = roundedHalfSum(left, right);
+        }
+    }
+}

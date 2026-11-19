@@ -1,0 +1,87 @@
+{
+  "input": "E:\\__PROJECTS__\\Wx264-Vulkan-Opencode\\clips\\youtube\\forza_original_30s_1080p_nvenc_p7_24mbps_240f.yuv",
+  "width": 1920,
+  "height": 1080,
+  "frames": 240,
+  "fps": 60,
+  "gop_frames": 120,
+  "target_kbps": 6000,
+  "wx264_rate_control": "average-rate feedback",
+  "reference_buffer_kbits": 12000,
+  "results": [
+    {
+      "encoder": "wx264-vulkan",
+      "command": [
+        "E:\\__PROJECTS__\\Wx264-Vulkan-Opencode\\build\\Release\\wx264.exe",
+        "E:\\__PROJECTS__\\Wx264-Vulkan-Opencode\\clips\\youtube\\forza_original_30s_1080p_nvenc_p7_24mbps_240f.yuv",
+        "E:\\__PROJECTS__\\Wx264-Vulkan-Opencode\\results\\verify-nvenc-vulkan-forza_original_30s\\wx264-vulkan.h264",
+        "1920",
+        "1080",
+        "240",
+        "60",
+        "--qp",
+        "34",
+        "--gop",
+        "120",
+        "--bitrate",
+        "6000",
+        "--backend",
+        "vulkan"
+      ],
+      "bytes": 3200239,
+      "wall_seconds": [
+        25.280810199998086
+      ],
+      "process_fps": 9.49336663268878,
+      "decoded_frames": 240,
+      "gpu_reconstruction_verified": true,
+      "gpu_runs": [
+        {
+          "backend": "x264-vulkan",
+          "preset": "prototype",
+          "gpu": "NVIDIA GeForce GTX 1660 SUPER",
+          "settings": {
+            "entropy": "cabac",
+            "gop": 120,
+            "reference_frames": 1,
+            "b_frames": 0,
+            "lookahead_frames": 0,
+            "slices_per_frame": 1,
+            "inter_8x8_transform": 1,
+            "rate_control": "average-rate"
+          },
+          "frames": 240,
+          "bytes": 3200239,
+          "encode_seconds": 25.2254,
+          "min_qp": 22,
+          "max_qp": 34,
+          "inter_8x8_blocks": 1958400
+        }
+      ],
+      "preset": "prototype",
+      "effective_settings": {
+        "entropy": "cabac",
+        "gop": 120,
+        "reference_frames": 1,
+        "b_frames": 0,
+        "lookahead_frames": 0,
+        "slices_per_frame": 1,
+        "inter_8x8_transform": 1,
+        "rate_control": "average-rate"
+      },
+      "video": "wx264-vulkan.h264",
+      "video_packet_bytes": 3200239,
+      "keyframes": 2,
+      "largest_frame_bytes": 43650,
+      "peak_window_seconds": 1.0,
+      "peak_window_kbps": 8490.832,
+      "achieved_kbps": 6400.478,
+      "psnr_y": 38.2821,
+      "psnr_u": 45.0104,
+      "psnr_v": 46.6004,
+      "psnr_average": 39.669,
+      "ssim": 0.985516,
+      "vmaf": 89.49
+    }
+  ]
+}

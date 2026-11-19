@@ -1,0 +1,113 @@
+{
+  "candidate": "2x1",
+  "clips": {
+    "warzone": {
+      "baseline": {
+        "seconds": 24.270038600000134,
+        "fps": 24.721839544169356,
+        "sha256": "21e5094c4d6bc4ddefd60828b28f4da9be89c5922b96d8740a10db92b746f054",
+        "encode": {
+          "backend": "x264-vulkan",
+          "preset": "prototype",
+          "gpu": "NVIDIA GeForce GTX 1660 SUPER",
+          "settings": {
+            "entropy": "cavlc",
+            "gop": 120,
+            "reference_frames": 1,
+            "b_frames": 0,
+            "lookahead_frames": 0,
+            "slices_per_frame": 1,
+            "inter_8x8_transform": 1,
+            "rate_control": "average-rate"
+          },
+          "frames": 600,
+          "bytes": 7520635,
+          "encode_seconds": 24.0726,
+          "min_qp": 21,
+          "max_qp": 51,
+          "inter_8x8_blocks": 273005
+        }
+      },
+      "2x1": {
+        "seconds": 27.106502799999816,
+        "fps": 22.13491000395684,
+        "sha256": "21e5094c4d6bc4ddefd60828b28f4da9be89c5922b96d8740a10db92b746f054",
+        "encode": {
+          "backend": "x264-vulkan",
+          "preset": "prototype",
+          "gpu": "NVIDIA GeForce GTX 1660 SUPER",
+          "settings": {
+            "entropy": "cavlc",
+            "gop": 120,
+            "reference_frames": 1,
+            "b_frames": 0,
+            "lookahead_frames": 0,
+            "slices_per_frame": 1,
+            "inter_8x8_transform": 1,
+            "rate_control": "average-rate"
+          },
+          "frames": 600,
+          "bytes": 7520635,
+          "encode_seconds": 26.9253,
+          "min_qp": 21,
+          "max_qp": 51,
+          "inter_8x8_blocks": 273005
+        }
+      }
+    },
+    "fortnite": {
+      "baseline": {
+        "seconds": 25.52552220000007,
+        "fps": 23.505885415343172,
+        "sha256": "c826ecfe00b25bb17955d80e629e7d27b52d439eb7cc3e2c8b77d2426c03414b",
+        "encode": {
+          "backend": "x264-vulkan",
+          "preset": "prototype",
+          "gpu": "NVIDIA GeForce GTX 1660 SUPER",
+          "settings": {
+            "entropy": "cavlc",
+            "gop": 120,
+            "reference_frames": 1,
+            "b_frames": 0,
+            "lookahead_frames": 0,
+            "slices_per_frame": 1,
+            "inter_8x8_transform": 1,
+            "rate_control": "average-rate"
+          },
+          "frames": 600,
+          "bytes": 7525290,
+          "encode_seconds": 25.3076,
+          "min_qp": 30,
+          "max_qp": 51,
+          "inter_8x8_blocks": 240534
+        }
+      },
+      "2x1": {
+        "seconds": 26.04398160000028,
+        "fps": 23.037952077189058,
+        "sha256": "c826ecfe00b25bb17955d80e629e7d27b52d439eb7cc3e2c8b77d2426c03414b",
+        "encode": {
+          "backend": "x264-vulkan",
+          "preset": "prototype",
+          "gpu": "NVIDIA GeForce GTX 1660 SUPER",
+          "settings": {
+            "entropy": "cavlc",
+            "gop": 120,
+            "reference_frames": 1,
+            "b_frames": 0,
+            "lookahead_frames": 0,
+            "slices_per_frame": 1,
+            "inter_8x8_transform": 1,
+            "rate_control": "average-rate"
+          },
+          "frames": 600,
+          "bytes": 7525290,
+          "encode_seconds": 25.5122,
+          "min_qp": 30,
+          "max_qp": 51,
+          "inter_8x8_blocks": 240534
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Translated from common/deblock.c. Copyright (C) 2003-2024 x264 project.
+#version 450
+layout(local_size_x = 64) in;
+
+const int scan8LumaSize = 40;
+const int scan8Size = 120;
+const int scan8Origin = 12;
+struct Fixture {
+    uint nonzero[scan8Size];
+    int reference[2][scan8LumaSize];
+    ivec2 motion[2][scan8LumaSize];
+    uint strength[2][8][4];
+    int verticalLimit, bframe;
+};
+layout(std430, binding = 0) buffer Corpus { Fixture fixtures[]; };
+
+bool predictionDiffers(uint fixture, int list, int location, int neighbor) {
+    ivec2 delta = abs(fixtures[fixture].motion[list][location] - fixtures[fixture].motion[list][neighbor]);
+    return fixtures[fixture].reference[list][location] != fixtures[fixture].reference[list][neighbor] ||
+           delta.x >= 4 || delta.y >= fixtures[fixture].verticalLimit;
+}
+
+void main() {
+    uint fixture = gl_GlobalInvocationID.x;
+    if (fixture >= fixtures.length()) return;
+    for (int direction = 0; direction < 2; ++direction) {
+        int along = direction == 0 ? 8 : 1;
+        int across = direction == 0 ? 1 : 8;
+        for (int edge = 0; edge < 4; ++edge)
+            for (int block = 0; block < 4; ++block) {
+                int location = scan8Origin + edge*across + block*along;
+                int neighbor = location - across;
+                uint strength = 0;
+                if (fixtures[fixture].nonzero[location] != 0 || fixtures[fixture].nonzero[neighbor] != 0)
+                    strength = 2;
+                else if (predictionDiffers(fixture, 0, location, neighbor) ||
+                         (fixtures[fixture].bframe != 0 && predictionDiffers(fixture, 1, location, neighbor)))
+                    strength = 1;
+                fixtures[fixture].strength[direction][edge][block] = strength;
+            }
+    }
+}

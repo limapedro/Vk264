@@ -1,0 +1,740 @@
+Start testing: Nov 19 01:07 E. South America Standard Time
+----------------------------------------------------------
+1/45 Testing: shader_reconstruction
+1/45 Test: shader_reconstruction
+Command: "C:/Program Files/Python310/python.exe" "E:/__PROJECTS__/Wx264-ChatGPT/harness/check.py" "--encoder" "E:/__PROJECTS__/Wx264-ChatGPT/build/Release/wx264.exe" "--ffmpeg" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe" "--ffprobe" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffprobe.exe"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build
+"shader_reconstruction" start time: Nov 19 01:07 E. South America Standard Time
+Output:
+----------------------------------------------------------
+0-flat-16x16-qp0: 4 frames match
+1-noise-2x2-qp0: 3 frames match
+2-noise-34x30-qp0: 8 frames match
+3-motion-1062x34-qp17: 12 frames match
+4-motion-162x30-qp30: 61 frames match
+5-motion-178x46-qp49: 12 frames match
+6-noise-128x64-qp29: 16 frames match
+7-flat-144x18-qp51: 5 frames match
+8-motion-32x34-qp26: 5 frames match
+9-motion-16x48-qp29: 6 frames match
+10-repeat16-48x34-qp20: 47 frames match
+11-motion-162x98-qp38: 9 frames match
+12-flat-grid-96x80-qp48: 8 frames match
+<end of output>
+Test time =  75.78 sec
+----------------------------------------------------------
+Test Passed.
+"shader_reconstruction" end time: Nov 19 01:08 E. South America Standard Time
+"shader_reconstruction" time elapsed: 00:01:15
+----------------------------------------------------------
+
+2/45 Testing: vulkan_encoder_reconstruction
+2/45 Test: vulkan_encoder_reconstruction
+Command: "C:/Program Files/Python310/python.exe" "E:/__PROJECTS__/Wx264-ChatGPT/harness/check.py" "--encoder" "E:/__PROJECTS__/Wx264-ChatGPT/build/Release/wx264.exe" "--ffmpeg" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe" "--ffprobe" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffprobe.exe" "--vulkan"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build
+"vulkan_encoder_reconstruction" start time: Nov 19 01:08 E. South America Standard Time
+Output:
+----------------------------------------------------------
+Vulkan CABAC: 1 frames and GPU reconstruction match
+Vulkan CABAC: 19 frames and GPU reconstruction match
+<end of output>
+Test time =  14.05 sec
+----------------------------------------------------------
+Test Passed.
+"vulkan_encoder_reconstruction" end time: Nov 19 01:09 E. South America Standard Time
+"vulkan_encoder_reconstruction" time elapsed: 00:00:14
+----------------------------------------------------------
+
+3/45 Testing: vulkan_cavlc_reconstruction
+3/45 Test: vulkan_cavlc_reconstruction
+Command: "C:/Program Files/Python310/python.exe" "E:/__PROJECTS__/Wx264-ChatGPT/harness/check.py" "--encoder" "E:/__PROJECTS__/Wx264-ChatGPT/build/Release/wx264.exe" "--ffmpeg" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe" "--ffprobe" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffprobe.exe" "--vulkan" "--entropy" "cavlc"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build
+"vulkan_cavlc_reconstruction" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+Vulkan CAVLC: 1 frames and GPU reconstruction match
+Vulkan CAVLC: 19 frames and GPU reconstruction match
+<end of output>
+Test time =  11.70 sec
+----------------------------------------------------------
+Test Passed.
+"vulkan_cavlc_reconstruction" end time: Nov 19 01:09 E. South America Standard Time
+"vulkan_cavlc_reconstruction" time elapsed: 00:00:11
+----------------------------------------------------------
+
+4/45 Testing: x264_dc_parity
+4/45 Test: x264_dc_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "dc" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/dc.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_dc_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+3328 DC fixtures matched nine x264 functions byte for byte across QP 0 to 51.
+<end of output>
+Test time =   0.23 sec
+----------------------------------------------------------
+Test Passed.
+"x264_dc_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_dc_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/45 Testing: x264_zigzag_parity
+5/45 Test: x264_zigzag_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "zigzag" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/zigzag.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_zigzag_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+4096 fixtures matched all 11 zigzag functions byte for byte.
+<end of output>
+Test time =   0.22 sec
+----------------------------------------------------------
+Test Passed.
+"x264_zigzag_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_zigzag_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/45 Testing: x264_chroma_dc_parity
+6/45 Test: x264_chroma_dc_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "chroma_dc" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/chroma_dc.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_chroma_dc_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+4096 fixtures matched all five forward chroma DC functions byte for byte.
+<end of output>
+Test time =   0.24 sec
+----------------------------------------------------------
+Test Passed.
+"x264_chroma_dc_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_chroma_dc_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/45 Testing: x264_reconstruct_dc_parity
+7/45 Test: x264_reconstruct_dc_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "reconstruct_dc" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/reconstruct_dc.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_reconstruct_dc_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+12288 fixtures matched all three DC-only reconstruction functions byte for byte.
+<end of output>
+Test time =   0.21 sec
+----------------------------------------------------------
+Test Passed.
+"x264_reconstruct_dc_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_reconstruct_dc_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+8/45 Testing: x264_quant_group_parity
+8/45 Test: x264_quant_group_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "quant_group" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/quant_group.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_quant_group_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+4096 fixtures matched x264 quant_4x4x4 levels and nonzero masks.
+<end of output>
+Test time =   0.22 sec
+----------------------------------------------------------
+Test Passed.
+"x264_quant_group_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_quant_group_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+9/45 Testing: x264_coeff_analysis_parity
+9/45 Test: x264_coeff_analysis_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "coeff_analysis" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/coeff_analysis.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_coeff_analysis_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+4096 fixtures matched 13 coefficient analysis functions byte for byte.
+<end of output>
+Test time =   0.21 sec
+----------------------------------------------------------
+Test Passed.
+"x264_coeff_analysis_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_coeff_analysis_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+10/45 Testing: x264_chroma_optimize_parity
+10/45 Test: x264_chroma_optimize_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "chroma_optimize" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/chroma_optimize.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_chroma_optimize_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+4096 fixtures matched both chroma DC optimizers byte for byte.
+<end of output>
+Test time =   0.19 sec
+----------------------------------------------------------
+Test Passed.
+"x264_chroma_optimize_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_chroma_optimize_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+11/45 Testing: x264_predict_intra_parity
+11/45 Test: x264_predict_intra_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "predict_intra" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/predict_intra.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_predict_intra_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+5376 fixtures matched all 21 luma 16x16 and chroma intra modes byte for byte.
+<end of output>
+Test time =   0.22 sec
+----------------------------------------------------------
+Test Passed.
+"x264_predict_intra_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_predict_intra_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+12/45 Testing: x264_predict_directional_parity
+12/45 Test: x264_predict_directional_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "predict_directional" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/predict_directional.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_predict_directional_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+8192 fixtures matched all 24 luma 4x4 and 8x8 modes and the 8x8 filter byte for byte.
+<end of output>
+Test time =   0.26 sec
+----------------------------------------------------------
+Test Passed.
+"x264_predict_directional_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_predict_directional_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+13/45 Testing: x264_deblock_filter_parity
+13/45 Test: x264_deblock_filter_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "deblock_filter" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/deblock_filter.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_deblock_filter_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+3584 fixtures matched all 14 deblock filters and both QP wrappers byte for byte.
+<end of output>
+Test time =   0.22 sec
+----------------------------------------------------------
+Test Passed.
+"x264_deblock_filter_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_deblock_filter_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+14/45 Testing: x264_deblock_frame_parity
+14/45 Test: x264_deblock_frame_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "deblock_frame" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/deblock_frame.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_deblock_frame_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+24 progressive pictures matched x264 row-order deblocking.
+<end of output>
+Test time =   0.29 sec
+----------------------------------------------------------
+Test Passed.
+"x264_deblock_frame_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_deblock_frame_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+15/45 Testing: x264_deblock_strength_parity
+15/45 Test: x264_deblock_strength_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "deblock_strength" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/deblock_strength.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_deblock_strength_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+4096 fixtures matched x264 deblock boundary strengths byte for byte.
+<end of output>
+Test time =   0.21 sec
+----------------------------------------------------------
+Test Passed.
+"x264_deblock_strength_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_deblock_strength_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+16/45 Testing: x264_cabac_parity
+16/45 Test: x264_cabac_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "cabac" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/cabac.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_cabac_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+9856 CABAC sequences matched x264 bytes, contexts and arithmetic state, including 960 residual, 1024 intra syntax and 5408 coded-block, QP-delta, transform-size, skip and motion syntax sequences.
+<end of output>
+Test time =   2.53 sec
+----------------------------------------------------------
+Test Passed.
+"x264_cabac_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_cabac_parity" time elapsed: 00:00:02
+----------------------------------------------------------
+
+17/45 Testing: x264_mv_predict_parity
+17/45 Test: x264_mv_predict_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "mv_predict" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/mv_predict.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_mv_predict_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+7500 motion predictor cases matched x264 16x16, P-skip and delta contexts.
+<end of output>
+Test time =   0.19 sec
+----------------------------------------------------------
+Test Passed.
+"x264_mv_predict_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_mv_predict_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+18/45 Testing: x264_motion_compensation_parity
+18/45 Test: x264_motion_compensation_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "motion_compensation" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/motion_compensation.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_motion_compensation_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+768 fixtures matched x264 half-pel, luma, reference and chroma motion compensation.
+<end of output>
+Test time =   0.29 sec
+----------------------------------------------------------
+Test Passed.
+"x264_motion_compensation_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_motion_compensation_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+19/45 Testing: x264_motion_metrics_parity
+19/45 Test: x264_motion_metrics_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "motion_metrics" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/motion_metrics.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_motion_metrics_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+2048 fixtures matched 54 x264 SAD, SSD, SATD and SA8D functions.
+<end of output>
+Test time =   0.42 sec
+----------------------------------------------------------
+Test Passed.
+"x264_motion_metrics_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_motion_metrics_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+20/45 Testing: x264_motion_elimination_parity
+20/45 Test: x264_motion_elimination_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "motion_elimination" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/motion_elimination.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_motion_elimination_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+3072 fixtures matched all three x264 successive elimination routines.
+<end of output>
+Test time =   0.20 sec
+----------------------------------------------------------
+Test Passed.
+"x264_motion_elimination_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_motion_elimination_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+21/45 Testing: x264_motion_integral_parity
+21/45 Test: x264_motion_integral_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "motion_integral" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/motion_integral.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_motion_integral_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+1024 fixtures matched all four x264 integral-sum routines byte for byte.
+<end of output>
+Test time =   0.19 sec
+----------------------------------------------------------
+Test Passed.
+"x264_motion_integral_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_motion_integral_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+22/45 Testing: x264_motion_lowres_parity
+22/45 Test: x264_motion_lowres_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "motion_lowres" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/motion_lowres.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_motion_lowres_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+1024 fixtures matched all four x264 low-resolution reference planes byte for byte.
+<end of output>
+Test time =   0.19 sec
+----------------------------------------------------------
+Test Passed.
+"x264_motion_lowres_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_motion_lowres_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+23/45 Testing: x264_motion_search_parity
+23/45 Test: x264_motion_search_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "motion_search" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/motion_search.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_motion_search_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+759 DIA, HEX and UMH searches and 168 quarter-pel refinements matched x264.
+<end of output>
+Test time =   8.34 sec
+----------------------------------------------------------
+Test Passed.
+"x264_motion_search_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_motion_search_parity" time elapsed: 00:00:08
+----------------------------------------------------------
+
+24/45 Testing: x264_motion_bidir_parity
+24/45 Test: x264_motion_bidir_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "motion_bidir" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/motion_bidir.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_motion_bidir_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+448 bidirectional refinements matched x264 vectors and scratch pixels.
+<end of output>
+Test time =   0.36 sec
+----------------------------------------------------------
+Test Passed.
+"x264_motion_bidir_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_motion_bidir_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+25/45 Testing: x264_bitstream_parity
+25/45 Test: x264_bitstream_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "bitstream" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/bitstream.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_bitstream_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+2048 bit writer sequences matched x264 bytes, positions and state.
+<end of output>
+Test time =   0.24 sec
+----------------------------------------------------------
+Test Passed.
+"x264_bitstream_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_bitstream_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+26/45 Testing: x264_nal_parity
+26/45 Test: x264_nal_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "nal" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/nal.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_nal_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+1024 NAL fixtures matched x264 escaping, framing and padding.
+<end of output>
+Test time =   0.29 sec
+----------------------------------------------------------
+Test Passed.
+"x264_nal_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_nal_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+27/45 Testing: x264_parameters_parity
+27/45 Test: x264_parameters_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "parameters" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/parameters.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_parameters_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+2048 SPS/PPS payloads matched x264 bytes for 8- and 10-bit syntax.
+<end of output>
+Test time =   1.88 sec
+----------------------------------------------------------
+Test Passed.
+"x264_parameters_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_parameters_parity" time elapsed: 00:00:01
+----------------------------------------------------------
+
+28/45 Testing: x264_slice_header_parity
+28/45 Test: x264_slice_header_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "slice_header" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/slice_header.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_slice_header_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+2048 I/P/B slice headers matched x264 bytes, writer state and weighted prediction.
+<end of output>
+Test time =   1.04 sec
+----------------------------------------------------------
+Test Passed.
+"x264_slice_header_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_slice_header_parity" time elapsed: 00:00:01
+----------------------------------------------------------
+
+29/45 Testing: x264_intra16_parity
+29/45 Test: x264_intra16_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "intra16" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/intra16.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_intra16_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+4368 I_16x16 macroblocks matched x264 coefficients, flags and reconstruction.
+<end of output>
+Test time =   0.46 sec
+----------------------------------------------------------
+Test Passed.
+"x264_intra16_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_intra16_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+30/45 Testing: x264_intra_chroma_parity
+30/45 Test: x264_intra_chroma_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "intra_chroma" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/intra_chroma.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_intra_chroma_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+11648 intra and 4160 inter chroma planes matched x264 across 4:2:0 and 4:2:2.
+<end of output>
+Test time =   1.26 sec
+----------------------------------------------------------
+Test Passed.
+"x264_intra_chroma_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_intra_chroma_parity" time elapsed: 00:00:01
+----------------------------------------------------------
+
+31/45 Testing: x264_inter8x8_parity
+31/45 Test: x264_inter8x8_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "inter8x8" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/inter8x8.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_inter8x8_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+2496 scalar inter 8x8 luma cases matched x264 byte for byte.
+<end of output>
+Test time =   0.71 sec
+----------------------------------------------------------
+Test Passed.
+"x264_inter8x8_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_inter8x8_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+32/45 Testing: x264_reference_frame_parity
+32/45 Test: x264_reference_frame_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "reference_frame" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/reference_frame.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_reference_frame_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+5 padded reference frames matched x264 half-pel samples.
+<end of output>
+Test time =   0.17 sec
+----------------------------------------------------------
+Test Passed.
+"x264_reference_frame_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_reference_frame_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+33/45 Testing: x264_deblock_frame_tiled_parity
+33/45 Test: x264_deblock_frame_tiled_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "deblock_frame_tiled" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/deblock_frame_tiled.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_deblock_frame_tiled_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+24 progressive pictures matched x264 row-order deblocking.
+<end of output>
+Test time =   0.23 sec
+----------------------------------------------------------
+Test Passed.
+"x264_deblock_frame_tiled_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_deblock_frame_tiled_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+34/45 Testing: x264_deblock_frame_subgroup_parity
+34/45 Test: x264_deblock_frame_subgroup_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "deblock_frame_subgroup" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/deblock_frame_subgroup.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_deblock_frame_subgroup_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+24 progressive pictures matched x264 row-order deblocking.
+<end of output>
+Test time =   0.22 sec
+----------------------------------------------------------
+Test Passed.
+"x264_deblock_frame_subgroup_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_deblock_frame_subgroup_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+35/45 Testing: x264_inter4x4_parity
+35/45 Test: x264_inter4x4_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "inter4x4" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/intra16.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_inter4x4_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+4368 inter 4x4-transform macroblocks matched x264 coefficients, flags and reconstruction.
+<end of output>
+Test time =   0.45 sec
+----------------------------------------------------------
+Test Passed.
+"x264_inter4x4_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_inter4x4_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+36/45 Testing: x264_motion_exhaustive_parity
+36/45 Test: x264_motion_exhaustive_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "motion_exhaustive" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/motion_search.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_motion_exhaustive_parity" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+504 ESA and TESA searches and 168 quarter-pel refinements matched x264.
+<end of output>
+Test time =   8.59 sec
+----------------------------------------------------------
+Test Passed.
+"x264_motion_exhaustive_parity" end time: Nov 19 01:09 E. South America Standard Time
+"x264_motion_exhaustive_parity" time elapsed: 00:00:08
+----------------------------------------------------------
+
+37/45 Testing: x264_cabac_stream_decode
+37/45 Test: x264_cabac_stream_decode
+Command: "C:/Program Files/Python310/python.exe" "E:/__PROJECTS__/Wx264-ChatGPT/x264-vulkan/vulkan/verify_cabac_stream.py" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/parameters.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/slice_header.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/intra16.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/intra_chroma.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/motion_compensation.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/mv_predict.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/motion_search.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/cabac_frame.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/nal.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/cabac-smoke.h264" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/cabac-smoke-reconstructed.yuv" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffprobe.exe"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_cabac_stream_decode" start time: Nov 19 01:09 E. South America Standard Time
+Output:
+----------------------------------------------------------
+FFmpeg decoded all 5 CABAC pictures with exact GPU reconstruction matches.
+FFprobe confirmed I/I/I/P/P, 30x30, limited-range BT.709, and 60 fps.
+<end of output>
+Test time =  14.46 sec
+----------------------------------------------------------
+Test Passed.
+"x264_cabac_stream_decode" end time: Nov 19 01:10 E. South America Standard Time
+"x264_cabac_stream_decode" time elapsed: 00:00:14
+----------------------------------------------------------
+
+38/45 Testing: x264_cabac_raw_decode
+38/45 Test: x264_cabac_raw_decode
+Command: "C:/Program Files/Python310/python.exe" "E:/__PROJECTS__/Wx264-ChatGPT/x264-vulkan/vulkan/verify_cabac_stream.py" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/parameters.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/slice_header.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/intra16.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/intra_chroma.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/motion_compensation.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/mv_predict.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/motion_search.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/cabac_frame.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/nal.spv" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/cabac-raw.h264" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/cabac-raw-reconstructed.yuv" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffprobe.exe" "--raw"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_cabac_raw_decode" start time: Nov 19 01:10 E. South America Standard Time
+Output:
+----------------------------------------------------------
+Coded 595 inter macroblocks with 8x8 luma transforms.
+FFmpeg decoded all 18 CABAC pictures with exact GPU reconstruction matches.
+FFprobe confirmed I/P/P/P/P/P/P/P/P/P/P/P/P/P/P/P/P/P, 100x70, limited-range BT.709, and 60 fps.
+<end of output>
+Test time =   7.91 sec
+----------------------------------------------------------
+Test Passed.
+"x264_cabac_raw_decode" end time: Nov 19 01:10 E. South America Standard Time
+"x264_cabac_raw_decode" time elapsed: 00:00:07
+----------------------------------------------------------
+
+39/45 Testing: x264_dct4x4_group4_parity
+39/45 Test: x264_dct4x4_group4_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "4x4" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/dct4x4_group4.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_dct4x4_group4_parity" start time: Nov 19 01:10 E. South America Standard Time
+Output:
+----------------------------------------------------------
+4096 4x4 groups of 4x4 blocks matched x264 for forward transforms, inverse reconstruction and coefficient writes.
+<end of output>
+Test time =   0.20 sec
+----------------------------------------------------------
+Test Passed.
+"x264_dct4x4_group4_parity" end time: Nov 19 01:10 E. South America Standard Time
+"x264_dct4x4_group4_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+40/45 Testing: x264_dct4x4_group8_parity
+40/45 Test: x264_dct4x4_group8_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "4x8" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/dct4x4_group8.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_dct4x4_group8_parity" start time: Nov 19 01:10 E. South America Standard Time
+Output:
+----------------------------------------------------------
+4096 8x8 groups of 4x4 blocks matched x264 for forward transforms, inverse reconstruction and coefficient writes.
+<end of output>
+Test time =   0.20 sec
+----------------------------------------------------------
+Test Passed.
+"x264_dct4x4_group8_parity" end time: Nov 19 01:10 E. South America Standard Time
+"x264_dct4x4_group8_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+41/45 Testing: x264_dct4x4_group16_parity
+41/45 Test: x264_dct4x4_group16_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "4x16" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/dct4x4_group16.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_dct4x4_group16_parity" start time: Nov 19 01:10 E. South America Standard Time
+Output:
+----------------------------------------------------------
+4096 16x16 groups of 4x4 blocks matched x264 for forward transforms, inverse reconstruction and coefficient writes.
+<end of output>
+Test time =   0.25 sec
+----------------------------------------------------------
+Test Passed.
+"x264_dct4x4_group16_parity" end time: Nov 19 01:10 E. South America Standard Time
+"x264_dct4x4_group16_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+42/45 Testing: x264_quant4x4_parity
+42/45 Test: x264_quant4x4_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "quant4" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/quant4x4.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_quant4x4_parity" start time: Nov 19 01:10 E. South America Standard Time
+Output:
+----------------------------------------------------------
+3328 4x4 quantization fixtures matched x264 across QP 0 to 51.
+<end of output>
+Test time =   0.17 sec
+----------------------------------------------------------
+Test Passed.
+"x264_quant4x4_parity" end time: Nov 19 01:10 E. South America Standard Time
+"x264_quant4x4_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+43/45 Testing: x264_dct8x8_group8_parity
+43/45 Test: x264_dct8x8_group8_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "8x8" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/dct8x8_group8.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_dct8x8_group8_parity" start time: Nov 19 01:10 E. South America Standard Time
+Output:
+----------------------------------------------------------
+4096 8x8 groups of 8x8 blocks matched x264 for forward transforms, inverse reconstruction and coefficient writes.
+<end of output>
+Test time =   0.43 sec
+----------------------------------------------------------
+Test Passed.
+"x264_dct8x8_group8_parity" end time: Nov 19 01:10 E. South America Standard Time
+"x264_dct8x8_group8_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+44/45 Testing: x264_dct8x8_group16_parity
+44/45 Test: x264_dct8x8_group16_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "8x16" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/dct8x8_group16.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_dct8x8_group16_parity" start time: Nov 19 01:10 E. South America Standard Time
+Output:
+----------------------------------------------------------
+4096 16x16 groups of 8x8 blocks matched x264 for forward transforms, inverse reconstruction and coefficient writes.
+<end of output>
+Test time =   0.47 sec
+----------------------------------------------------------
+Test Passed.
+"x264_dct8x8_group16_parity" end time: Nov 19 01:10 E. South America Standard Time
+"x264_dct8x8_group16_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+45/45 Testing: x264_quant8x8_parity
+45/45 Test: x264_quant8x8_parity
+Command: "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/Release/dct_parity.exe" "quant8" "E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan/quant8x8.spv"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build/x264-vulkan/vulkan
+"x264_quant8x8_parity" start time: Nov 19 01:10 E. South America Standard Time
+Output:
+----------------------------------------------------------
+3328 8x8 quantization fixtures matched x264 across QP 0 to 51.
+<end of output>
+Test time =   0.18 sec
+----------------------------------------------------------
+Test Passed.
+"x264_quant8x8_parity" end time: Nov 19 01:10 E. South America Standard Time
+"x264_quant8x8_parity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Nov 19 01:10 E. South America Standard Time

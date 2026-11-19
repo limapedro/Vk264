@@ -1,0 +1,34 @@
+[
+  {
+    "variant": "serial",
+    "p_packet_ms": 1.0110336134453781,
+    "idr_packet_ms": 7.97683,
+    "p_graph_ms": 26.00361344537815,
+    "motion_ms": 11.825378151260505,
+    "process_seconds": 10.445003900000302
+  },
+  {
+    "variant": "parallel",
+    "p_packet_ms": 0.028209747899159664,
+    "idr_packet_ms": 0.155744,
+    "p_graph_ms": 23.357899159663866,
+    "motion_ms": 11.016974789915967,
+    "process_seconds": 10.052188699999533
+  },
+  {
+    "variant": "parallel",
+    "p_packet_ms": 0.028744621848739497,
+    "idr_packet_ms": 0.21776,
+    "p_graph_ms": 23.20764705882353,
+    "motion_ms": 10.91075630252101,
+    "process_seconds": 9.366169300000365
+  },
+  {
+    "variant": "serial",
+    "p_packet_ms": 0.9666638655462185,
+    "idr_packet_ms": 9.79066,
+    "p_graph_ms": 24.03235294117647,
+    "motion_ms": 10.88420168067227,
+    "process_seconds": 9.547597899999346
+  }
+]

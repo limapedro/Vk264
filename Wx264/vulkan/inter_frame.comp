@@ -1,0 +1,413 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#version 450
+#extension GL_GOOGLE_include_directive : require
+const int stride = 32, origin = stride+8;
+#include "intra16_fixture.glsl"
+#include "inter8x8_fixture.glsl"
+#include "intra_chroma_fixture.glsl"
+#include "hadamard4.glsl"
+#include "macroblock4_order.glsl"
+layout(local_size_x = 64) in;
+layout(push_constant) uniform Batch { uint index; } batch;
+layout(std430, binding = 0) buffer Arena { uint words[]; };
+layout(std430, binding = 1) buffer Luma4 { Luma4Fixture luma4[]; };
+layout(std430, binding = 2) buffer Luma8 { Luma8Fixture luma8[]; };
+layout(std430, binding = 3) buffer Chroma { ChromaFixture chroma[]; };
+// SATD intra mode decision uses predictIntra(), which addresses the luma
+// fixture buffer as `fixtures`. Alias it to luma4 (declared above).
+#define fixtures luma4
+#include "predict_intra_math.glsl"
+#undef fixtures
+
+const uint joinFlag = 1u << 31;
+const uint prefilterFlag = 1u << 30;
+const uint levelWords = 394u, motionWords = 98u;
+
+uint sampleByte(uint offset, uint pixel) {
+    return (words[offset+pixel/4u] >> (8u*(pixel&3u))) & 255u;
+}
+
+uint referencePixel(int x, int y, int width, int height, uint source) {
+    return sampleByte(source, uint(clamp(y, 0, height-1)*width+clamp(x, 0, width-1)));
+}
+
+void prefilter(uint index) {
+    int width = int(words[0])*16, height = int(words[1])*16;
+    int pitch = width+64;
+    uint planeWords = uint(pitch*(height+64)/4);
+    if (index >= planeWords) return;
+    int x = int(index%uint(pitch/4))*4-32, y = int(index/uint(pitch/4))-32;
+    uint source = words[7]+7u+3u*words[0]*words[1], dest = words[12];
+    const int tap[6] = int[6](1,-5,20,20,-5,1);
+    // Adjacent outputs reuse their overlapping unrounded vertical taps.
+    int vertical[9];
+    for (int i = 0; i < 9; ++i) {
+        vertical[i] = 0;
+        for (int j = 0; j < 6; ++j)
+            vertical[i] += tap[j]*int(referencePixel(x+i-2, y+j-2, width, height, source));
+    }
+    uvec4 packed = uvec4(0);
+    for (int i = 0; i < 4; ++i) {
+        int horizontal = 0, diagonal = 0;
+        for (int j = 0; j < 6; ++j) {
+            horizontal += tap[j]*int(referencePixel(x+i+j-2, y, width, height, source));
+            diagonal += tap[j]*vertical[i+j];
+        }
+        uvec4 result = uvec4(referencePixel(x+i, y, width, height, source),
+            uint(clamp((horizontal+16)>>5, 0, 255)),
+            uint(clamp((vertical[i+2]+16)>>5, 0, 255)),
+            uint(clamp((diagonal+512)>>10, 0, 255)));
+        packed |= result << (8*i);
+    }
+    for (uint plane = 0u; plane < 4u; ++plane)
+        words[dest+plane*planeWords+index] = packed[plane];
+}
+
+ivec4 unpackPixels(uint word) {
+    return ivec4((uvec4(word)>>uvec4(0,8,16,24))&255u);
+}
+
+void transformTile(uint motion, uint width, uint x, uint y, int col, int row, out ivec4 transformed[4]) {
+    ivec4 lines[4];
+    for (int i = 0; i < 4; ++i) {
+        uint source = (16u*y+uint(row+i))*width+16u*x+uint(col);
+        uint pred = uint((row+i)*16+col);
+        lines[i] = hadamard4(unpackPixels(words[words[2]+source/4u])-unpackPixels(words[motion+2u+pred/4u]));
+    }
+    for (int i = 0; i < 4; ++i)
+        transformed[i] = hadamard4(ivec4(lines[0][i], lines[1][i], lines[2][i], lines[3][i]));
+}
+
+int sumLanes(ivec4 v) { return v.x+v.y+v.z+v.w; }
+
+bool use8x8(uint motion, uint width, uint x, uint y) {
+    int satd = 0;
+    ivec4 sa8d = ivec4(0);
+    for (int row = 0; row < 16; row += 8)
+        for (int col = 0; col < 16; col += 8) {
+            ivec4 a[4], b[4], c[4], d[4];
+            transformTile(motion, width, x, y, col, row, a);
+            transformTile(motion, width, x, y, col+4, row, b);
+            transformTile(motion, width, x, y, col, row+4, c);
+            transformTile(motion, width, x, y, col+4, row+4, d);
+            ivec4 sumA = ivec4(0), sumB = ivec4(0), sumC = ivec4(0), sumD = ivec4(0);
+            for (int i = 0; i < 4; ++i) {
+                sumA += abs(a[i]); sumB += abs(b[i]); sumC += abs(c[i]); sumD += abs(d[i]);
+                ivec4 topSum = a[i]+b[i], topDiff = a[i]-b[i];
+                ivec4 bottomSum = c[i]+d[i], bottomDiff = c[i]-d[i];
+                sa8d += abs(topSum+bottomSum)+abs(topSum-bottomSum)
+                      + abs(topDiff+bottomDiff)+abs(topDiff-bottomDiff);
+            }
+            satd += (sumLanes(sumA)>>1)+(sumLanes(sumB)>>1)+(sumLanes(sumC)>>1)+(sumLanes(sumD)>>1);
+        }
+    return ((sumLanes(sa8d)+2) >> 2) < satd;
+}
+
+int dcMode(uint x, uint y, int middle) {
+    // x264's intra16 mode decision (analyse.c) picks the min-SATD mode, and
+    // ties are broken by mode bit cost via bs_size_ue(fix[mode]). For luma
+    // V (mode 0) costs 1 bit vs DC's 3, so on flat/near-flat blocks it wins
+    // whenever the top neighbour is available. Chroma's fix table makes DC
+    // cost 1 bit, so `middle` (DC) already matches x264 there. Only applied
+    // for x264-preset CABAC encodes; the legacy CAVLC path keeps DC prediction.
+    if (middle == 2 && (words[13] & 2u) != 0u)
+        return y != 0u ? 0 : x != 0u ? 4 : 6;  // V / DC_LEFT / DC_128
+    return x != 0u && y != 0u ? middle : x != 0u ? 4 : y != 0u ? 5 : 6;
+}
+
+// x264 lambda table (common/tables.c::x264_lambda_tab) for QP 0..51.
+const int lambdaTab[52] = int[52](
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,2,3,3,3,4,4,4,5,6,6,7,8,9,10,11,13,14,16,18,20,23,25,29,32,36,40,45,51,57,64,71,80,90
+);
+
+// x264_mb_pred_mode16x16_fix: V,H,DC,P->0..3; DC_LEFT/TOP/128->DC(2).
+int predFix(int mode) { return mode <= 3 ? mode : 2; }
+// bs_size_ue(v) = 2*floor(log2(v+1))+1.
+int ueBits(int v) {
+    int n = 0;
+    while ((1 << (n+1)) <= v+1) ++n;
+    return 2*n+1;
+}
+
+// Sum of 4x4 SATDs between the source block and current prediction buffer.
+int satd16(uint f) {
+    int total = 0;
+    for (int by = 0; by < 4; ++by)
+        for (int bx = 0; bx < 4; ++bx) {
+            ivec4 rows[4];
+            for (int y = 0; y < 4; ++y) {
+                int base = (by*4+y)*16+bx*4, pbase = origin+(by*4+y)*stride+bx*4;
+                rows[y] = ivec4(
+                    int(luma4[f].source[base  ])-int(luma4[f].pixels[pbase  ]),
+                    int(luma4[f].source[base+1])-int(luma4[f].pixels[pbase+1]),
+                    int(luma4[f].source[base+2])-int(luma4[f].pixels[pbase+2]),
+                    int(luma4[f].source[base+3])-int(luma4[f].pixels[pbase+3]));
+            }
+            total += satd4x4(rows);
+        }
+    return total;
+}
+
+// x264 analyse.c::predict_16x16_mode_available + COPY2_IF_LT tie-breaking.
+int selectIntra16Mode(uint f, uint x, uint y, int qp) {
+    bool left = x != 0u, top = y != 0u;
+    int idx = (left && top) ? 4 : (top ? 2 : (left ? 1 : 0));
+    int candidates[5], count;
+    if      (idx == 0) { candidates[0]=6; count=1; }
+    else if (idx == 1) { candidates[0]=4; candidates[1]=1; count=2; }
+    else if (idx == 2) { candidates[0]=5; candidates[1]=0; count=2; }
+    else if (idx == 3) { candidates[0]=0; candidates[1]=1; candidates[2]=2; count=3; }
+    else               { candidates[0]=0; candidates[1]=1; candidates[2]=2; candidates[3]=3; count=4; }
+    int lambda = qp >= 0 && qp < 52 ? lambdaTab[qp] : 4;
+    int bestCost = 0x7fffffff, bestMode = candidates[0];
+    for (int i = 0; i < count; ++i) {
+        int mode = candidates[i];
+        predictIntra(f, 16, 16, mode);
+        int cost = satd16(f) + lambda * ueBits(predFix(mode));
+        if (cost < bestCost) { bestCost = cost; bestMode = mode; }
+    }
+    return bestMode;
+}
+
+// chroma fix table: DC/H/V/P -> 0..3, DC_LEFT/TOP/128 -> DC(0).
+int chromaFix(int mode) { return mode <= 3 ? mode : 0; }
+
+// 8x8 chroma SATD (4 4x4 blocks).
+int satd8(uint fc) {
+    int total = 0;
+    for (int by = 0; by < 2; ++by)
+        for (int bx = 0; bx < 2; ++bx) {
+            ivec4 rows[4];
+            for (int y = 0; y < 4; ++y) {
+                int base = (by*4+y)*8+bx*4, pbase = origin+(by*4+y)*stride+bx*4;
+                rows[y] = ivec4(
+                    int(chroma[fc].source[base  ])-int(chroma[fc].pixels[pbase  ]),
+                    int(chroma[fc].source[base+1])-int(chroma[fc].pixels[pbase+1]),
+                    int(chroma[fc].source[base+2])-int(chroma[fc].pixels[pbase+2]),
+                    int(chroma[fc].source[base+3])-int(chroma[fc].pixels[pbase+3]));
+            }
+            total += satd4x4(rows);
+        }
+    return total;
+}
+
+// 8x8 chroma prediction via predictIntra (aliased to the chroma buffer).
+void predictChroma(uint fc, int mode) {
+#define fixtures chroma
+    predictIntra(fc, 8, 8, mode);
+#undef fixtures
+}
+
+int selectChromaMode(uint fcU, uint fcV, uint x, uint y, int qp) {
+    bool left = x != 0u, top = y != 0u;
+    int idx = (left && top) ? 4 : (top ? 2 : (left ? 1 : 0));
+    int candidates[5], count;
+    if      (idx == 0) { candidates[0]=6; count=1; }
+    else if (idx == 1) { candidates[0]=4; candidates[1]=1; count=2; }
+    else if (idx == 2) { candidates[0]=5; candidates[1]=2; count=2; }
+    else if (idx == 3) { candidates[0]=2; candidates[1]=1; candidates[2]=0; count=3; }
+    else               { candidates[0]=2; candidates[1]=1; candidates[2]=0; candidates[3]=3; count=4; }
+    int lambda = qp >= 0 && qp < 52 ? lambdaTab[qp] : 4;
+    int bestCost = 0x7fffffff, bestMode = candidates[0];
+    for (int i = 0; i < count; ++i) {
+        int mode = candidates[i];
+        predictChroma(fcU, mode);
+        predictChroma(fcV, mode);
+        int cost = satd8(fcU) + satd8(fcV) + lambda * ueBits(chromaFix(mode));
+        if (cost < bestCost) { bestCost = cost; bestMode = mode; }
+    }
+    return bestMode;
+}
+
+void prepare(uint f, uint motion, uint width, uint x, uint y, bool intra) {
+    uint q4 = words[8], q8 = words[9], qc = words[10];
+    bool eight = !intra && use8x8(motion, width, x, y);
+    luma4[f].field = eight ? -1 : 0;
+    luma8[f].field = eight ? 0 : -1;
+    if (eight) {
+        luma8[f].qp = int(words[q8]);
+        luma8[f].decimate = 1;
+        luma8[f].denoise = 0;
+        luma8[f].cbp = 0;
+        for (uint i = 0u; i < 64u; ++i) {
+            luma8[f].multiplier[i] = words[q8+6u+i];
+            luma8[f].bias[i] = words[q8+70u+i];
+            luma8[f].dequant[i] = int(words[q8+262u+i]);
+        }
+    } else {
+        luma4[f].qp = int(words[q4]);
+        luma4[f].mode = -1; // set after source/neighbours are staged
+        luma4[f].plane = 0;
+        luma4[f].decimate = 1;
+        luma4[f].denoise = 0;
+        luma4[f].cbp = 0;
+        for (uint i = 0u; i < 16u; ++i) {
+            luma4[f].multiplier[i] = words[q4+7u+i];
+            luma4[f].bias[i] = words[q4+23u+i];
+            luma4[f].dequant[i] = int(words[q4+71u+i]);
+        }
+    }
+    for (uint r = 0u; r < 16u; ++r)
+        for (uint c = 0u; c < 16u; ++c) {
+            uint src = sampleByte(words[2], (16u*y+r)*width+16u*x+c);
+            uint ref = intra ? 0u : sampleByte(motion+2u, 16u*r+c);
+            if (eight) {
+                luma8[f].source[16u*r+c] = src;
+                luma8[f].pixels[origin+stride*r+c] = ref;
+            } else {
+                luma4[f].source[16u*r+c] = src;
+                luma4[f].pixels[origin+stride*r+c] = ref;
+            }
+        }
+    uint mbCount = words[0]*words[1], luma = words[7]+7u+3u*mbCount;
+    if (intra) {
+        uint pos = 16u*y*width+16u*x;
+        if (x != 0u) for (uint r = 0u; r < 16u; ++r)
+            luma4[f].pixels[origin+stride*r-1u] = sampleByte(luma, pos+r*width-1u);
+        if (y != 0u) for (uint c = 0u; c < 16u; ++c)
+            luma4[f].pixels[origin-stride+c] = sampleByte(luma, pos-width+c);
+        if ((words[13] & 2u) != 0u)
+            luma4[f].mode = selectIntra16Mode(f, x, y, int(words[q4]));
+        else
+            luma4[f].mode = dcMode(x, y, 2);
+    }
+    for (uint plane = 0u; plane < 2u; ++plane) {
+        uint fc = 2u*f+plane;
+        chroma[fc].qp = int(words[qc]);
+        chroma[fc].mode = -1; // selected after pixels staged
+        chroma[fc].chroma422 = chroma[fc].field = chroma[fc].denoise = chroma[fc].lossless = 0;
+        chroma[fc].decimate = 1;
+        chroma[fc].lambda2 = int(words[qc+7u]);
+        chroma[fc].cbp = chroma[fc].dcNonzero = chroma[fc].acMask = 0;
+        chroma[fc].dcMultiplier = words[qc+11u];
+        chroma[fc].dcBias = words[qc+12u];
+        chroma[fc].dcDequant = int(words[qc+13u]);
+        for (uint i = 0u; i < 16u; ++i) {
+            chroma[fc].multiplier[i] = words[qc+14u+i];
+            chroma[fc].bias[i] = words[qc+30u+i];
+            chroma[fc].dequant[i] = int(words[qc+78u+i]);
+        }
+        for (uint r = 0u; r < 8u; ++r)
+            for (uint c = 0u; c < 8u; ++c) {
+                chroma[fc].source[8u*r+c] = sampleByte(words[3u+plane], (8u*y+r)*width/2u+8u*x+c);
+                chroma[fc].pixels[origin+stride*r+c] = intra ? 0u : sampleByte(motion+66u+16u*plane, 8u*r+c);
+            }
+        if (intra) {
+            uint strideC = width/2u, pos = 8u*y*strideC+8u*x;
+            uint chromaBase = luma+(64u+16u*plane)*mbCount;
+            if (x != 0u) for (uint r = 0u; r < 8u; ++r)
+                chroma[fc].pixels[origin+stride*r-1u] = sampleByte(chromaBase, pos+r*strideC-1u);
+            if (y != 0u) for (uint c = 0u; c < 8u; ++c)
+                chroma[fc].pixels[origin-stride+c] = sampleByte(chromaBase, pos-strideC+c);
+        }
+    }
+    if (intra) {
+        int chromaMode;
+        if ((words[13] & 2u) != 0u)
+            chromaMode = selectChromaMode(2u*f, 2u*f+1u, x, y, int(words[qc]));
+        else
+            chromaMode = dcMode(x, y, 0);
+        chroma[2u*f].mode = chroma[2u*f+1u].mode = chromaMode;
+    }
+}
+
+void join(uint f, uint mb, uint motion, uint width, uint x, uint y, bool intra) {
+    bool eight = luma4[f].field < 0;
+    uint cbp = uint(eight ? luma8[f].cbp : luma4[f].cbp);
+    uint mask = intra ? 0u : (1u << 17);
+    if (eight && cbp != 0u) {
+        mask |= 1u << 16;
+        atomicAdd(words[words[11]], 1u);
+    }
+    for (uint by = 0u; by < 4u; ++by)
+        for (uint bx = 0u; bx < 4u; ++bx) {
+            uint nz = eight ? luma8[f].nonzero[12u+8u*by+bx] : luma4[f].nonzero[12u+8u*by+bx];
+            mask |= nz << (4u*by+bx);
+        }
+    uint level = words[6]+levelWords*mb;
+    words[level] = intra ? uint(luma4[f].mode) : words[motion];
+    words[level+1u] = intra ? uint(cbp != 0u) : cbp;
+    words[level+2u] = intra ? luma4[f].nonzero[0] : words[motion+1u];
+    words[level+3u] = mask;
+    if (intra) {
+        if (luma4[f].nonzero[0] != 0u)
+            for (uint i = 0u; i < 16u; ++i) words[level+4u+i] = uint(luma4[f].dcCoefficients[i]);
+        for (uint block = 0u; block < 16u; ++block) {
+            if ((mask & (1u<<blockToRaster[block])) == 0u) continue;
+            for (uint i = 0u; i < 15u; ++i)
+                words[level+20u+15u*block+i] = uint(luma4[f].ac[block][i+1u]);
+        }
+    } else if (eight) {
+        for (uint block = 0u; block < 4u; ++block) {
+            if ((cbp & (1u<<block)) == 0u) continue;
+            for (uint i = 0u; i < 64u; ++i)
+                words[level+4u+64u*block+i] = uint(luma8[f].coefficients[block][i]);
+        }
+    } else {
+        for (uint block = 0u; block < 16u; ++block) {
+            if ((mask & (1u<<blockToRaster[block])) == 0u) continue;
+            for (uint i = 0u; i < 16u; ++i)
+                words[level+4u+16u*block+i] = uint(luma4[f].ac[block][i]);
+        }
+    }
+    words[level+260u] = uint(max(chroma[2u*f].cbp, chroma[2u*f+1u].cbp));
+    words[level+261u] = uint(chroma[2u*f].mode);
+    uint mbCount = words[0]*words[1], deblock = words[7]+7u;
+    words[deblock+3u*mb] = mask;
+    words[deblock+3u*mb+1u] = intra ? 0u : words[motion];
+    words[deblock+3u*mb+2u] = intra ? 0u : words[motion+1u];
+    uint luma = deblock+3u*mbCount, chromaOutput = luma+64u*mbCount;
+    for (uint r = 0u; r < 16u; ++r)
+        for (uint c = 0u; c < 16u; c += 4u) {
+            uint word = 0u, pos = origin+stride*r+c;
+            for (uint i = 0u; i < 4u; ++i)
+                word |= (eight ? luma8[f].pixels[pos+i] : luma4[f].pixels[pos+i]) << (8u*i);
+            words[luma+(16u*y+r)*width/4u+4u*x+c/4u] = word;
+        }
+    for (uint plane = 0u; plane < 2u; ++plane) {
+        uint fc = 2u*f+plane, cLevel = level+262u+66u*plane;
+        words[cLevel] = uint(chroma[fc].dcNonzero);
+        words[cLevel+1u] = uint(chroma[fc].acMask);
+        if (chroma[fc].dcNonzero != 0)
+            for (uint i = 0u; i < 4u; ++i) words[cLevel+2u+i] = uint(chroma[fc].dcCoefficients[i]);
+        for (uint block = 0u; block < 4u; ++block) {
+            if ((chroma[fc].acMask & (1<<block)) == 0) continue;
+            for (uint i = 0u; i < 15u; ++i)
+                words[cLevel+6u+15u*block+i] = uint(chroma[fc].ac[block][i+1u]);
+        }
+        for (uint r = 0u; r < 8u; ++r)
+            for (uint c = 0u; c < 8u; c += 4u) {
+                uint word = 0u, pos = origin+stride*r+c;
+                for (uint i = 0u; i < 4u; ++i) word |= chroma[fc].pixels[pos+i] << (8u*i);
+                words[chromaOutput+16u*mbCount*plane+(8u*y+r)*width/8u+2u*x+c/4u] = word;
+            }
+    }
+}
+
+void main() {
+    uint f = gl_GlobalInvocationID.x;
+    if (batch.index == prefilterFlag) {
+        prefilter(f);
+        return;
+    }
+    bool intra = (words[13] & 1u) != 0u;
+    uint columns = words[0], rows = words[1], index = batch.index & ~joinFlag;
+    uint mb = index+f, x = mb%columns, y = mb/columns;
+    if (intra) {
+        y = f;
+        x = index-y;
+        mb = y*columns+x;
+    }
+    if (x >= columns || y >= rows) {
+        if ((batch.index & joinFlag) == 0u) {
+            luma4[f].field = luma8[f].field = -1;
+            chroma[2u*f].mode = -2;
+        }
+        return;
+    }
+    uint motion = words[5]+motionWords*mb;
+    if ((batch.index & joinFlag) == 0u)
+        prepare(f, motion, 16u*columns, x, y, intra);
+    else
+        join(f, mb, motion, 16u*columns, x, y, intra);
+}

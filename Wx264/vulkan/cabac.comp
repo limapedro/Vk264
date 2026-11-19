@@ -1,0 +1,356 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Translated from common/cabac.c. Copyright (C) 2003-2024 x264 project.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "macroblock4_order.glsl"
+#include "mv_predict_math.glsl"
+layout(local_size_x = 64) in;
+
+#ifndef CABAC_MAX_OPERATIONS
+#define CABAC_MAX_OPERATIONS 160
+#endif
+#ifndef CABAC_RESIDUAL_WORDS
+#define CABAC_RESIDUAL_WORDS 8192
+#endif
+const int maxOperations = CABAC_MAX_OPERATIONS;
+#ifndef CABAC_MAX_BYTES
+#define CABAC_MAX_BYTES 768
+#endif
+const int maxBytes = CABAC_MAX_BYTES;
+const int decision = 0, bypass = 1, ueBypass = 2, terminal = 3, residual = 4;
+const int intraType = 5, intra4x4Mode = 6, intraChromaMode = 7;
+const int intra16Macroblock = 8;
+const int codedBlockPattern = 9, qpDelta = 10, transformSize = 11;
+const int macroblockSkip = 12, mvdComponent = 13, inter16Macroblock = 14;
+// Direct frame mode: one operation encodes every macroblock from the residual
+// bank. The resident pipeline already leaves the bank in the layout the
+// per-macroblock operations read, so no host-built operation list is needed.
+const int wholeFrame = 15;
+struct Operation {
+    int kind, first, second;
+};
+struct Fixture {
+    int qp, model, chroma444, frame, count, finish;
+    Operation operations[maxOperations];
+    int coefficients[64];
+    uint context[1024];
+    uint bytes[maxBytes];
+    int low, range, queue, outstanding, position, effectiveQp, mvdMagnitude;
+};
+layout(std430, binding = 0) buffer Corpus {
+    int contextInit[4][1024][2];
+    int rangeLps[64][4];
+    int transition[128][2];
+    int renormShift[64];
+    int significantBase[2][16], lastBase[2][16], levelBase[16], countMinusOne[14];
+    int significant8x8[2][64], last8x8[63], significance422[7];
+    int residualBank[CABAC_RESIDUAL_WORDS];
+    Fixture fixtures[];
+};
+
+#ifdef CABAC_SHARED_FRAME
+shared uint frameContext[1024];
+shared int frameRangeLps[64][4], frameTransition[128][2], frameRenormShift[64];
+#endif
+
+struct Coder {
+    int low, range, queue, outstanding, position;
+};
+
+#ifdef CABAC_TRACE
+int traceCounter;
+void traceOp(uint fixture, int kind, int a) {
+    int base = 1000000 + 5 * traceCounter;
+    ++traceCounter;
+    if (base + 4 < 2097152) {
+        fixtures[fixture].bytes[base] = uint(kind) << 16 | uint(a & 0xffff);
+    }
+}
+void traceState(uint fixture, Coder coder) {
+    int base = 1000000 + 5 * traceCounter - 1;
+    fixtures[fixture].bytes[base+1] = uint(coder.low);
+    fixtures[fixture].bytes[base+2] = uint(coder.range) | (uint(coder.outstanding) << 16);
+    fixtures[fixture].bytes[base+3] = uint(coder.queue);
+    fixtures[fixture].bytes[base+4] = uint(coder.position);
+}
+#endif
+
+#ifdef CABAC_TRACE
+int writeCounter;
+#endif
+void writeByte(uint fixture, int position, uint value) {
+#ifdef CABAC_TRACE
+    if (fixture == 0 && writeCounter < 30000) {
+        int base = 2000000 + 2 * writeCounter;
+        fixtures[fixture].bytes[base] = uint(position) << 16 | (uint(value) & 0xffffu);
+        ++writeCounter;
+    }
+#endif
+    if (position < maxBytes) fixtures[fixture].bytes[position] = value;
+}
+
+void putByte(uint fixture, inout Coder coder) {
+    if (coder.queue < 0) return;
+    int outputByte = coder.low >> (coder.queue + 10);
+    coder.low &= (0x400 << coder.queue) - 1;
+    coder.queue -= 8;
+    if ((outputByte & 255) == 255) {
+        ++coder.outstanding;
+        return;
+    }
+    int carry = outputByte >> 8;
+    if (carry != 0 && coder.position <= maxBytes)
+        fixtures[fixture].bytes[coder.position-1] =
+            (fixtures[fixture].bytes[coder.position-1] + uint(carry)) & 255u;
+    while (coder.outstanding > 0) {
+        writeByte(fixture, coder.position++, uint(carry - 1) & 255u);
+        --coder.outstanding;
+    }
+    writeByte(fixture, coder.position++, uint(outputByte) & 255u);
+}
+
+void renormalize(uint fixture, inout Coder coder) {
+#ifdef CABAC_SHARED_FRAME
+    int shift = frameRenormShift[coder.range >> 3];
+#else
+    int shift = renormShift[coder.range >> 3];
+#endif
+    coder.range <<= shift;
+    coder.low <<= shift;
+    coder.queue += shift;
+    putByte(fixture, coder);
+}
+
+void encodeDecision(uint fixture, inout Coder coder, int index, int bit) {
+#ifdef CABAC_SHARED_FRAME
+    int state = int(frameContext[index]);
+    int lps = frameRangeLps[state >> 1][(coder.range >> 6)-4];
+#else
+    int state = int(fixtures[fixture].context[index]);
+    int lps = rangeLps[state >> 1][(coder.range >> 6)-4];
+#endif
+    coder.range -= lps;
+    if (bit != (state & 1)) {
+        coder.low += coder.range;
+        coder.range = lps;
+    }
+#ifdef CABAC_SHARED_FRAME
+    frameContext[index] = uint(frameTransition[state][bit]);
+#else
+    fixtures[fixture].context[index] = uint(transition[state][bit]);
+#endif
+    renormalize(fixture, coder);
+#ifdef CABAC_TRACE
+    traceOp(fixture, 0, (index << 1) | (bit & 1));
+    traceState(fixture, coder);
+#endif
+}
+
+void encodeBypass(uint fixture, inout Coder coder, int negatedBit) {
+    coder.low <<= 1;
+    coder.low += negatedBit & coder.range;
+    ++coder.queue;
+    putByte(fixture, coder);
+#ifdef CABAC_TRACE
+    traceOp(fixture, 1, negatedBit & 1);
+    traceState(fixture, coder);
+#endif
+}
+
+const int bypassLut[16] = int[16](
+    -1, 0x2, 0x14, 0x68, 0x1d0, 0x7a0, 0x1f40, 0x7e80,
+    0x1fd00, 0x7fa00, 0x1ff400, 0x7fe800, 0x1ffd000, 0x7ffa000, 0x1fff4000, 0x7ffe8000
+);
+
+void encodeUeBypass(uint fixture, inout Coder coder, int expBits, int value) {
+    uint v = uint(value + (1 << expBits));
+    int k = findMSB(v);
+    uint x = (uint(bypassLut[k-expBits]) << expBits) + v;
+    k = 2*k + 1 - expBits;
+    int chunk = ((k-1) & 7) + 1;
+    do {
+        k -= chunk;
+        coder.low <<= chunk;
+        coder.low += int((x >> k) & 255u) * coder.range;
+        coder.queue += chunk;
+        putByte(fixture, coder);
+        chunk = 8;
+    } while (k > 0);
+#ifdef CABAC_TRACE
+    traceOp(fixture, 2, (expBits << 28) | value);
+    traceState(fixture, coder);
+#endif
+}
+
+void encodeFlush(uint fixture, inout Coder coder, int frame) {
+    coder.low += coder.range - 2;
+    coder.low |= 1;
+    coder.low <<= 9;
+    coder.queue += 9;
+    putByte(fixture, coder);
+    putByte(fixture, coder);
+    coder.low <<= -coder.queue;
+    coder.low |= ((0x35a4e4f5 >> (frame & 31)) & 1) << 10;
+    coder.queue = 0;
+    putByte(fixture, coder);
+    while (coder.outstanding > 0) {
+        writeByte(fixture, coder.position++, 255u);
+        --coder.outstanding;
+    }
+}
+
+void encodeTerminal(uint fixture, inout Coder coder) {
+    coder.range -= 2;
+    renormalize(fixture, coder);
+#ifdef CABAC_TRACE
+    traceOp(fixture, 3, 0);
+    traceState(fixture, coder);
+#endif
+}
+
+Coder globalCoder;
+
+#ifdef CABAC_RECORD_BINS
+// Diagnostic build: records the bin sequence alongside the real coding so the
+// parallel bin generator can be diffed against the direct coder.
+int recordCount = 0;
+void recordBin(uint value) {
+    if (recordCount < 4000) fixtures[0].bytes[400+recordCount] = value;
+    ++recordCount;
+}
+void emitDecision(int f, int index, int bit) {
+    encodeDecision(uint(f), globalCoder, index, bit);
+    recordBin((uint(index) << 1) | uint(bit & 1));
+}
+void emitBypass(int f, int bit) {
+    encodeBypass(uint(f), globalCoder, bit);
+    recordBin(0x40000000u | uint(bit & 1));
+}
+void emitUeBypass(int f, int expBits, int value) {
+    encodeUeBypass(uint(f), globalCoder, expBits, value);
+    recordBin(0x80000000u | (uint(expBits & 3) << 28) | (uint(value) & 0x0fffffffu));
+}
+void emitTerminal(int f) {
+    encodeTerminal(uint(f), globalCoder);
+    recordBin(0xc0000000u);
+}
+void emitFlush(int f, int frame) {
+    encodeFlush(uint(f), globalCoder, frame);
+    recordBin(0xe0000000u | uint(frame & 31));
+}
+#else
+void emitDecision(int f, int index, int bit) { encodeDecision(uint(f), globalCoder, index, bit); }
+void emitBypass(int f, int bit) { encodeBypass(uint(f), globalCoder, bit); }
+void emitUeBypass(int f, int expBits, int value) { encodeUeBypass(uint(f), globalCoder, expBits, value); }
+void emitTerminal(int f) { encodeTerminal(uint(f), globalCoder); }
+void emitFlush(int f, int frame) { encodeFlush(uint(f), globalCoder, frame); }
+#endif
+
+#include "cabac_syntax.glsl"
+
+void encodeOperations(uint fixture) {
+    // Slot zero holds the preceding slice-header byte.
+    globalCoder = Coder(0, 0x1fe, -9, 0, 1);
+    for (int i = 0; i < fixtures[fixture].count; ++i) {
+        Operation op = fixtures[fixture].operations[i];
+        switch (op.kind) {
+            case decision: emitDecision(int(fixture), op.first, op.second); break;
+            case bypass: emitBypass(int(fixture), op.first); break;
+            case ueBypass: emitUeBypass(int(fixture), op.first, op.second); break;
+            case terminal: emitTerminal(int(fixture)); break;
+            case residual: encodeResidual(int(fixture), op.first, op.second & 1, (op.second & 2) != 0,
+                                          (op.second >> 2)-1); break;
+            case intraType: encodeIntraType(int(fixture), op.first, op.second, fixtures[fixture].frame); break;
+            case intra4x4Mode: encodeIntra4x4Mode(int(fixture), op.first, op.second); break;
+            case intraChromaMode: encodeIntraChromaMode(int(fixture), op.first, op.second); break;
+            case intra16Macroblock:
+                encodeIntra16Macroblock(int(fixture), op.first, op.second, fixtures[fixture].frame);
+                break;
+            case codedBlockPattern: {
+                int left = (op.second & 127)-1;
+                int top = (op.second >> 7)-1;
+                encodeLumaCbp(int(fixture), op.first & 15, left, top);
+                encodeChromaCbp(int(fixture), op.first >> 4, left, top);
+                break;
+            }
+            case qpDelta:
+                fixtures[fixture].effectiveQp =
+                    encodeQpDelta(int(fixture), op.first & 63, op.first >> 6,
+                                  (op.second & 3) == 1,
+                                  (op.second & 4) != 0 && (op.second & 24) != 0);
+                break;
+            case transformSize: encodeTransformSize(int(fixture), op.first, op.second); break;
+            case macroblockSkip:
+                encodeMacroblockSkip(int(fixture), op.first & 3, (op.first & 4) != 0, op.second & 1);
+                if ((op.second & 2) != 0) emitTerminal(int(fixture));
+                break;
+            case mvdComponent:
+                fixtures[fixture].mvdMagnitude = encodeMvdComponent(int(fixture), op.second & 1,
+                                                                    op.first, op.second >> 1);
+                break;
+            case inter16Macroblock: encodeInter16Macroblock(int(fixture), op.first, op.second); break;
+            case wholeFrame: {
+                int width = (op.second >> 16) & 65535, count = op.second & 65535;
+                for (int mb = 0; mb < count; ++mb) {
+                    int position = (width << 16) | mb;
+                    if (op.first != 0) encodeInter16Macroblock(int(fixture), 0, position);
+                    else encodeIntra16Macroblock(int(fixture), 0, position, fixtures[fixture].frame);
+                }
+                break;
+            }
+        }
+    }
+    if (fixtures[fixture].finish != 0) emitFlush(int(fixture), fixtures[fixture].frame);
+#ifdef CABAC_RECORD_BINS
+    fixtures[fixture].mvdMagnitude = recordCount;
+#endif
+#ifdef CABAC_TRACE
+    fixtures[fixture].mvdMagnitude = traceCounter;
+#endif
+    fixtures[fixture].low = globalCoder.low;
+    fixtures[fixture].range = globalCoder.range;
+    fixtures[fixture].queue = globalCoder.queue;
+    fixtures[fixture].outstanding = globalCoder.outstanding;
+    fixtures[fixture].position = globalCoder.position;
+}
+
+uint initialContext(int model, int qp, int index) {
+    int m = contextInit[model][index][0], n = contextInit[model][index][1];
+    int state = clamp(((m*qp) >> 4) + n, 1, 126);
+    return uint((min(state, 127-state) << 1) | (state >> 6));
+}
+
+void main() {
+#ifdef CABAC_SHARED_FRAME
+    uint fixture = gl_WorkGroupID.x;
+    if (fixture >= fixtures.length()) return;
+    int lane = int(gl_LocalInvocationIndex);
+    for (int i = 0; i < 4; ++i) frameRangeLps[lane][i] = rangeLps[lane][i];
+    for (int i = lane; i < 128; i += 64) {
+        frameTransition[i][0] = transition[i][0];
+        frameTransition[i][1] = transition[i][1];
+    }
+    frameRenormShift[lane] = renormShift[lane];
+    const int stride = 64;
+#else
+    uint fixture = gl_GlobalInvocationID.x;
+    if (fixture >= fixtures.length()) return;
+    const int lane = 0, stride = 1;
+#endif
+    int model = fixtures[fixture].model;
+    int qp = fixtures[fixture].qp;
+    int contexts = fixtures[fixture].chroma444 != 0 ? 1024 : 460;
+    for (int i = lane; i < contexts; i += stride) {
+#ifdef CABAC_SHARED_FRAME
+        frameContext[i] = initialContext(model, qp, i);
+#else
+        fixtures[fixture].context[i] = initialContext(model, qp, i);
+#endif
+    }
+#ifdef CABAC_SHARED_FRAME
+    barrier();
+    if (lane == 0) encodeOperations(fixture);
+#else
+    encodeOperations(fixture);
+#endif
+}

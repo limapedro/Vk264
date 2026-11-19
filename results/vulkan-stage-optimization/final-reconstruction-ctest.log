@@ -1,0 +1,65 @@
+Start testing: Nov 19 01:11 E. South America Standard Time
+----------------------------------------------------------
+1/45 Testing: shader_reconstruction
+1/45 Test: shader_reconstruction
+Command: "C:/Program Files/Python310/python.exe" "E:/__PROJECTS__/Wx264-ChatGPT/harness/check.py" "--encoder" "E:/__PROJECTS__/Wx264-ChatGPT/build/Release/wx264.exe" "--ffmpeg" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe" "--ffprobe" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffprobe.exe"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build
+"shader_reconstruction" start time: Nov 19 01:11 E. South America Standard Time
+Output:
+----------------------------------------------------------
+0-flat-16x16-qp0: 4 frames match
+1-noise-2x2-qp0: 3 frames match
+2-noise-34x30-qp0: 8 frames match
+3-motion-1062x34-qp17: 12 frames match
+4-motion-162x30-qp30: 61 frames match
+5-motion-178x46-qp49: 12 frames match
+6-noise-128x64-qp29: 16 frames match
+7-flat-144x18-qp51: 5 frames match
+8-motion-32x34-qp26: 5 frames match
+9-motion-16x48-qp29: 6 frames match
+10-repeat16-48x34-qp20: 47 frames match
+11-motion-162x98-qp38: 9 frames match
+12-flat-grid-96x80-qp48: 8 frames match
+<end of output>
+Test time =  70.22 sec
+----------------------------------------------------------
+Test Passed.
+"shader_reconstruction" end time: Nov 19 01:12 E. South America Standard Time
+"shader_reconstruction" time elapsed: 00:01:10
+----------------------------------------------------------
+
+2/45 Testing: vulkan_encoder_reconstruction
+2/45 Test: vulkan_encoder_reconstruction
+Command: "C:/Program Files/Python310/python.exe" "E:/__PROJECTS__/Wx264-ChatGPT/harness/check.py" "--encoder" "E:/__PROJECTS__/Wx264-ChatGPT/build/Release/wx264.exe" "--ffmpeg" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe" "--ffprobe" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffprobe.exe" "--vulkan"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build
+"vulkan_encoder_reconstruction" start time: Nov 19 01:12 E. South America Standard Time
+Output:
+----------------------------------------------------------
+Vulkan CABAC: 1 frames and GPU reconstruction match
+Vulkan CABAC: 19 frames and GPU reconstruction match
+<end of output>
+Test time =  13.53 sec
+----------------------------------------------------------
+Test Passed.
+"vulkan_encoder_reconstruction" end time: Nov 19 01:12 E. South America Standard Time
+"vulkan_encoder_reconstruction" time elapsed: 00:00:13
+----------------------------------------------------------
+
+3/45 Testing: vulkan_cavlc_reconstruction
+3/45 Test: vulkan_cavlc_reconstruction
+Command: "C:/Program Files/Python310/python.exe" "E:/__PROJECTS__/Wx264-ChatGPT/harness/check.py" "--encoder" "E:/__PROJECTS__/Wx264-ChatGPT/build/Release/wx264.exe" "--ffmpeg" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe" "--ffprobe" "C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffprobe.exe" "--vulkan" "--entropy" "cavlc"
+Directory: E:/__PROJECTS__/Wx264-ChatGPT/build
+"vulkan_cavlc_reconstruction" start time: Nov 19 01:12 E. South America Standard Time
+Output:
+----------------------------------------------------------
+Vulkan CAVLC: 1 frames and GPU reconstruction match
+Vulkan CAVLC: 19 frames and GPU reconstruction match
+<end of output>
+Test time =  12.85 sec
+----------------------------------------------------------
+Test Passed.
+"vulkan_cavlc_reconstruction" end time: Nov 19 01:13 E. South America Standard Time
+"vulkan_cavlc_reconstruction" time elapsed: 00:00:12
+----------------------------------------------------------
+
+End testing: Nov 19 01:13 E. South America Standard Time

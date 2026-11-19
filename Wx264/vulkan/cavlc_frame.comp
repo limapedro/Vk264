@@ -1,0 +1,218 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "macroblock4_order.glsl"
+#include "mv_predict_math.glsl"
+layout(local_size_x = 64) in;
+layout(push_constant) uniform Pass { uint pass; };
+
+layout(std430, binding = 0) buffer Frame {
+    uint width, macroblocks, inter, headerWords, headerTail, tailBits;
+    uint levelStart, outputStart, countStart, lengthStart, bodyStart;
+    uint codes[732];
+    uint data[];
+};
+
+const uint bodyWords = 768u, outputWords = 524288u, mbWords = 394u;
+const uint interPattern[48] = uint[48](0,2,3,7,4,8,17,13,5,18,9,14,10,15,16,11,
+    1,32,33,36,34,37,44,40,35,45,38,41,39,42,43,19,6,24,25,20,26,21,46,28,27,47,22,29,23,30,31,12);
+
+uint dest, limit, wordCount, pending, accumulator;
+bool overflow;
+
+void beginBits(uint offset, uint capacity) {
+    dest = offset;
+    limit = capacity;
+    wordCount = pending = accumulator = 0u;
+    overflow = false;
+}
+
+void bits(uint value, int count) {
+    while (count > 0) {
+        uint take = min(32u-pending, uint(count));
+        count -= int(take);
+        uint mask = take == 32u ? ~0u : (1u << take)-1u;
+        accumulator |= ((value >> count) & mask) << (32u-pending-take);
+        pending += take;
+        if (pending == 32u) {
+            if (wordCount < limit) data[dest+wordCount] = accumulator;
+            else overflow = true;
+            ++wordCount;
+            pending = accumulator = 0u;
+        }
+    }
+}
+
+uint finishBits() {
+    if (pending != 0u) {
+        if (wordCount < limit) data[dest+wordCount] = accumulator;
+        else overflow = true;
+    }
+    return overflow ? 0xffffffffu : 32u*wordCount+pending;
+}
+
+void ue(uint value) {
+    int order = findMSB(value+1u);
+    bits(0u, order);
+    bits(value+1u, order+1);
+}
+void se(int value) { ue(uint(value <= 0 ? -2*value : 2*value-1)); }
+#include "cavlc_residual.glsl"
+
+void residual(uint mb, int block, out int values[16], out int size) {
+    uint base = levelStart+mb*mbWords;
+    uint cbp = data[base+1], flags = data[base+3];
+    bool enabled = true;
+    int stride = 1;
+    uint source;
+    if (block == 24) {
+        source = base+4u;
+        enabled = data[base+2] != 0u;
+        size = 16;
+    } else if (block >= 16) {
+        uint plane = uint(block-16)/4u, b = uint(block-16)%4u;
+        uint chroma = base+262u+66u*plane;
+        source = chroma+6u+15u*b;
+        enabled = (data[chroma+1] & (1u << b)) != 0u;
+        size = 15;
+    } else if (inter == 0u) {
+        source = base+20u+15u*uint(block);
+        enabled = cbp != 0u && (flags & (1u << blockToRaster[block])) != 0u;
+        size = 15;
+    } else {
+        enabled = (cbp & (1u << (block/4))) != 0u;
+        size = 16;
+        if ((flags & 65536u) != 0u) {
+            source = base+4u+64u*uint(block/4)+uint(block%4);
+            stride = 4;
+        } else {
+            enabled = enabled && (flags & (1u << blockToRaster[block])) != 0u;
+            source = base+4u+16u*uint(block);
+        }
+    }
+    if (!enabled) size = 0;
+    for (int i = 0; i < size; ++i) values[i] = int(data[source+uint(i*stride)]);
+}
+
+uint countIndex(uint mb, int block) {
+    return countStart+24u*mb+uint(block < 16 ? blockToRaster[block] : block);
+}
+
+int context(uint mb, int block) {
+    int raster = block < 16 ? blockToRaster[block] : block;
+    int wide = block < 16 ? 4 : 2;
+    bool innerLeft = raster%wide != 0, innerTop = (raster%(wide*wide))/wide != 0;
+    bool left = innerLeft || mb%width != 0u, top = innerTop || mb >= width;
+    uint index = countStart+24u*mb+uint(raster);
+    int a = left ? int(data[innerLeft ? index-1u : index-24u+uint(wide-1)]) : 0;
+    int b = top ? int(data[innerTop ? index-uint(wide) : index-24u*width+uint(wide*(wide-1))]) : 0;
+    return left && top ? (a+b+1)/2 : a+b;
+}
+
+void writeBlock(uint mb, int block) {
+    int values[16], size;
+    residual(mb, block, values, size);
+    writeCavlcResidual(values, context(mb, block == 24 ? 0 : block), size, false);
+}
+
+ivec2 vectorAt(uint mb) {
+    uint base = levelStart+mb*mbWords;
+    return ivec2(data[base], data[base+2]);
+}
+
+void writeMacroblock(uint mb) {
+    uint base = levelStart+mb*mbWords;
+    uint luma = data[base+1], chroma = data[base+260];
+    if (inter == 0u) {
+        // x264 cavlc.c::cavlc_mb_header_i(): mb_type = 1 + fix[mode] + 4*cbp_chroma
+        // + (cbp_luma?12:0). fix maps V/H/DC/P->0..3 and DC_LEFT/TOP/128->DC(2).
+        uint mode = data[base];
+        uint fixedMode = mode <= 3u ? mode : 2u;
+        ue(1u+fixedMode+4u*chroma+(luma != 0u ? 12u : 0u));
+        ue(0u); // chroma DC (flat frames use DC prediction)
+        se(0);
+        writeBlock(mb, 24);
+    } else {
+        ue(0u); // mb_skip_run
+        ue(0u); // P_L0_16x16
+        bool left = mb%width != 0u, top = mb >= width;
+        bool tr = top && mb%width+1u < width;
+        ivec4 refs = ivec4(left ? 0 : -2, top ? 0 : -2, tr ? 0 : -2, left && top ? 0 : -2);
+        ivec2 mv = vectorAt(mb);
+        ivec2 pred = predictMotion16(0, refs, left ? vectorAt(mb-1u) : ivec2(0),
+            top ? vectorAt(mb-width) : ivec2(0), tr ? vectorAt(mb-width+1u) : ivec2(0),
+            left && top ? vectorAt(mb-width-1u) : ivec2(0));
+        se(mv.x-pred.x);
+        se(mv.y-pred.y);
+        ue(interPattern[luma+16u*chroma]);
+        if (luma != 0u) bits((data[base+3] >> 16u) & 1u, 1);
+        if ((luma | chroma) != 0u) se(0);
+    }
+    for (int b = 0; b < 16; ++b)
+        if (inter == 0u ? luma != 0u : (luma & (1u << (b/4))) != 0u) writeBlock(mb, b);
+    if (chroma != 0u) for (uint plane = 0; plane < 2u; ++plane) {
+        int values[16];
+        uint dc = base+264u+66u*plane;
+        for (uint i = 0; i < 4u; ++i) values[i] = data[dc-2u] != 0u ? int(data[dc+i]) : 0;
+        writeCavlcResidual(values, 0, 4, true);
+    }
+    if (chroma == 2u) for (int b = 16; b < 24; ++b) writeBlock(mb, b);
+}
+
+void indexBits(uint lane) {
+    // nC is no longer needed after the macroblock bodies have been emitted.
+    for (uint i = lane; i < outputWords; i += ((macroblocks+63u)/64u)*64u)
+        data[outputStart+1u+i] = 0u;
+    if (lane != 0u) return;
+    uint end = 32u*headerWords+tailBits;
+    for (uint mb = 0u; mb < macroblocks; ++mb) {
+        uint length = data[lengthStart+mb];
+        if (length > 32u*bodyWords || end+length >= 32u*outputWords) {
+            data[outputStart] = 0xffffffffu;
+            return;
+        }
+        data[countStart+mb] = end;
+        end += length;
+    }
+    data[countStart+macroblocks] = end;
+    data[outputStart] = (end+8u)&~7u; // Include rbsp_stop_one_bit and byte padding.
+}
+
+void mergeWord(uint position, uint value, uint length) {
+    uint dst = outputStart+1u+position/32u, shift = position&31u;
+    atomicOr(data[dst], value >> shift);
+    if (shift+length > 32u) atomicOr(data[dst+1u], value << (32u-shift));
+}
+
+void assembleBits(uint mb) {
+    if (mb >= macroblocks || data[outputStart] == 0xffffffffu) return;
+    uint length = data[lengthStart+mb], offset = bodyStart+mb*bodyWords;
+    uint bitPosition = data[countStart+mb];
+    for (uint word = 0u; word < length/32u; ++word)
+        mergeWord(bitPosition+32u*word, data[offset+word], 32u);
+    uint tail = length&31u;
+    if (tail != 0u) mergeWord(bitPosition+(length&~31u), data[offset+length/32u], tail);
+    if (mb != 0u) return;
+    for (uint i = 0u; i < headerWords; ++i) mergeWord(32u*i, data[i], 32u);
+    if (tailBits != 0u) mergeWord(32u*headerWords, headerTail << (32u-tailBits), tailBits);
+    mergeWord(data[countStart+macroblocks], 0x80000000u, 1u);
+}
+
+void main() {
+    uint mb = gl_GlobalInvocationID.x;
+    if (pass == 0u) {
+        if (mb >= macroblocks) return;
+        for (int b = 0; b < 24; ++b) {
+            int values[16], size, count = 0;
+            residual(mb, b, values, size);
+            for (int i = 0; i < size; ++i) count += int(values[i] != 0);
+            data[countIndex(mb, b)] = uint(count);
+        }
+    } else if (pass == 1u) {
+        if (mb >= macroblocks) return;
+        beginBits(bodyStart+mb*bodyWords, bodyWords);
+        writeMacroblock(mb);
+        data[lengthStart+mb] = finishBits();
+    } else if (pass == 2u) indexBits(mb);
+    else assembleBits(mb);
+}

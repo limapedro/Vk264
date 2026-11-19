@@ -1,0 +1,191 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#define WX_RECONSTRUCTION_ACCESS coherent
+#define WX_MOTION_ACCESS coherent
+#include "layout.glsl"
+#include "transform.glsl"
+
+layout(local_size_x=32) in;
+shared uint work[maxPairedSliceMbs];
+shared uint workCount;
+shared ivec3 sampleStats[24]; // source sum, source squared sum, inter squared error
+shared int reconstructedDc[24];
+shared int levels[24];
+shared bool useIntra;
+
+bool candidate(uint mb) {
+    ivec2 origin = mbOrigin(mb, 0);
+    int sum = 0, square = 0, error = 0;
+    for (int y = 2; y < 16; y += 4) for (int x = 2; x < 16; x += 4) {
+        ivec2 p = origin + ivec2(x, y);
+        int sampleValue = srcPixel(0, p);
+        int delta = sampleValue - reconPixel(0, p);
+        sum += sampleValue;
+        square += sampleValue * sampleValue;
+        error += delta * delta;
+    }
+    int variance = 16 * square - sum * sum;
+    if (sum < 16 * 96 && variance <= 16 * 16 * 9) return error > 16 * 4;
+    return variance <= 16 * 16 * 256 && error > 16 * 64;
+}
+
+int lumaDc(uint mb, bool left, bool top) {
+    if (!left && !top) return 128;
+    ivec2 origin = mbOrigin(mb, 0);
+    int sum = 0, n = 16 * (int(left) + int(top));
+    for (int i = 0; i < 16; ++i) {
+        if (left) sum += reconPixel(0, origin + ivec2(-1, i));
+        if (top) sum += reconPixel(0, origin + ivec2(i, -1));
+    }
+    return (sum + n/2) / n;
+}
+
+ivec4 chromaDc(uint mb, int plane, bool left, bool top) {
+    if (!left && !top) return ivec4(128);
+    ivec2 origin = mbOrigin(mb, plane);
+    ivec2 l = ivec2(0), t = ivec2(0);
+    for (int i = 0; i < 8; ++i) {
+        if (left) l[i >> 2] += reconPixel(plane, origin + ivec2(-1, i));
+        if (top) t[i >> 2] += reconPixel(plane, origin + ivec2(i, -1));
+    }
+    if (left && top)
+        return ivec4((l.x + t.x + 4) >> 3, (t.y + 2) >> 2, (l.y + 2) >> 2, (l.y + t.y + 4) >> 3);
+    if (left) return (l.xxyy + 2) >> 2;
+    return (t.xyxy + 2) >> 2;
+}
+
+int distortion(ivec3 stats, int dc) {
+    return stats.y - 2 * dc * stats.x + 16 * dc * dc;
+}
+
+int levelCost(int level) { return level == 0 ? 0 : 5 + 2 * findMSB(uint(abs(level))); }
+
+void decide(uint mb, uint local, int qp) {
+    bool left = leftAvailable(mb, local) && isIntraMb(mb - 1u);
+    bool top = topAvailable(local) && isIntraMb(mb - pc.mbWidth);
+    ivec3 yStats = ivec3(0);
+    for (int block = 0; block < 16; ++block) yStats += sampleStats[block];
+    int target = (yStats.x + 128) / 256;
+    int variance = yStats.y - 2 * target * yStats.x + 256 * target * target;
+    useIntra = false;
+    int pred = lumaDc(mb, left, top);
+    bool flatDark = target < 96 && variance <= 256 * 9;
+    int intraError = 0, bitsCost = 8;
+    if (flatDark) {
+        int scale = dequantize(1, qp, 0);
+        int delta = target - pred;
+        int level = sign(delta) * ((abs(delta)*256 + scale/2) / scale);
+        int dc = (dequantize(level, qp, 0) + 2) >> 2;
+        int value = clamp(pred + ((dc + 32) >> 6), 0, 255);
+        for (int i = 0; i < 16; ++i) {
+            levels[i] = i == 0 ? level : 0;
+            reconstructedDc[i] = value;
+            intraError += distortion(sampleStats[i], value);
+        }
+        bitsCost += levelCost(level);
+    } else {
+        // Intra16x16 has sixteen luma DC coefficients. Preserve changes
+        // across 4x4 blocks when an inter prediction leaves a visible edge.
+        ivec4 rows[4];
+        for (int y = 0; y < 4; ++y) {
+            ivec4 sums;
+            for (int x = 0; x < 4; ++x) sums[x] = sampleStats[4*y+x].x - 16*pred;
+            rows[y] = hadamard4(sums);
+        }
+        for (int x = 0; x < 4; ++x) {
+            ivec4 column = hadamard4(ivec4(rows[0][x], rows[1][x], rows[2][x], rows[3][x]));
+            for (int y = 0; y < 4; ++y) {
+                int level = quantize((column[y] + 1) >> 1, qp, 0, 1, true);
+                levels[4*y+x] = rows[y][x] = level;
+                bitsCost += levelCost(level);
+            }
+        }
+        for (int y = 0; y < 4; ++y) rows[y] = hadamard4(rows[y]);
+        for (int x = 0; x < 4; ++x) {
+            ivec4 column = hadamard4(ivec4(rows[0][x], rows[1][x], rows[2][x], rows[3][x]));
+            for (int y = 0; y < 4; ++y) {
+                int dc = (dequantize(column[y], qp, 0) + 2) >> 2;
+                int value = clamp(pred + ((dc + 32) >> 6), 0, 255);
+                reconstructedDc[4*y+x] = value;
+                intraError += distortion(sampleStats[4*y+x], value);
+            }
+        }
+    }
+    int interError = yStats.z;
+    int chroma = chromaQp(qp);
+    for (int plane = 1; plane <= 2; ++plane) {
+        int base = 4 * (plane - 1);
+        ivec3 stats = ivec3(0);
+        for (int block = 0; block < 4; ++block) stats += sampleStats[16 + base + block];
+        int mean = (stats.x + 32) / 64;
+        if (stats.y - 2*mean*stats.x + 64*mean*mean > 64*(flatDark ? 5 : 64)) return;
+        ivec4 prediction = chromaDc(mb, plane, left, top);
+        ivec4 transformDc = hadamard2x2(16 * (ivec4(mean) - prediction));
+        ivec4 encoded;
+        for (int block = 0; block < 4; ++block) {
+            encoded[block] = quantize(transformDc[block], chroma, 0, 1, true);
+            levels[16 + base + block] = encoded[block];
+            bitsCost += levelCost(encoded[block]);
+        }
+        ivec4 restored = hadamard2x2(encoded);
+        for (int block = 0; block < 4; ++block) {
+            int r = clamp(prediction[block] + (((dequantize(restored[block], chroma, 0) >> 1) + 32) >> 6), 0, 255);
+            reconstructedDc[16 + base + block] = r;
+            intraError += 2 * distortion(sampleStats[16 + base + block], r);
+        }
+        interError += 2 * stats.z;
+    }
+    // Charge the intra escape for its estimated syntax even when it would
+    // replace a coded inter MB. Favor blocks with a clear reconstruction gain.
+    float bitPrice = flatDark ? float(qp + 16) : max(float(qp + 16), 0.55 * exp2(float(qp - 12) / 3.0));
+    useIntra = float(intraError) + bitPrice * float(bitsCost) < float(interError);
+    if (useIntra) matches[5u * mb] = MotionMatch(ivec2(0), 0u, mbIntraMode);
+}
+
+void main() {
+    uint slice = gl_WorkGroupID.x, lane = gl_LocalInvocationID.x;
+    int qp = frameQp();
+    if (qp < 20) return;
+    uint first = firstMb(slice), count = sliceLength(slice);
+    for (uint i = lane; i < count; i += 32u) work[i] = uint(candidate(first + i));
+    barrier();
+    if (lane == 0u) {
+        workCount = 0u;
+        for (uint i = 0u; i < count; ++i) if (work[i] != 0u) work[workCount++] = i;
+    }
+    barrier();
+
+    int plane = lane < 16u ? 0 : 1 + int((lane - 16u) / 4u);
+    int block = plane == 0 ? int(lane) : int((lane - 16u) & 3u);
+    int wide = plane == 0 ? 4 : 2;
+    for (uint i = 0u; i < workCount; ++i) {
+        uint local = work[i], mb = first + local;
+        ivec2 origin = mbOrigin(mb, plane) + 4 * ivec2(block % wide, block / wide);
+        if (lane < 24u) {
+            ivec3 stats = ivec3(0);
+            for (int y = 0; y < 4; ++y) for (int x = 0; x < 4; ++x) {
+                ivec2 p = origin + ivec2(x, y);
+                int sampleValue = srcPixel(plane, p);
+                int delta = sampleValue - reconPixel(plane, p);
+                stats += ivec3(sampleValue, sampleValue * sampleValue, delta * delta);
+            }
+            sampleStats[lane] = stats;
+        }
+        barrier();
+        if (lane == 0u) decide(mb, local, pictureAq() ? int(mbSyntax[mb].y) : qp);
+        barrier();
+        if (useIntra && lane < 24u) {
+            uint base = mb * mbCoefficients;
+            
+            if (lane < 16u) coefficients[base + 384u + lane] = levels[lane];
+            else coefficients[base + 400u + lane - 16u] = levels[lane];
+            coefficients[base + 408u + lane] = 0;
+            uint value = uint(reconstructedDc[lane]) * 0x01010101u;
+            ivec2 size = ivec2(pc.mbWidth, pc.mbHeight) << (plane == 0 ? 4 : 3);
+            int address = planeOffset(plane, size) + origin.y * size.x + origin.x;
+            for (int y = 0; y < 4; ++y) reconstructed[(address + y*size.x) >> 2] = value;
+        }
+        memoryBarrierBuffer();
+        barrier();
+    }
+}

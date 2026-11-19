@@ -1,0 +1,268 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "layout.glsl"
+#include "transform.glsl"
+
+layout(local_size_x=32) in;
+shared int dc[24];
+shared int edges[32];  // right edge of the preceding intra MB: Y[16], Cb[8], Cr[8]
+shared int dcPred[5]; // luma and two subrows per chroma plane
+shared int skipDelta[24];
+shared int predictionDelta[24];
+shared int estimatedBits[24];
+shared int chromaDcBits[2];
+shared int chromaDcDelta[8];
+shared uint codedGroups; // four 8x8 luma groups
+shared int chromaMode; // 0: prediction only, 1: DC, 2: DC and AC
+shared bool skipMb;
+shared bool partitioned;
+shared uvec2 lumaActivity[16];
+shared int adaptiveQp;
+
+int approximateMvBits(ivec2 mv) {
+    ivec2 magnitude = abs(mv);
+    return 2 * (findMSB(uint(2 * magnitude.x + 1)) + findMSB(uint(2 * magnitude.y + 1)));
+}
+
+int residualGroup(int block) {
+    return block < 16 ? ((block >> 3) * 2 + ((block >> 1) & 1)) : 4;
+}
+
+void processMb(uint mb, bool intra, bool haveLeft, int qp) {
+    int lane = int(gl_LocalInvocationID.x);
+    uint mbBase = mb * mbCoefficients;
+    uint matchBase = 5u * mb;
+    if (!intra && pictureAq()) {
+        if (lane < 16) {
+            ivec2 origin = mbOrigin(mb, 0) + ivec2(lane % 4, lane / 4) * 4;
+            uvec2 stats = uvec2(0);
+            for (int y = 0; y < 4; y += 2) for (int x = 0; x < 4; x += 2) {
+                uint sampleValue = uint(srcPixel(0, origin + ivec2(x, y)));
+                stats += uvec2(sampleValue, sampleValue * sampleValue);
+            }
+            lumaActivity[lane] = stats;
+        }
+        barrier();
+        if (lane == 0) {
+            uvec2 stats = uvec2(0);
+            for (int i = 0; i < 16; ++i) stats += lumaActivity[i];
+            float variance = float(64u * stats.y - stats.x * stats.x) / 4096.0;
+            int offset = clamp(int(round(1.25 * (log2(max(1.0, variance)) - 6.0))), -6, 5);
+            adaptiveQp = clamp(qp + offset, 0, 51);
+            mbSyntax[mb].y = uint(adaptiveQp);
+        }
+        barrier();
+        qp = adaptiveQp;
+    }
+    int cqp = chromaQp(qp);
+
+    if (!intra && lane == 0) {
+        partitioned = false;
+        if (pc.partitions != 0u && pc.motionRadius != 0u) {
+            uint cost = 0u;
+            for (uint part = 1u; part <= 4u; ++part) cost += matches[matchBase + part].cost;
+            uint modePenalty = uint(16 + max(qp - 24, 0) * 2);
+            partitioned = cost + modePenalty < matches[matchBase].cost;
+        }
+    }
+
+    if (intra && lane < 5) {
+        int sum = 0;
+        int start = lane == 0 ? 0 : 12 + lane * 4;
+        int count = lane == 0 ? 16 : 4;
+        if (haveLeft) for (int i = 0; i < count; ++i) sum += edges[start + i];
+        dcPred[lane] = haveLeft ? (sum + count / 2) / count : 128;
+    }
+    barrier();
+
+    int plane = lane < 16 ? 0 : 1 + (lane - 16) / 4;
+    int block = plane == 0 ? lane : (lane - 16) & 3;
+    int blocksWide = plane == 0 ? 4 : 2;
+    int blockX = block % blocksWide, blockY = block / blocksWide;
+    ivec2 origin = mbOrigin(mb, plane) + ivec2(blockX, blockY) * 4;
+    int blockQp = plane == 0 ? qp : cqp;
+    bool separateDc = intra || plane != 0;
+    ivec4 rows[4], predicted[4];
+    if (lane < 24) {
+        int part = plane == 0 ? (blockX >> 1) + 2 * (blockY >> 1) : block;
+        uint matchIndex = matchBase + (!intra && partitioned ? uint(part + 1) : 0u);
+        ivec2 mv = intra ? ivec2(0) : matches[matchIndex].mv;
+        uint ref = intra ? 0u : referenceIndex(mb);
+        uint address = ref == 0u ? pc.previousWords : referenceOffset(ref);
+        int intraValue = intra ? dcPred[plane == 0 ? 0 : 2 * plane - 1 + blockY] : 0;
+        for (int y = 0; y < 4; ++y) {
+            ivec4 residual;
+            for (int x = 0; x < 4; ++x) {
+                ivec2 xy = origin + ivec2(x, y);
+                int p = intra ? intraValue : prediction(plane, xy, mv, address);
+                predicted[y][x] = p;
+                residual[x] = srcPixel(plane, xy) - p;
+            }
+            rows[y] = forward4(residual);
+        }
+        for (int x = 0; x < 4; ++x) {
+            ivec4 v = forward4(ivec4(rows[0][x], rows[1][x], rows[2][x], rows[3][x]));
+            for (int y = 0; y < 4; ++y) rows[y][x] = v[y];
+        }
+        dc[lane] = rows[0][0];
+        int count = 0, cost = 0;
+        for (int y = 0; y < 4; ++y) for (int x = 0; x < 4; ++x) {
+            int k = 4 * y + x;
+            int level = k == 0 && separateDc ? 0 : quantize(rows[y][x], blockQp, k, 0, intra);
+            coefficients[mbBase + uint(lane * 16 + k)] = level;
+            count += int(level != 0);
+            if (level != 0) cost += 3 + 2 * findMSB(uint(abs(level)));
+            rows[y][x] = dequantize(level, blockQp, k);
+        }
+        coefficients[mbBase + 408u + uint(lane)] = count;
+        estimatedBits[lane] = cost;
+    }
+    barrier();
+
+    if (intra && lane == 0) {
+        ivec4 v[4];
+        for (int y = 0; y < 4; ++y)
+            v[y] = hadamard4(ivec4(dc[4*y], dc[4*y+1], dc[4*y+2], dc[4*y+3]));
+        for (int x = 0; x < 4; ++x) {
+            ivec4 col = hadamard4(ivec4(v[0][x], v[1][x], v[2][x], v[3][x]));
+            for (int y = 0; y < 4; ++y) {
+                int level = quantize((col[y] + 1) >> 1, qp, 0, 1, true);
+                v[y][x] = level;
+                coefficients[mbBase + 384u + uint(4*y+x)] = level;
+            }
+        }
+        for (int y = 0; y < 4; ++y) v[y] = hadamard4(v[y]);
+        for (int x = 0; x < 4; ++x) {
+            ivec4 col = hadamard4(ivec4(v[0][x], v[1][x], v[2][x], v[3][x]));
+            for (int y = 0; y < 4; ++y) dc[4*y+x] = (dequantize(col[y], qp, 0) + 2) >> 2;
+        }
+    }
+    if (lane == 16 || lane == 20) {
+        ivec4 v = hadamard2x2(ivec4(dc[lane], dc[lane+1], dc[lane+2], dc[lane+3]));
+        int bits = 0;
+        for (int i = 0; i < 4; ++i) {
+            v[i] = quantize(v[i], cqp, 0, 1, intra);
+            coefficients[mbBase + 400u + uint(lane - 16 + i)] = v[i];
+            if (v[i] != 0) bits += 3 + 2 * findMSB(uint(abs(v[i])));
+        }
+        chromaDcBits[(lane - 16) / 4] = bits;
+        v = hadamard2x2(v);
+        for (int i = 0; i < 4; ++i) dc[lane+i] = dequantize(v[i], cqp, 0) >> 1;
+    }
+    barrier();
+
+    ivec4 zeroMotion[4];
+    if (lane < 24) {
+        if (separateDc) rows[0][0] = dc[lane];
+        inverseBlock(rows);
+        int delta = 0, predictionErrorDelta = 0, dcErrorDelta = 0;
+        for (int y = 0; y < 4; ++y) {
+            rows[y] = clamp(predicted[y] + rows[y], 0, 255);
+            if (!intra) for (int x = 0; x < 4; ++x) {
+                ivec2 xy = origin + ivec2(x, y);
+                int src = srcPixel(plane, xy), ref = refPixel(plane, xy);
+                int skipError = src - ref, codedError = src - rows[y][x];
+                int predictionError = src - predicted[y][x];
+                zeroMotion[y][x] = ref;
+                delta += skipError * skipError - codedError * codedError;
+                predictionErrorDelta += predictionError * predictionError - codedError * codedError;
+                if (plane != 0) {
+                    int dcOnly = clamp(predicted[y][x] + ((dc[lane] + 32) >> 6), 0, 255);
+                    int dcError = src - dcOnly;
+                    dcErrorDelta += dcError * dcError - codedError * codedError;
+                }
+            }
+        }
+        skipDelta[lane] = delta;
+        predictionDelta[lane] = predictionErrorDelta;
+        if (plane != 0) chromaDcDelta[lane - 16] = dcErrorDelta;
+    }
+    barrier();
+
+    if (!intra && lane == 0) {
+        int skipDistortion = 0;
+        int predictionError[5] = int[5](0, 0, 0, 0, 0);
+        int residualBits[5] = int[5](0, 0, 0, 0, 0);
+        int motionRate = partitioned ? 16 : 8 + approximateMvBits(matches[matchBase].mv);
+        uint ref = referenceIndex(mb);
+        if (ref != 0u) motionRate += 1 + 2 * findMSB(ref + 1u);
+        if (partitioned)
+            for (uint part = 1u; part <= 4u; ++part) motionRate += 2 + approximateMvBits(matches[matchBase + part].mv);
+        for (int i = 0; i < 24; ++i) {
+            int weight = i < 16 ? 2 : 1;
+            skipDistortion += skipDelta[i] * weight;
+            int group = residualGroup(i);
+            predictionError[group] += predictionDelta[i] * weight;
+            residualBits[group] += estimatedBits[i];
+        }
+
+        // The decoder can signal the four luma CBP groups independently. Compare
+        // each group against motion-only prediction, then compare the combined
+        // inter candidate against the zero-motion alternative.
+        float lambda = 0.55 * exp2(float(qp - 12) / 3.0);
+        float interCost = lambda * float(motionRate);
+        codedGroups = 0u;
+        for (int group = 0; group < 4; ++group) {
+            float coded = lambda * float(residualBits[group] + 2);
+            float predicted = 0.5 * float(predictionError[group]);
+            bool keep = qp == 0 || (residualBits[group] != 0 && coded < predicted);
+            codedGroups |= uint(keep) << group;
+            interCost += keep ? coded : predicted;
+        }
+        int dcBits = chromaDcBits[0] + chromaDcBits[1];
+        int acBits = residualBits[4];
+        int dcDistortion = 0;
+        for (int i = 0; i < 8; ++i) dcDistortion += chromaDcDelta[i];
+        float chromaCost = 0.5 * float(predictionError[4]);
+        float dcCost = 0.5 * float(dcDistortion) + lambda * float(dcBits + 2);
+        float fullCost = lambda * float(dcBits + acBits + 2);
+        chromaMode = 0;
+        if (dcBits != 0 && dcCost < chromaCost) {
+            chromaMode = 1;
+            chromaCost = dcCost;
+        }
+        if (qp == 0 || (acBits != 0 && fullCost < chromaCost)) {
+            chromaMode = 2;
+            chromaCost = fullCost;
+        }
+        interCost += chromaCost;
+        skipMb = qp > 0 && 0.5 * float(skipDistortion) <= interCost;
+        if (skipMb) matches[matchBase].mv = ivec2(0);
+        matches[matchBase].mode = skipMb ? 0u : (ref << 1u) | uint(partitioned);
+    }
+    barrier();
+
+    if (lane < 24) {
+        bool skip = !intra && skipMb;
+        bool keepAc = intra || (!skip && (plane == 0
+            ? (codedGroups & (1u << residualGroup(lane))) != 0u
+            : chromaMode == 2));
+        bool keepDc = plane != 0 && (keepAc || (!skip && chromaMode == 1));
+        if (!keepAc) coefficients[mbBase + 408u + uint(lane)] = 0;
+        if (plane != 0 && !keepDc) coefficients[mbBase + 400u + uint(lane - 16)] = 0;
+        ivec2 size = ivec2(pc.mbWidth, pc.mbHeight) << (plane == 0 ? 4 : 3);
+        for (int y = 0; y < 4; ++y) {
+            ivec4 pixels = keepAc ? rows[y] : skip ? zeroMotion[y] : predicted[y];
+            if (!keepAc && keepDc) pixels = clamp(pixels + ((dc[lane] + 32) >> 6), 0, 255);
+            uvec4 p = uvec4(pixels);
+            int offset = (planeOffset(plane, size) + (origin.y + y) * size.x + origin.x) >> 2;
+            reconstructed[offset] = p.x | (p.y << 8) | (p.z << 16) | (p.w << 24);
+            if (intra && blockX == blocksWide - 1) {
+                int edgeStart = plane == 0 ? 0 : 8 * (plane + 1);
+                edges[edgeStart + blockY * 4 + y] = int(p.w);
+            }
+        }
+    }
+    barrier();
+}
+
+void main() {
+    uint index = gl_WorkGroupID.x;
+    int qp = frameQp();
+    if (idr()) {
+        uint first = firstMb(index), count = sliceLength(index);
+        for (uint i = 0; i < count; ++i) processMb(first + i, true, i != 0u, qp);
+    } else {
+        processMb(index, false, false, qp);
+    }
+}

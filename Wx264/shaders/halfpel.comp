@@ -1,0 +1,35 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "layout.glsl"
+
+layout(local_size_x=16, local_size_y=8) in;
+shared int pixels[21 * 13];
+shared int horizontal[16 * 13];
+
+int sixTap(int a, int b, int c, int d, int e, int f) {
+    return (a + f) + 20 * (c + d) - 5 * (b + e);
+}
+
+void main() {
+    ivec2 start = ivec2(gl_WorkGroupID.xy * gl_WorkGroupSize.xy);
+    uint lane = gl_LocalInvocationIndex;
+    for (uint i = lane; i < 21u * 13u; i += 128u) {
+        ivec2 xy = start + ivec2(i % 21u, i / 21u) - 6;
+        pixels[i] = refPixel(0, xy);
+    }
+    barrier();
+    for (uint i = lane; i < 16u * 13u; i += 128u) {
+        uint j = (i / 16u) * 21u + (i % 16u);
+        horizontal[i] = sixTap(pixels[j], pixels[j+1u], pixels[j+2u], pixels[j+3u], pixels[j+4u], pixels[j+5u]);
+    }
+    barrier();
+    ivec2 ij = ivec2(gl_GlobalInvocationID.xy), size = halfPelSize();
+    if (any(greaterThanEqual(ij, size))) return;
+    uint j = gl_LocalInvocationID.y * 21u + gl_LocalInvocationID.x + 2u;
+    int v = sixTap(pixels[j], pixels[j+21u], pixels[j+42u], pixels[j+63u], pixels[j+84u], pixels[j+105u]);
+    int d = sixTap(horizontal[lane], horizontal[lane+16u], horizontal[lane+32u],
+                   horizontal[lane+48u], horizontal[lane+64u], horizontal[lane+80u]);
+    uint h = uint(clamp((horizontal[lane+32u] + 16) >> 5, 0, 255));
+    halfPel[ij.y * size.x + ij.x] = h | (uint(clamp((v + 16) >> 5, 0, 255)) << 8) |
+                                       (uint(clamp((d + 512) >> 10, 0, 255)) << 16);
+}

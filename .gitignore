@@ -1,0 +1,36 @@
+# Build outputs
+build/
+*.spv
+*.obj
+*.exe
+*.dll
+*.pdb
+*.lib
+*.ilk
+
+# Large media / test data
+clips/
+*.yuv
+*.mp4
+*.h264
+
+# Generated eval / result artifacts (keep markdown reports)
+Evals/
+results/*.json
+results/*.mp4
+results/*.h264
+results/**/*.h264
+results/**/*.part
+results/**/*.mp4
+x264-master.zip
+obs/
+
+# Editor / OS
+.vs/
+.vscode/
+*.user
+Thumbs.db
+.DS_Store
+
+# Local helper scripts created for diagnostics
+build/*.py

@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Translated from common/quant.c. Copyright (C) 2003-2024 x264 project.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "chroma_hadamard.glsl"
+layout(local_size_x = 64) in;
+
+struct Fixture {
+    int coefficients[8];
+    int scale, chroma422, nonzero;
+};
+layout(std430, binding = 0) buffer Corpus { Fixture fixtures[]; };
+
+#include "chroma_optimize_math.glsl"
+
+void main() {
+    uint fixture = gl_GlobalInvocationID.x;
+    if (fixture >= fixtures.length()) return;
+    int coefficients[8] = fixtures[fixture].coefficients;
+    int nonzero = optimizeChromaDc(coefficients, fixtures[fixture].scale, fixtures[fixture].chroma422 != 0);
+    fixtures[fixture].nonzero = nonzero;
+    fixtures[fixture].coefficients = coefficients;
+}

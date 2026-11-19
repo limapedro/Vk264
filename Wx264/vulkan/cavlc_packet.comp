@@ -1,0 +1,107 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#version 450
+
+layout(local_size_x = 64) in;
+layout(push_constant) uniform Pass { uint index; } pass;
+layout(std430, binding = 0) buffer Arena { uint words[]; };
+layout(std430, binding = 4) buffer Packet { uint packet[]; };
+
+const uint maxBytes = 1u << 21;
+const uint chunkBytes = 64u;
+const uint maxChunks = maxBytes/chunkBytes;
+
+uint rbspByte(uint start, uint offset) {
+    return (words[start+offset/4u] >> (24u-8u*(offset&3u))) & 255u;
+}
+
+// The incoming zero count only affects leading zeros and the first
+// nonzero byte. After that byte, all three possible states agree.
+uvec2 leadingState(uint zeros, uint length, uint first) {
+    uint run = zeros+length;
+    uint inserts = run == 0u ? 0u : (run-1u)/2u;
+    uint tail = run-2u*inserts;
+    return uvec2(inserts+uint(first != 0u && first <= 3u && tail == 2u), tail);
+}
+
+uint summarize(uint start, uint begin, uint end) {
+    uint zeros = 0u, inserts = 0u, leading = 0u, first = 0u;
+    for (uint i = begin; i < end; ++i) {
+        uint value = rbspByte(start, i);
+        if (first == 0u) {
+            if (value == 0u) ++leading;
+            else first = value;
+        }
+        if (zeros == 2u && value <= 3u) {
+            ++inserts;
+            zeros = 0u;
+        }
+        zeros = value == 0u ? zeros+1u : 0u;
+    }
+    uint rest = inserts-leadingState(0u, leading, first).x;
+    uint summary = 0u;
+    for (uint incoming = 0u; incoming < 3u; ++incoming) {
+        uvec2 state = leadingState(incoming, leading, first);
+        uint outgoing = first == 0u ? state.y : zeros;
+        summary |= ((rest+state.x) | (outgoing << 8u)) << (10u*incoming);
+    }
+    return summary;
+}
+
+void indexChunks(uint scratch, uint bytes, uint chunks) {
+    uint offset = 4u, zeros = 0u;
+    for (uint chunk = 0u; chunk < chunks; ++chunk) {
+        uint entry = (words[scratch+chunk] >> (10u*zeros)) & 1023u;
+        words[scratch+chunk] = offset | (zeros << 24u);
+        offset += min(chunkBytes, bytes-chunk*chunkBytes)+(entry&255u);
+        zeros = entry >> 8u;
+    }
+    packet[1] = words[13] != 0u ? 0x65010000u : 0x61010000u;
+    packet[0] = offset;
+}
+
+void emitByte(inout uint offset, inout uint pending, inout bool partial, uint value) {
+    pending |= value << (8u*(offset&3u));
+    ++offset;
+    if ((offset&3u) == 0u) {
+        // Only words shared with a neighboring chunk need atomic writes.
+        if (partial) atomicOr(packet[offset/4u], pending);
+        else packet[offset/4u] = pending;
+        pending = 0u;
+        partial = false;
+    }
+}
+
+void emitChunk(uint start, uint begin, uint end, uint entry) {
+    uint offset = entry&0xffffffu, zeros = entry >> 24u, pending = 0u;
+    bool partial = (offset&3u) != 0u;
+    for (uint i = begin; i < end; ++i) {
+        uint value = rbspByte(start, i);
+        if (zeros == 2u && value <= 3u) {
+            emitByte(offset, pending, partial, 3u);
+            zeros = 0u;
+        }
+        emitByte(offset, pending, partial, value);
+        zeros = value == 0u ? zeros+1u : 0u;
+    }
+    if ((offset&3u) != 0u) atomicOr(packet[1u+offset/4u], pending);
+}
+
+void main() {
+    uint start = words[14], bits = words[start], chunk = gl_GlobalInvocationID.x;
+    if (bits == 0u || (bits&7u) != 0u || bits > 8u*maxBytes) {
+        if (pass.index == 1u && chunk == 0u) packet[0] = 0u;
+        return;
+    }
+    uint bytes = bits/8u, chunks = (bytes+chunkBytes-1u)/chunkBytes, scratch = words[15];
+    uint begin = chunk*chunkBytes, end = min(begin+chunkBytes, bytes);
+    if (pass.index == 0u) {
+        // Clear enough output for the worst case of one insert every two bytes.
+        uint limit = (bytes+bytes/2u+3u)/4u;
+        for (uint i = chunk; i < limit; i += maxChunks) packet[2u+i] = 0u;
+        if (chunk < chunks) words[scratch+chunk] = summarize(start+1u, begin, end);
+    } else if (pass.index == 1u) {
+        if (chunk == 0u) indexChunks(scratch, bytes, chunks);
+    } else if (chunk < chunks) {
+        emitChunk(start+1u, begin, end, words[scratch+chunk]);
+    }
+}

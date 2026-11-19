@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "mv_predict_math.glsl"
+layout(local_size_x = 64) in;
+
+struct Fixture {
+    ivec4 neighbors;
+    ivec2 motion[4];
+    ivec2 leftDelta, topDelta;
+    ivec2 prediction, pskip, contexts;
+    int reference, list;
+};
+layout(std430, binding = 0) buffer Corpus { Fixture fixtures[]; };
+
+void main() {
+    uint f = gl_GlobalInvocationID.x;
+    if (f >= fixtures.length()) return;
+    ivec4 refs = fixtures[f].neighbors;
+    ivec2 a = fixtures[f].motion[0], b = fixtures[f].motion[1];
+    ivec2 c = fixtures[f].motion[2], d = fixtures[f].motion[3];
+    fixtures[f].prediction = predictMotion16(fixtures[f].reference, refs, a, b, c, d);
+    fixtures[f].pskip = predictPSkip(refs, a, b, c, d);
+    fixtures[f].contexts = motionDeltaContexts(fixtures[f].leftDelta, fixtures[f].topDelta);
+}

@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Translated from common/dct.c. Copyright (C) 2003-2024 x264 project.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 64) in;
+
+#include "zigzag4_order.glsl"
+
+#include "zigzag8_order.glsl"
+
+struct Block {
+    int side, field, acOnly;
+    int coefficient[64];
+    uint source[64], destination[64];
+    int scan[64], residual[64], interleaved[64];
+    uint nonzeroContext[10];
+    int dc, nonzero;
+};
+layout(std430, binding = 0) buffer Corpus { Block blocks[]; };
+
+void main() {
+    uint block = gl_GlobalInvocationID.x;
+    if (block >= blocks.length()) return;
+
+    int side = blocks[block].side;
+    bool field = blocks[block].field != 0;
+    int nonzero = 0;
+    for (int i = 0; i < side*side; ++i) {
+        // x264 stores coefficients with the horizontal frequency first.
+        int index = side == 4 ? (field ? scan4field[i] : scan4frame[i])
+                              : (field ? scan8field[i] : scan8frame[i]);
+        blocks[block].scan[i] = blocks[block].coefficient[index];
+        // Lossless subtraction scans pixels in the equivalent spatial order.
+        int pixel = (index % side) * side + index / side;
+        int delta = int(blocks[block].source[pixel]) - int(blocks[block].destination[pixel]);
+        if (i == 0 && blocks[block].acOnly != 0) {
+            blocks[block].dc = delta;
+            delta = 0;
+        }
+        blocks[block].residual[i] = delta;
+        nonzero |= delta;
+    }
+    for (int i = 0; i < side*side; ++i)
+        blocks[block].destination[i] = blocks[block].source[i];
+    blocks[block].nonzero = int(nonzero != 0);
+
+    if (side == 8) {
+        for (int group = 0; group < 4; ++group) {
+            int nonzeroGroup = 0;
+            for (int i = 0; i < 16; ++i) {
+                int level = blocks[block].scan[4*i+group];
+                blocks[block].interleaved[16*group+i] = level;
+                nonzeroGroup |= level;
+            }
+            blocks[block].nonzeroContext[(group & 1) + (group >> 1) * 8] = uint(nonzeroGroup != 0);
+        }
+    }
+}

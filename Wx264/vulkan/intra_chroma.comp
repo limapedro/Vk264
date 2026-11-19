@@ -1,0 +1,258 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Translated from encoder/macroblock.c. Copyright (C) 2003-2024 x264 project.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "dct4x4_math.glsl"
+#include "zigzag4_order.glsl"
+#include "quant_level.glsl"
+#include "chroma_hadamard.glsl"
+#include "chroma_optimize_math.glsl"
+#include "decimate4_table.glsl"
+layout(local_size_x = 64) in;
+const int stride = 32, origin = stride+8;
+const int dcScan420[4] = int[4](0,2,1,3);
+const int dcScan422[8] = int[8](0,2,1,4,6,3,5,7);
+const int losslessDc422[8] = int[8](0,2,1,5,3,6,4,7);
+#include "intra_chroma_fixture.glsl"
+#ifdef RESIDUAL_FRAME
+layout(std430, binding = 3) buffer Corpus { ChromaFixture fixtures[]; };
+#else
+layout(std430, binding = 0) buffer Corpus { ChromaFixture fixtures[]; };
+#endif
+#include "predict_intra_math.glsl"
+#include "macroblock4_math.glsl"
+
+void hadamard(int dc[8], bool chroma422, out int result[8]) {
+    if (chroma422) chromaHadamard2x4(dc, result);
+    else {
+        ivec4 transformed = chromaHadamard2x2(ivec4(dc[0],dc[1],dc[2],dc[3]));
+        for (int i = 0; i < 4; ++i) result[i] = transformed[i];
+    }
+}
+
+void predictChromaLossless(uint f, int height, int mode) {
+    const int horizontal = 1, vertical = 2;
+    if (mode != horizontal && mode != vertical) {
+        predictIntra(f, 8, height, mode);
+        return;
+    }
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < 8; ++x) {
+            int pos = origin+y*stride+x;
+            uint predicted;
+            if (mode == vertical)
+                predicted = y == 0 ? fixtures[f].pixels[origin-stride+x] : fixtures[f].source[(y-1)*8+x];
+            else
+                predicted = x == 0 ? fixtures[f].pixels[pos-1] : fixtures[f].source[y*8+x-1];
+            fixtures[f].pixels[pos] = predicted;
+        }
+}
+
+void encodeLossless(uint f, int count, bool field) {
+    int acMask = 0, dcNonzero = 0;
+    for (int block = 0; block < count; ++block) {
+        int x = 4*(block%2), y = 4*(block/2);
+        int source = y*8+x;
+        int prediction = origin+y*stride+x;
+        int dc = int(fixtures[f].source[source])-int(fixtures[f].pixels[prediction]);
+        fixtures[f].dcCoefficients[count == 8 ? losslessDc422[block] : block] = dc;
+        dcNonzero |= dc;
+        fixtures[f].ac[block][0] = 0;
+        int ac = 0;
+        for (int i = 1; i < 16; ++i) {
+            int scan = field ? scan4field[i] : scan4frame[i];
+            int dx = scan/4, dy = scan%4;
+            int delta = int(fixtures[f].source[source+dy*8+dx])
+                       -int(fixtures[f].pixels[prediction+dy*stride+dx]);
+            fixtures[f].ac[block][i] = delta;
+            ac |= delta;
+        }
+        acMask |= int(ac != 0) << block;
+        for (int dy = 0; dy < 4; ++dy)
+            for (int dx = 0; dx < 4; ++dx)
+                fixtures[f].pixels[prediction+dy*stride+dx] = fixtures[f].source[source+dy*8+dx];
+    }
+    fixtures[f].dcNonzero = int(dcNonzero != 0);
+    fixtures[f].acMask = acMask;
+    fixtures[f].cbp = acMask != 0 ? 2 : int(dcNonzero != 0);
+}
+
+int residualAt(uint f, int x, int y) {
+    return int(fixtures[f].source[y*8+x])-int(fixtures[f].pixels[origin+y*stride+x]);
+}
+
+int chromaVariance(uint f, int height, out int squared) {
+    int sum = 0;
+    squared = 0;
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < 8; ++x) {
+            int diff = residualAt(f, x, y);
+            sum += diff;
+            squared += diff*diff;
+        }
+    return squared-((sum*sum) >> (height == 16 ? 7 : 6));
+}
+
+int decimateAc(uint f, int block) {
+    int index = 15, score = 0;
+    while (index > 0 && fixtures[f].ac[block][index] == 0) --index;
+    while (index > 0) {
+        if (abs(fixtures[f].ac[block][index--]) > 1) return 9;
+        int run = 0;
+        while (index > 0 && fixtures[f].ac[block][index] == 0) {
+            --index;
+            ++run;
+        }
+        score += decimateTable4[run];
+    }
+    return score;
+}
+
+bool encodeChromaDc(uint f, int count, bool optimize, inout int dc[8]) {
+    bool chroma422 = count == 8;
+    int levels[8];
+    hadamard(dc, chroma422, levels);
+    bool nonzero = false;
+    for (int i = 0; i < count; ++i) {
+        levels[i] = quantLevel(shortValue(levels[i]), fixtures[f].dcMultiplier >> 1, fixtures[f].dcBias << 1);
+        nonzero = nonzero || levels[i] != 0;
+    }
+    int dcQp = fixtures[f].qp + (chroma422 ? 3 : 0);
+    int scale = fixtures[f].dcDequant << (dcQp/6);
+    if (nonzero && optimize && scale <= 2048)
+        nonzero = optimizeChromaDc(levels, scale, chroma422) != 0;
+    if (nonzero) {
+        for (int i = 0; i < count; ++i)
+            fixtures[f].dcCoefficients[i] = levels[chroma422 ? dcScan422[i] : dcScan420[i]];
+        hadamard(levels, chroma422, dc);
+        for (int i = 0; i < count; ++i)
+            dc[i] = shortValue(chroma422 ? (dc[i]*scale+32) >> 6 : (dc[i]*scale) >> 5);
+    }
+    return nonzero;
+}
+
+void addChromaDc(uint f, int block, int dc) {
+    int pixels = origin+4*((block/2)*stride+block%2);
+    int delta = (dc+32) >> 6;
+    for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x) {
+            int pos = pixels+y*stride+x;
+            fixtures[f].pixels[pos] = uint(clamp(int(fixtures[f].pixels[pos])+delta, 0, 255));
+        }
+}
+
+void encodeEarlyChroma(uint f, int count, int squared, int threshold) {
+    fixtures[f].dcNonzero = 0;
+    fixtures[f].acMask = 0;
+    fixtures[f].cbp = 0;
+    if (squared <= threshold) return;
+    int dc[8];
+    for (int block = 0; block < count; ++block) {
+        int sum = 0, px = 4*(block%2), py = 4*(block/2);
+        for (int y = 0; y < 4; ++y)
+            for (int x = 0; x < 4; ++x)
+                sum += residualAt(f, px+x, py+y);
+        dc[block] = sum;
+    }
+    if (!encodeChromaDc(f, count, true, dc)) return;
+    fixtures[f].dcNonzero = 1;
+    fixtures[f].cbp = 1;
+    for (int block = 0; block < count; ++block)
+        addChromaDc(f, block, dc[block]);
+}
+
+void encodeChroma(uint f) {
+    bool chroma422 = fixtures[f].chroma422 != 0;
+    int count = chroma422 ? 8 : 4;
+    bool field = fixtures[f].field != 0;
+    bool intra = fixtures[f].mode >= 0;
+    if (fixtures[f].lossless != 0) {
+        if (intra) predictChromaLossless(f, count*2, fixtures[f].mode);
+        encodeLossless(f, count, field);
+        return;
+    }
+    if (intra) predictIntra(f, 8, count*2, fixtures[f].mode);
+    int dc[8], restored[8][16], acMask = 0;
+    int qp = fixtures[f].qp;
+    bool denoise = fixtures[f].denoise != 0;
+    int score = !intra && fixtures[f].decimate != 0 ? 0 : 7;
+    for (int block = 0; block < count; ++block) {
+        int px = 4*(block%2), py = 4*(block/2);
+        int pixels = origin+py*stride+px;
+        ivec4 rows[4];
+        for (int y = 0; y < 4; ++y) {
+            ivec4 difference;
+            for (int x = 0; x < 4; ++x)
+                difference[x] = int(fixtures[f].source[(py+y)*8+px+x])-int(fixtures[f].pixels[pixels+y*stride+x]);
+            ivec4 row = forwardPass(difference);
+            for (int x = 0; x < 4; ++x) rows[x][y] = row[x];
+        }
+        int levels[16];
+        bool nonzero = false;
+        for (int x = 0; x < 4; ++x) {
+            ivec4 column = forwardPass(rows[x]);
+            for (int y = 0; y < 4; ++y) {
+                int index = 4*x+y;
+                int value = column[y];
+                if (denoise) {
+                    int magnitude = abs(value);
+                    fixtures[f].residualSum[index] += uint(magnitude);
+                    int filtered = max(magnitude-int(fixtures[f].noiseOffset[index]), 0);
+                    value = value < 0 ? -filtered : filtered;
+                }
+                if (index == 0) {
+                    dc[block] = value;
+                    value = 0;
+                }
+                int level = quantLevel(value, fixtures[f].multiplier[index], fixtures[f].bias[index]);
+                levels[index] = level;
+                nonzero = nonzero || level != 0;
+                restored[block][index] = dequantize(level, fixtures[f].dequant[index], qp/6-4);
+            }
+        }
+        if (nonzero) {
+            acMask |= 1 << block;
+            for (int i = 0; i < 16; ++i) fixtures[f].ac[block][i] = levels[field ? scan4field[i] : scan4frame[i]];
+            if (score < 7) score += decimateAc(f, block);
+        }
+    }
+    if (score < 7) acMask = 0;
+    bool dcNonzero = encodeChromaDc(f, count, acMask == 0, dc);
+    fixtures[f].dcNonzero = int(dcNonzero);
+    fixtures[f].acMask = acMask;
+    fixtures[f].cbp = acMask != 0 ? 2 : int(dcNonzero);
+    for (int b = 0; b < count && (dcNonzero || acMask != 0); ++b) {
+        int pixels = origin+4*((b/2)*stride+b%2);
+        if (acMask != 0) {
+            if (dcNonzero) restored[b][0] = dc[b];
+            reconstruct(f, pixels, restored[b]);
+        } else addChromaDc(f, b, dc[b]);
+    }
+}
+
+void main() {
+    // One invocation owns both planes because the variance gate reads them
+    // together before either prediction is modified.
+    uint f = 2*gl_GlobalInvocationID.x;
+    if (f+1 >= fixtures.length()) return;
+#ifdef RESIDUAL_FRAME
+    if (fixtures[f].mode == -2) return;
+#endif
+    if (fixtures[f].mode < 0 && fixtures[f].decimate != 0 &&
+        fixtures[f].qp >= 18 && fixtures[f].denoise == 0) {
+        bool chroma422 = fixtures[f].chroma422 != 0;
+        int height = chroma422 ? 16 : 8;
+        int shift = chroma422 ? 5 : 6;
+        int threshold = (fixtures[f].lambda2+(1 << (shift-1))) >> shift;
+        int squaredU, squaredV;
+        int varianceU = chromaVariance(f, height, squaredU);
+        int varianceV = chromaVariance(f+1, height, squaredV);
+        if (varianceU+varianceV < 4*threshold) {
+            encodeEarlyChroma(f, height/2, squaredU, threshold);
+            encodeEarlyChroma(f+1, height/2, squaredV, threshold);
+            return;
+        }
+    }
+    encodeChroma(f);
+    encodeChroma(f+1);
+}

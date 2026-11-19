@@ -1,0 +1,133 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Scalar 8x8 inter transform path from x264 encoder/macroblock.c.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "dct8x8_math.glsl"
+#include "zigzag8_order.glsl"
+#include "decimate8_table.glsl"
+#include "quant_level.glsl"
+layout(local_size_x = 64) in;
+
+const int stride = 32, origin = stride+8;
+#include "inter8x8_fixture.glsl"
+#ifdef RESIDUAL_FRAME
+layout(std430, binding = 2) buffer Corpus { Luma8Fixture fixtures[]; };
+#else
+layout(std430, binding = 0) buffer Corpus { Luma8Fixture fixtures[]; };
+#endif
+
+int score(uint f, int block) {
+    int index = 63, total = 0;
+    while (index >= 0 && fixtures[f].coefficients[block][index] == 0) --index;
+    while (index >= 0) {
+        if (abs(fixtures[f].coefficients[block][index--]) > 1) return 9;
+        int run = 0;
+        while (index >= 0 && fixtures[f].coefficients[block][index] == 0) {
+            --index;
+            ++run;
+        }
+        total += decimateTable8[run];
+    }
+    return total;
+}
+
+int quantizeBlock(uint f, int block, bool field, bool denoise, out int levels[64]) {
+    int tmp[64], values[8], result[8];
+    int bx = 8*(block%2), by = 8*(block/2);
+    for (int x = 0; x < 8; ++x) {
+        for (int y = 0; y < 8; ++y) {
+            int p = origin+(by+y)*stride+bx+x;
+            values[y] = int(fixtures[f].source[(by+y)*16+bx+x])-int(fixtures[f].pixels[p]);
+        }
+        forwardPass(values, result);
+        for (int y = 0; y < 8; ++y) tmp[8*y+x] = result[y];
+    }
+    bool nonzero = false;
+    for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 8; ++x) values[x] = tmp[8*y+x];
+        forwardPass(values, result);
+        for (int x = 0; x < 8; ++x) {
+            int i = 8*x+y, value = result[x];
+            if (denoise) {
+                int magnitude = abs(value);
+                fixtures[f].residualSum[i] += uint(magnitude);
+                int filtered = max(magnitude-int(fixtures[f].noiseOffset[i]), 0);
+                value = value < 0 ? -filtered : filtered;
+            }
+            int level = quantLevel(value, fixtures[f].multiplier[i], fixtures[f].bias[i]);
+            levels[i] = level;
+            nonzero = nonzero || level != 0;
+        }
+    }
+    if (!nonzero) return 0;
+    for (int i = 0; i < 64; ++i)
+        fixtures[f].coefficients[block][i] = levels[field ? scan8field[i] : scan8frame[i]];
+    return fixtures[f].decimate != 0 ? score(f, block) : 4;
+}
+
+void reconstructBlock(uint f, int block, int cbp, int levels[64]) {
+    int x4 = 2*(block%2), y4 = 2*(block/2);
+    bool coded = (cbp & (1 << block)) != 0;
+    for (int y = 0; y < 2; ++y)
+        for (int x = 0; x < 2; ++x)
+            fixtures[f].nonzero[12+8*(y4+y)+x4+x] = uint(coded);
+    if (!coded) return;
+    int tmp[64], values[8], result[8], shift = fixtures[f].qp/6-6;
+    for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 8; ++x) {
+            int i = 8*x+y, product = levels[i]*fixtures[f].dequant[i];
+            values[x] = signed16(shift >= 0 ? product*(1 << shift) :
+                                 (product+(1 << (-shift-1))) >> -shift);
+        }
+        if (y == 0) values[0] = signed16(values[0]+32);
+        inversePass(values, result);
+        for (int x = 0; x < 8; ++x) tmp[8*x+y] = signed16(result[x]);
+    }
+    for (int x = 0; x < 8; ++x) {
+        for (int y = 0; y < 8; ++y) values[y] = tmp[8*x+y];
+        inversePass(values, result);
+        for (int y = 0; y < 8; ++y) {
+            int p = origin+(4*y4+y)*stride+4*x4+x;
+            fixtures[f].pixels[p] = uint(clamp(int(fixtures[f].pixels[p])+(result[y] >> 6), 0, 255));
+        }
+    }
+}
+
+#ifdef RESIDUAL_FRAME
+shared int blockScores[64];
+void main() {
+    uint f = gl_GlobalInvocationID.x/4u;
+    int lane = int(gl_LocalInvocationIndex), block = lane&3;
+    bool valid = f < fixtures.length() && fixtures[f].field >= 0;
+    int levels[64];
+    // Frame fixtures use scalar quantization, progressive scan and no denoising.
+    blockScores[lane] = valid ? quantizeBlock(f, block, false, false, levels) : 0;
+    barrier();
+    if (!valid) return;
+    int first = lane-block, cbp = 0, totalScore = 0;
+    for (int i = 0; i < 4; ++i) {
+        int value = blockScores[first+i];
+        totalScore += value;
+        if (value >= 4) cbp |= 1 << i;
+    }
+    if (fixtures[f].decimate != 0 && totalScore < 6) cbp = 0;
+    if (block == 0) fixtures[f].cbp |= cbp;
+    reconstructBlock(f, block, cbp, levels);
+}
+#else
+void main() {
+    uint f = gl_GlobalInvocationID.x;
+    if (f >= fixtures.length()) return;
+    bool field = fixtures[f].field != 0, denoise = fixtures[f].denoise != 0;
+    if (denoise) fixtures[f].noiseCount += 4u;
+    int levels[4][64], cbp = 0, totalScore = 0;
+    for (int block = 0; block < 4; ++block) {
+        int value = quantizeBlock(f, block, field, denoise, levels[block]);
+        totalScore += value;
+        if (value >= 4) cbp |= 1 << block;
+    }
+    if (fixtures[f].decimate != 0 && totalScore < 6) cbp = 0;
+    fixtures[f].cbp |= cbp;
+    for (int block = 0; block < 4; ++block) reconstructBlock(f, block, cbp, levels[block]);
+}
+#endif

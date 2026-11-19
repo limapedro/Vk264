@@ -1,0 +1,34 @@
+coefficient_pack_and_entropy calls=120 host_ms=0.0328
+entropy_and_bitstream_pack calls=120 host_ms=7779.45
+nal_pack_and_output calls=120 host_ms=22.2061
+raw_input calls=120 host_ms=311.563
+resident_cavlc_idr_frame calls=1 host_ms=4160.13
+resident_cavlc_p_frame calls=119 host_ms=3276.41
+resident_staging_input calls=120 host_ms=32.6194
+nal.spv calls=1 uploaded_MiB=0.000526428 readback_MiB=0.000526428 setup_ms=15.6505 upload_ms=0.0004 dispatch_ms=0.3131 gpu_ms=0.008768 readback_ms=0.0032
+parameters.spv calls=1 uploaded_MiB=0.0146637 readback_MiB=0.0146637 setup_ms=2504 upload_ms=0.0074 dispatch_ms=0.795 gpu_ms=0.041856 readback_ms=0.0029
+rate_control.spv calls=120 uploaded_MiB=0.00366211 readback_MiB=0.00366211 setup_ms=9.4151 upload_ms=0.0249 dispatch_ms=25.3003 gpu_ms=0.523008 readback_ms=0.3683
+slice_header.spv calls=120 uploaded_MiB=0.647278 readback_MiB=0.647278 setup_ms=1037.39 upload_ms=0.0478 dispatch_ms=17.3207 gpu_ms=2.28598 readback_ms=0.2774
+resident_cavlc_idr_frame calls=1 uploaded_MiB=2.99464 readback_MiB=0.0897951 setup_ms=0 upload_ms=0 dispatch_ms=138.47 gpu_ms=138.021 readback_ms=0
+resident_cavlc_p_frame calls=119 uploaded_MiB=356.362 readback_MiB=1.33891 setup_ms=0 upload_ms=0 dispatch_ms=3199.11 gpu_ms=3173.04 readback_ms=0
+resident_idr_chroma calls=187 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=25.9495 readback_ms=0
+resident_idr_deblock calls=1 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=2.76835 readback_ms=0
+resident_idr_download calls=1 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=0.0056 readback_ms=0
+resident_idr_entropy calls=1 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=2.08205 readback_ms=0
+resident_idr_join calls=187 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=12.8738 readback_ms=0
+resident_idr_luma calls=187 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=54.464 readback_ms=0
+resident_idr_packet calls=1 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=9.15862 readback_ms=0
+resident_idr_prepare calls=187 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=30.4402 readback_ms=0
+resident_idr_upload calls=1 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=0.279264 readback_ms=0
+resident_p_chroma calls=1904 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=121.415 readback_ms=0
+resident_p_deblock calls=119 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=234.086 readback_ms=0
+resident_p_download calls=119 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=0.642816 readback_ms=0
+resident_p_entropy calls=119 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=197.969 readback_ms=0
+resident_p_join calls=1904 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=155.064 readback_ms=0
+resident_p_luma4 calls=1904 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=222.064 readback_ms=0
+resident_p_luma8 calls=1904 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=224.811 readback_ms=0
+resident_p_motion calls=119 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=1452.04 readback_ms=0
+resident_p_packet calls=119 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=115.947 readback_ms=0
+resident_p_prefilter calls=119 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=11.2828 readback_ms=0
+resident_p_prepare calls=1904 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=404.695 readback_ms=0
+resident_p_upload calls=119 uploaded_MiB=0 readback_MiB=0 setup_ms=0 upload_ms=0 dispatch_ms=0 gpu_ms=33.0165 readback_ms=0
