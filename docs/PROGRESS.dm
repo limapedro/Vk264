@@ -7,6 +7,85 @@ Vk264-Vulkan port: `Vk264/vulkan/*.comp`, shader SPIR-V shader pipelines registe
 fixture tests in `Vk264/vulkan/dct_parity.cpp` (the `verifyXxx` functions and the
 `x264_*_parity` CTest registrations).
 
+## CABAC slice-tail divergence at 64x64 (issue #8 — Ram, 2026-11-19) — characterized, NOT fixed
+
+**Result of this session: the issue's premise is not supported by the evidence.
+This is not a CABAC flush-constant/frame-index bug. No code change is made; the
+fix is deliberately not attempted.**
+
+### Reproduction (actual command output, current branch)
+
+`python harness/parity_check.py --preset fast --pattern flat --width 64 --height 64 --frames 1 --gop 1`:
+
+```
+first mismatch at offset 69 in SEI-stripped stream
+vk264  [... d6 94 bb e1]
+x264   [... d6 94 d1 61]
+```
+
+Note the harness's `nal_type_at()` label is unreliable: it only matches 4-byte
+start codes, so it calls this byte a "PPS" NAL; the actual slice starts with the
+3-byte code `00 00 01 65`. A correct NAL dump shows SPS and PPS are byte-identical
+and the **only** differences are the last two slice bytes.
+
+### Evidence that the flush algorithm is correct
+
+- `Vk264/vulkan/cabac.comp::encodeFlush` is a line-for-line translation of
+  `references/x264-master/common/cabac.c::x264_cabac_encode_flush` (same
+  `low += range-2`, `|=1`, `<<9`, two `putByte`, `low <<= -queue`,
+  `|= (0x35a4e4f5 >> (frame&31) & 1) << 10`, `queue=0`, `putByte`, outstanding
+  `0xff` bytes). `putByte`/`renormalize` likewise match `cabac_putbyte` and
+  `cabac_encode_renorm`.
+- The existing `x264_cabac_parity` fixture compares GPU and x264-C CABAC streams
+  with `input.frame = i % 97` and `finish` set for ~2/3 of ~9856 cases; this
+  covers every `(frame & 31)` value with flush, and passes. So acceptance
+  criterion "flush bytes match x264 for frame indices 0..31" is already met.
+- 8-frame dump (`--frames 8 --gop 1`, flat 64x64) shows the **final-byte LSB**
+  follows `0x35a4e4f5` bit `(frame&31)` identically in both encoders
+  (`e1,e0,e1,e0,e1,e1,e1,e1` vs `61,60,61,60,61,61,61,61`): only bit 7 of the
+  final byte differs, constant across all frames. A wrong frame index would
+  change the LSB, so that hypothesis is ruled out (and matches the previous
+  reverted speculative attempt).
+
+### Where the divergence actually is
+
+Size sweep (`fast`, flat, 1 frame, gop=1) — `mb` is the macroblock count:
+
+```
+ 16x16  mb= 1 exact=True   vk_tail=58 0f 72 ff 21 81      x264_tail=58 0f 72 ff 21 81
+ 32x16  mb= 2 exact=False  vk_tail=0f 72 ff 1f b8 19      x264_tail=0f 72 ff 1f b8 79
+ 16x32  mb= 2 exact=False  vk_tail=0f 72 ff 1d 43 c9      x264_tail=0f 72 ff 1d 44 79
+ 32x32  mb= 4 exact=False  vk_tail=1f b8 21 a5 c5 81      x264_tail=1f b8 21 a5 df 81
+ 64x16  mb= 4 exact=False  vk_tail=1f b8 58 ac 99 91      x264_tail=1f b8 58 ac 9c f1
+ 64x64  mb=16 exact=False  vk_tail=8f 82 d6 94 bb e1      x264_tail=8f 82 d6 94 d1 61
+```
+
+- 1 macroblock is byte-exact; divergence begins at 2 MBs, i.e. as soon as a
+  left/top neighbour exists. It affects only the final 1–2 bytes; reconstruction
+  is unchanged.
+- **CAVLC is byte-exact at the same sizes** (`ultrafast` flat 64x64 and 32x16
+  both `BYTE-EXACT MATCH`). CAVLC and CABAC encode the same MB modes and residual
+  levels, so the analysis/decisions are identical; the divergence is confined to
+  CABAC-specific bin/context emission for neighbour-dependent syntax.
+- Diagnostic experiment (not committed): adding an extra `emitTerminal()` at
+  end of slice made things worse — it broke the previously exact 16x16 case and
+  shifted 64x64 from `bb e1` to `bb a1`. So this is not a missing trailing
+  terminal bin. `cabac.comp` was restored to its original state.
+
+### Honest limitation and request
+
+The remaining tail-byte delta is a CABAC neighbour-context/bin difference that
+manifests only in the arithmetic coder's trailing bytes; it is **not** the flush
+constant, the frame index, a missing terminal, or a mode decision. Pinpointing
+the exact differing bin requires a bin-level decoder comparison that is not yet
+available in this folder (the old `build/cabac_valid.py` was never committed).
+Subaru: please decide whether to (a) keep #8 open and fund the bin-level
+debugging, or (b) reclassify it away from "CABAC flush byte" since that premise
+is disproven. No parity is claimed for 64x64 fast here.
+
+Regression gates on this branch: `ctest` 47/47, `ultrafast` and `fast` flat 16x16
+gop=1 both `BYTE-EXACT MATCH`.
+
 ## Multi-reference groundwork (issue #5 — Ram, 2026-11-19)
 
 Issue #5 is `blocked`: the resident CABAC path has no per-MB `ref_idx` syntax
