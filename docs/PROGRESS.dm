@@ -328,6 +328,60 @@ difference (recon differs by 1-2 in chroma only), not a luma mode issue.
 
 `ctest` → 46/46 passed.
 
+### B-frames groundwork (issue #4, Rem) — header/POC scaffolding landed
+
+Scoped, gated first sub-PR for #4. Derived from `references/x264-master/encoder/set.c`
+(`x264_sps_init` lines 147-180, `x264_pps_init` lines 479-497) and `encoder/encoder.c`
+(lines 239-244, 2639-2667, 3512-3513). **No shader changed** — the existing
+`parameters.comp` / `slice_header.comp` already implement POC type 0; only the
+host-side parameter construction was corrected.
+
+Changes in `dct_parity.cpp` (all gated by `bFrameHeaders` = real clip &&
+`gop > 1` && preset has `bframes > 0` && CABAC):
+- SPS: `pic_order_cnt_type=0`, x264's `log2_max_poc_lsb` loop, DPB sizing
+  (`num_ref_frames = MAX4(ref_budget, 1+reorder, pyramid?4:1, 0)` clamped to 16,
+  `max_num_reorder_frames=2`, `max_dec_frame_buffering` equal to refs,
+  `log2_max_frame_num` loop).
+- PPS: `b_pic_order=0`, `num_ref_idx_l0_default_active = referenceBudget`,
+  `weighted_pred=1`, `weighted_bipred=2` (x264-fast's weightp mapping).
+- Slice header: `pic_order_cnt_lsb = 2*frame_num`, P-slices override active refs
+  down to 1, and non-IDR reference NALs use `nal_ref_idc=2` (x264
+  `NAL_PRIORITY_HIGH`) with a 4-byte Annex B start code; `nal.comp`-equivalent
+  packing now honours the header's `nalRef`.
+- Every byte-exact path is untouched: gop==1 (including the byte-exact fast
+  case), ultrafast/CAVLC, all synthetic fixtures and presets with bframes==0.
+
+Evidence (2026-11-19):
+```
+ctest --test-dir build -C Release --output-on-failure
+  100% tests passed, 0 tests failed out of 46  (14.32 sec)
+
+parity_check.py --preset fast --gop 1 --frames 1 --pattern flat --width 16 --height 16
+  BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+parity_check.py --preset ultrafast --gop 1 --frames 1 --pattern flat --width 16 --height 16
+  BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+
+parity_check.py --preset fast --gop 8 --frames 8 --pattern flat --width 16 --height 16
+  BEFORE: first mismatch at offset 9 in SPS
+  AFTER:  first mismatch at offset 67 in P slice
+          (SPS, PPS, IDR slice and all P-slice syntax up to pic_order_cnt_lsb
+           are now byte-identical; the remaining delta is the POC value itself)
+
+ffmpeg -i vk264-fast.h264 -f null -   -> exit 0 (stream decodes cleanly)
+ffmpeg -bsf:v trace_headers on vk264 stream:
+  pic_order_cnt_type=0, log2_max_pic_order_cnt_lsb_minus4=2,
+  max_num_ref_frames=4, max_num_reorder_frames=2, max_dec_frame_buffering=4,
+  num_ref_idx_l0_default_active_minus1=1, weighted_pred_flag=1,
+  weighted_bipred_idc=2  -- identical to x264-fast ground truth.
+```
+
+Honest limitations: this is header/POC scaffolding only. Our encoder still emits
+`I P P P ...` (no B-slices, no DPB reordering, no direct/bidir prediction), so
+the first P-frame POC is 2 whereas x264-fast's is 8 (three B-frames at display
+indices 1-3). Full `I B B P` parity remains **blocked** on multi-reference (#5)
+and lookahead; `medium`+ is still rejected at the CLI. No byte-exact claim is
+made for any `gop > 1` preset.
+
 ### superfast / veryfast / faster — characterized, not yet byte-exact
 
 All three presets have `subme < 6` (1/2/4) and `trellis=0`, so x264 sets
