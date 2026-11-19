@@ -28,6 +28,10 @@ const int macroblockSkip = 12, mvdComponent = 13, inter16Macroblock = 14;
 const int wholeFrame = 15;
 // x264 cabac.c::cabac_ref_p: reference-index bins (contexts 54..65) for P slices.
 const int refIdx = 16;
+// Fixture-only B macroblock type bins (issue #4 groundwork); never emitted by
+// the resident encode path, which is still P-only. Kept distinct from refIdx
+// so the union with the multi-ref fixture (#5) preserves both operations.
+const int mbTypeB = 17;
 struct Operation {
     int kind, first, second;
 };
@@ -292,6 +296,7 @@ void encodeOperations(uint fixture) {
                 break;
             case inter16Macroblock: encodeInter16Macroblock(int(fixture), op.first, op.second); break;
             case refIdx: encodeRefIdx(int(fixture), op.first, op.second); break;
+            case mbTypeB: encodeMbTypeB(int(fixture), op.first); break;
             case wholeFrame: {
                 int width = (op.second >> 16) & 65535, count = op.second & 65535;
                 for (int mb = 0; mb < count; ++mb) {

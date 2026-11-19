@@ -205,6 +205,47 @@ Evidence:
   before PPS active-refs is raised would desync a 1-ref stream). gop>1 still
   diverges from default x264 (B-frames/POC); the N-slot GPU motion ABI and
   per-MB older-reference selection remain open (sub-PRs C/D in the design doc).
+## B-frame sub-PR: CABAC B macroblock-type header fixture (issue #4, Rem)
+
+Sub-PR `rem/4-bslice-cabac-fixture`, independent of the `rem/4-bframe-headers-poc`
+header/POC sub-PR. Recovered from the legacy shared checkout and completed here.
+
+- **Shader** (`cabac_syntax.glsl`, `cabac.comp`): new `encodeMbTypeB()` transcribes
+  `encoder/cabac.c::cabac_mb_header_b` (lines 499-573) mb_type bins only —
+  B_DIRECT (ctx 27+ctx), the 9 B_16x8/8x16/16x16 modes via the `i_mb_bits[9*3]`
+  table, and the B_8x8 header prefix. Ref indices, MVDs and B_8x8 subpartitions
+  are out of scope (need multi-ref #5 + DPB). New fixture-only op `mbTypeB=17`,
+  kept distinct from Ram's merged `refIdx=16` (#5) so both operations survive
+  the union; the resident encode path is unchanged (still P-only). Rebased onto
+  main@351e8c0 after Subaru's review; Ram's `encodeRefIdx`, `verifyCabacRefIdx`
+  and `x264_cabac_refidx_parity` CTest are all preserved.
+- **Fixture** (`dct_parity.cpp::verifyCabac`): +90 cases = B_DIRECT + 9 modes ×
+  3 partitions × 3 neighbour contexts, cross-checked byte-for-byte (bytes,
+  context states, arithmetic state) against a host transcription of x264's bin
+  sequence with `SLICE_TYPE_B` context init. Total `x264_cabac_parity` cases
+  9856 → 9946.
+- **Bug fixed during recovery**: the in-progress legacy code packed `part` at bit 6,
+  overlapping the 5-bit `type` field (bits 2-6); `part=1` corrupted `type`
+  (B_DIRECT=7 misread as 23 → `mbBits[46]` out of bounds). Moved `part` to
+  bits 7-8 in both host and shader. Diagnosed via fixture 9866 mismatch
+  (ctxFirst=32, byteFirst=1).
+
+Evidence (2026-11-19):
+```
+cmake --build build --config Release                 -> OK
+ctest --test-dir build -C Release --output-on-failure -> 47/47 passed (25.73 s)
+python harness/parity_check.py --preset ultrafast --pattern flat --width 16 --height 16 --frames 1 --gop 1
+  BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+python harness/parity_check.py --preset fast --pattern flat --width 16 --height 16 --frames 1 --gop 1
+  BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+dct_parity cabac build/Vk264/vulkan/cabac.spv
+  9946 CABAC sequences matched x264 bytes, contexts and arithmetic state, ... and 90 B macroblock-type header sequences.
+dct_parity cabac_refidx build/Vk264/vulkan/cabac.spv
+  1536 CABAC ref_idx sequences matched x264 cabac_ref_internal bytes, contexts and arithmetic state.
+```
+
+Limitations: fixture-only; no B-slices emitted in the bitstream, no DPB/reorder.
+Full `I B B P` parity remains blocked on #5 (multi-ref) and lookahead.
 
 ## CAVLC residual byte-exact fixture (issue #7, Rem)
 
@@ -908,7 +949,7 @@ Verified fixture families:
   x264_motion_bidir_parity, x264_motion_compensation_parity, x264_motion_frame_parity
   x264_reference_frame_parity, x264_dct4x4_*_parity, x264_dct8x8_*_parity, x264_quant4x4_parity, x264_quant8x8_parity
   x264_predict_directional_parity, x264_aq_parity
-  x264_cabac_parity (9856 cases), x264_cabac_stream_decode, x264_cabac_raw_decode
+  x264_cabac_parity (9946 cases), x264_cabac_stream_decode, x264_cabac_raw_decode
   x264_nal_parity, x264_bitstream_parity, x264_zigzag_parity
   x264_parameters_parity, x264_slice_header_parity
 
