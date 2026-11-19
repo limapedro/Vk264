@@ -16,9 +16,9 @@ PRESETS = ("fast", "medium", "slow", "veryslow")
 X264_PRESETS = ("ultrafast", "superfast", "veryfast", "faster", *PRESETS[:3],
                 "slower", "veryslow", "placebo")
 VULKAN_PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast")
-ENCODERS = (("wx264", "wx264-vulkan", "wx264-vulkan-cavlc")
-            + tuple(f"wx264-vulkan-{preset}" for preset in VULKAN_PRESETS)
-            + tuple(f"wx264-{preset}" for preset in PRESETS)
+ENCODERS = (("vk264", "vk264-vulkan", "vk264-vulkan-cavlc")
+            + tuple(f"vk264-vulkan-{preset}" for preset in VULKAN_PRESETS)
+            + tuple(f"vk264-{preset}" for preset in PRESETS)
             + tuple(f"x264-{preset}" for preset in X264_PRESETS)
             + tuple(f"nvenc-p{preset}" for preset in range(1, 8)))
 
@@ -84,7 +84,7 @@ def quality(args, stream, directory, name):
 
 def build_command(args, name, stream):
     codec, _, preset = name.partition("-")
-    if codec == "wx264":
+    if codec == "vk264":
         command = [args.encoder, args.input, stream, args.width, args.height, args.frames, args.fps,
                    "--qp", args.qp, "--gop", args.gop, "--bitrate", args.bitrate]
         if preset in ("vulkan", "vulkan-cavlc"):
@@ -94,7 +94,7 @@ def build_command(args, name, stream):
         elif preset.startswith("vulkan-"):
             vulkan_preset = preset[len("vulkan-"):]
             if vulkan_preset not in VULKAN_PRESETS:
-                raise ValueError(f"Unsupported wx264-vulkan preset: {vulkan_preset!r} "
+                raise ValueError(f"Unsupported vk264-vulkan preset: {vulkan_preset!r} "
                                  f"(supported: {', '.join(VULKAN_PRESETS)})")
             command.extend(["--backend", "vulkan", "--preset", vulkan_preset])
         elif preset:
@@ -149,7 +149,7 @@ def packet_stats(args, stream):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--encoder", default=Path("build/Release/wx264.exe"), type=Path)
+    parser.add_argument("--encoder", default=Path("build/Release/vk264.exe"), type=Path)
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path, help="New results directory")
     parser.add_argument("--width", default=1920, type=int)
@@ -158,33 +158,33 @@ def main():
     parser.add_argument("--frames", default=120, type=int)
     parser.add_argument("--bitrate", default=6000, type=int, help="Target in kbit/s")
     parser.add_argument("--gop", type=int, help="GOP length, defaults to two seconds")
-    parser.add_argument("--qp", default=34, type=int, help="Wx264 initial QP")
-    parser.add_argument("--search", type=int, help="Override the Wx264 integer search radius")
-    parser.add_argument("--subpel", type=int, choices=[0, 1], help="Override Wx264 quarter-pel refinement")
-    parser.add_argument("--partitions", type=int, choices=[0, 1], help="Enable experimental Wx264 8x8 inter partitions")
-    parser.add_argument("--p-slice-rows", type=int, choices=[1, 2], help="Override Wx264 P-slice rows in 16x16 mode")
-    parser.add_argument("--satd-candidates", type=int, choices=range(9), help="Override Wx264 full-resolution motion candidates")
-    parser.add_argument("--ref", type=int, choices=range(1, 17), help="Override the Wx264 reference-picture budget")
-    parser.add_argument("--deblock", type=int, choices=[0, 1, 2], help="Wx264 filter: off, within slices, or full frame")
+    parser.add_argument("--qp", default=34, type=int, help="Vk264 initial QP")
+    parser.add_argument("--search", type=int, help="Override the Vk264 integer search radius")
+    parser.add_argument("--subpel", type=int, choices=[0, 1], help="Override Vk264 quarter-pel refinement")
+    parser.add_argument("--partitions", type=int, choices=[0, 1], help="Enable experimental Vk264 8x8 inter partitions")
+    parser.add_argument("--p-slice-rows", type=int, choices=[1, 2], help="Override Vk264 P-slice rows in 16x16 mode")
+    parser.add_argument("--satd-candidates", type=int, choices=range(9), help="Override Vk264 full-resolution motion candidates")
+    parser.add_argument("--ref", type=int, choices=range(1, 17), help="Override the Vk264 reference-picture budget")
+    parser.add_argument("--deblock", type=int, choices=[0, 1, 2], help="Vk264 filter: off, within slices, or full frame")
     parser.add_argument("--flat-intra", type=int, choices=[0, 1], help="Test DC-only P-frame intra on flat dark blocks")
-    parser.add_argument("--aq", type=int, choices=[0, 1], help="Toggle spatial adaptive quantization in Wx264")
+    parser.add_argument("--aq", type=int, choices=[0, 1], help="Toggle spatial adaptive quantization in Vk264")
     parser.add_argument("--runs", default=1, type=int)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--encoders", nargs="+", choices=ENCODERS)
-    selection.add_argument("--presets", nargs="+", choices=PRESETS, help="Pair each selected Wx264 and x264 preset")
+    selection.add_argument("--presets", nargs="+", choices=PRESETS, help="Pair each selected Vk264 and x264 preset")
     parser.add_argument("--vmaf", action="store_true")
     parser.add_argument("--mp4", action=argparse.BooleanOptionalAction, default=True,
                         help="Save playable MP4s (default); --no-mp4 keeps raw .h264 intermediates only")
-    parser.add_argument("--check-recon", action="store_true", help="Run a separate untimed Wx264 decode-back check")
+    parser.add_argument("--check-recon", action="store_true", help="Run a separate untimed Vk264 decode-back check")
     parser.add_argument("--ffmpeg", default="ffmpeg")
     parser.add_argument("--ffprobe", default="ffprobe")
     args = parser.parse_args()
     args.input, args.out, args.encoder = (path.resolve() for path in (args.input, args.out, args.encoder))
     args.gop = args.gop if args.gop is not None else 2 * args.fps
     if args.presets:
-        args.encoders = [f"{codec}-{preset}" for preset in args.presets for codec in ("wx264", "x264")]
+        args.encoders = [f"{codec}-{preset}" for preset in args.presets for codec in ("vk264", "x264")]
     if not args.encoders:
-        args.encoders = ["wx264", "x264-slow", "nvenc-p4", "nvenc-p6"]
+        args.encoders = ["vk264", "x264-slow", "nvenc-p4", "nvenc-p6"]
     if (min(args.width, args.height, args.fps, args.frames, args.runs, args.bitrate, args.gop) <= 0 or
         (args.width | args.height) & 1 or len(set(args.encoders)) != len(args.encoders)):
         parser.error("Use positive counts, even YUV420 dimensions, and unique encoders")
@@ -193,34 +193,34 @@ def main():
     args.out.mkdir(parents=True)
     summary = {"input": str(args.input), "width": args.width, "height": args.height, "frames": args.frames,
                "fps": args.fps, "gop_frames": args.gop, "target_kbps": args.bitrate,
-               "wx264_rate_control": "average-rate feedback", "reference_buffer_kbits": 2 * args.bitrate,
+               "vk264_rate_control": "average-rate feedback", "reference_buffer_kbits": 2 * args.bitrate,
                "results": []}
     for name in args.encoders:
         codec, _, preset = name.partition("-")
-        suffix = ".mp4" if args.mp4 and codec != "wx264" else ".h264"
+        suffix = ".mp4" if args.mp4 and codec != "vk264" else ".h264"
         stream = args.out / f"{name}{suffix}"
         command = build_command(args, name, stream)
         timings, reports = [], []
         for repeat in range(args.runs):
             log = args.out / f"{name}.run{repeat + 1}.log"
             timings.append(run_logged(command, log))
-            if codec == "wx264":
+            if codec == "vk264":
                 reports.append(json.loads(log.read_text().splitlines()[-1]))
         verify_stream(args.ffprobe, stream, args.width, args.height, args.frames)
         recon_verified = False
-        if codec == "wx264" and args.check_recon:
+        if codec == "vk264" and args.check_recon:
             recon, checked_stream = args.out / f"{name}.padded-recon.yuv", args.out / f"{name}.recon-check.h264"
             check_command = build_command(args, name, checked_stream) + ["--recon", recon]
             run_logged(check_command, args.out / f"{name}.recon-check.log")
             if checked_stream.read_bytes() != stream.read_bytes():
                 raise ValueError("Timed and reconstruction-check streams differ")
             check_reconstruction(args.ffmpeg, checked_stream, recon, args.width, args.height, args.frames,
-                                 padded=not name.startswith("wx264-vulkan"))
+                                 padded=not name.startswith("vk264-vulkan"))
             recon_verified = True
             recon.unlink()
             checked_stream.unlink()
         video = stream
-        if args.mp4 and codec == "wx264":
+        if args.mp4 and codec == "vk264":
             # The raw .h264 is only a recon-check intermediate; mux it and
             # drop it so the output directory contains only the playable .mp4.
             video = stream.with_suffix(".mp4")

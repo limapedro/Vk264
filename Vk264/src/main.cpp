@@ -55,7 +55,7 @@ bool samePath(const fs::path& a, const fs::path& b) {
 }
 
 void usage() {
-    std::cerr << "Usage: wx264 input.yuv output.h264 width height frames fps [--preset fast|medium|slow|veryslow]\n"
+    std::cerr << "Usage: vk264 input.yuv output.h264 width height frames fps [--preset fast|medium|slow|veryslow]\n"
               << "             [--qp N] [--bitrate KBPS] [--satd-candidates N] [--ref N]\n"
               << "             [--gop N] [--search N] [--subpel 0|1] [--partitions 0|1] [--deblock 0|1|2]\n"
               << "             [--p-slice-rows 1|2] [--flat-intra 0|1] [--aq 0|1] [--recon padded.yuv]\n"
@@ -63,7 +63,7 @@ void usage() {
               << "             [--backend cavlc|vulkan] (vulkan uses CABAC and its own search configuration)\n"
               << "             [--entropy cabac|cavlc] (Vulkan backend only)\n"
               << "             [--preset NAME] (Vulkan: x264 preset ultrafast..faster)\n"
-              << "       wx264 --list-presets\n";
+              << "       vk264 --list-presets\n";
 }
 }
 
@@ -270,6 +270,6 @@ int main(int argc, char** argv) try {
               << ",\"scan\":" << stageMs[11] / frameCount << ",\"assemble\":" << stageMs[12] / frameCount << "}}\n";
     return 0;
 } catch (const std::exception& error) {
-    std::cerr << "wx264: " << error.what() << '\n';
+    std::cerr << "vk264: " << error.what() << '\n';
     return 1;
 }

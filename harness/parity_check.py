@@ -1,11 +1,11 @@
-"""Byte-parity comparator: wx264 --backend vulkan vs libx264 (harness settings).
+"""Byte-parity comparator: vk264 --backend vulkan vs libx264 (harness settings).
 
 Usage:
   python harness/parity_check.py --input clip.yuv --width 128 --height 64 \
       --frames 40 --preset ultrafast [--out-dir DIR] [--keep]
 
 Encoding for libx264 mirrors harness/benchmark.py (mp4 container with -c copy
-then probe-free Annex B extraction); wx264 writes the raw .h264 directly.
+then probe-free Annex B extraction); vk264 writes the raw .h264 directly.
 Annex B streams are extracted with ffmpeg -c copy and compared byte-for-byte;
 first mismatching offset is reported with context and NAL type.
 
@@ -85,7 +85,7 @@ def main() -> int:
     parser.add_argument("--gop", default=12)
     parser.add_argument("--pattern", default="motion", choices=["flat", "noise", "motion", "flat-grid", "repeat16"])
     parser.add_argument("--out-dir", type=Path, help="Keep artifacts in this directory")
-    parser.add_argument("--wx264", type=Path, default=Path("build/Release/wx264.exe"))
+    parser.add_argument("--vk264", type=Path, default=Path("build/Release/vk264.exe"))
     parser.add_argument("--ffmpeg", default="ffmpeg")
     args = parser.parse_args()
 
@@ -97,10 +97,10 @@ def main() -> int:
     else:
         make_source(source, args.width, args.height, args.frames, args.pattern)
 
-    wx_out = work / f"wx264-{args.preset}.h264"
+    wx_out = work / f"vk264-{args.preset}.h264"
     ref_mp4 = work / f"x264-{args.preset}.mp4"
 
-    run([args.wx264, source, wx_out, args.width, args.height, args.frames, args.fps,
+    run([args.vk264, source, wx_out, args.width, args.height, args.frames, args.fps,
          "--qp", args.qp, "--gop", args.gop, "--backend", "vulkan", "--preset", args.preset])
     ref_cmd = [args.ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
                "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", f"{args.width}x{args.height}",
@@ -117,14 +117,14 @@ def main() -> int:
     wxs, refs = strip_sei(wx), strip_sei(ref)
     mismatch = first_mismatch(wxs, refs)
     print(f"preset={args.preset} pattern={args.pattern}")
-    print(f"wx264 bytes={len(wx)} (SEI {wx_sei})  x264 bytes={len(ref)} (SEI {ref_sei})")
+    print(f"vk264 bytes={len(wx)} (SEI {wx_sei})  x264 bytes={len(ref)} (SEI {ref_sei})")
     print("note: encoder-identity SEI NALs are excluded from the comparison (both streams decode identically either way)")
     if mismatch < 0:
         print("BYTE-EXACT MATCH (ignoring encoder-identity SEI)")
         return 0
     lo = max(0, mismatch - 16)
     print(f"first mismatch at offset {mismatch} in SEI-stripped stream ({nal_type_at(wxs, mismatch)} NAL)")
-    print(f"wx264  [{lo}:{mismatch + 24}] " + wxs[lo:mismatch + 24].hex(" "))
+    print(f"vk264  [{lo}:{mismatch + 24}] " + wxs[lo:mismatch + 24].hex(" "))
     print(f"x264   [{lo}:{mismatch + 24}] " + refs[lo:mismatch + 24].hex(" "))
     return 1
 

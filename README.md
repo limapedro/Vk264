@@ -2,7 +2,7 @@
 
 **A Vulkan compute H.264/AVC encoder ported function-by-function from x264, with byte-exact output as the target.**
 
-`Vk` = Vulkan · `264` = x264. The project started as `Wx264`; this repository is its new home and name.
+`Vk` = Vulkan · `264` = x264. The project started as `Vk264`; this repository is its new home and name.
 
 ## Goal
 
@@ -22,7 +22,7 @@ Development is PR-based: each change (a parity fix, a new shader, a test) lands 
 
 | Path | What it is |
 |---|---|
-| `Wx264/` | The encoder source and the x264→GLSL port. `Wx264/src` is the CLI runner; `Wx264/vulkan` holds the Vulkan shaders (`.comp`), the x264-derived C++ primitives, and the `dct_parity` fixture harness. |
+| `Vk264/` | The encoder source and the x264→GLSL port. `Vk264/src` is the CLI runner; `Vk264/vulkan` holds the Vulkan shaders (`.comp`), the x264-derived C++ primitives, and the `dct_parity` fixture harness. |
 | `x264-vulkan/` | x264 fork used **only as a CPU reference** for parity fixtures and correctness checks. Not shipped. |
 | `references/x264-master/` | Pinned x264 source snapshot used to generate tables and verify functions bottom-up. |
 | `harness/` | Python benchmark and check runner (`benchmark.py`, `check.py`). |
@@ -56,7 +56,7 @@ python harness/parity_check.py --preset superfast --pattern flat --width 16 --he
 A `BYTE-EXACT MATCH` line means the SPS, PPS, slice header, entropy-coded macroblock data and deblocking all match libx264 byte-for-byte. Quality/speed comparison across real clips:
 
 ```powershell
-python harness/benchmark.py --input <clip.yuv> --out <dir> --frames 240 --encoders wx264-vulkan x264-fast --vmaf --check-recon
+python harness/benchmark.py --input <clip.yuv> --out <dir> --frames 240 --encoders vk264-vulkan x264-fast --vmaf --check-recon
 ```
 
 `--check-recon` re-encodes and verifies the GPU reconstruction against an independent FFmpeg decode, byte for byte.
@@ -71,8 +71,8 @@ See [`docs/PROGRESS.dm`](docs/PROGRESS.dm) for the full, evidence-backed state.
 
 ## Speed context
 
-The original Wx264 CAVLC/Vulkan encoder runs at roughly 10–37 fps on 1080p60 (GTX 1660 SUPER), versus ~80–170 fps for x264 `fast`; the CABAC whole-frame bin coder is the main bottleneck. The port work is correctness-first; slice-level CABAC parallelism is the planned speed pass once parity is established.
+The original Vk264 CAVLC/Vulkan encoder runs at roughly 10–37 fps on 1080p60 (GTX 1660 SUPER), versus ~80–170 fps for x264 `fast`; the CABAC whole-frame bin coder is the main bottleneck. The port work is correctness-first; slice-level CABAC parallelism is the planned speed pass once parity is established.
 
 ## License and references
 
-Ported from x264 (GPL-2.0-or-later); see [`references/x264-master`](references/x264-master). Legacy CAVLC/deblocking lookup tables originated from OpenH264 — see `Wx264/src/OPENH264_LICENSE.txt`. [ITU-T H.264](https://www.itu.int/rec/T-REC-H.264-202408-S/en) · [x264](https://www.videolan.org/developers/x264.html) · [OpenH264](https://github.com/cisco/openh264).
+Ported from x264 (GPL-2.0-or-later); see [`references/x264-master`](references/x264-master). Legacy CAVLC/deblocking lookup tables originated from OpenH264 — see `Vk264/src/OPENH264_LICENSE.txt`. [ITU-T H.264](https://www.itu.int/rec/T-REC-H.264-202408-S/en) · [x264](https://www.videolan.org/developers/x264.html) · [OpenH264](https://github.com/cisco/openh264).

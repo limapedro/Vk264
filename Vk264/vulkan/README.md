@@ -126,7 +126,7 @@ after the input path. The following PowerShell example encodes six full
         ForEach-Object { "$build/$_.spv" }
     & "$build/Release/dct_parity.exe" cabac_raw @shaders fortnite-full.h264 fortnite-reconstructed.yuv clips/youtube/fortnite_1080p60_600f.yuv 1920 1080 0 0 1920 1080 60 6
 
-Set `WX264_PROFILE=1` when running the Wx264 Vulkan backend directly
+Set `VK264_PROFILE=1` when running the Vk264 Vulkan backend directly
 to report calls, bytes transferred and timings per shader.
 `gpu_ms` uses queue timestamps where available. `dispatch_ms` also
 includes command recording, submission and waiting. `setup_ms` includes
@@ -145,7 +145,7 @@ with shuffle support, the resident CAVLC path assigns four groups of
 eight lanes to independent motion candidates and resolves ties in
 search order. Other devices use the subgroup or scalar frame shader.
 
-Set `WX264_MOTION_TILE` to `2x1`, `4x1`, `2x2`, or `4x2` to try tiled
+Set `VK264_MOTION_TILE` to `2x1`, `4x1`, `2x2`, or `4x2` to try tiled
 motion search in the resident CAVLC path on devices that support batched
 candidates. Single-row tiles keep the preceding motion vector in the
 subgroup. Two-row tiles use workgroup shared memory for predictors
@@ -160,7 +160,7 @@ macroblock and its left and top borders in workgroup memory. Devices with
 32-lane compute subgroup voting skip empty macroblocks with a subgroup vote.
 The tiled path also has a workgroup-reduction variant for other devices.
 
-The Wx264 CLI's CAVLC backend records each picture's reference filtering,
+The Vk264 CLI's CAVLC backend records each picture's reference filtering,
 prediction, transform selection, residual coding, reconstruction,
 deblocking, entropy coding, and Annex B slice packing in one Vulkan
 command buffer. Reconstructed references stay in device-local memory.
@@ -198,7 +198,7 @@ The test compares the bytes of native 8-bit pixels and signed 16-bit
 coefficients. It first checks that the GPU's 32-bit storage values fit the
 native types exactly, so a widening or overflow discrepancy fails the test.
 
-From the Wx264 workspace with the Vulkan SDK, Python, CMake, and MSVC:
+From the Vk264 workspace with the Vulkan SDK, Python, CMake, and MSVC:
 
     cmake -S . -B build-x264-vulkan -A x64  # from the repository root
     cmake --build build-x264-vulkan --config Release

@@ -1,10 +1,10 @@
-# Wx264-Vulkan vs x264 — bottom-up port progress
+# Vk264-Vulkan vs x264 — bottom-up port progress
 
 Date: 2026-11-19
 Source: `references/x264-master` (x264 snapshot `c24e06c2e184345ceb33eb20a15d1024d9fd3497`,
 extracted from `x264-master.zip` into a stable location so `Remove-Item build` cannot wipe it)
-Wx264-Vulkan port: `Wx264/vulkan/*.comp`, shader SPIR-V shader pipelines registered in `Wx264/vulkan/CMakeLists.txt`,
-fixture tests in `Wx264/vulkan/dct_parity.cpp` (the `verifyXxx` functions and the
+Vk264-Vulkan port: `Vk264/vulkan/*.comp`, shader SPIR-V shader pipelines registered in `Vk264/vulkan/CMakeLists.txt`,
+fixture tests in `Vk264/vulkan/dct_parity.cpp` (the `verifyXxx` functions and the
 `x264_*_parity` CTest registrations).
 
 ## Preset-by-preset parity (2026-11-19, third session)
@@ -60,37 +60,37 @@ difference (recon differs by 1-2 in chroma only), not a luma mode issue.
 ### superfast / veryfast / faster — characterized, not yet byte-exact
 
 All three presets have `subme < 6` (1/2/4) and `trellis=0`, so x264 sets
-`i_mbrd=0` and `i_psy_rd=0` (`analyse.c`). wx264's current paths match x264
+`i_mbrd=0` and `i_psy_rd=0` (`analyse.c`). vk264's current paths match x264
 only when `i_mbrd>=1` (fast/medium+). Evidence (flat 16x16, QP 28):
 ```
-wx264 superfast slice : 88 84 3f fd af 4f 81 4b d9 15 aa 51 d8 32 d0
+vk264 superfast slice : 88 84 3f fd af 4f 81 4b d9 15 aa 51 d8 32 d0
 x264  superfast slice : 88 84 3f ea 40 35 70 9b fe 0b 72 bf 3e 1a c9 b1 34 b4 31
-x264 subme=6,psy-rd=0 : 88 84 3f fd af 4f 81 4b d9 15 aa 51 d8 32 d0  (== wx264)
+x264 subme=6,psy-rd=0 : 88 84 3f fd af 4f 81 4b d9 15 aa 51 d8 32 d0  (== vk264)
 x264 fast (subme=6)   : 88 84 3f fd af 4f 81 4b d9 15 aa 58 0f 72 ff 21
 ```
-So wx264's decisions equal x264 with `i_mbrd>=1` and the preset's psy (chroma
+So vk264's decisions equal x264 with `i_mbrd>=1` and the preset's psy (chroma
 QP) setting; the remaining difference is entirely the `i_mbrd=0` analysis path.
 SPS/PPS/slice headers are byte-identical; only CABAC macroblock coefficients
-differ. Decoded luma differs at top-left (x264: 2,2,1,1,1,0…; wx264: all 0),
+differ. Decoded luma differs at top-left (x264: 2,2,1,1,1,0…; vk264: all 0),
 consistent with a different quantized DC/AC-of-DC level.
 
 Ruled out by experiment: trellis (fast with `trellis=0` is byte-identical to
 fast), `analyse` flags (even `analyse=0x0:0x0` gives the same output),
 deblocking offsets, QP offset, profile/8x8dct.
 
-### ROOT CAUSE FOUND (validated, 2026-11-19): superfast uses I4x4, wx264 uses I16x16
+### ROOT CAUSE FOUND (validated, 2026-11-19): superfast uses I4x4, vk264 uses I16x16
 
 Built a **validated** CABAC decoder (`build/cabac_valid.py`) with ffmpeg's
 exact init (`low = b0<<18 + b1<<10 + b2<<2`, `range=0x1FE`, compare
 `low < range<<17`) and x264's context/LPS/transition tables. Validated against
-wx264 **fast** (CABAC) at slice byte offset 3: decodes the known I16x16 header
+vk264 **fast** (CABAC) at slice byte offset 3: decodes the known I16x16 header
 correctly (mb0=1, cbpL=0, pred=(1,0), chroma=0). Earlier "validation failed"
 was because I wrongly tested against **ultrafast**, which is CAVLC, not CABAC.
 
 Decoded header bins (`build/cabac_compare.py`):
 ```
-wx264 fast       (I16x16): mb0=1 cbpL=0 cbpC=1 pred=(0,1) chroma=0 dqp=1
-wx264 superfast  (I16x16): mb0=1 cbpL=0 cbpC=1 pred=(0,1) chroma=0 dqp=1
+vk264 fast       (I16x16): mb0=1 cbpL=0 cbpC=1 pred=(0,1) chroma=0 dqp=1
+vk264 superfast  (I16x16): mb0=1 cbpL=0 cbpC=1 pred=(0,1) chroma=0 dqp=1
 x264 superfast   (I4x4)  : mb0=0 cbpL=0 cbpC=0 pred=(1,0) chroma=1 dqp=1
 ```
 `mb0=0` is the I4x4 mb_type bin. Confirmed independently by libx264 verbose
@@ -102,21 +102,21 @@ superfast :   0.0%  0.0% 100.0%   (I4x4)
 ```
 So the entire superfast divergence is **macroblock type**: with `i_mbrd=0`
 (subme<6) and `analyse.intra` enabled, x264's SATD decision picks I4x4 for a
-flat frame; wx264 always emits I16x16. This replaces the earlier coefficient
+flat frame; vk264 always emits I16x16. This replaces the earlier coefficient
 hypothesis. Fix requires implementing I4x4 intra frame encoding (prediction
 modes, per-4x4 DCT/quant, residual) in the resident GPU path — currently only
 I16x16 is implemented there (fixture-level I4x4 CABAC ops exist in
 `cabac_syntax.glsl` and `verifyCabac`).
 
 The reliable facts remain:
-- x264 superfast slice = `88 84 3f ea 40 35 70 ...` (19 bytes), wx264/fast-t0
+- x264 superfast slice = `88 84 3f ea 40 35 70 ...` (19 bytes), vk264/fast-t0
   = `88 84 3f fd af 4f 81 4b d9 15 aa 51 d8 32 d0` (15 bytes). First 3 bytes
   (slice header) match; CABAC data diverges from byte 3.
 - libx264 verbose stats confirm both are 100% I16x16 (`mb I I16..4: 0.0%
   0.0% 100.0%`).
 - Chroma recon is byte-identical (U=250, V=30); only luma differs
-  (x264 `[2,2,1,1,1,0…]` vs wx264 all-0).
-- x264 superfast with `subme=6,psy-rd=0` is byte-identical to wx264 superfast;
+  (x264 `[2,2,1,1,1,0…]` vs vk264 all-0).
+- x264 superfast with `subme=6,psy-rd=0` is byte-identical to vk264 superfast;
   the entire delta is the `i_mbrd` (subme>=6) analysis path.
 
 The earlier "6 nonzero luma-DC significant flags" claim (from the unvalidated
@@ -241,10 +241,10 @@ reconstruction model (256/256 assertion) remains the solid, verified result.
 Verified state: 46/46 ctest green; ultrafast + fast flat byte-exact; superfast
 still divergent.
 So with `i_mbrd=0`, x264 produces nonzero AC-of-DC coefficients even for a
-flat frame (recon [2,2,1,1,1,0…]); wx264's DCT yields only the DC coefficient
+flat frame (recon [2,2,1,1,1,0…]); vk264's DCT yields only the DC coefficient
 (recon all 0). This is the precise remaining gap: x264's i_mbrd=0 analysis
 reuses DCT state that introduces these coefficients. `build/cabac_res2.py`
-and the dumped residual bank (`WX264_DUMP_DIR`, DC level -186) are the evidence.
+and the dumped residual bank (`VK264_DUMP_DIR`, DC level -186) are the evidence.
 
 `i_mbrd=0` changes x264's intra analysis (SATD mode decision vs RD, and
 `mb_analyse_transform`); emulating that path in the GPU analysis is the open
@@ -253,7 +253,7 @@ are currently rejected at the CLI (`supported=false`).
 
 ## x264-fast byte-parity work (2026-11-19, second session)
 
-Goal from user: "all wx264 presets should match x264 byte-to-byte". Investigated
+Goal from user: "all vk264 presets should match x264 byte-to-byte". Investigated
 bottom-up using `harness/parity_check.py --preset fast` (intra-only single-frame
 case first, to remove B-frames from the equation). Each mismatch was diffed with
 `build/sps_diff2.py` / `build/pps_diff.py` and fixed against x264-master source:
@@ -273,7 +273,7 @@ case first, to remove B-frames from the equation). Each mismatch was diffed with
    tests are unaffected. Result: `slice_qp_delta` matches x264 (-3 at QP 28).
 4. **Intra mode selection**: x264's `analyse.c` picks the min-SATD I16x16 mode
    with ties broken by `bs_size_ue(fix[mode])`; for luma V (mode 0, 1 bit) beats
-   DC (3 bits) on flat blocks when the top neighbour exists, while wx264 always
+   DC (3 bits) on flat blocks when the top neighbour exists, while vk264 always
    used DC variants. Changed `inter_frame.comp::dcMode()` luma path to pick V
    when top neighbour is available. Gated behind a flag (`frameInput[15]==1`,
    set only for x264-preset CABAC encodes) so the legacy CAVLC path and fixture
@@ -293,7 +293,7 @@ Evidence:
 - Final-byte CABAC flush discrepancy (1 byte, no visual/recon impact).
 - **B-frames / frame reordering are entirely absent** — this is the dominant
   gap. x264-fast emits `I B B P` with `pic_order_cnt_type=0`, 4 refs, 2 reorder
-  slots; wx264 emits `I P P P` with `pic_order_cnt_type=2`, 1 ref, 0 reorder.
+  slots; vk264 emits `I P P P` with `pic_order_cnt_type=2`, 1 ref, 0 reorder.
   Byte parity for `gop>1` is impossible until B-slices land.
 - Multi-reference, weighted prediction, trellis, psy-RD, AQ, lookahead, mb-tree
   are also absent (see `x264_presets.hpp::unsupported`).
@@ -309,7 +309,7 @@ Evidence:
   reproduced the same 46/46 green suite.
 - A clean build exposed a latent CMake bug: `cavlc_packet.spv` was never built, although
   `encodeResidentCavlcFrame` unconditionally loads it. It used to survive only because stale
-  `.spv` files remained in the build dir. Fixed in `Wx264/vulkan/CMakeLists.txt`: the shader is
+  `.spv` files remained in the build dir. Fixed in `Vk264/vulkan/CMakeLists.txt`: the shader is
   now built via a dedicated `add_custom_command` but deliberately NOT added to the `stages`
   list (which also registers the broken `x264_cavlc_packet_parity` test).
 - Regressions found and reverted during this session: an I-slice QP offset (`ip_offset`),
@@ -321,17 +321,17 @@ Evidence:
 
 Command (both): 1080p60 `testsrc2`, 60 frames, QP 28, GOP 60, preset/fast-class analysis:
 ```
-wx264: wx264.exe clips/test/testsrc2_1080p60_240f.yuv out.h264 1920 1080 60 60 \
+vk264: vk264.exe clips/test/testsrc2_1080p60_240f.yuv out.h264 1920 1080 60 60 \
            --backend vulkan --preset fast --qp 28 --gop 60
 x264:  ffmpeg ... -c:v libx264 -preset fast -qp 28 -g 60 -f h264 out.h264
 ```
 
 | encoder | wall time (60 frames) | fps | ratio |
 |---|---|---|---|
-| wx264-vulkan (CABAC, present build) | 6184.7 ms | 9.7 | **17.6× slower** |
+| vk264-vulkan (CABAC, present build) | 6184.7 ms | 9.7 | **17.6× slower** |
 | x264-fast (libx264) | 350.9 ms | 171 | baseline |
 
-Root cause of the speed gap, from `WX264_PROFILE=1` (GPU timestamp queries + HostTimer):
+Root cause of the speed gap, from `VK264_PROFILE=1` (GPU timestamp queries + HostTimer):
 ```
 resident_cabac_p_frame  calls=59 gpu_ms=5465.82
 resident_p_cabac_bins   calls=59 gpu_ms=4523.97   <-- 82.8% of GPU time
@@ -347,7 +347,7 @@ resident_p_prefilter    calls=59 gpu_ms=5.60
 resident_idr_cabac_bins calls=1  gpu_ms=84.77
 ```
 The dominant cost is CABAC arithmetic coding, not motion/transform/deblock. Why:
-- `Wx264/vulkan/cabac.comp:325` — in `CABAC_SHARED_FRAME` mode (used by `cabac_frame.spv`),
+- `Vk264/vulkan/cabac.comp:325` — in `CABAC_SHARED_FRAME` mode (used by `cabac_frame.spv`),
   `uint fixture = gl_WorkGroupID.x;` and at line ~336 `if (lane == 0) encodeOperations(fixture);`
   → the whole-frame slice is entropy-coded by **one lane of one workgroup**, fully serial.
 - `dct_parity.cpp:4940` — `const std::uint32_t binGroups = 1; dispatch(binGroups, 0);`
@@ -363,9 +363,9 @@ RESULT: 4 of 5 static tables MATCH; coeff_token has 25 differing entries
 Replaced the OpenH264-derived `src/cavlc_codes.hpp` with an x264-generated table:
 - `build/gen_x264_cavlc_codes.py` extracts `x264_coeff_token`, `x264_coeff0_token`,
   `x264_total_zeros`, `x264_total_zeros_2x2_dc`, `x264_run_before_init` from
-  `references/x264-master/common/tables.c` into `Wx264/vulkan/x264_cavlc_codes.hpp`,
+  `references/x264-master/common/tables.c` into `Vk264/vulkan/x264_cavlc_codes.hpp`,
   in the exact flat index order used by `cavlc_residual.glsl`.
-- `Wx264/src/main.cpp` passes `x264CavlcCodes` to the Vulkan CAVLC encoder.
+- `Vk264/src/main.cpp` passes `x264CavlcCodes` to the Vulkan CAVLC encoder.
 - `build/check_cavlc_tables.py` verifies every reachable VLC entry:
   ```
   coeff_token: tested=257 mismatches=0
@@ -395,8 +395,8 @@ Companion docs: `docs/parity-roadmap.md`, `docs/x264-function-map.md`, `HANDOFF.
 and (raw brute-force sieve) `docs/x264-master-function-inventory.md`.
 
 Legend:
-- ✅ **done** — Wx264 has a Vulkan kernel/GLSL for it, fixture-verified byte-exact vs x264 C reference.
-- 🔵 **wired** — present in Wx264, but wired into the resident encode path and not independently verified.
+- ✅ **done** — Vk264 has a Vulkan kernel/GLSL for it, fixture-verified byte-exact vs x264 C reference.
+- 🔵 **wired** — present in Vk264, but wired into the resident encode path and not independently verified.
 - 🟡 **fixture-only** — exists only inside the parity-fixture tests, not in production output.
 - ⚠️ **partial** — some x264 behaviour, but missing pieces (not x264 exact).
 - ❌ **missing** — no counterpart.
@@ -410,16 +410,16 @@ kernels). For entries where no benchmark has been run yet, the speed-vs-x264 col
 
 ## Layer 1 — Bit writers / host-side APIs
 
-| x264 function (x264-master file:line) | Purpose | Wx264 kernel / fixture | Status | Speed × x264 | Notes |
+| x264 function (x264-master file:line) | Purpose | Vk264 kernel / fixture | Status | Speed × x264 | Notes |
 |---|---|---|---|---|---|
 | `bs_write1`, `bs_write`, `bs_write_ue/se/te`, `bs_align_*`, `bs_align_1`, `bs_align_10`, `bs_align_0`, `bs_rbsp_trailing`, `bs_align_1`, `bs_write_ue_big`, `bs_write_se`, `bs_write_te` — common/bitstream.h (~220–250) | Bit writer primitives | `bit_writer.glsl` | ✅ fixture (`x264_bitstream_parity`, `verifyBitstream`, 2048 cases) | TBD | Resident encode path writes via same primitives |
 | `x264_nal_encode` / `nal_escape_c` / `x264_nal_encode` — common/bitstream.c | NAL RBSP escaping (Annex B) | `nal.comp` | ✅ fixture (`x264_nal_parity`, `verifyNal`) | TBD | Resident Annex B bytes identical to fixture |
 | `x264_nal_encode` — x264_common (bitstream) FIXME | Annex B write | `nal.comp` | ✅ (resident path writes Annex B) | TBD | |
-| `x264_param_default`, `x264_default_*` — common/base.c | x264 preset application | `x264_presets.hpp` (Wx264 version, not a port of base.c) | ⚠️ partial (only the encoder-visible knobs ourselves need; CLI defaults differ) | TBD | Not an API port — Wx264 dictates only the knobs its own CLI exposes |
+| `x264_param_default`, `x264_default_*` — common/base.c | x264 preset application | `x264_presets.hpp` (Vk264 version, not a port of base.c) | ⚠️ partial (only the encoder-visible knobs ourselves need; CLI defaults differ) | TBD | Not an API port — Vk264 dictates only the knobs its own CLI exposes |
 
 ## Layer 2 — Tables, zigzag, CQM, λ
 
-| x264 function | Purpose | Wx264 | Status | Speed | Notes |
+| x264 function | Purpose | Vk264 | Status | Speed | Notes |
 |---|---|---|---|---|---|
 | `x264_zigzag_init` — common/zigzag.c (native tables compiled into zigzag4/8_order.glsl for fixtures) | Zigzag scans | `zigzag4_order.glsl`, `zigzag8_order.glsl` | ✅ fixture | TBD | Resident path uses only DC-mode zigzag inline |
 | `x264_zigzag_scan*_msa` — common/mips/dct-c.c (SIMD) | SIMD zigzag | none (SIMD dispatch) | 🚫 N/A | — | |
@@ -436,7 +436,7 @@ kernels). For entries where no benchmark has been run yet, the speed-vs-x264 col
 
 ## Layer 3 — 4×4 & 8×8 transforms
 
-| x264 function | Purpose | Wx264 kernel | Status | Speed | Notes |
+| x264 function | Purpose | Vk264 kernel | Status | Speed | Notes |
 |---|---|---|---|---|---|
 | `sub4x4_dct`, `sub4x4_dct_dc`, `sub4x4_dct_dc_*` — common/dct.c (macro) | 4×4 forward DCT | `dct4x4.comp`, `dct4x4_math.glsl` | ✅ fixture (`x264_dct4x4_parity`) | TBD | wired in `intra16_frame.spv` & `inter8x8_frame.spv` (for DC-only mode) |
 | `add4x4_idct`, `add4x4_idct_dc` | 4×4 inverse DCT | `dct4x4.comp` (combined) | ⚠️ partial (fused with reconstruction; no separate inverse kernel — fused with recon pass) | TBD | |
@@ -449,7 +449,7 @@ kernels). For entries where no benchmark has been run yet, the speed-vs-x264 col
 
 ## Layer 4 — Quantization, decimation, denoise
 
-| x264 function | Purpose | Wx264 | Status | Speed | Notes |
+| x264 function | Purpose | Vk264 | Status | Speed | Notes |
 |---|---|---|---|---|---|
 | `quant_4x4`, `quant_4x4_dc`, `quant_4x4x4`, `quant_8x8`, `quant_8x8_dc` — common/quant.c | Forward quant | `quant.comp`, `quant_group.comp` | ✅ fixture (`x264_quant4x4_parity`, `x264_quant8x8_parity`) | TBD | wired via frames |
 | `dequant_4x4`, `dequant_4x4_dc`, `dequant_8x8`, `dequant_8x8_dc` — common/quant.c | Inverse quant | `intra16.comp`, `inter8x8.comp`, `intra_chroma.comp` | ✅ fused in recon kernels | TBD | |
@@ -462,7 +462,7 @@ kernels). For entries where no benchmark has been run yet, the speed-vs-x264 col
 
 ## Layer 5 — Pixel primitives (SATD / SAD / SSD / integral)
 
-| x264 function | Purpose | Wx264 | Status | Speed | Notes |
+| x264 function | Purpose | Vk264 | Status | Speed | Notes |
 |---|---|---|---|---|---|
 | `x264_pixel_satd_16x16`, `_8x8`, `_8x4`, `_4x8`, `_4x4` | SATD | `hadamard4.glsl`, kernels in `motion_search.comp`/`motion_metrics.comp`/`inter_frame.comp` | ✅ SATD+SA8D resident via `use8x8()` decision; SAD avail in `motion_search.comp` | TBD | |
 | `x264_pixel_sa8d_16x16`, `sa8d_8x8` | SA8D | `hadamard4.glsl`, `hadamard_magnitude.glsl` | ✅ fixture (motion_metrics) | TBD | |
@@ -476,7 +476,7 @@ kernels). For entries where no benchmark has been run yet, the speed-vs-x264 col
 
 ## Layer 6 — MC, intra prediction, deblock
 
-| x264 function | Purpose | Wx264 | Status | Speed | Notes |
+| x264 function | Purpose | Vk264 | Status | Speed | Notes |
 |---|---|---|---|---|---|
 | `x264_hpel_filter<h/h/v>` SIMD/scalar — common/mc.c | Half-pel hpel | `motion_compensation.comp` | ✅ fixture (`x264_motion_compensation_parity` + `x264_reference_frame_parity`) | TBD | byte-exact on all phases |
 | `mc_luma`, `mc_chroma`, `get_ref` — common/mc.c | MC | `motion_compensation.comp` | ✅ fixture + wired in P-skip picture | TBD | |
@@ -489,7 +489,7 @@ kernels). For entries where no benchmark has been run yet, the speed-vs-x264 col
 
 ## Layer 7 — Macroblock encode
 
-| x264 function | Purpose | Wx264 | Status | Speed | Notes |
+| x264 function | Purpose | Vk264 | Status | Speed | Notes |
 |---|---|---|---|---|---|
 | `mb_encode_i16x16` (= encodeI16x16) — encoder/macroblock.c:126 | I_16x16 luma | `intra16.comp` | ✅ fixture (2048-ish cases, `x264_intra16_parity`) | TBD | I_PCM/lossless not yet |
 | `mb_encode_chroma_internal` — encoder/macroblock.c:259 | Chroma encode 420/422 | `intra_chroma.comp` | ✅ fixture | TBD | |
@@ -507,7 +507,7 @@ kernels). For entries where no benchmark has been run yet, the speed-vs-x264 col
 
 ## Layer 8 — Slice CABAC/CAVLC, NAL packing
 
-| x264 function | Purpose | Wx264 | Status | Speed | Notes |
+| x264 function | Purpose | Vk264 | Status | Speed | Notes |
 |---|---|---|---|---|---|
 | `cabac_init`, `cabac_context_init`, `cabac_encode_init_core`, `x264_cabac_encode_decision/noup/bypass/terminal/flush` — common/cabac.c | CABAC coder | `cabac.comp` | ✅ fixture (`x264_cabac_parity` 9856 sequences) | TBD | resident bypass fixture only used in tests |
 | `cabac_mb_skip`, `cabac_mb_type_intra`, `cabac_mb_type_inter*` — encoder/cabac.c | MB syntax | `cabac_syntax.glsl` | ✅ fixture | TBD | |
@@ -527,7 +527,7 @@ kernels). For entries where no benchmark has been run yet, the speed-vs-x264 col
 
 ## Layer 9 — SPS/PPS/slicetype/headers
 
-| x264 function | Purpose | Wx264 | Status | Speed | Notes |
+| x264 function | Purpose | Vk264 | Status | Speed | Notes |
 |---|---|---|---|---|---|
 | `x264_sps_init` | SPS build-from-param | hand-built in `encodeCabacClip` | ⚠️ partial (x264 hand-init is copied to 75% only by hand; never propagates config outside) | TBD | |
 | `x264_pps_init` | PPS | hand-built | ⚠️ partial | TBD | |
@@ -538,7 +538,7 @@ kernels). For entries where no benchmark has been run yet, the speed-vs-x264 col
 
 ## Layer 10 — Rate control, AQ, lookahead, analyse, RC
 
-| x264 function | Purpose | Wx264 | Status | Speed | Notes |
+| x264 function | Purpose | Vk264 | Status | Speed | Notes |
 |---|---|---|---|---|---|
 | `x264_adaptive_quant_frame` — ratecontrol.c | AQ | `aq.comp` (energy verified) + unwired | 🧪 wired-but-unclear (never changes a QP in resident path) | TBD | |
 | `macroblock_tree` — slicetype.c | MB-tree | none | ❌ missing | — | |
@@ -556,7 +556,7 @@ kernels). For entries where no benchmark has been run yet, the speed-vs-x264 col
 
 ## Layer 11 — Frame pools, threading, lookahead
 
-| x264 function | Purpose | Wx264 | Status | Speed | Notes |
+| x264 function | Purpose | Vk264 | Status | Speed | Notes |
 |---|---|---|---|---|---|
 | `x264_frame_*`, `x264_lookahead_*` — common/frame.c, encoder/lookahead.c, common/threadpool.c | Frame pools/lookahead | none | ❌ missing | — | tied to B-frames |
 

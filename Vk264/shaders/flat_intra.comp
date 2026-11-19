@@ -1,7 +1,7 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
-#define WX_RECONSTRUCTION_ACCESS coherent
-#define WX_MOTION_ACCESS coherent
+#define VK_RECONSTRUCTION_ACCESS coherent
+#define VK_MOTION_ACCESS coherent
 #include "layout.glsl"
 #include "transform.glsl"
 

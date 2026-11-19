@@ -523,7 +523,7 @@ struct ComputeContext {
         std::uint64_t calls = 0;
         Clock::duration elapsed{};
     };
-    const bool profiling = std::getenv("WX264_PROFILE") != nullptr;
+    const bool profiling = std::getenv("VK264_PROFILE") != nullptr;
     std::map<std::string, DispatchTotals, std::less<>> profile;
     std::map<std::string, HostTotals, std::less<>> hostProfile;
     vk::UniqueInstance instance;
@@ -4663,7 +4663,7 @@ ResidentFrameResult encodeResidentCavlcFrame(const std::filesystem::path& shader
         copy(filter.offset, filterInput);
     }
     const auto subgroupSize = context.motionSubgroupSize;
-    const char* tileSetting = std::getenv("WX264_MOTION_TILE");
+    const char* tileSetting = std::getenv("VK264_MOTION_TILE");
     const bool tiled = context.motionCandidateBatches && tileSetting &&
         std::strlen(tileSetting) == 3 && (tileSetting[0] == '2' || tileSetting[0] == '4') &&
         tileSetting[1] == 'x' && (tileSetting[2] == '1' || tileSetting[2] == '2');
@@ -5059,7 +5059,7 @@ ResidentFrameResult encodeResidentCabacFrame(const std::filesystem::path& shader
         std::memcpy(context.mapped+fixtureByteStaging, &lastHeaderByte, wordBytes);
     }
     const auto subgroupSize = context.motionSubgroupSize;
-    const char* tileSetting = std::getenv("WX264_MOTION_TILE");
+    const char* tileSetting = std::getenv("VK264_MOTION_TILE");
     const bool tiled = context.motionCandidateBatches && tileSetting &&
         std::strlen(tileSetting) == 3 && (tileSetting[0] == '2' || tileSetting[0] == '4') &&
         tileSetting[1] == 'x' && (tileSetting[2] == '1' || tileSetting[2] == '2');
@@ -5170,7 +5170,7 @@ ResidentFrameResult encodeResidentCabacFrame(const std::filesystem::path& shader
     }
     barrier(compute, transfer, shaderWrite, vk::AccessFlagBits::eTransferRead);
     constexpr auto positionOffset = static_cast<std::size_t>(offsetof(cabacCorpus::FrameFixture, position));
-    const char* dumpDir = std::getenv("WX264_DUMP_DIR");
+    const char* dumpDir = std::getenv("VK264_DUMP_DIR");
     const std::size_t bankStart = corpus.offset+bankBase*wordBytes;
     const std::size_t bankBytes = std::size_t(macroblocks)*cabacCorpus::macroblockWords*wordBytes;
     constexpr auto bytesOffset = static_cast<std::size_t>(offsetof(cabacCorpus::FrameFixture, bytes));
@@ -5390,7 +5390,7 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
     // real clips; the staged host-orchestrated path remains for the synthetic
     // parity fixtures that exercise the per-macroblock operation stream.
     const bool resident = cavlcCodes != nullptr ||
-        (clip != nullptr && std::getenv("WX264_STAGED_CABAC") == nullptr);
+        (clip != nullptr && std::getenv("VK264_STAGED_CABAC") == nullptr);
     pps.b_cabac = cavlcCodes == nullptr;
     // Keep 8x8 transform mode enabled regardless of profile: the CAVLC and
     // CABAC residual kernels emit 8x8 block syntax in the shipped pipeline.
@@ -5903,7 +5903,7 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
             }
         } else {
             using Slice = cabacCorpus::FrameFixture;
-            if (const char* dump = std::getenv("WX264_DUMP_DIR")) {
+            if (const char* dump = std::getenv("VK264_DUMP_DIR")) {
                 std::ofstream out(std::string(dump)+"/staged_bank_"+std::to_string(i)+".bin", std::ios::binary);
                 out.write(reinterpret_cast<const char*>(levels.data()), std::streamsize(levels.size()*sizeof(levels[0])));
             }

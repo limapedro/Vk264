@@ -2,7 +2,7 @@
 
 ## Fix in this turn
 
-Wx264's Vulkan CABAC backend was emitting P-slice bitstreams whose
+Vk264's Vulkan CABAC backend was emitting P-slice bitstreams whose
 arithmetic encoder desynchronized on the very first macroblock and which
 produced completely corrupt reconstruction. Root cause: the host-side
 `cabacEncodeBins()` made the resident GPU path call `cabac_bins` first,
@@ -20,7 +20,7 @@ game/synthetic clip with bit-identical reconstruction vs the GPU.
 
 ## Preset parity status
 
-`x264_presets.hpp` now maps every x264 preset onto the knobs Wx264
+`x264_presets.hpp` now maps every x264 preset onto the knobs Vk264
 understands. Subsets that require features not yet ported are rejected at
 the CLI rather than silently diverging.
 
@@ -46,18 +46,18 @@ values mirror `param_apply_preset()` in `x264-vulkan/common/base.c` exactly:
 x264's `i_me_range` verbatim (16 everywhere except veryslow/placebo = 24).
 The default (CAVLC GPU) backend `src/presets.hpp` was updated the same way
 (motionRadius mirrors x264's me_range; verylow/placebo radii 24). The
-wx264-vulkan encode bytes will change vs the sweep in
-`results/wx264_vulkan_vs_x264_preset_sweep.md` for this reason — re-running
+vk264-vulkan encode bytes will change vs the sweep in
+`results/vk264_vulkan_vs_x264_preset_sweep.md` for this reason — re-running
 the sweep is needed to refresh those numbers.
 
 The `unsupported` strings in the table list every x264 delta a preset carries
-that Wx264 cannot apply today, per preset (verified against the source, not
-hand-waved). `satdCandidates` is Wx264-specific with no x264 analogue and is
+that Vk264 cannot apply today, per preset (verified against the source, not
+hand-waved). `satdCandidates` is Vk264-specific with no x264 analogue and is
 not consumed by the resident motion-search shader.
 
 ## Preset parity status
 
-| preset | Wx264-vulkan | reasoning |
+| preset | Vk264-vulkan | reasoning |
 |---|---|---|
 | ultrafast | wired | DIA, 16x16, 0 satd, 1 ref, subpel 0, range 16 |
 | superfast | wired | DIA, 16x16, 0 satd, 1 ref, subpel 1, range 16 |
@@ -81,8 +81,8 @@ FRAME_MOTION mode so presets change the search heuristic on the GPU path.
 
 ```
 ctest --test-dir build -C Release                                                  # 45/45 pass
-python harness/check.py --encoder build/Release/wx264.exe --vulkan                 # PASS
-python harness/check.py --encoder build/Release/wx264.exe --vulkan --entropy cavlc # PASS
+python harness/check.py --encoder build/Release/vk264.exe --vulkan                 # PASS
+python harness/check.py --encoder build/Release/vk264.exe --vulkan --entropy cavlc # PASS
 ```
 
 Effects of the preset wiring on a 60-frame 1080p encode of testsrc2:
@@ -109,6 +109,6 @@ analysis work — the port is still an x264 `fast`-class analysis configuration.
 
 ## Artifacts
 
-- `x264-vs-wx264-1080p-comparison.md` — per-clip 1080p comparison
+- `x264-vs-vk264-1080p-comparison.md` — per-clip 1080p comparison
 - `docs/presets.md` — this file (parity status matrix)
 - `results/verify-nvenc-vulkan-*/` — post-fix verification of the 4 NVENC-encoded game clips

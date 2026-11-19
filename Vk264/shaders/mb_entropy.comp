@@ -1,7 +1,7 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 #include "layout.glsl"
-#define WX_MACROBLOCK_BODY
+#define VK_MACROBLOCK_BODY
 #include "bitstream.glsl"
 #include "macroblock_syntax.glsl"
 

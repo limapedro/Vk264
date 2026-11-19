@@ -1,7 +1,7 @@
-# wx264-vulkan → libx264 parity roadmap (2026-11-19)
+# vk264-vulkan → libx264 parity roadmap (2026-11-19)
 
 Goal: make the Vulkan x264 port functionally equivalent to libx264 for the
-presets wx264 accepts, starting with the ones whose x264 counterparts are
+presets vk264 accepts, starting with the ones whose x264 counterparts are
 already "wired" (ultrafast…fast) and expanding the supported set as features
 land. Inspired by the gap analysis in `docs/presets.md`.
 
@@ -80,7 +80,7 @@ Skeleton replaced (2026-11-19) by verified facts from a full codebase pass.
 
 ### Phase 1 groundwork — DONE (this session)
 
-`Wx264\vulkan\aq.comp` — fixture-capable variance kernel matching
+`Vk264\vulkan\aq.comp` — fixture-capable variance kernel matching
 `x264_adaptive_quant_frame(X264_AQ_AUTOVARIANCE)` in
 `x264-vulkan/encoder/ratecontrol.c:304` exactly (luma var2 shift=8, chroma
 shift=6, `energy = luma + cb + cr`). `verifyAqVariance()` in `dct_parity.cpp`
@@ -104,7 +104,7 @@ reference translated bit-for-bit from `common/pixel.c`'s `pixel_var_16x16` /
   otherwise were stale): SA8D-vs-SATD choice in `inter_frame.comp:78–99`,
   `inter8x8_frame.spv` dispatched only when `eight` is set at
   `dct_parity.cpp:4898–4902`. Intra 8×8 and chroma 8×8 are **not**.
-- **AQ is in the legacy CAVLC backend only** (`Wx264/shaders/residual.comp:35–56`,
+- **AQ is in the legacy CAVLC backend only** (`Vk264/shaders/residual.comp:35–56`,
   heuristic `offset=clamp(round(1.25*(log2(max(1,var))-6)),-6,5)` — not x264's
   algorithm). Not wired into the CABAC path; `--aq 0|1` is rejected for
   `--backend vulkan` at `src/main.cpp:~111`.

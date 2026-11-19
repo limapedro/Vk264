@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(Wx264Gpu LANGUAGES CXX)
+project(Vk264Gpu LANGUAGES CXX)
 
 find_package(Vulkan REQUIRED COMPONENTS glslc)
 
@@ -18,20 +18,20 @@ foreach(shader IN ITEMS pyramid halfpel motion spatial older_references residual
     list(APPEND shaders "${output}")
 endforeach()
 
-add_custom_target(wx264_shaders DEPENDS ${shaders})
-add_executable(wx264 src/main.cpp src/gpu.cpp)
-add_dependencies(wx264 wx264_shaders)
-target_link_libraries(wx264 PRIVATE Vulkan::Vulkan)
-target_compile_features(wx264 PRIVATE cxx_std_17)
-target_compile_definitions(wx264 PRIVATE WX_SHADER_DIR="${shader_dir}")
+add_custom_target(vk264_shaders DEPENDS ${shaders})
+add_executable(vk264 src/main.cpp src/gpu.cpp)
+add_dependencies(vk264 vk264_shaders)
+target_link_libraries(vk264 PRIVATE Vulkan::Vulkan)
+target_compile_features(vk264 PRIVATE cxx_std_17)
+target_compile_definitions(vk264 PRIVATE VK_SHADER_DIR="${shader_dir}")
 if(MSVC)
-    target_compile_options(wx264 PRIVATE /W4)
+    target_compile_options(vk264 PRIVATE /W4)
 else()
-    target_compile_options(wx264 PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(vk264 PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 add_subdirectory(vulkan)
-target_link_libraries(wx264 PRIVATE x264_vulkan_backend)
+target_link_libraries(vk264 PRIVATE x264_vulkan_backend)
 
 if(BUILD_TESTING)
     find_package(Python3 COMPONENTS Interpreter)
@@ -40,12 +40,12 @@ if(BUILD_TESTING)
     if(Python3_FOUND AND FFMPEG AND FFPROBE)
         add_test(NAME shader_reconstruction
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/../harness/check.py"
-                    --encoder $<TARGET_FILE:wx264> --ffmpeg "${FFMPEG}" --ffprobe "${FFPROBE}")
+                    --encoder $<TARGET_FILE:vk264> --ffmpeg "${FFMPEG}" --ffprobe "${FFPROBE}")
         add_test(NAME vulkan_encoder_reconstruction
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/../harness/check.py"
-                    --encoder $<TARGET_FILE:wx264> --ffmpeg "${FFMPEG}" --ffprobe "${FFPROBE}" --vulkan)
+                    --encoder $<TARGET_FILE:vk264> --ffmpeg "${FFMPEG}" --ffprobe "${FFPROBE}" --vulkan)
         add_test(NAME vulkan_cavlc_reconstruction
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/../harness/check.py"
-                    --encoder $<TARGET_FILE:wx264> --ffmpeg "${FFMPEG}" --ffprobe "${FFPROBE}" --vulkan --entropy cavlc)
+                    --encoder $<TARGET_FILE:vk264> --ffmpeg "${FFMPEG}" --ffprobe "${FFPROBE}" --vulkan --entropy cavlc)
     endif()
 endif()

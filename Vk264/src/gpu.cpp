@@ -186,7 +186,7 @@ struct EncoderGpu::Impl {
 
     void init(const FrameConfig& c, bool readRecon) {
         auto app = info<VkApplicationInfo>(VK_STRUCTURE_TYPE_APPLICATION_INFO);
-        app.pApplicationName = "Wx264";
+        app.pApplicationName = "Vk264";
         app.apiVersion = VK_API_VERSION_1_1;
         auto instanceInfo = info<VkInstanceCreateInfo>(VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO);
         instanceInfo.pApplicationInfo = &app;
@@ -444,7 +444,7 @@ struct EncoderGpu::Impl {
 
 EncoderGpu::EncoderGpu(const FrameConfig& c, bool readRecon, std::filesystem::path shaderDirectory)
     : impl_(std::make_unique<Impl>()) {
-    impl_->shaderDirectory = shaderDirectory.empty() ? std::filesystem::path(WX_SHADER_DIR)
+    impl_->shaderDirectory = shaderDirectory.empty() ? std::filesystem::path(VK_SHADER_DIR)
                                                       : std::move(shaderDirectory);
     impl_->init(c, readRecon);
 }

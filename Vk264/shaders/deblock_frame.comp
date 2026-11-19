@@ -1,13 +1,13 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
-#define WX_RECONSTRUCTION_ACCESS coherent
+#define VK_RECONSTRUCTION_ACCESS coherent
 #include "layout.glsl"
 #include "transform.glsl"
 #include "deblock_tables.glsl"
 
 layout(local_size_x=128) in;
 // Each set of 32 invocations owns a separate macroblock tile.
-#define WX_DEBLOCK_TILES 4
+#define VK_DEBLOCK_TILES 4
 #include "deblock_filter.glsl"
 
 shared int segmentStrength[128];

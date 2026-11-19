@@ -16,7 +16,7 @@ struct EncodeOptions {
     int levelIdc;
     const std::uint32_t* cavlcCodes = nullptr;
     // x264-compatible preset name; see x264_presets.hpp. nullptr = default
-    // Wx264 search profile (approximately x264 "slow" without trellis/AQ).
+    // Vk264 search profile (approximately x264 "slow" without trellis/AQ).
     const char* preset = nullptr;
 };
 

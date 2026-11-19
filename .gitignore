@@ -34,3 +34,7 @@ Thumbs.db
 
 # Local helper scripts created for diagnostics
 build/*.py
+
+# Python bytecode
+__pycache__/
+*.pyc

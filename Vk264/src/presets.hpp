@@ -12,14 +12,14 @@ struct Preset {
     std::uint32_t motionRadius, satdCandidates, references;
 };
 
-// Wx264 internal knob-space, broadened to cover the x264 preset order so that
-// --preset <name> means the same thing across wx264 and libx264. Each wx264
+// Vk264 internal knob-space, broadened to cover the x264 preset order so that
+// --preset <name> means the same thing across vk264 and libx264. Each vk264
 // preset carries (motionRadius, satdCandidates, referenceFrames); the x264
 // motion search method/subpel-refine/rate-distortion-settings used by libx264
 // are assembled by the x264 backend at a different layer.
 inline constexpr Preset defaultPreset{"slow", 16, 4, 5};
 inline constexpr Preset presets[] = {
-    // wx264 native names (kept for backwards compatibility).
+    // vk264 native names (kept for backwards compatibility).
     // motionRadius mirrors x264 i_me_range (16 default, 24 veryslow/placebo).
     {"fast",        16, 0, 2},
     {"medium",      16, 2, 3},
@@ -59,7 +59,7 @@ inline FrameConfig makeFrameConfig(std::uint32_t width, std::uint32_t height,
                                    Preset preset) {
     if (!width || !height || width > maxFrameDimension || height > maxFrameDimension ||
         ((width | height) & 1u))
-        throw std::runtime_error("Wx264 requires even dimensions from 2 to 4096 pixels per axis");
+        throw std::runtime_error("Vk264 requires even dimensions from 2 to 4096 pixels per axis");
     if (!denominator || numerator < denominator || numerator > 240ull * denominator)
         throw std::runtime_error("Frame rate must be between 1 and 240 fps");
     auto divisor = std::gcd(numerator, denominator);
@@ -76,7 +76,7 @@ inline FrameConfig makeFrameConfig(std::uint32_t width, std::uint32_t height,
     config.mbWidth = (config.width + 15u) / 16u;
     config.mbHeight = (config.height + 15u) / 16u;
     if (config.mbWidth * config.mbHeight > maxFrameMacroblocks)
-        throw std::runtime_error("Wx264 supports up to 36864 macroblocks per frame");
+        throw std::runtime_error("Vk264 supports up to 36864 macroblocks per frame");
     config.slicesPerRow = (config.mbWidth + singleSliceWidth - 1u) / singleSliceWidth;
     config.sliceCount = config.slicesPerRow * config.mbHeight;
     config.slotWords = singleSliceWidth * macroblockSlotWords;
