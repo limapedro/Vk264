@@ -2058,7 +2058,7 @@ constexpr int frameResidualBankSize = frameMaxOperations*macroblockWords;
 enum Kind {
     decision, bypass, ueBypass, terminal, residual, intraType, intra4x4Mode, intraChromaMode,
     intra16Macroblock, codedBlockPattern, qpDelta, transformSize, macroblockSkip, mvdComponent, inter16Macroblock,
-    wholeFrame, refIdx
+    wholeFrame, refIdx, mbTypeB
 };
 struct Operation {
     std::int32_t kind, first, second;
@@ -2127,7 +2127,11 @@ void verifyCabac(const char* shader) {
     constexpr int syntaxCases = 1024;
     constexpr int macroblockSyntaxStart = syntaxStart+syntaxCases;
     constexpr int macroblockSyntaxCases = 2*52*52;
-    std::vector<Fixture> cases(macroblockSyntaxStart+macroblockSyntaxCases);
+    // B mb_type header fixtures (issue #4): B_DIRECT + the nine 16x16/16x8/8x16
+    // B modes, three partitions and three neighbour-context values.
+    constexpr int bMbTypeStart = macroblockSyntaxStart + macroblockSyntaxCases;
+    constexpr int bMbTypeCases = 10*3*3;
+    std::vector<Fixture> cases(bMbTypeStart + bMbTypeCases);
     std::mt19937 random(0x264cab);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         auto& input = cases[i];
@@ -2140,6 +2144,16 @@ void verifyCabac(const char* shader) {
         for (auto& byte : input.bytes) byte = random() & 255;
         input.bytes[0] = 165; // The slice header byte preceding the arithmetic stream.
         if (i < initializationCases) continue;
+        if (i >= bMbTypeStart) {
+            const int index = static_cast<int>(i)-bMbTypeStart;
+            const int type = 7 + index % 10;    // B_DIRECT .. B_BI_BI
+            const int part = (index / 10) % 3;  // 0=D_16x8, 1=D_8x16, 2=D_16x16
+            const int ctx = (index / 30) % 3;   // left/top neighbour context
+            input.qp = (index * 7) % 52;
+            input.model = 1 + (index / 3) % 3;  // P/B context model 0..2
+            input.operations[input.count++] = {mbTypeB, ctx | (type << 2) | (part << 7), 0};
+            continue;
+        }
         if (i >= macroblockSyntaxStart) {
             const int index = static_cast<int>(i)-macroblockSyntaxStart;
             const int qp = index%52, previousQp = index/52%52;
@@ -2239,7 +2253,8 @@ void verifyCabac(const char* shader) {
         std::copy(input.context.begin(), input.context.end(), coder.state);
         encoder.i_frame = input.frame;
         encoder.chroma444 = input.chroma444 != 0;
-        x264_cabac_context_init(&encoder, &coder, input.model == 0 ? SLICE_TYPE_I : 0,
+        x264_cabac_context_init(&encoder, &coder,
+            input.operations[0].kind == mbTypeB ? SLICE_TYPE_B : (input.model == 0 ? SLICE_TYPE_I : SLICE_TYPE_P),
                                 input.qp, input.model-1);
         x264_cabac_encode_init(&coder, bytes+1, bytes+maxBytes);
         int effectiveQp = input.effectiveQp;
@@ -2331,6 +2346,38 @@ void verifyCabac(const char* shader) {
                     mvdMagnitude = cabac_mvd_cpn(&encoder, &coder, 0, 0, op.second & 1,
                                                  op.first, op.second >> 1);
                     break;
+                case mbTypeB: {
+                    // x264 encoder/cabac.c::cabac_mb_header_b (lines 499-573),
+                    // mb_type bins only; ref/mvd/subpartitions need issue #5.
+                    const int ctx = op.first & 3;
+                    const int type = (op.first >> 2) & 31;
+                    const int part = (op.first >> 7) & 3;
+                    const auto bin = [&](int index, int bit) {
+                        x264_cabac_encode_decision_c(&coder, index, bit);
+                    };
+                    if (type == 7) { bin(27+ctx, 0); break; }  // B_DIRECT
+                    bin(27+ctx, 1);
+                    if (type == 17) {  // B_8x8 header prefix only
+                        bin(27+3, 1); bin(27+4, 1);
+                        bin(27+5, 1); bin(27+5, 1); bin(27+5, 1);
+                        break;
+                    }
+                    static const std::uint8_t mbBits[9*3] = {
+                        0x31, 0x29, 0x04, 0x35, 0x2d, 0x00, 0x43, 0x63, 0x00,
+                        0x3d, 0x2f, 0x00, 0x39, 0x25, 0x06, 0x53, 0x73, 0x00,
+                        0x4b, 0x6b, 0x00, 0x5b, 0x7b, 0x00, 0x47, 0x67, 0x21};
+                    int bits = mbBits[(type-8)*3 + part];
+                    bin(27+3, bits & 1);
+                    bin(27+5-(bits & 1), (bits >> 1) & 1);
+                    bits >>= 2;
+                    if (bits != 1) {
+                        bin(27+5, bits & 1); bits >>= 1;
+                        bin(27+5, bits & 1); bits >>= 1;
+                        bin(27+5, bits & 1); bits >>= 1;
+                        if (bits != 1) bin(27+5, bits & 1);
+                    }
+                    break;
+                }
             }
             sawPending |= coder.i_bytes_outstanding > 0;
             sawCarry |= *previous != previousByte;
@@ -2348,8 +2395,9 @@ void verifyCabac(const char* shader) {
     }
     if (!sawPending || !sawCarry) throw std::runtime_error("Missing CABAC carry coverage");
     std::cout << cases.size() << " CABAC sequences matched x264 bytes, contexts and arithmetic state, including "
-              << residualCases << " residual, " << syntaxCases << " intra syntax and "
-              << macroblockSyntaxCases << " coded-block, QP-delta, transform-size, skip and motion syntax sequences.\n";
+              << residualCases << " residual, " << syntaxCases << " intra syntax, "
+              << macroblockSyntaxCases << " coded-block, QP-delta, transform-size, skip and motion syntax, and "
+              << bMbTypeCases << " B macroblock-type header sequences.\n";
 }
 
 // Issue #5 sub-PR B: verify the P-slice reference-index bin syntax against

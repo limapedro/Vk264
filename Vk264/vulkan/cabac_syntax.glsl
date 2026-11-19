@@ -102,6 +102,47 @@ void encodeRefIdx(int f, int ref, int neighbors) {
     }
     emitDecision(f, 54+ctx, 0);
 }
+
+// B macroblock type header, transcribed from x264 encoder/cabac.c::cabac_mb_header_b
+// (lines 499-573). `flags`: bits 0-1 = ctx (neighbours that are not B_SKIP/B_DIRECT),
+// bits 2-6 = mb type (B_DIRECT=7 .. B_BI_BI=16, B_8x8=17), bits 7-8 = partition
+// index (0=D_16x8, 1=D_8x16, 2=D_16x16). Only the mb_type bins are emitted here:
+// reference indices, motion vectors and B_8x8 subpartitions need the DPB work
+// tracked by issue #5 and are deliberately out of scope for this fixture.
+void encodeMbTypeB(int f, int flags) {
+    int ctx = flags & 3;
+    int type = (flags >> 2) & 31;
+    int part = (flags >> 7) & 3;
+    if (type == 7) {  // B_DIRECT
+        emitDecision(f, 27+ctx, 0);
+        return;
+    }
+    emitDecision(f, 27+ctx, 1);
+    if (type == 17) {  // B_8x8 header prefix only (subpartitions/ref/mvd pending #5)
+        emitDecision(f, 27+3, 1);
+        emitDecision(f, 27+4, 1);
+        emitDecision(f, 27+5, 1);
+        emitDecision(f, 27+5, 1);
+        emitDecision(f, 27+5, 1);
+        return;
+    }
+    // x264 encoder/cabac.c:548-559, i_mb_bits[9*3], indexed by
+    // (type - B_L0_L0)*3 + (partition - D_16x8).
+    int mbBits[27] = int[27](
+        0x31, 0x29, 0x04, 0x35, 0x2d, 0x00, 0x43, 0x63, 0x00,
+        0x3d, 0x2f, 0x00, 0x39, 0x25, 0x06, 0x53, 0x73, 0x00,
+        0x4b, 0x6b, 0x00, 0x5b, 0x7b, 0x00, 0x47, 0x67, 0x21);
+    int bits = mbBits[(type-8)*3 + part];
+    emitDecision(f, 27+3, bits & 1);
+    emitDecision(f, 27+5-(bits & 1), (bits >> 1) & 1);
+    bits >>= 2;
+    if (bits != 1) {
+        emitDecision(f, 27+5, bits & 1); bits >>= 1;
+        emitDecision(f, 27+5, bits & 1); bits >>= 1;
+        emitDecision(f, 27+5, bits & 1); bits >>= 1;
+        if (bits != 1) emitDecision(f, 27+5, bits & 1);
+    }
+}
 int encodeMvdComponent(int f, int axis, int delta, int context) {
     int base = axis == 0 ? 40 : 47;
     emitDecision(f, base+context, int(delta != 0));
