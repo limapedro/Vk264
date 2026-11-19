@@ -5291,6 +5291,14 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
         if (const auto* preset = x264_vulkan::presets::find(options->preset))
             if (preset->subpelRefine >= 6) chromaQpOffset = -2;
     }
+    // x264 set.c::x264_sps_init() uses i_frame_reference (the per-preset ref
+    // budget) for both SPS max_num_ref_frames and level DPB selection. Consume
+    // the value already transcribed in x264_presets.hpp instead of hard-coding 1.
+    int referenceBudget = 1;
+    if (options && options->preset) {
+        if (const auto* preset = x264_vulkan::presets::find(options->preset))
+            referenceBudget = std::max(1, preset->referenceBudget);
+    }
     constexpr int chromaQpMap[52] = {
         0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,
         29,30,31,32,32,33,34,34,35,35,36,36,37,37,37,38,38,38,39,39,39,39,
@@ -5321,7 +5329,7 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
         levelIn.mbsPerFrame = macroblocks;
         levelIn.widthInMbs = widthInMbs;
         levelIn.heightInMbs = heightInMbs;
-        levelIn.maxDecFrameBuffering = 1;
+        levelIn.maxDecFrameBuffering = gop == 1 ? 1 : referenceBudget;
         levelIn.fpsNum = options ? options->fpsNumerator : 60000;
         levelIn.fpsDen = options ? options->fpsDenominator : 1001;
         if (options && options->targetBits > 0) {
@@ -5336,9 +5344,13 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
     sps.i_chroma_format_idc = CHROMA_420;
     sps.i_log2_max_frame_num = 4;
     sps.i_poc_type = 2;
-    sps.i_num_ref_frames = 1;
-    // x264's x264_sps_init(): intra-only streams have zero reference frames.
-    if (gop == 1) sps.i_num_ref_frames = 0;
+    // x264 set.c::x264_sps_init(): with B-frames disabled (the resident path
+    // today, i_num_reorder_frames = 0), max_num_ref_frames is the preset's
+    // i_frame_reference for inter streams and 0 for intra-only streams.
+    // Verified against x264 with bframes=0: faster/fast (ref=2) emit 2 here.
+    // When B-frames land this formula also needs the reorder/b-pyramid DPB
+    // slots from set.c:150-158 (see docs/multi-reference-design.md).
+    sps.i_num_ref_frames = gop == 1 ? 0 : referenceBudget;
     // x264's x264_sps_init(): intra-only streams (keyint==1) with High profile
     // set constraint_set3, which in turn suppresses VUI bitstream_restriction.
     sps.b_constraint_set3 = (gop == 1 && sps.i_profile_idc >= PROFILE_HIGH) ? 1 : 0;
