@@ -1029,3 +1029,23 @@ by simply substituting one set. Next step: log the bin sequence from x264's
 the exact syntax element that differs. Issue #2 remains OPEN; the
 `i4x4_cabac` host emitter is diagnostic only and is not part of the CTest gates.
 
+
+### Definitive I4x4 bin sequence (issue #2)
+
+Decoded x264's actual superfast/flat slice (`88843fea4035709bfe0b72bf3e1ac9b134b43181`,
+QP 25) with `harness/cabac_decoder.py`:
+```
+mb0=I4x4, transform_size=1 (8x8 transform!), chroma_mode=0, cbp_luma=0xe,
+cbp_chroma=0, dqp=1, nonzero blocks 4,5,7,10,13,15
+bins: 3:0 399:1 68:1 ... (81 bins total)
+```
+The earlier discrepancy between the patched CLI dump and the decoder was a
+harness invocation error: the decoder was initially fed the slice starting at
+`ea 40` instead of at `88 84 3f`. With the full slice the decoder is authoritative.
+
+The host `i4x4_cabac` emitter hardcodes a 4x4 transform and `b_transform_8x8=false`,
+so it cannot reproduce the 8x8-transform residual syntax. Fixing #2 requires
+implementing x264's 8x8 CABAC residual path (`x264_cabac_block_residual_8x8_rd_c`)
+plus the correct modes/coefficients from the decoded bin sequence. The host
+emitter is diagnostic only; CTest gates are unaffected (58/58).
+
