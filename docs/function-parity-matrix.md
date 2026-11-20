@@ -189,6 +189,20 @@ roadmap. Multi-MB staging is issue #30.
   algorithms are byte-exact in isolation, so the remaining fault is inside the
   GPU chroma-mode cost path. Forcing H unconditionally breaks other patterns and
   is not a valid fix. Tracked in issue #30.
+
+  Further evidence (this turn): the production flag `frameInput[13]` was dumped
+  from the host as `flag13=3` (intra bit + ultrafast mode-decision bit) with
+  `preset=ultrafast`, so `selectChromaMode()` is definitely selected — the fault
+  is inside its per-mode cost computation, not in flag plumbing. Attempts to
+  read the per-mode costs back from the shader via spare fixture fields were
+  inconclusive (the chroma pass overwrites several fields); a dedicated debug
+  field was added but the readback still returned stale values, so this needs a
+  purpose-built debug buffer rather than field reuse.
+
+  Issue #2 note: the harness "flat" pattern is Y=0 (confirmed by inspecting
+  `build/sf-now/source.yuv`), which is why x264 selects I4x4 for superfast
+  (`mb I I16..4: 0.0% 0.0% 100.0%`). A Y=128 flat frame selects I16x16 instead,
+  so I4x4 ground truth must be captured with the exact Y=0 input.
 - **Untested production shader variants**: `motion_frame{, _parallel, _batched,
   _tiled}.spv` are compiled from `motion_search.comp` with FRAME_MOTION defines
   and have a different fixture struct layout (extra source/reference stride
