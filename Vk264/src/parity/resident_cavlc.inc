@@ -135,14 +135,15 @@ std::vector<FrameMotionBlock> predictInterFrame(const RawFrame& source,
 constexpr int cavlcOutputWords = cabacCorpus::frameMaxBytes/4, cavlcBodyWords = 768;
 
 std::vector<std::int32_t> cavlcHeader(const std::uint32_t* codes, const sliceCorpus::Fixture& header,
-                                      int width, int macroblocks, bool inter, int levelCount) {
+                                      int width, int macroblocks, bool inter, int levelCount, bool transform8x8) {
     constexpr int codeCount = 732;
     const int headerWords = header.pointer/4, tailBits = header.bitPosition-8*header.pointer;
     const int outputStart = headerWords+levelCount;
     const int countStart = outputStart+1+cavlcOutputWords;
     const int lengthStart = countStart+24*macroblocks, bodyStart = lengthStart+macroblocks;
     std::vector<std::int32_t> input{width, macroblocks, int(inter), headerWords,
-        static_cast<std::int32_t>(header.low), tailBits, headerWords, outputStart, countStart, lengthStart, bodyStart};
+        static_cast<std::int32_t>(header.low), tailBits, headerWords, outputStart, countStart, lengthStart, bodyStart,
+        static_cast<std::int32_t>(transform8x8 ? 1 : 0)};
     input.reserve(input.size()+codeCount+headerWords);
     input.insert(input.end(), codes, codes+codeCount);
     for (int i = 0; i < header.pointer; i += 4) {
@@ -208,7 +209,7 @@ ResidentFrameResult encodeResidentCavlcFrame(const std::filesystem::path& shader
     constexpr std::size_t batchSize = 512, wordBytes = sizeof(std::uint32_t);
     const int columns = width/16, rows = height/16, macroblocks = columns*rows;
     const int levelWords = macroblocks*cabacCorpus::macroblockWords;
-    const auto sliceInput = cavlcHeader(codes, header, columns, macroblocks, inter, levelWords);
+    const auto sliceInput = cavlcHeader(codes, header, columns, macroblocks, inter, levelWords, inter8x8);
     constexpr std::size_t sliceHeaderCapacity = 1024;
     if (sliceInput.size() > sliceHeaderCapacity) throw std::runtime_error("CAVLC frame header exceeds its storage");
     const int sourceWords = width*height/4, referenceWords = (width+64)*(height+64)/4;

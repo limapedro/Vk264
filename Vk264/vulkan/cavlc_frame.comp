@@ -9,6 +9,7 @@ layout(push_constant) uniform Pass { uint pass; };
 layout(std430, binding = 0) buffer Frame {
     uint width, macroblocks, inter, headerWords, headerTail, tailBits;
     uint levelStart, outputStart, countStart, lengthStart, bodyStart;
+    uint transform8x8;
     uint codes[732];
     uint data[];
 };
@@ -150,7 +151,10 @@ void writeMacroblock(uint mb) {
         se(mv.x-pred.x);
         se(mv.y-pred.y);
         ue(interPattern[luma+16u*chroma]);
-        if (luma != 0u) bits((data[base+3] >> 16u) & 1u, 1);
+        // x264 writes transform_size_8x8_flag only when transform_8x8_mode_flag
+        // is set. Baseline/CAVLC has it off; emitting the bit unconditionally
+        // shifted all subsequent CAVLC bins and corrupted P-slices (issue #50).
+        if (transform8x8 != 0u && luma != 0u) bits((data[base+3] >> 16u) & 1u, 1);
         if ((luma | chroma) != 0u) se(0);
     }
     for (int b = 0; b < 16; ++b)
