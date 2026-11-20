@@ -1070,3 +1070,30 @@ offset 41. Making it byte-exact requires: (1) a GPU I4x4 mode-decision shader,
 support. These are substantial but now fully specified by PR #41's exact
 bin sequence. Issue #2 remains OPEN.
 
+### Issue #2 — GPU I4x4 CABAC encoder landed; mode-decision gap identified (Subaru, 2026-11-20)
+
+PR #45 added `encodeIntra4Macroblock` to `cabac_syntax.glsl`, transcribed from
+PR #41's byte-exact host emitter: mb_type, transform_size, 16 pred modes with
+x264 predictors, chroma mode, cbp_luma/chroma, qp_delta, per-block cbf (ctx96)
++ 4x4 residual, trailing cbf bins, and chroma DC residual (ctx100). The 16 pred
+modes live in the unused frame-bank tail (frameBase+macroblocks*394+mb*16),
+so the 394-word record shared with CAVLC is untouched. A new op (kind 18) and
+wholeFrame flag (op.first bit1) dispatch it. New x264_i4x4_frame_parity CTest
+builds the exact I4x4 record and proves the GPU emits x264's exact 20-byte
+superfast flat slice. 60/60 CTests; ultrafast real-footage parity unchanged.
+Item (2) of the production gap is now DONE and byte-exact.
+
+New root-cause finding for the remaining mode-decision gap: the host
+verifyI4x4Decision / encodeI4x4Frame model in fixtures_intra.inc cannot
+reproduce x264's flat-case modes {2,2,3,2,2,...} because its candidate array
+modeIndex[] = {0,1,2,4,5,6,7,8,9} omits mode 3 (I_PRED_4x4_DDL), which is
+exactly the mode x264 selects at block idx 2. Moreover x264's real decision
+(encoder/analyse.c:890-950) uses intra_mbcmp_x9_4x4 (SSSE3) with a bit-cost
+table cost_i4x4_mode[i] = 3*lambda*(i!=8) (analyse.c:171-173) so mode 8 (VL)
+and the predicted mode effectively get free bit cost, plus an
+intra_analysis_shortcut table when SIMD is unavailable. The host model's
+simplified cost = satd + (fixed==predMode ? -3lambda : 0) with V and DDL
+excluded is therefore NOT a faithful oracle. Production superflat parity needs
+the exact x9 cost/shortcut behaviour ported to inter_frame.comp - this is the
+true blocker for item (1), not just "add a 4x4 path". Issue #2 remains OPEN.
+

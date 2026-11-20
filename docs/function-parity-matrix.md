@@ -90,7 +90,7 @@ architecture yet. This blocks `medium+` presets (issue #4).
 |---|---|---|---|
 | `mb_encode_i16x16`, `macroblock_encode_internal` | `intra16.comp`, `verifyLuma4x4` | EXACT | `x264_intra16_parity` |
 | `x264_mb_encode_chroma`, `mb_encode_chroma_internal` | `intra_chroma.comp` | EXACT | `x264_intra_chroma_parity` |
-| I4x4 encode path | `encodeI4x4Frame()` host model | PARTIAL | analysis 256/256 exact; CABAC emission incomplete (#2) |
+| I4x4 encode path | `encodeI4x4Frame()` host model + `encodeIntra4Macroblock` GPU encoder | PARTIAL | 256/256 reconstruction exact; GPU CABAC emission byte-exact (PR #45) but host mode decision omits x264's DDL mode 3 and the x9 bit-cost/shortcut behaviour (#2) |
 | `macroblock_encode_skip`, `x264_macroblock_probe_skip` | `motion_elimination.comp` | EXACT | `x264_motion_elimination_parity` |
 | `x264_macroblock_deblock` | `deblock_frame.comp` | EXACT | `x264_deblock_frame_parity` |
 
@@ -113,6 +113,7 @@ architecture yet. This blocks `medium+` presets (issue #4).
 |---|---|---|---|
 | `x264_cabac_encode_*`, `x264_cabac_init*` | `cabac.comp` | EXACT | `x264_cabac_parity` (9946 sequences) |
 | `cabac_ref_p/b`, `cabac_mvd*`, `cabac_block_residual*` | `cabac.comp`, `cabac_syntax.glsl` | EXACT | `x264_cabac_refidx_parity` (1536 sequences) |
+| `cabac_mb_header_i` I4x4 path + residual/chroma DC | `encodeIntra4Macroblock` in `cabac_syntax.glsl` | EXACT (encoder) | `x264_i4x4_frame_parity`: GPU emits x264's exact 20-byte superfast flat slice (PR #45). Mode decision still missing (#2). |
 | B mb_type header | `cabac.comp` | EXACT | 90 sequences in `x264_cabac_parity` |
 | `cavlc_block_residual*`, `cavlc_qp_delta`, `cavlc_mvd` | `cavlc_frame.comp`, `cavlc_residual_test.comp` | EXACT | `x264_cavlc_residual_parity` (2327 sequences) |
 | `x264_nal_encode` | `nal.comp` | EXACT | `x264_nal_parity` |
