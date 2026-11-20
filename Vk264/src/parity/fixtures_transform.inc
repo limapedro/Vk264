@@ -184,7 +184,7 @@ void verifyDc(const char* shader) {
         for (auto& value : block.chroma422Blocks) value = static_cast<int>(random() & 65535) - 32768;
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::dct::dc(shader, cases);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& block = cases[i];
         dctcoef forward[16], inverse[16], quantized[16], dequantized[16], chroma[4];
@@ -268,7 +268,7 @@ void verifyZigzag(const char* shader) {
         }
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::dct::zigzag(shader, cases);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& block = cases[i];
         const auto& input = inputs[i];
@@ -348,7 +348,7 @@ void verifyChromaDc(const char* shader) {
     }
 
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::dct::chromaDc(shader, cases);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];
@@ -407,7 +407,7 @@ void verifyReconstructDc(const char* shader) {
         }
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::dct::reconstructDc(shader, cases);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];
@@ -480,7 +480,7 @@ void verifyCoeffAnalysis(const char* shader) {
     cases[1].residualSum.fill(UINT32_MAX);
 
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::dct::coeffAnalysis(shader, cases);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];
@@ -549,7 +549,7 @@ void verifyChromaOptimize(const char* shader) {
         cases[2 + format].scale = cases[4 + format].scale = 2048;
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::dct::chromaOptimize(shader, cases);
     std::array<int, 2> zero{}, changed{}, kept{};
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];

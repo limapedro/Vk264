@@ -72,7 +72,7 @@ void verifyBitstream(const char* shader) {
         }
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::bitstream::write(shader, cases);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];
@@ -380,7 +380,7 @@ void verifyParameters(const char* shader) {
         store(input, sps, pps);
     }
     const auto inputs = cases;
-    execute(shader, cases, 1, tables());
+    vk264::set::parameters(shader, cases, 1, tables());
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];
@@ -558,7 +558,7 @@ void verifySliceHeader(const char* shader) {
     }
 
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::encoder::sliceHeader(shader, cases);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];

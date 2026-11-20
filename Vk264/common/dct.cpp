@@ -26,5 +26,18 @@ void transform(const char* shader, std::vector<Block<Group>>& blocks) {
     execute(shader, blocks, blocksPerGroup);
 }
 
+template<class Cases>
+void dc(const char* shader, Cases& cases) { execute(shader, cases); }
+template<class Cases>
+void zigzag(const char* shader, Cases& cases) { execute(shader, cases); }
+template<class Cases>
+void chromaDc(const char* shader, Cases& cases) { execute(shader, cases); }
+template<class Cases>
+void reconstructDc(const char* shader, Cases& cases) { execute(shader, cases); }
+template<class Cases>
+void coeffAnalysis(const char* shader, Cases& cases) { execute(shader, cases); }
+template<class Cases>
+void chromaOptimize(const char* shader, Cases& cases) { execute(shader, cases); }
+
 } // namespace dct
 } // namespace vk264

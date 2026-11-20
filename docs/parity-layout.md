@@ -33,7 +33,7 @@ Alongside the fixture modules, `Vk264/common/` and `Vk264/encoder/` mirror
 exposes `vk264::<x264 function>` — the GPU compute as an ordinary function call
 with the same intent as its x264 counterpart — and its fixture calls both the
 verbatim x264 C oracle and the Vulkan wrapper with identical inputs, comparing
-outputs byte for byte. Wired so far (6): `Vk264/common/dct.cpp` (mirrors
+outputs byte for byte. Wired so far (15): `Vk264/common/dct.cpp` (mirrors
 `common/dct.c`, wraps the DCT shaders as `vk264::dct::transform`),
 `common/quant.cpp`, `common/predict.cpp`, `common/deblock.cpp`,
 `encoder/cabac.cpp`, `encoder/cavlc.cpp`.
