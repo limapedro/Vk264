@@ -16,3 +16,10 @@ target_compile_definitions(vk264_test_shader_dct PRIVATE
     VK264_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders/")
 add_dependencies(vk264_test_shader_dct vk264_rewrite_shaders)
 add_test(NAME rewrite_shader_dct COMMAND vk264_test_shader_dct)
+
+add_executable(vk264_test_shader_dc test_shader_dc.c)
+target_link_libraries(vk264_test_shader_dc PRIVATE vk264_rewrite_ref vk264_rewrite_host)
+target_compile_definitions(vk264_test_shader_dc PRIVATE
+    VK264_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders/")
+add_dependencies(vk264_test_shader_dc vk264_rewrite_shaders)
+add_test(NAME rewrite_shader_dc COMMAND vk264_test_shader_dc)

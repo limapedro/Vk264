@@ -76,6 +76,13 @@ static void sub4x4_dct(int dct[16], const uint8_t *src, const uint8_t *pred)
     }
 }
 
+static void dct4x4dc(int d[16]);
+
+void vk_ref_dct4x4dc(int d[16])
+{
+    dct4x4dc(d);
+}
+
 static void dct4x4dc(int d[16])
 {
     int tmp[16];
