@@ -125,6 +125,24 @@ static void sub8x8_dct_dc(int dct[4], const uint8_t *src, const uint8_t *pred)
     }
 }
 
+void vk_ref_predict16x16(uint8_t out[256], const uint8_t top[16],
+                         const uint8_t left[16], int mode)
+{
+    if (mode == 0) { /* V */
+        for (int y = 0; y < 16; ++y)
+            for (int x = 0; x < 16; ++x) out[y*16+x] = top[x];
+    } else if (mode == 1) { /* H */
+        for (int y = 0; y < 16; ++y)
+            for (int x = 0; x < 16; ++x) out[y*16+x] = left[y];
+    } else if (mode == 2) { /* DC */
+        int s = 16;
+        for (int i = 0; i < 16; ++i) s += top[i] + left[i];
+        memset(out, s >> 5, 256);
+    } else { /* DC_128 and the DC_LEFT/TOP fixups */
+        memset(out, 128, 256);
+    }
+}
+
 static void predict_dc(uint8_t *out, int size, int value)
 {
     /* x264 replicates luma edge pixels into the fdec border (frame.c:535-553),

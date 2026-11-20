@@ -76,6 +76,15 @@ bitstream at real-time speed is the intended result.
 ## Current state (milestones)
 - M0 done: C11/Vulkan build, bitstream writer, 1/1 CTest green.
 - M1 done: SPS/PPS byte-exact vs x264 CLI, 2/2 CTest green.
-- M2 in progress: first IDR slice; header + mb_type already byte-match.
-- M3 next: move ref code to `src/ref/`, add first equivalence-tested shader
-  (intra DC prediction + 4x4 DCT/quant), then wire it into the slice.
+- M2 done: full 16x16 flat IDR slice byte-exact vs x264 CLI, 3/3 CTest green.
+- M3 done: GPU-first layout (`src/ref/` oracle, `src/host/` thin driver,
+  `shaders/`), plus first GPU shader `dct4x4.comp` proven equal to the C
+  oracle bit-for-bit (4/4 green).
+- M4 done: `dct4x4dc.comp` (Hadamard) and `quant4x4.comp` equivalence tests,
+  6/6 CTest green.
+- M5 done: `predict16x16.comp` (V/H/DC/DC_128) equivalence-tested against the
+  C oracle; 7/7 CTest green. Shaders so far: dct4x4, dct4x4dc, quant4x4,
+  predict16x16 — all bit-for-bit equal to their C oracle on random inputs.
+- M6 next: 8x8 chroma prediction + P-mode, then a multi-shader GPU I16
+  coefficient pipeline, then CAVLC syntax shaders, then P-slices/motion
+  search, then CABAC.
