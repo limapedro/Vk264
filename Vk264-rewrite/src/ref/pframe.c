@@ -455,6 +455,52 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
     return cbp;
 }
 
+/* Code the luma DC residual block of an I16 MB in a P-slice. x264 always
+ * codes the 16x16 DC block for I16, even when cbp_luma==0. */
+static void code_i16_dc(vk_bs_t *bs, const uint8_t *cur, int w, int x, int y,
+                        const uint8_t pred[256], int qp,
+                        const uint8_t *ll, const uint8_t *tl,
+                        uint8_t *rcony, int rdy)
+{
+    int mf[16], bias[16], deq[16];
+    vk_ref_quant_tables(qp, 0, mf, bias, deq);
+    int dc[16];
+    for (int b = 0; b < 16; ++b) {
+        int by = (b/4)*4, bx = (b%4)*4;
+        uint8_t s[16], p[16];
+        for (int yy = 0; yy < 4; ++yy)
+            for (int xx = 0; xx < 4; ++xx) {
+                s[yy*4+xx] = cur[(y+by+yy)*w + x+bx+xx];
+                p[yy*4+xx] = pred[(by+yy)*16 + bx+xx];
+            }
+        int d[16];
+        vk_ref_dct4x4(d, s, p);
+        dc[b] = d[0];
+    }
+    vk_ref_dct4x4dc(dc);
+    int dcmf = mf[0] >> 1, dcbias = bias[0] << 1;
+    int q[16];
+    for (int i = 0; i < 16; ++i) q[i] = vk_ref_quant_one(dc[i], dcmf, dcbias);
+    /* nC from luma block 0's left/top neighbours */
+    int za = ll[0], zb = tl[0], sum = za+zb;
+    int prednc = sum < 0x80 ? (sum+1)>>1 : sum & 0x7f;
+    static const int ctt[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
+    /* x264's luma16x16_dc is zigzag-scanned before CAVLC */
+    static const uint8_t dczz[16] = {0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
+    int zq[16];
+    for (int i = 0; i < 16; ++i) zq[i] = q[dczz[i]];
+    vk_cavlc_block_residual(bs, VK_DCT_LUMA_DC, zq, ctt[prednc & 0x7f], 1, 16);
+    /* DC-only reconstruction: idct4x4dc + dequant4dc + add to prediction */
+    int rec[16];
+    for (int i = 0; i < 16; ++i) rec[i] = zq[i];
+    vk_ref_idct4x4dc(rec);
+    vk_ref_dequant4dc(rec, deq, qp);
+    for (int i = 0; i < 16; ++i) {
+        int by = (i/4)*4, bx = (i%4)*4;
+        vk_ref_add_block_dc(rcony + by*rdy + bx, rdy, rec[i]);
+    }
+}
+
 /* Decide whether to code a P MB as I16x16 (x264 subme=0 rule):
  * choose the I16 mode / chroma mode minimising SATD + lambda*bits, then
  * compare the total against the inter cost. */
@@ -463,6 +509,7 @@ static int intra_decide(const uint8_t *cy, const uint8_t *cu, const uint8_t *cv,
                         const uint8_t *top, const uint8_t *left, uint8_t tl,
                         const uint8_t *topu, const uint8_t *leftu, uint8_t tlu,
                         const uint8_t *topv, const uint8_t *leftv, uint8_t tlv,
+                        int have_l, int have_t, int have_tl,
                         int qp, int inter_cost,
                         int *mode, int *cmode, int *cost)
 {
@@ -482,9 +529,36 @@ static int intra_decide(const uint8_t *cy, const uint8_t *cu, const uint8_t *cv,
         int c = sad + lambda*vk_mode_bits(m);
         if (c < best) { best = c; bm = m; }
     }
-    /* x264 at subme=0 has b_chroma_me=0: chroma SATD is NOT part of the
-     * intra-vs-inter cost. Chroma mode is chosen separately during encode. */
-    int cm = 0;
+    /* x264 at subme=0 has b_chroma_me=0: chroma is not part of the
+     * intra-vs-inter cost, but the chroma prediction mode is still chosen
+     * by minimising SAD over both 8x8 planes + lambda*bs_size_ue(mode). */
+    int cs = w/2, cbest = 0x7fffffff, cm = 0;
+    int avail = (have_l ? 1 : 0) | (have_t ? 2 : 0) | (have_tl ? 4 : 0);
+    static const int8_t cmavail[5][5] = {
+        {6,-1,-1,-1,-1}, {4,1,-1,-1,-1}, {5,2,-1,-1,-1},
+        {2,1,0,-1,-1},   {2,1,0,3,-1}
+    };
+    int idx = avail & 7;
+    idx = (idx == 7) ? 4 : (idx & 3);
+    for (int k = 0; cmavail[idx][k] >= 0; ++k) {
+        int m = cmavail[idx][k];
+        int fix = m <= 3 ? m : 0;
+        int c = 0;
+        vk_predict_chroma8(p8, topu, leftu, tlu, m);
+        for (int yy = 0; yy < 8; ++yy)
+            for (int xx = 0; xx < 8; ++xx) {
+                int dv = cu[(y/2+yy)*cs + x/2+xx] - p8[yy*8+xx];
+                c += dv < 0 ? -dv : dv;
+            }
+        vk_predict_chroma8(p8, topv, leftv, tlv, m);
+        for (int yy = 0; yy < 8; ++yy)
+            for (int xx = 0; xx < 8; ++xx) {
+                int dv = cv[(y/2+yy)*cs + x/2+xx] - p8[yy*8+xx];
+                c += dv < 0 ? -dv : dv;
+            }
+        c += lambda*vk_mode_bits(fix);
+        if (c < cbest) { cbest = c; cm = m; }
+    }
     *cost = best;
     *mode = bm;
     *cmode = cm;
@@ -631,6 +705,7 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                              cur + (size_t)w*h + (size_t)(w/2)*(h/2),
                              w, mx*16, my*16, top, left, tly,
                              topu, leftu, tlu, topv, leftv, tlv,
+                             have_l, have_t, have_tl,
                              qp, inter_cost, &imode, &icmode, &icost);
 
             /* CAVLC requires mb_skip_run before every coded MB, including 0. */
@@ -640,19 +715,17 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
 
             if (use_intra) {
                 vk_bs_write_ue(bs, (uint32_t)(5 + 1 + imode));  /* I16 in P */
-                vk_bs_write_ue(bs, (uint32_t)icmode);            /* chroma mode */
+                vk_bs_write_ue(bs, (uint32_t)(icmode <= 3 ? icmode : 0));  /* chroma mode fix */
                 vk_bs_write_se(bs, 0);                           /* mb_qp_delta */
-                /* luma DC block (all zero when cbp=0) */
-                int za = have_l ? nnz_c[idx-1][3] : 0x80;
-                int zb = have_t ? nnz_c[idx-mw][12] : 0x80;
-                int sum = za+zb;
-                int pred = sum < 0x80 ? (sum+1)>>1 : sum & 0x7f;
-                static const int ctt[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
-                int zq[16] = {0};
-                vk_cavlc_block_residual(bs, VK_DCT_LUMA_DC, zq, ctt[pred & 0x7f], 1, 16);
-                /* reconstruct: intra prediction only (cbp=0) */
                 uint8_t pred16[256], pred8[64];
                 vk_predict16(pred16, top, left, tly, imode);
+                uint8_t il[4], it[4];
+                for (int i = 0; i < 4; ++i) {
+                    il[i] = have_l ? nnz_c[idx-1][i*4+3] : 0x80;
+                    it[i] = have_t ? nnz_c[idx-mw][12+i] : 0x80;
+                }
+                code_i16_dc(bs, cur, w, mx*16, my*16, pred16, qp, il, it,
+                            ry + (my*16+LPAD)*rs + LPAD + mx*16, rs);
                 for (int yy = 0; yy < 16; ++yy)
                     memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16, pred16 + yy*16, 16);
                 vk_predict_chroma8(pred8, topu, leftu, tlu, icmode);
