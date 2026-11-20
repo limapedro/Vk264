@@ -128,8 +128,10 @@ int vk_select_chroma(const uint8_t srcu[64], const uint8_t srcv[64],
                      const uint8_t topv[8], const uint8_t leftv[8],
                      uint8_t tlu, uint8_t tlv, int avail, int qp)
 {
-    static const int8_t modes[5][4] = {
-        {6,-1,-1,-1}, {4,1,-1,-1}, {5,2,-1,-1}, {2,1,0,-1}, {2,1,0,3}
+    /* 5th column is the -1 terminator: the 4-mode row must not read OOB. */
+    static const int8_t modes[5][5] = {
+        {6,-1,-1,-1,-1}, {4,1,-1,-1,-1}, {5,2,-1,-1,-1},
+        {2,1,0,-1,-1}, {2,1,0,3,-1}
     };
     int idx = avail & (1|2|8);
     idx = (idx == (1|2|8)) ? 4 : (idx & 3);
