@@ -451,6 +451,8 @@ ResidentFrameResult encodeResidentCavlcFrame(const std::filesystem::path& shader
         {countOffset, countOffset, wordBytes},
     };
     if (readReconstruction) downloads.emplace_back(referenceEnd, referenceEnd, pixels);
+    const bool dumpCoef = std::getenv("VK264_DUMP_COEF") != nullptr;
+    if (dumpCoef) downloads.emplace_back(frameInput[6]*wordBytes, 0, macroblocks*cabacCorpus::macroblockWords*wordBytes);
     cmd.copyBuffer(resident, staging, downloads);
     barrier(transfer, vk::PipelineStageFlagBits::eHost, vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eHostRead);
     barrier(compute, vk::PipelineStageFlagBits::eHost, shaderWrite, vk::AccessFlagBits::eHostRead);
@@ -461,6 +463,16 @@ ResidentFrameResult encodeResidentCavlcFrame(const std::filesystem::path& shader
     context.queue.waitIdle();
     const auto completed = ComputeContext::Clock::now();
 
+    if (dumpCoef) {
+        const auto* lv = reinterpret_cast<const std::int32_t*>(context.mapped);
+        std::fprintf(stderr, "VK264DC ");
+        for (int i = 0; i < 16; ++i) std::fprintf(stderr, "%d,", lv[4+i]);
+        std::fprintf(stderr, "\nVK264META mode=%d luma=%d dcNZ=%d mask=%08x chroma=%d\n",
+                     lv[0], lv[1], lv[2], lv[3], lv[260]);
+        for (int b = 0; b < 16; ++b)
+            std::fprintf(stderr, "VK264AC%d %d,%d,%d,%d\n", b,
+                         lv[20+15*b], lv[21+15*b], lv[22+15*b], lv[23+15*b]);
+    }
     if (readReconstruction) {
         auto reference = context.mapped+referenceEnd;
         const auto unpack = [&reference](std::vector<pixel>& plane) {

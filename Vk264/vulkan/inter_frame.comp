@@ -238,7 +238,10 @@ void prepare(uint f, uint motion, uint width, uint x, uint y, bool intra) {
         luma4[f].qp = int(words[q4]);
         luma4[f].mode = -1; // set after source/neighbours are staged
         luma4[f].plane = 0;
-        luma4[f].decimate = 1;
+        // x264 (encoder/macroblock.c::mb_encode_i16x16) starts decimate_score
+        // at 9 (no decimation) for I-slices; DCT decimation applies to P-frames
+        // only. Forcing 1 here discarded coefficients x264 keeps (issue #25).
+        luma4[f].decimate = intra ? 0 : 1;
         luma4[f].denoise = 0;
         luma4[f].cbp = 0;
         for (uint i = 0u; i < 16u; ++i) {
