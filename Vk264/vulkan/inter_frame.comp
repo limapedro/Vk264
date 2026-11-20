@@ -294,6 +294,11 @@ void prepare(uint f, uint motion, uint width, uint x, uint y, bool intra) {
             luma4[f].pixels[origin+stride*r-1u] = sampleByte(luma, pos+r*width-1u);
         if (y != 0u) for (uint c = 0u; c < 16u; ++c)
             luma4[f].pixels[origin-stride+c] = sampleByte(luma, pos-width+c);
+        // x264's macroblock_cache_load provides p_fdec[-1-FDEC_STRIDE] (the
+        // top-left corner) used by I16x16 plane prediction; stage it here too
+        // or the plane mode scores against a stale/zero corner (issue #30).
+        if (x != 0u && y != 0u)
+            luma4[f].pixels[origin-stride-1u] = sampleByte(luma, pos-width-1u);
         if ((words[13] & 2u) != 0u)
             luma4[f].mode = selectIntra16Mode(f, x, y, int(words[q4]));
         else
@@ -327,6 +332,8 @@ void prepare(uint f, uint motion, uint width, uint x, uint y, bool intra) {
                 chroma[fc].pixels[origin+stride*r-1u] = sampleByte(chromaBase, pos+r*strideC-1u);
             if (y != 0u) for (uint c = 0u; c < 8u; ++c)
                 chroma[fc].pixels[origin-stride+c] = sampleByte(chromaBase, pos-strideC+c);
+            if (x != 0u && y != 0u)
+                chroma[fc].pixels[origin-stride-1u] = sampleByte(chromaBase, pos-strideC-1u);
         }
     }
     if (intra) {
