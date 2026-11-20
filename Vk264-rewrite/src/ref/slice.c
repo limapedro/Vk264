@@ -300,7 +300,6 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
         for (int y = 0; y < 16; ++y)
             for (int x = 0; x < 16; ++x) tight[y*16+x] = src_y[y*stride_y+x];
         mode = vk_select16(tight, top, left, nb->tl_y, nb->avail, qp);
-        if (getenv("DBGMODE")) fprintf(stderr, "ORAMB mb=%d,%d lmode=%d\n", mb_x, mb_y, mode);
         vk_predict16(pred_y, top, left, nb->tl_y, mode);
         /* chroma mode decision + prediction from neighbours */
         uint8_t t8[8], l8[8], su64[64], sv64[64];
