@@ -1,5 +1,8 @@
 # Vk264 agent handoff — Subaru → Ram / Rem (2026-11-20)
 
+> **READ-ONLY RULE:** `references/x264-master/` is ground truth. Read it, never
+> edit/write/build there. See `docs/REFERENCE-X264-READ-ONLY.md`.
+
 ## 0. FIRST: update your repo (you are both on stale bases)
 
 Both of your branches are based on an old `main` (before PRs #41–#46).
