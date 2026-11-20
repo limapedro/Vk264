@@ -236,6 +236,7 @@ int runParityTests(int argc, char** argv) try {
     else if (side == "predict_intra") verifyPredictIntra(argv[2]);
     else if (side == "predict_directional") verifyPredictDirectional(argv[2]);
     else if (side == "i16_mode") verifyIntra16Mode();
+    else if (side == "cavlc_context") verifyCavlcContext();
     else if (side == "i4x4_decision") verifyI4x4Decision();
     else if (side == "i4x4_cabac") encodeI4x4Frame();
     else if (side == "deblock_filter") verifyDeblockFilter(argv[2]);
