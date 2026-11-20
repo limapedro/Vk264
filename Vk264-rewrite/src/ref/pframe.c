@@ -10,6 +10,7 @@
 #include "motion.h"
 #include "slice.h"
 #include "cavlc.h"
+#include "intra16.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -195,6 +196,55 @@ static int probe(const uint8_t *cur, const uint8_t *refp,
     return 1;
 }
 
+/* x264 pixel SATD: sum of absolute Hadamard coefficients of the residual,
+ * rounded >>1 once per 8x4 block (x264_pixel_satd_8x4). */
+static int satd4_raw(const uint8_t *a, int sa, const uint8_t *b, int sb)
+{
+    int d[4][4];
+    for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x)
+            d[y][x] = (int)a[y*sa+x] - (int)b[y*sb+x];
+    for (int y = 0; y < 4; ++y) {
+        int s0 = d[y][0]+d[y][3], s1 = d[y][1]+d[y][2];
+        int e0 = d[y][0]-d[y][3], e1 = d[y][1]-d[y][2];
+        d[y][0]=s0+s1; d[y][1]=e0+e1; d[y][2]=s0-s1; d[y][3]=e0-e1;
+    }
+    for (int x = 0; x < 4; ++x) {
+        int s0 = d[0][x]+d[3][x], s1 = d[1][x]+d[2][x];
+        int e0 = d[0][x]-d[3][x], e1 = d[1][x]-d[2][x];
+        d[0][x]=s0+s1; d[1][x]=e0+e1; d[2][x]=s0-s1; d[3][x]=e0-e1;
+    }
+    int sum = 0;
+    for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x) {
+            int v = d[y][x];
+            sum += v < 0 ? -v : v;
+        }
+    return sum;
+}
+
+static int satd8x4(const uint8_t *a, int sa, const uint8_t *b, int sb)
+{
+    return (satd4_raw(a, sa, b, sb) + satd4_raw(a+4, sa, b+4, sb)) >> 1;
+}
+
+static int satd16(const uint8_t *a, int sa, const uint8_t *b, int sb)
+{
+    int s = 0;
+    for (int y = 0; y < 16; y += 4)
+        for (int x = 0; x < 16; x += 8)
+            s += satd8x4(a + y*sa + x, sa, b + y*sb + x, sb);
+    return s;
+}
+
+static int satd8(const uint8_t *a, int sa, const uint8_t *b, int sb)
+{
+    int s = 0;
+    for (int y = 0; y < 8; y += 4)
+        s += satd8x4(a + y*sa, sa, b + y*sb, sb);
+    return s;
+}
+
 /* x264 tables for inter residual CAVLC. */
 static const uint8_t rz4[16] = {0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
 static const uint8_t rblock_idx[16] = {0,1,4,5,2,3,6,7,8,9,12,13,10,11,14,15};
@@ -365,6 +415,42 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
     return cbp;
 }
 
+/* Decide whether to code a P MB as I16x16 (x264 subme=0 rule):
+ * choose the I16 mode / chroma mode minimising SATD + lambda*bits, then
+ * compare the total against the inter cost. */
+static int intra_decide(const uint8_t *cy, const uint8_t *cu, const uint8_t *cv,
+                        int w, int x, int y,
+                        const uint8_t *top, const uint8_t *left, uint8_t tl,
+                        const uint8_t *topu, const uint8_t *leftu, uint8_t tlu,
+                        const uint8_t *topv, const uint8_t *leftv, uint8_t tlv,
+                        int qp, int inter_cost,
+                        int *mode, int *cmode, int *cost)
+{
+    int lambda = vk_lambda(qp);
+    uint8_t pred[256], p8[64];
+    int best = 0x7fffffff, bm = 2;
+    for (int m = 0; m < 4; ++m) {
+        vk_predict16(pred, top, left, tl, m);
+        /* subme=0: x264 uses SAD (mbcmp = sad_aligned), not SATD. */
+        const uint8_t *s = cy + y*w + x;
+        int sad = 0;
+        for (int yy = 0; yy < 16; ++yy)
+            for (int xx = 0; xx < 16; ++xx) {
+                int dv = s[yy*w+xx] - pred[yy*16+xx];
+                sad += dv < 0 ? -dv : dv;
+            }
+        int c = sad + lambda*vk_mode_bits(m);
+        if (c < best) { best = c; bm = m; }
+    }
+    /* x264 at subme=0 has b_chroma_me=0: chroma SATD is NOT part of the
+     * intra-vs-inter cost. Chroma mode is chosen separately during encode. */
+    int cm = 0;
+    *cost = best;
+    *mode = bm;
+    *cmode = cm;
+    return *cost < inter_cost;
+}
+
 void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                        const uint8_t *cur, const uint8_t *ref,
                        int w, int h, int qp, int frame_num)
@@ -397,6 +483,11 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
     uint8_t (*nnz_c)[16] = calloc((size_t)mw*mh, 16);
     uint8_t (*cnnz_c)[2][4] = calloc((size_t)mw*mh, 8);
     uint8_t *dcnz_c = calloc((size_t)mw*mh, 1);
+    /* reconstructed current-frame planes (with border) for intra prediction */
+    int pcrs = rs/2;
+    size_t rys = (size_t)rs*(h+2*LPAD), rcs = (size_t)pcrs*(h/2+2*CPAD);
+    uint8_t *ry = malloc(rys), *ru = malloc(rcs), *rv = malloc(rcs);
+    memset(ry, 128, rys); memset(ru, 128, rcs); memset(rv, 128, rcs);
     int skip_run = 0;
     for (int my = 0; my < mh; ++my)
         for (int mx = 0; mx < mw; ++mx) {
@@ -410,6 +501,25 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                             : (have_tl ? mv[idx-mw-1][0] : 0);
             int cy = have_c ? mv[idx-mw+1][1]
                             : (have_tl ? mv[idx-mw-1][1] : 0);
+
+            /* reconstructed neighbours for intra prediction */
+            uint8_t top[16], left[16], topu[8], leftu[8], topv[8], leftv[8];
+            uint8_t tly = 128, tlu = 128, tlv = 128;
+            for (int i = 0; i < 16; ++i) {
+                top[i] = have_t ? ry[(my*16-1+LPAD)*rs + LPAD + mx*16+i] : 128;
+                left[i] = have_l ? ry[(my*16+i+LPAD)*rs + LPAD + mx*16-1] : 128;
+            }
+            if (have_t && have_l) tly = ry[(my*16-1+LPAD)*rs + LPAD + mx*16-1];
+            for (int i = 0; i < 8; ++i) {
+                topu[i] = have_t ? ru[(my*8-1+CPAD)*crs + CPAD + mx*8+i] : 128;
+                leftu[i] = have_l ? ru[(my*8+i+CPAD)*crs + CPAD + mx*8-1] : 128;
+                topv[i] = have_t ? rv[(my*8-1+CPAD)*crs + CPAD + mx*8+i] : 128;
+                leftv[i] = have_l ? rv[(my*8+i+CPAD)*crs + CPAD + mx*8-1] : 128;
+            }
+            if (have_t && have_l) {
+                tlu = ru[(my*8-1+CPAD)*crs + CPAD + mx*8-1];
+                tlv = rv[(my*8-1+CPAD)*crs + CPAD + mx*8-1];
+            }
 
             int psk_x, psk_y;
             pskip_mv(lx, ly, tx, ty, cx, cy, have_l, have_t, have_c || have_tl,
@@ -425,11 +535,11 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                 probe(cur, refp, w, h, rs, mx*16, my*16, psk_x, psk_y, qp))
                 do_skip = 1;
 
-            int mvpx = 0, mvpy = 0, mvx = 0, mvy = 0;
+            int mvpx = 0, mvpy = 0, mvx = 0, mvy = 0, inter_cost = 0;
             if (!do_skip) {
                 mvp16_avail(lx, ly, tx, ty, cx, cy, have_l, have_t,
                             have_c || have_tl, &mvpx, &mvpy);
-                vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
+                inter_cost = vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
                             mvpx/4, mvpy/4, 16,
                             lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
                             &mvx, &mvy);
@@ -444,11 +554,60 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                 mv[idx][0] = psk_x; mv[idx][1] = psk_y;
                 is_skip[idx] = 1;
                 ++skip_run;
+                /* reconstruct skip MB from reference */
+                int sx = mv[idx][0]/4, sy = mv[idx][1]/4;
+                for (int yy = 0; yy < 16; ++yy)
+                    memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
+                           refp + (my*16+yy+sy+LPAD)*rs + LPAD + mx*16+sx, 16);
+                for (int yy = 0; yy < 8; ++yy) {
+                    int cx = mv[idx][0]/8, cyp = mv[idx][1]/8;
+                    memcpy(ru + (my*8+yy+CPAD)*crs + CPAD + mx*8,
+                           refp + rys + (my*8+yy+cyp+CPAD)*crs + CPAD + mx*8+cx, 8);
+                    memcpy(rv + (my*8+yy+CPAD)*crs + CPAD + mx*8,
+                           refp + rys + rcs + (my*8+yy+cyp+CPAD)*crs + CPAD + mx*8+cx, 8);
+                }
                 continue;
             }
+
+            /* x264 subme=0 intra-vs-inter decision */
+            int imode = 2, icmode = 0, icost = 0;
+            int use_intra = !do_skip && inter_cost > 0 &&
+                intra_decide(cur, cur + (size_t)w*h,
+                             cur + (size_t)w*h + (size_t)(w/2)*(h/2),
+                             w, mx*16, my*16, top, left, tly,
+                             topu, leftu, tlu, topv, leftv, tlv,
+                             qp, inter_cost, &imode, &icmode, &icost);
+
             /* CAVLC requires mb_skip_run before every coded MB, including 0. */
             vk_bs_write_ue(bs, (uint32_t)skip_run);
             skip_run = 0;
+            mv[idx][0] = mvx*4; mv[idx][1] = mvy*4;
+
+            if (use_intra) {
+                vk_bs_write_ue(bs, (uint32_t)(5 + 1 + imode));  /* I16 in P */
+                vk_bs_write_ue(bs, (uint32_t)icmode);            /* chroma mode */
+                vk_bs_write_se(bs, 0);                           /* mb_qp_delta */
+                /* luma DC block (all zero when cbp=0) */
+                int za = have_l ? nnz_c[idx-1][3] : 0x80;
+                int zb = have_t ? nnz_c[idx-mw][12] : 0x80;
+                int sum = za+zb;
+                int pred = sum < 0x80 ? (sum+1)>>1 : sum & 0x7f;
+                static const int ctt[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
+                int zq[16] = {0};
+                vk_cavlc_block_residual(bs, VK_DCT_LUMA_DC, zq, ctt[pred & 0x7f], 1, 16);
+                /* reconstruct: intra prediction only (cbp=0) */
+                uint8_t pred16[256], pred8[64];
+                vk_predict16(pred16, top, left, tly, imode);
+                for (int yy = 0; yy < 16; ++yy)
+                    memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16, pred16 + yy*16, 16);
+                vk_predict_chroma8(pred8, topu, leftu, tlu, icmode);
+                for (int yy = 0; yy < 8; ++yy)
+                    memcpy(ru + (my*8+yy+CPAD)*crs + CPAD + mx*8, pred8 + yy*8, 8);
+                vk_predict_chroma8(pred8, topv, leftv, tlv, icmode);
+                for (int yy = 0; yy < 8; ++yy)
+                    memcpy(rv + (my*8+yy+CPAD)*crs + CPAD + mx*8, pred8 + yy*8, 8);
+                continue;
+            }
             mv[idx][0] = mvx*4; mv[idx][1] = mvy*4;
             vk_bs_write_ue(bs, 0);                          /* P_L0_16x16 */
             vk_bs_write_se(bs, mvx*4 - mvpx);               /* mvd_x */
@@ -470,9 +629,22 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
             memcpy(nnz_c[idx], on, 16);
             memcpy(cnnz_c[idx], oc, 8);
             dcnz_c[idx] = od;
+            /* reconstruct P16 MB from reference (zero-residual case) */
+            int sx = mvx, sy = mvy;
+            for (int yy = 0; yy < 16; ++yy)
+                memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
+                       refp + (my*16+yy+sy+LPAD)*rs + LPAD + mx*16+sx, 16);
+            for (int yy = 0; yy < 8; ++yy) {
+                int cx = mvx/2, cyp = mvy/2;
+                memcpy(ru + (my*8+yy+CPAD)*crs + CPAD + mx*8,
+                       refp + rys + (my*8+yy+cyp+CPAD)*crs + CPAD + mx*8+cx, 8);
+                memcpy(rv + (my*8+yy+CPAD)*crs + CPAD + mx*8,
+                       refp + rys + rcs + (my*8+yy+cyp+CPAD)*crs + CPAD + mx*8+cx, 8);
+            }
         }
     if (skip_run) vk_bs_write_ue(bs, (uint32_t)skip_run);
     vk_bs_rbsp_trailing(bs);
     free(dcnz_c); free(cnnz_c); free(nnz_c);
+    free(ry); free(ru); free(rv);
     free(is_skip); free(mv); free(refp);
 }

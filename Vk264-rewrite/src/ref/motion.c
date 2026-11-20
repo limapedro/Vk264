@@ -62,7 +62,9 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
         bcost &= ~15;
     }
     *best_x = bmx; *best_y = bmy;
-    return sad16(cur, cur_stride, rpad, ref_stride, x, y, bmx, bmy);
+    /* x264's me16x16.cost = SAD + lambda-weighted MVD bits. */
+    return sad16(cur, cur_stride, rpad, ref_stride, x, y, bmx, bmy)
+         + mv_cost((bmx-mvpx)*4, lambda) + mv_cost((bmy-mvpy)*4, lambda);
 }
 
 void vk_pad_plane(uint8_t *dst, int ds, const uint8_t *src, int ss,
