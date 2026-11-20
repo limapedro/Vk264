@@ -70,7 +70,8 @@ ResidentFrameResult encodeResidentCabacFrame(const std::filesystem::path& shader
                                              int width, int height, int qp, int chromaQp,
                                              const motionSearchCorpus::Fixture& search,
                                              bool inter, int pictureIndex, bool readReconstruction, bool inter8x8 = true,
-                                              bool x264ModeSelection = false, bool longStart = false) {
+                                              bool x264ModeSelection = false, bool longStart = false,
+                                               const char* preset = nullptr) {
     const char* stageName = inter ? "resident_cabac_p_frame" : "resident_cabac_idr_frame";
     const HostTimer phase(stageName);
     auto& context = computeContext();
@@ -112,7 +113,9 @@ ResidentFrameResult encodeResidentCabacFrame(const std::filesystem::path& shader
     chromaCorpus::configure(qc);
 
     std::vector<std::uint32_t> frameInput(16);
-    frameInput[13] = (inter ? 0u : 1u) | (x264ModeSelection ? 2u : 0u);
+    const auto* presetInfo = preset ? x264_vulkan::presets::find(preset) : nullptr;
+    const bool useSad = presetInfo && presetInfo->subpelRefine <= 1;
+    frameInput[13] = (inter ? 0u : 1u) | (x264ModeSelection ? 2u : 0u) | (useSad ? 4u : 0u);
     const auto append = [&frameInput](const void* bytes, std::size_t length) {
         const auto start = static_cast<std::uint32_t>(frameInput.size());
         frameInput.resize(frameInput.size()+(length+3)/4);
