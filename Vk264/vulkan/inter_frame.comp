@@ -176,6 +176,21 @@ int satd16(uint f) {
 }
 
 // x264 analyse.c::predict_16x16_mode_available + COPY2_IF_LT tie-breaking.
+// x264 mbcmp_init(): with subpel_refine <= 1 the intra mode metric is SAD,
+// not SATD (the satd flag requires i_subpel_refine > 1).
+int sad16(uint f) {
+    int total = 0;
+    for (int i = 0; i < 256; ++i)
+        total += abs(int(luma4[f].source[i]) - int(luma4[f].pixels[origin + (i/16)*stride + i%16]));
+    return total;
+}
+int sad8(uint fc) {
+    int total = 0;
+    for (int i = 0; i < 64; ++i)
+        total += abs(int(chroma[fc].source[i]) - int(chroma[fc].pixels[origin + (i/8)*stride + i%8]));
+    return total;
+}
+
 int selectIntra16Mode(uint f, uint x, uint y, int qp) {
     bool left = x != 0u, top = y != 0u;
     int idx = (left && top) ? 4 : (top ? 2 : (left ? 1 : 0));
@@ -190,7 +205,8 @@ int selectIntra16Mode(uint f, uint x, uint y, int qp) {
     for (int i = 0; i < count; ++i) {
         int mode = candidates[i];
         predictIntra(f, 16, 16, mode);
-        int cost = satd16(f) + lambda * ueBits(predFix(mode));
+        bool useSad = (words[13] & 4u) != 0u;
+        int cost = (useSad ? sad16(f) : satd16(f)) + lambda * ueBits(predFix(mode));
         if (cost < bestCost) { bestCost = cost; bestMode = mode; }
     }
     return bestMode;
@@ -238,7 +254,9 @@ int selectChromaMode(uint fcU, uint fcV, uint x, uint y, int qp) {
         int mode = candidates[i];
         predictChroma(fcU, mode);
         predictChroma(fcV, mode);
-        int cost = satd8(fcU) + satd8(fcV) + lambda * ueBits(chromaFix(mode));
+        bool useSad = (words[13] & 4u) != 0u;
+        int cost = (useSad ? sad8(fcU) + sad8(fcV) : satd8(fcU) + satd8(fcV))
+                 + lambda * ueBits(chromaFix(mode));
         if (cost < bestCost) { bestCost = cost; bestMode = mode; }
     }
     return bestMode;
