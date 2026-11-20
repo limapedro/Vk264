@@ -134,10 +134,10 @@ int main(int argc, char **argv)
         if (fr) {
             for (int y = 0; y < h; ++y)
                 fwrite(ry + ro + y*rs, 1, w, fr);
-            for (int y = 0; y < h/2; ++y) {
+            for (int y = 0; y < h/2; ++y)
                 fwrite(ru + co2 + y*cs2, 1, w/2, fr);
+            for (int y = 0; y < h/2; ++y)
                 fwrite(rv + co2 + y*cs2, 1, w/2, fr);
-            }
             fclose(fr);
         }
     }
