@@ -165,7 +165,7 @@ void configure(Fixture& fixture) {
 }
 }
 
-void verifyInter8x8(const char* shader) {
+void verifyInter8x8(const char* shader, bool frame = false) {
     using namespace inter8Corpus;
     std::vector<Fixture> cases(52*2*2*2*6);
     std::mt19937 random(0x264888);
@@ -176,6 +176,9 @@ void verifyInter8x8(const char* shader) {
         fixture.decimate = (i/(52*2))&1;
         fixture.denoise = (i/(52*4))&1;
         const auto pattern = i/(52*8);
+        // Production inter8x8_frame hardcodes scalar quantization, progressive
+        // scan and no denoising.
+        if (frame) { fixture.field = 0; fixture.denoise = 0; }
         configure(fixture);
         fixture.cbp = pattern == 5 ? 4 : 0;
         fixture.noiseCount = 500;
@@ -197,7 +200,9 @@ void verifyInter8x8(const char* shader) {
             }
     }
     const auto inputs = cases;
-    vk264::macroblock::inter(shader, cases);
+    // inter8x8_frame main() maps 4 invocations per fixture (one per 8x8 block).
+    if (frame) execute(shader, cases, 4);
+    else vk264::macroblock::inter(shader, cases);
     Intra16Reference ref{};
     ref.param.b_cabac = 1;
     ref.dctf.sub16x16_dct8 = sub16x16_dct8;
@@ -273,7 +278,7 @@ void configure(Fixture& block) {
 }
 }
 
-void verifyIntraChroma(const char* shader) {
+void verifyIntraChroma(const char* shader, bool frame = false) {
     using namespace chromaCorpus;
     constexpr auto p420 = std::array{x264_predict_8x8c_dc_c, x264_predict_8x8c_h_c, x264_predict_8x8c_v_c,
         x264_predict_8x8c_p_c, predict_8x8c_dc_left_c, predict_8x8c_dc_top_c, predict_8x8c_dc_128_c};
@@ -333,6 +338,9 @@ void verifyIntraChroma(const char* shader) {
                 block.source[p] = prior+difference;
             }
         }
+        // The production intra_chroma_frame main() hardcodes progressive scan
+        // and no denoising; frame mode restricts fixtures to that subset.
+        if (frame) { block.field = 0; block.denoise = 0; }
         configure(block);
         block.ac.fill(-149);
         block.dc.fill(198);

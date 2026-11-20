@@ -762,7 +762,14 @@ void execute(const char* spv, std::vector<Case>& blocks, int workItemsPerCase = 
     const auto storage = vk::DescriptorType::eStorageBuffer;
     const auto set = context.set;
     const vk::DescriptorBufferInfo data(deviceStorage ? *context.deviceBuffer : *context.buffer, 0, size);
-    device->updateDescriptorSets(vk::WriteDescriptorSet(set, 0, 0, storage, {}, data), {});
+    // Bind the same arena to binding 0 (fixture shaders) and binding 1
+    // (production *_frame.spv variants compiled with -DRESIDUAL_FRAME=1),
+    // so both shader variants can be byte-exact tested by the same fixture.
+    // intra16/inter8x8/intra_chroma production variants use bindings 1/2/3.
+    std::array<vk::WriteDescriptorSet, 5> writes;
+    for (std::uint32_t binding = 0; binding < writes.size(); ++binding)
+        writes[binding] = vk::WriteDescriptorSet(set, binding, 0, storage, {}, data);
+    device->updateDescriptorSets(writes, {});
 
     device->resetCommandPool(*context.commandPool);
     const auto cmd = context.cmd;
