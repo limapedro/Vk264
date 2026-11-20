@@ -81,9 +81,13 @@ from it. See the corrigendum in `docs/PROGRESS.dm` (2026-11-20):
   (transform_size=1, cbp=0xe, dqp=1, blocks 4/5/7/10/13/15) contradicts the
   byte-proven PR #41 target (transform_size=0, cbp=1, blocks 0/1).
 
-Its selftest only round-trips random decision bins, so it cannot catch these.
-Either fix the decoder first (own PR, extend the selftest to syntax/residual/
-qp_delta/terminal), or use raw byte comparison against x264 as the oracle.
+UPDATE: Subaru has since FIXED all four bugs (including a fourth: x264 stores
+context states as (min(s,127-s)<<1)|(s>>6), not the raw clamped value). The
+I4x4 HEADER now decodes exactly to PR #41 ground truth and is gated by
+`x264_cabac_decoder_oracle`. You may trust header syntax (modes/cbp/dqp), but
+residual levels >=15 still need ue_bypass and are NOT trustworthy — use raw
+byte comparison for residual work. Feed the decoder the CABAC payload only
+(bytes after the 88 84 3f slice header).
 
 ## 3. Hard constraints
 

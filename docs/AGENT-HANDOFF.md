@@ -68,9 +68,10 @@ What actually works:
 
 ## 2b. Trustworthiness caveats (full audit, 2026-11-20 — see PROGRESS.dm corrigendum)
 
-- `harness/cabac_decoder.py` has 3 verified bugs: off-by-one mode fix (`:33,95-96`,
-  x264 uses `fix[t+1]`), truncated qp_delta (`:133`), and intra cbf context 93
-  instead of 96 (`:148-151`). It is NOT an oracle; do not derive syntax from it.
+- `harness/cabac_decoder.py` had 4 bugs, now FIXED (Subaru): off-by-one mode fix,
+  truncated qp_delta, intra cbf context 93 vs 96, and wrong context-state init
+  (x264 stores `(min(s,127-s)<<1)|(s>>6)`). Header syntax is now a proven oracle
+  (`x264_cabac_decoder_oracle` CTest); residual levels >=15 still misparse.
 - `parity_check.py` strips ALL NAL type 6 (`:55-57`) and only splits 4-byte start
   codes (`:45-52`), so "PPS NAL" in mismatch messages is mislabelled slice data.
 - The harness compares against installed ffmpeg/libx264 (`N-126335…20260830`),

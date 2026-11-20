@@ -17,7 +17,10 @@ import cabac_decoder as cd
 
 class ReferenceEncoder:
     def __init__(self, qp):
-        self.state = [max(1, min(126, (m * qp >> 4) + n)) for m, n in cd.INIT_I]
+        # Match x264's stored state encoding: (min(s,127-s)<<1)|(s>>6).
+        self.state = [((min(s, 127 - s) << 1) | (s >> 6))
+                      for m, n in cd.INIT_I
+                      for s in [max(1, min(126, (m * qp >> 4) + n))]]
         self.low = 0
         self.range = 0x1FE
         self.queue = -9
@@ -90,6 +93,21 @@ def main():
                     raise SystemExit(f"round-trip mismatch at qp={qp}")
             trials += 1
     print(f"cabac_decoder round-trip OK: {trials} streams, QP 0/25/51.")
+
+    # Syntax-oracle regression: decode the byte-exact x264 superfast/flat slice
+    # (PR #41/#45) and require its I4x4 header to match the captured ground truth.
+    # The input is the CABAC payload only (bytes after the 88 84 3f slice header).
+    x264_slice_cabac = bytes.fromhex("ea4035709bfe0b72bf3e1ac9b134b43181")
+    info, d = cd.parse(x264_slice_cabac, 25)
+    expected_modes = [2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+    for key, want in (("mb0", 0), ("ts0", 0), ("modes", expected_modes),
+                      ("chroma", 0), ("cbp", 1), ("cbp_chroma", 1), ("dqp", 0)):
+        if info[key] != want:
+            raise SystemExit(f"x264 I4x4 header mismatch on {key}: {info[key]} != {want}")
+    first_bins = [(c, b) for _, c, b in d.bins[:4]]
+    if first_bins != [(3, 0), (399, 0), (68, 1), (68, 1)]:
+        raise SystemExit(f"x264 I4x4 leading bins mismatch: {first_bins}")
+    print("cabac_decoder x264 I4x4 slice header matches byte-exact ground truth.")
     return 0
 
 
