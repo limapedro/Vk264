@@ -21,6 +21,9 @@ void vk_slice_header_write(vk_bs_t *s, const vk_slice_header_t *sh,
 
 /* Encode one I16x16 macroblock. source points at 256 Y + 64 Cb + 64 Cr bytes.
  * Entropy is written to s; decoded samples are written back to recon_y/u/v. */
+/* Oracle entry points for GPU-vs-C equivalence tests. */
+void vk_ref_dct4x4(int dct[16], const uint8_t src[16], const uint8_t pred[16]);
+
 void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
                       const uint8_t *src_v, uint8_t *recon_y, uint8_t *recon_u,
                       uint8_t *recon_v, int qp, int mb_x, int mb_y);

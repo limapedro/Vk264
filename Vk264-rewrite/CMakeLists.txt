@@ -30,14 +30,19 @@ endforeach()
 add_custom_target(vk264_rewrite_shaders DEPENDS ${SPIRV})
 
 # ---- Encoder library (C only) ---------------------------------------------
-file(GLOB REWRITE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
-list(REMOVE_ITEM REWRITE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c")
-add_library(vk264_rewrite_core STATIC ${REWRITE_SOURCES})
-target_include_directories(vk264_rewrite_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_link_libraries(vk264_rewrite_core PUBLIC Vulkan::Vulkan)
+# The reference C port is a byte-exact oracle linked into tests only.
+file(GLOB REWRITE_REF CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/ref/*.c")
+add_library(vk264_rewrite_ref STATIC ${REWRITE_REF})
+target_include_directories(vk264_rewrite_ref PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/ref")
+
+# Thin Vulkan host driver. No encoding algorithms live here.
+file(GLOB REWRITE_HOST CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/host/*.c")
+add_library(vk264_rewrite_host STATIC ${REWRITE_HOST})
+target_include_directories(vk264_rewrite_host PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/host")
+target_link_libraries(vk264_rewrite_host PUBLIC Vulkan::Vulkan)
 
 add_executable(vk264_rewrite "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c")
-target_link_libraries(vk264_rewrite PRIVATE vk264_rewrite_core)
+target_link_libraries(vk264_rewrite PRIVATE vk264_rewrite_host)
 add_dependencies(vk264_rewrite vk264_rewrite_shaders)
 
 # Shader directory is passed at compile time so the binary can find its SPIR-V.

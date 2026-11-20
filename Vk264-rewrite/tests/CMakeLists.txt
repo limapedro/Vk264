@@ -1,11 +1,18 @@
 add_executable(vk264_test_bitstream test_bitstream.c)
-target_link_libraries(vk264_test_bitstream PRIVATE vk264_rewrite_core)
+target_link_libraries(vk264_test_bitstream PRIVATE vk264_rewrite_ref)
 add_test(NAME rewrite_bitstream COMMAND vk264_test_bitstream)
 
 add_executable(vk264_test_nal test_nal.c)
-target_link_libraries(vk264_test_nal PRIVATE vk264_rewrite_core)
+target_link_libraries(vk264_test_nal PRIVATE vk264_rewrite_ref)
 add_test(NAME rewrite_nal COMMAND vk264_test_nal)
 
 add_executable(vk264_test_slice test_slice.c)
-target_link_libraries(vk264_test_slice PRIVATE vk264_rewrite_core)
+target_link_libraries(vk264_test_slice PRIVATE vk264_rewrite_ref)
 add_test(NAME rewrite_slice COMMAND vk264_test_slice)
+
+add_executable(vk264_test_shader_dct test_shader_dct.c)
+target_link_libraries(vk264_test_shader_dct PRIVATE vk264_rewrite_ref vk264_rewrite_host)
+target_compile_definitions(vk264_test_shader_dct PRIVATE
+    VK264_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders/")
+add_dependencies(vk264_test_shader_dct vk264_rewrite_shaders)
+add_test(NAME rewrite_shader_dct COMMAND vk264_test_shader_dct)

@@ -48,6 +48,13 @@ static int quant_one(int coef, int mf, int bias)
     return -(int)(((uint32_t)bias + (uint32_t)(-coef)) * (uint32_t)mf >> 16);
 }
 
+static void sub4x4_dct(int dct[16], const uint8_t *src, const uint8_t *pred);
+
+void vk_ref_dct4x4(int dct[16], const uint8_t src[16], const uint8_t pred[16])
+{
+    sub4x4_dct(dct, src, pred);
+}
+
 static void sub4x4_dct(int dct[16], const uint8_t *src, const uint8_t *pred)
 {
     int d[16], tmp[16];
