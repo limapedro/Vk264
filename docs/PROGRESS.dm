@@ -7,6 +7,16 @@ Vk264-Vulkan port: `Vk264/vulkan/*.comp`, shader SPIR-V shader pipelines registe
 fixture tests in `Vk264/src/dct_parity.cpp` (the `verifyXxx` functions and the
 `x264_*_parity` CTest registrations).
 
+## Real-content bottom-up verification (Subaru, 2026-11-20)
+
+`docs/real-content-verification.md` records the full evidence. Headline: all 52
+shader fixtures are byte-exact; a single 16x16 MB of real gameplay is byte-exact
+(bitstream and reconstruction); divergence begins at the second MB row — first
+differing pixel at MB(1,1), the first MB with both left and top neighbours.
+`fast` diverges at MB(0,0) on textured content; `superfast` from pixel 0. This
+localises the remaining gap to the decision/orchestration layer (mode selection,
+neighbour context, I4x4 emission), not the GPU primitives.
+
 ## 1:1 x264 source mirror (issue #18, Subaru) — IN PROGRESS
 
 Goal: mirror `references/x264-master` file-for-file under `Vk264/common/` and
