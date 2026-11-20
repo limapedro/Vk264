@@ -18,6 +18,33 @@ layout(std430, binding = 3) buffer Chroma { ChromaFixture chroma[]; };
 #define fixtures luma4
 #include "predict_intra_math.glsl"
 #undef fixtures
+// A second, chroma-bound copy of the predictors is required: the #define above
+// bakes `fixtures` into predictIntra() at compile time, so redefining it inside
+// predictChroma() has no effect and chroma mode selection kept scoring the
+// luma buffer (issue #30).
+#define fixtures chroma
+#define top chromaTop
+#define left chromaLeft
+#define predictIntra predictChromaIntra
+#define dc chromaDcConst
+#define horizontal chromaHorizontalConst
+#define vertical chromaVerticalConst
+#define plane chromaPlaneConst
+#define dcLeft chromaDcLeftConst
+#define dcTop chromaDcTopConst
+#define dcMidpoint chromaDcMidpointConst
+#include "predict_intra_math.glsl"
+#undef fixtures
+#undef top
+#undef left
+#undef predictIntra
+#undef dc
+#undef horizontal
+#undef vertical
+#undef plane
+#undef dcLeft
+#undef dcTop
+#undef dcMidpoint
 
 const uint joinFlag = 1u << 31;
 const uint prefilterFlag = 1u << 30;
@@ -193,9 +220,7 @@ int satd8(uint fc) {
 
 // 8x8 chroma prediction via predictIntra (aliased to the chroma buffer).
 void predictChroma(uint fc, int mode) {
-#define fixtures chroma
-    predictIntra(fc, 8, 8, mode);
-#undef fixtures
+    predictChromaIntra(fc, 8, 8, mode);
 }
 
 int selectChromaMode(uint fcU, uint fcV, uint x, uint y, int qp) {
