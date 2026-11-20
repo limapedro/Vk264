@@ -2,6 +2,7 @@
 #include "encoder_backend.hpp"
 #include "x264_presets.hpp"
 #include "x264_cavlc_codes.hpp"
+#include "mp4_muxer.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -163,6 +164,20 @@ int main(int argc, char** argv) try {
     if (useVulkanPort) config.references = 1;
     finalizeFrameConfig(config);
     fs::path inputPath = argv[1], outputPath = argv[2];
+    // x264-style extension dispatch: .mp4 gets a correctly-timed container,
+    // all other extensions keep the byte-exact raw Annex B path.
+    auto maybeMuxMp4 = [&]() {
+        std::string ext = outputPath.extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (ext == ".mp4" &&
+            !vk264_mp4::annexBToMp4(outputPath, config.fpsNumerator, config.fpsDenominator,
+                                    static_cast<std::uint32_t>(frameCount),
+                                    static_cast<std::uint32_t>(config.gop),
+                                    static_cast<std::uint32_t>(config.width),
+                                    static_cast<std::uint32_t>(config.height)))
+            throw std::runtime_error("Failed to mux MP4 output");
+    };
     if (samePath(inputPath, outputPath) || (!reconPath.empty() &&
         (samePath(inputPath, reconPath) || samePath(outputPath, reconPath))))
         throw std::runtime_error("Input, output and reconstruction must be distinct files");
@@ -180,6 +195,7 @@ int main(int argc, char** argv) try {
             int(config.targetBits), config.videoSignal, int(config.levelIdc), useCavlc ? x264CavlcCodes : nullptr,
             presetPtr,
         });
+        maybeMuxMp4();
         std::cout << std::fixed << std::setprecision(4)
                   << "{\"backend\":\"x264-vulkan\",\"preset\":\"" << (x264Preset.empty() ? "prototype" : x264Preset.c_str()) << "\",\"gpu\":"
                   << std::quoted(result.deviceName) << ",\"settings\":{"
@@ -230,6 +246,7 @@ int main(int argc, char** argv) try {
     output.close();
     if (recon.is_open()) recon.close();
     if (!output || !recon) throw std::runtime_error("Could not finalize output files");
+    maybeMuxMp4();
     double elapsed = seconds(loop);
     std::sort(frameMs.begin(), frameMs.end());
     bool spatial = config.gop != 1 && !config.partitions && config.subpel && config.motionRadius >= 4;
