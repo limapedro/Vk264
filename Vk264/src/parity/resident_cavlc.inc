@@ -237,9 +237,13 @@ ResidentFrameResult encodeResidentCavlcFrame(const std::filesystem::path& shader
     chromaCorpus::configure(qc);
 
     std::vector<std::uint32_t> frameInput(16);
-    // bit0 = intra; bit1 = x264 intra mode decision (V wins ties for luma).
+    // bit0 = intra; bit1 = x264 intra mode decision (V wins ties for luma);
+    // bit2 = x264 mbcmp_init() uses SAD (not SATD) when subpel_refine <= 1.
+    const auto* presetInfo = preset ? x264_vulkan::presets::find(preset) : nullptr;
+    const bool useSad = presetInfo && presetInfo->subpelRefine <= 1;
     frameInput[13] = (inter ? 0u : 1u) |
-        ((preset && std::strcmp(preset, "ultrafast") == 0) ? 2u : 0u);
+        ((preset && std::strcmp(preset, "ultrafast") == 0) ? 2u : 0u) |
+        (useSad ? 4u : 0u);
     const auto append = [&frameInput](const void* bytes, std::size_t length) {
         const auto start = static_cast<std::uint32_t>(frameInput.size());
         frameInput.resize(frameInput.size()+(length+3)/4);
