@@ -81,6 +81,28 @@ void verifyLuma4x4(const char* shader, bool inter) {
             }
         }
     }
+    // Real-content reproducer: 16x16 gradient crop at (1792,896). This case
+    // diverges in the full encode (offset 42) while simple gradients do not.
+    if (!inter) {
+        Fixture repro{};
+        repro.qp = 28;
+        repro.mode = 6;            // DC_128, the only mode for a first MB
+        repro.plane = 0;
+        repro.field = 0;
+        repro.decimate = 0;
+        repro.denoise = 0;
+        repro.cbp = 0;
+        setFlatQuant(repro, 21);
+        static constexpr std::uint8_t reproY[256] = {50,50,50,50,50,51,51,52,52,53,54,55,55,55,56,56,54,54,54,54,54,54,54,55,55,55,56,56,56,56,56,56,56,56,56,56,56,55,55,55,56,56,56,56,56,56,56,56,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,56,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,56,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,54,54,54,54,54,54,54,55,55,55,55,55,55,55,55,54,54,54,54,54,54,54,54,54,54,55,55,55,55,55,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,53,54,53,53,53,54,54,54,54,54,54,54,54,54,53,53,53,53,52,53,52,54,54,54,54,54,54,53,53,52,52,51,51,51,51,51,50,54,54,54,54,53,53,53,52,51,51,50,50,49,49,49,49};
+        for (int i = 0; i < 256; ++i) repro.source[i] = reproY[i];
+        repro.pixels.fill(128);
+        repro.noiseOffset.fill(0);
+        repro.residualSum.fill(0);
+        repro.ac.fill(-167);
+        repro.dc.fill(163);
+        repro.nonzero.fill(0);
+        cases.push_back(repro);
+    }
     const auto inputs = cases;
     vk264::macroblock::encode(shader, cases);
     Intra16Reference reference{};
