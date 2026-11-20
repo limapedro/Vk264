@@ -257,6 +257,9 @@ add_test(NAME x264_i4x4_frame_parity
          COMMAND dct_parity i4x4_frame "${CMAKE_CURRENT_BINARY_DIR}/cabac_frame.spv")
 add_test(NAME x264_cabac_decoder_oracle
          COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/harness/cabac_decoder_selftest.py")
+add_test(NAME gop3_nal_structure
+         COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/harness/nal_structure_test.py"
+                 "$<TARGET_FILE:vk264>" "${CMAKE_CURRENT_BINARY_DIR}/gop3-nal")
 add_test(NAME x264_cavlc_context_parity
          COMMAND dct_parity cavlc_context "${CMAKE_CURRENT_BINARY_DIR}/cavlc_residual_test.spv")
 # Production *_frame.spv shaders (-DRESIDUAL_FRAME=1, binding 1) use the same

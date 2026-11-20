@@ -1161,6 +1161,43 @@ blocks 0/1, 20-byte target) precisely because of these bugs:
    neighbours count as available (`encoder/cabac.c:612-643`), giving 96 for the
    first intra MB — which is exactly the bin sequence PR #41 proved.
 
+### I4x4 mode decision: candidate table identified as key missing piece (Subaru, 2026-11-20)
+
+A Python model (`build/i4_raw_diag.py`, all 9 predictors + DC_LEFT/TOP/128)
+reproduced x264's RAW mode dump `{11,9,3,2,9,9,2,2,10,2,10,2,2,2,2,2}` at the
+first two blocks once the per-block candidate table was included. Key insight:
+x264 stores RAW modes (0..11) in `intra4x4_pred_mode`; DC modes 9/10/11 fix to
+DC(2) only at CABAC write time (`predict.h:92`). My earlier models used only
+fixed modes 0..8 and discarded that distinction.
+
+The candidate set is `i4x4_mode_available[avoid_topright][neighbour_class]`
+(`analyse.c:512-528`), indexed by `i_neighbour4[idx]` (`macroblock.c:489-498,
+1340-1351`). For the first MB of a frame: block 0 -> {11} only, block 1/4/5 ->
+{9,1,8}, block 2/8/10 -> {10,0,3,7}, blocks 3/6/... -> full set. With that
+table and SAD + predicted-mode -3*lambda bonus, the model produced
+`{11,9,10,11,9,9,11,11,...}`: blocks 0/1 match x264 exactly, but later blocks
+still differ (x264 picks DDL/DDR where the model picks DC_TOP/128). The
+remaining gap is x264's SIMD `intra_sad_x9_4x4` bit-cost application
+(`cost_i4x4_mode[i]=3*lambda*(i!=8)`, `analyse.c:171-173`, passed as
+`cost - i_pred_mode` at `:893`), whose assembly is NOT present in the reference
+tree (`common/x86/predict-a.asm` has no x9 macro). This is the true blocker for
+byte-exact I4x4 mode decision; issue #2 remains OPEN.
+
+### gop>1 all-IDR bug found and fixed (issue #50, Subaru, 2026-11-20)
+
+`cavlc_packet.comp:58` decided IDR via `words[13] != 0u`, but `words[13]` is
+the frame-input flags word: bit0 = I/IDR, bit1 = ultrafast, bit2 = useSad
+(`resident_cavlc.inc:244-246`). For ultrafast bits 1/2 are always set, so every
+frame was coded as IDR. Changed the test to `words[13] & 1u`.
+
+Verified: `vk264 ... --gop 3` NAL types changed from `[7,8,5,5,5]` to
+`[7,8,5,1,1]`, matching x264's `[6,7,8,5,1,1]` modulo SEI. New
+`gop3_nal_structure` CTest locks the sequence in; 62/62 CTests, parity 4/4.
+
+Remaining: the P-slice PAYLOAD still diverges (`parity_check.py ... --gop 3`
+first mismatch at offset 194), so issue #50 stays OPEN — only the NAL-type
+half is fixed. The deeper P-slice motion/residual parity work is ahead.
+
 `harness/cabac_decoder_selftest.py` only round-trips random decision bins at
 QP 0/25/51; it does not cover syntax ordering, residual, qp_delta, ue-bypass or
 terminal, so it cannot catch any of these. **Byte comparison against x264's
