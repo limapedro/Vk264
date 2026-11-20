@@ -44,6 +44,45 @@ failing broader cases (multi-frame inter, noise/motion mode decision) were
 verified to fail identically with the fix stashed.
 
 Regression gate added: `x264_parity_fast_64x64` in `Vk264/vulkan/CMakeLists.txt`.
+## Issue #3 intra-mode-decision scope verified (Rem, 2026-11-20)
+
+On current main 03caa14 (after the merged I4x4/SAD-flag work #43/#45/#46), all
+intra-only acceptance cases for issue #3 are byte-exact with **no new code**:
+the `selectIntra16Mode()` / `selectChromaMode()` SATD path in
+`Vk264/vulkan/inter_frame.comp` now matches x264 for these cases. `x264ModeSelection`
+(frameInput[13] bit1) and `useSad` (bit2) remain untouched.
+
+Evidence (actual output, build `cmake -S . -B build -A x64` + Release):
+```
+ctest --test-dir build -C Release --output-on-failure          -> 60/60 passed (16.82 s)
+ctest --test-dir build -C Release -R x264_parity_              ->  4/4 passed (12.70 s)
+python harness/parity_check.py --preset ultrafast --pattern flat-grid --width 64 --height 64 --frames 1 --gop 1
+  BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+python harness/parity_check.py --preset ultrafast --pattern motion --width 64 --height 64 --frames 1 --gop 1
+  BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+python harness/parity_check.py --preset ultrafast --pattern flat-grid --width 64 --height 64 --frames 3 --gop 1
+  BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+python harness/parity_check.py --preset ultrafast --pattern motion --width 64 --height 64 --frames 3 --gop 1
+  BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+```
+
+Scope boundary — the remaining `gop=3` multi-frame mismatch is NOT intra:
+a NAL scan of `build/parity-ultrafast-flat-grid/` shows
+```
+vk264:  SPS, PPS, IDR(5), IDR(5), IDR(5)
+x264:   SEI, SPS, PPS, IDR(5), P(1), P(1)
+```
+vk264 codes every frame as a keyframe, so P-slice/GOP handling diverges before
+any intra-mode question. That belongs to the inter-frame track (#4/#5), not the
+SATD mode-decision port owned by #3. Earlier (pre-#43/#45) findings that
+flat-grid 32/48/64 diverged and 16x16 was exact are recorded in issue comment
+7025340614; they no longer reproduce on main.
+
+Coordination: per the #2 corrigendum, the I4x4 CABAC encoder record layout and
+first-MB-only contexts remain with the #2 staging owner; this work does not
+touch `cabac.comp`/`fixtures_cabac.inc` and does not alter the 394-word record
+stride. No 100% parity claim — lookahead/slicetype, RD/trellis, mbtree, CQM and
+B-frames remain missing families.
 
 ## Issue #25 fixed + round 2 (Subaru, 2026-11-20)
 
@@ -1159,12 +1198,76 @@ blocks 0/1, 20-byte target) precisely because of these bugs:
    neighbours count as available (`encoder/cabac.c:612-643`), giving 96 for the
    first intra MB — which is exactly the bin sequence PR #41 proved.
 
+### I4x4 mode decision: candidate table identified as key missing piece (Subaru, 2026-11-20)
+
+A Python model (`build/i4_raw_diag.py`, all 9 predictors + DC_LEFT/TOP/128)
+reproduced x264's RAW mode dump `{11,9,3,2,9,9,2,2,10,2,10,2,2,2,2,2}` at the
+first two blocks once the per-block candidate table was included. Key insight:
+x264 stores RAW modes (0..11) in `intra4x4_pred_mode`; DC modes 9/10/11 fix to
+DC(2) only at CABAC write time (`predict.h:92`). My earlier models used only
+fixed modes 0..8 and discarded that distinction.
+
+The candidate set is `i4x4_mode_available[avoid_topright][neighbour_class]`
+(`analyse.c:512-528`), indexed by `i_neighbour4[idx]` (`macroblock.c:489-498,
+1340-1351`). For the first MB of a frame: block 0 -> {11} only, block 1/4/5 ->
+{9,1,8}, block 2/8/10 -> {10,0,3,7}, blocks 3/6/... -> full set. With that
+table and SAD + predicted-mode -3*lambda bonus, the model produced
+`{11,9,10,11,9,9,11,11,...}`: blocks 0/1 match x264 exactly, but later blocks
+still differ (x264 picks DDL/DDR where the model picks DC_TOP/128). The
+remaining gap is x264's SIMD `intra_sad_x9_4x4` bit-cost application
+(`cost_i4x4_mode[i]=3*lambda*(i!=8)`, `analyse.c:171-173`, passed as
+`cost - i_pred_mode` at `:893`), whose assembly is NOT present in the reference
+tree (`common/x86/predict-a.asm` has no x9 macro). This is the true blocker for
+byte-exact I4x4 mode decision; issue #2 remains OPEN.
+
+### gop>1 all-IDR bug found and fixed (issue #50, Subaru, 2026-11-20)
+
+`cavlc_packet.comp:58` decided IDR via `words[13] != 0u`, but `words[13]` is
+the frame-input flags word: bit0 = I/IDR, bit1 = ultrafast, bit2 = useSad
+(`resident_cavlc.inc:244-246`). For ultrafast bits 1/2 are always set, so every
+frame was coded as IDR. Changed the test to `words[13] & 1u`.
+
+Verified: `vk264 ... --gop 3` NAL types changed from `[7,8,5,5,5]` to
+`[7,8,5,1,1]`, matching x264's `[6,7,8,5,1,1]` modulo SEI. New
+`gop3_nal_structure` CTest locks the sequence in; 62/62 CTests, parity 4/4.
+
+Remaining: the P-slice PAYLOAD still diverges (`parity_check.py ... --gop 3`
+first mismatch at offset 194), so issue #50 stays OPEN — only the NAL-type
+half is fixed. The deeper P-slice motion/residual parity work is ahead.
+
 `harness/cabac_decoder_selftest.py` only round-trips random decision bins at
 QP 0/25/51; it does not cover syntax ordering, residual, qp_delta, ue-bypass or
 terminal, so it cannot catch any of these. **Byte comparison against x264's
 actual stream remains the only trustworthy oracle.** Agents: do not use the
 decoder to derive ground-truth syntax until these three bugs are fixed and the
 selftest is extended.
+
+### Decoder bugs FIXED; header is now a proven oracle (Subaru, 2026-11-20)
+
+A follow-up found a FOURTH and decisive bug: x264 stores context states as
+`(min(s,127-s)<<1)|(s>>6)` (`common/cabac.c`, `cabac_contexts` init), but both
+the decoder and its selftest mirror encoder used the raw clamped value 1..126.
+Because both sides were wrong in the same way, the round-trip selftest passed
+while decoding real x264 output produced garbage. Fixed both sides.
+
+Also fixed the three bugs above: `FIX` -> `fix4(t) = FIX_TABLE[t+1]`, full
+unary qp_delta decode with context transitions, and intra cbf context 96 for
+unavailable neighbours.
+
+Verified with a new selftest regression that decodes x264's byte-exact
+superfast/flat CABAC payload (`ea4035709bfe0b72bf3e1ac9b134b43181`, QP25)
+and asserts the PR #41 ground truth: mb0=0, ts0=0,
+modes={2,2,3,2,2,2,2,2,2,2,2,2,2,2,2,2}, chroma=0, cbp_luma=1,
+cbp_chroma=1, dqp=0, leading bins `3:0 399:0 68:1 68:1`.
+Registered as `x264_cabac_decoder_oracle` CTest; 61/61 CTests.
+
+Remaining decoder limitation: residual coefficient levels >=15 need
+`x264_cabac_encode_ue_bypass` after the run of 13 ones; the decoder still
+stops at 15 and misparses the following bins, so decoded nnz/levels are NOT
+yet trustworthy. Header syntax is trustworthy; residual still needs byte
+comparison. Input to `cabac_decoder.py` must be the CABAC payload only
+(bytes after the 88 84 3f slice header), contrary to the earlier note at
+line 1044.
 
 ### Harness caveats (same audit)
 

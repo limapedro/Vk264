@@ -30,7 +30,12 @@ def parse_2d(name):
 INIT_I = parse_2d("x264_cabac_context_init_I")
 LPS = parse_2d("x264_cabac_range_lps")
 TRANS = parse_2d("x264_cabac_transition")
-FIX = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 2, 2, 2]  # x264_mb_pred_mode4x4_fix[t+1]
+# x264_mb_pred_mode4x4_fix[13]; the macro is fix(t) = table[t+1]
+# (references/x264-master/common/predict.h:92). Index 0 is the -1 sentinel.
+FIX_TABLE = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 2, 2, 2]
+
+def fix4(t):
+    return FIX_TABLE[t + 1]
 
 
 def clamp(v, lo, hi):
@@ -40,7 +45,12 @@ def clamp(v, lo, hi):
 class Decoder:
     def __init__(self, data, qp):
         self.data, self.pos, self.bits, self.buf = data, 0, 0, 0
-        self.state = [clamp((m * qp >> 4) + n, 1, 126) for m, n in INIT_I]
+        # x264 common/cabac.c: cabac_contexts[][] = (min(s,127-s)<<1)|(s>>6)
+        # where s = clip((m*qp>>4)+n, 1, 126). The raw clamped value is NOT the
+        # stored CABAC state; using it directly mis-decodes every context.
+        self.state = [((min(s, 127 - s) << 1) | (s >> 6))
+                      for m, n in INIT_I
+                      for s in [clamp((m * qp >> 4) + n, 1, 126)]]
         self.range = 0x1FE
         self.code = 0
         for _ in range(9):
@@ -92,8 +102,8 @@ def parse(data, qp):
     modes = []
     for i in range(16):
         x, y = i % 4, i // 4
-        left = FIX[modes[i - 1]] if x else -1
-        top = FIX[modes[i - 4]] if y else -1
+        left = fix4(modes[i - 1]) if x else -1
+        top = fix4(modes[i - 4]) if y else -1
         pred = min(left, top)
         if pred < 0:
             pred = 2
@@ -129,8 +139,15 @@ def parse(data, qp):
     if cbp_chroma:
         c2 = 4 + (1 if cbp_a == 0x20 else 0) + (2 if cbp_b == 0x20 else 0)
         cbp_chroma |= d.decision(77 + c2) << 1
-    # qp_delta: first bin; 1 means a nonzero delta follows
-    dqp0 = d.decision(60)
+    # qp_delta: unary runs at ctx 60 with ctx = 2+(ctx>>1); the terminating 0
+    # ends it. The run length val maps to dqp: 2*dqp-1 if dqp>0, -2*dqp if <0.
+    # First MB has i_last_dqp == 0 so the initial context offset is 0.
+    dqp_ctx = 0
+    val = 0
+    while d.decision(60 + dqp_ctx):
+        val += 1
+        dqp_ctx = 2 + (dqp_ctx >> 1)
+    dqp = (val + 1) // 2 if val % 2 else -val // 2
     # residual coding (x264 DCT_LUMA_4x4 = category 2)
     ctx_sig, ctx_last, ctx_level = 134, 195, 247
     count_m1 = 15
@@ -145,8 +162,11 @@ def parse(data, qp):
         for j in range(4):
             idx = group * 4 + j
             x, y = idx % 4, idx // 4
-            left_nz = nnz[idx - 1] if x else 0
-            top_nz = nnz[idx - 4] if y else 0
+            # x264 cabac_cbf_ctxidxinc (encoder/cabac.c:612-643): for INTRA,
+            # unavailable neighbours are masked as available (nonzero), so a
+            # first-MB block starts at ctx 96, not 93.
+            left_nz = nnz[idx - 1] if x else 1
+            top_nz = nnz[idx - 4] if y else 1
             cbf_ctx = 93 + 2 * (1 if top_nz else 0) + (1 if left_nz else 0)
             cbf = d.decision(cbf_ctx)
             if not cbf:
@@ -180,7 +200,7 @@ def parse(data, qp):
             nnz[idx] = len(sig)
             coeffs[idx] = (sig, coeff_vals)
     return dict(mb0=mb0, ts0=ts0, modes=modes, chroma=chroma,
-                cbp=cbp, cbp_chroma=cbp_chroma, dqp0=dqp0,
+                cbp=cbp, cbp_chroma=cbp_chroma, dqp=dqp,
                 nnz=nnz, coeffs=coeffs), d
 
 
@@ -191,7 +211,7 @@ def main():
     print(f"mb0={info['mb0']} ts0={info['ts0']}")
     print("modes:", [info["modes"][4 * y:4 * y + 4] for y in range(4)])
     print(f"chroma_mode={info['chroma']} cbp_luma={info['cbp']:#x} "
-          f"cbp_chroma={info['cbp_chroma']} dqp0={info['dqp0']}")
+          f"cbp_chroma={info['cbp_chroma']} dqp={info['dqp']}")
     print(f"nnz per 4x4 block: {info['nnz']}")
     for idx, (sig, vals) in info["coeffs"].items():
         print(f"  block {idx}: sig={sig} abslevels={vals}")

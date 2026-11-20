@@ -114,6 +114,7 @@ architecture yet. This blocks `medium+` presets (issue #4).
 | `x264_cabac_encode_*`, `x264_cabac_init*` | `cabac.comp` | EXACT | `x264_cabac_parity` (9946 sequences) |
 | `cabac_ref_p/b`, `cabac_mvd*`, `cabac_block_residual*` | `cabac.comp`, `cabac_syntax.glsl` | EXACT | `x264_cabac_refidx_parity` (1536 sequences) |
 | `cabac_mb_header_i` I4x4 path + residual/chroma DC | `encodeIntra4Macroblock` in `cabac_syntax.glsl` | EXACT (encoder) | `x264_i4x4_frame_parity`: GPU emits x264's exact 20-byte superfast flat slice (PR #45). Mode decision still missing (#2). |
+| CABAC header syntax decoder (oracle) | `harness/cabac_decoder.py` | EXACT (header only) | `x264_cabac_decoder_oracle` decodes x264's byte-exact slice to PR #41 ground truth. Residual levels >=15 not yet handled. |
 | B mb_type header | `cabac.comp` | EXACT | 90 sequences in `x264_cabac_parity` |
 | `cavlc_block_residual*`, `cavlc_qp_delta`, `cavlc_mvd` | `cavlc_frame.comp`, `cavlc_residual_test.comp` | EXACT | `x264_cavlc_residual_parity` (2327 sequences) |
 | `x264_nal_encode` | `nal.comp` | EXACT | `x264_nal_parity` |

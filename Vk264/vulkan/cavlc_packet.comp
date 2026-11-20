@@ -55,7 +55,9 @@ void indexChunks(uint scratch, uint bytes, uint chunks) {
         offset += min(chunkBytes, bytes-chunk*chunkBytes)+(entry&255u);
         zeros = entry >> 8u;
     }
-    packet[1] = words[13] != 0u ? 0x65010000u : 0x61010000u;
+    // words[13] bit0 is the I/IDR flag; bits 1/2 carry ultrafast and SAD
+    // mode-selection flags for the analysis stages and must not force IDR.
+    packet[1] = (words[13] & 1u) != 0u ? 0x65010000u : 0x61010000u;
     packet[0] = offset;
 }
 
