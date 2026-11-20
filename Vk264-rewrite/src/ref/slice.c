@@ -7,6 +7,9 @@
  */
 #include "slice.h"
 #include "cavlc.h"
+#include "intra16.h"
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -132,6 +135,81 @@ static void sub8x8_dct_dc(int dct[4], const uint8_t *src, const uint8_t *pred)
     }
 }
 
+static void idct4x4dc(int d[16])
+{
+    int tmp[16];
+    for (int i = 0; i < 4; ++i) {
+        int s01=d[i*4+0]+d[i*4+1], dd01=d[i*4+0]-d[i*4+1];
+        int s23=d[i*4+2]+d[i*4+3], dd23=d[i*4+2]-d[i*4+3];
+        tmp[0*4+i]=s01+s23; tmp[1*4+i]=s01-s23;
+        tmp[2*4+i]=dd01-dd23; tmp[3*4+i]=dd01+dd23;
+    }
+    for (int i = 0; i < 4; ++i) {
+        int s01=tmp[i*4+0]+tmp[i*4+1], dd01=tmp[i*4+0]-tmp[i*4+1];
+        int s23=tmp[i*4+2]+tmp[i*4+3], dd23=tmp[i*4+2]-tmp[i*4+3];
+        d[i*4+0]=s01+s23; d[i*4+1]=s01-s23;
+        d[i*4+2]=dd01-dd23; d[i*4+3]=dd01+dd23;
+    }
+}
+
+static void dequant4(int dct[16], const int dm[16], int qp)
+{
+    int mf = qp % 6, qb = qp/6 - 4;
+    if (qb >= 0) for (int i = 0; i < 16; ++i) dct[i] = (dct[i]*dm[i]) << qb;
+    else {
+        int f = 1 << (-qb-1);
+        for (int i = 0; i < 16; ++i) dct[i] = (dct[i]*dm[i]+f) >> (-qb);
+    }
+}
+
+static void dequant4dc(int dct[16], const int dm[16], int qp)
+{
+    int qb = qp/6 - 6;
+    if (qb >= 0) {
+        int d = dm[0] << qb;
+        for (int i = 0; i < 16; ++i) dct[i] *= d;
+    } else {
+        int f = 1 << (-qb-1);
+        for (int i = 0; i < 16; ++i) dct[i] = (dct[i]*dm[0]+f) >> (-qb);
+    }
+}
+
+static void idct4(int d[16])
+{
+    int tmp[16];
+    for (int i = 0; i < 4; ++i) {
+        int s02=d[0*4+i]+d[2*4+i], dd02=d[0*4+i]-d[2*4+i];
+        int s13=d[1*4+i]+(d[3*4+i]>>1), dd13=(d[1*4+i]>>1)-d[3*4+i];
+        tmp[i*4+0]=s02+s13; tmp[i*4+1]=dd02+dd13;
+        tmp[i*4+2]=dd02-dd13; tmp[i*4+3]=s02-s13;
+    }
+    for (int i = 0; i < 4; ++i) {
+        int s02=tmp[0*4+i]+tmp[2*4+i], dd02=tmp[0*4+i]-tmp[2*4+i];
+        int s13=tmp[1*4+i]+(tmp[3*4+i]>>1), dd13=(tmp[1*4+i]>>1)-tmp[3*4+i];
+        d[0*4+i]=(s02+s13+32)>>6; d[1*4+i]=(dd02+dd13+32)>>6;
+        d[2*4+i]=(dd02-dd13+32)>>6; d[3*4+i]=(s02-s13+32)>>6;
+    }
+}
+
+static void add_block(uint8_t *dst, int stride, const int d[16])
+{
+    for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x) {
+            int v = dst[y*stride+x] + d[y*4+x];
+            dst[y*stride+x] = (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v);
+        }
+}
+
+static void add_block_dc(uint8_t *dst, int stride, int dc)
+{
+    dc = (dc+32)>>6;
+    for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x) {
+            int v = dst[y*stride+x] + dc;
+            dst[y*stride+x] = (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v);
+        }
+}
+
 void vk_ref_predict16x16(uint8_t out[256], const uint8_t top[16],
                          const uint8_t left[16], int mode)
 {
@@ -207,14 +285,43 @@ void vk_slice_header_write(vk_bs_t *s, const vk_slice_header_t *sh,
 
 void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
                       const uint8_t *src_v, uint8_t *recon_y, uint8_t *recon_u,
-                      uint8_t *recon_v, int qp, int mb_x, int mb_y)
+                      uint8_t *recon_v, int qp, int mb_x, int mb_y,
+                      const vk_neighbours_t *nb, int stride_y, int stride_c,
+                      uint8_t out_nnz[16], uint8_t out_cnnz[2][4], uint8_t *out_dcnz)
 {
     (void)mb_x; (void)mb_y;
     int mf[16], bias[16], dequant[16], cmf[16], cbias[16], cdeq[16];
     uint8_t pred_y[256], pred_u[64], pred_v[64];
-    predict_dc(pred_y, 16, 128);
-    predict_dc(pred_u, 8, 128);
-    predict_dc(pred_v, 8, 128);
+    int mode = 2; /* I16 DC */
+    int chroma_pred_mode = 0;
+    if (nb) {
+        uint8_t top[16], left[16], tight[256];
+        for (int i = 0; i < 16; ++i) { top[i] = nb->top_y[i]; left[i] = nb->left_y[i]; }
+        for (int y = 0; y < 16; ++y)
+            for (int x = 0; x < 16; ++x) tight[y*16+x] = src_y[y*stride_y+x];
+        mode = vk_select16(tight, top, left, nb->tl_y, nb->avail, qp);
+        vk_predict16(pred_y, top, left, nb->tl_y, mode);
+        /* chroma mode decision + prediction from neighbours */
+        uint8_t t8[8], l8[8], su64[64], sv64[64];
+        for (int i = 0; i < 8; ++i) {
+            t8[i] = nb->top_u[i]; l8[i] = nb->left_u[i];
+        }
+        for (int y = 0; y < 8; ++y)
+            for (int x = 0; x < 8; ++x) {
+                su64[y*8+x] = src_u[y*stride_c+x];
+                sv64[y*8+x] = src_v[y*stride_c+x];
+            }
+        uint8_t t8v[8], l8v[8];
+        for (int i = 0; i < 8; ++i) { t8v[i] = nb->top_v[i]; l8v[i] = nb->left_v[i]; }
+        chroma_pred_mode = vk_select_chroma(su64, sv64, t8, l8, t8v, l8v,
+                                            nb->avail, qp);
+        vk_predict_chroma8(pred_u, t8, l8, chroma_pred_mode);
+        vk_predict_chroma8(pred_v, t8v, l8v, chroma_pred_mode);
+    } else {
+        predict_dc(pred_y, 16, 128);
+        predict_dc(pred_u, 8, 128);
+        predict_dc(pred_v, 8, 128);
+    }
     quant_tables(qp, 0, mf, bias, dequant);
     quant_tables(qp, 2, cmf, cbias, cdeq);
 
@@ -225,7 +332,7 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
         uint8_t sb[16], pb[16];
         for (int y = 0; y < 4; ++y)
             for (int x = 0; x < 4; ++x) {
-                sb[y*4+x] = src_y[(by+y)*16+bx+x];
+                sb[y*4+x] = src_y[(by+y)*stride_y+bx+x];
                 pb[y*4+x] = pred_y[(by+y)*16+bx+x];
             }
         sub4x4_dct(dct4[b], sb, pb);
@@ -247,7 +354,11 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
     memcpy(dcdc, dc4, sizeof(dcdc));
     dct4x4dc(dcdc);
     int dc_mf = mf[0] >> 1, dc_bias = bias[0] << 1;
-    for (int i = 0; i < 16; ++i) dcdc[i] = quant_one(dcdc[i], dc_mf, dc_bias);
+    int dcnz = 0;
+    for (int i = 0; i < 16; ++i) {
+        dcdc[i] = quant_one(dcdc[i], dc_mf, dc_bias);
+        dcnz |= dcdc[i] != 0;
+    }
     int dc_q[16];
     for (int i = 0; i < 16; ++i) dc_q[i] = dcdc[zigzag4[i]];
 
@@ -261,7 +372,7 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
             uint8_t sb[16], pb[16];
             for (int y = 0; y < 4; ++y)
                 for (int x = 0; x < 4; ++x) {
-                    sb[y*4+x] = src[(by+y)*8+bx+x];
+                    sb[y*4+x] = src[(by+y)*stride_c+bx+x];
                     pb[y*4+x] = prd[(by+y)*8+bx+x];
                 }
             sub4x4_dct(cdct[p][b], sb, pb);
@@ -274,13 +385,15 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
             for (int i = 0; i < 16; ++i) cacq[p][b][i] = cdct[p][b][zigzag4[i]];
         }
     }
-    int chroma_dc[2][4], cbp_chroma = 0, cacbp = 0, cdnz[2] = {0};
+    int chroma_dc[2][4], cbp_chroma = 0, cacbp = 0, cdnz[2] = {0}, chad[2][4];
     for (int p = 0; p < 2; ++p) {
         int a = cdc[p][0] + cdc[p][1], b = cdc[p][2] + cdc[p][3];
         int c = cdc[p][0] - cdc[p][1], d = cdc[p][2] - cdc[p][3];
         int had[4] = { a+b, a-b, c+d, c-d }, q[4];
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 4; ++i) {
             q[i] = quant_one(had[i], cmf[0] >> 1, cbias[0] << 1);
+            chad[p][i] = q[i];
+        }
         chroma_dc[p][0] = q[0]; chroma_dc[p][1] = q[2];
         chroma_dc[p][2] = q[1]; chroma_dc[p][3] = q[3];
         for (int i = 0; i < 4; ++i) {
@@ -292,13 +405,21 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
     if (cacbp) cbp_chroma = 2;
 
     /* ---- entropy ---- */
-    uint32_t mb_type = 1u + 2u /* I16 DC */ + 4u*(uint32_t)cbp_chroma
+    int fix = mode <= 3 ? mode : 2;
+    uint32_t mb_type = 1u + (uint32_t)fix + 4u*(uint32_t)cbp_chroma
                      + (cbp_luma ? 12u : 0u);
     vk_bs_write_ue(s, mb_type);
-    vk_bs_write_ue(s, 0);  /* chroma pred mode = DC */
+    vk_bs_write_ue(s, (uint32_t)(chroma_pred_mode <= 3 ? chroma_pred_mode : 0));
     vk_bs_write_se(s, 0);  /* mb_qp_delta */
 
-    vk_cavlc_block_residual(s, VK_DCT_LUMA_DC, dc_q, 0, 1, 16);
+    /* x264 predicts luma DC nz from neighbours of luma block 0 */
+    {
+        static const uint8_t ctt[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
+        int za = (nb && nb->left_luma) ? nb->left_luma[0] : 0x80;
+        int zb = (nb && nb->top_luma) ? nb->top_luma[0] : 0x80;
+        int sum = za+zb, pred = sum < 0x80 ? (sum+1)>>1 : sum & 0x7f;
+        vk_cavlc_block_residual(s, VK_DCT_LUMA_DC, dc_q, ctt[pred & 0x7f], 1, 16);
+    }
     /* x264's dct4x4[idx] enumeration maps to raster through block_idx_xy_1d;
      * entropy coding walks idx order, not raster order. */
     static const uint8_t block_idx_xy_1d[16] = {
@@ -310,11 +431,12 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
         12,13,20,21, 14,15,22,23, 28,29,36,37, 30,31,38,39
     };
     uint8_t cache[64] = {0};
+    static const int lpos[4] = {11,19,27,35};
+    static const int tpos[4] = {4,5,6,7};
     for (int i = 0; i < 4; ++i) {
-        cache[4+i] = 0x80;                       /* top edge */
+        cache[tpos[i]] = (nb && nb->top_luma) ? nb->top_luma[i] : 0x80;
+        cache[lpos[i]] = (nb && nb->left_luma) ? nb->left_luma[i] : 0x80;
     }
-    /* left edge of each 4x4 block row (scan8 first column of each row pair) */
-    cache[scan8[0]-1] = cache[scan8[2]-1] = cache[scan8[8]-1] = cache[scan8[10]-1] = 0x80;
     if (cbp_luma) for (int idx = 0; idx < 16; ++idx) {
         int b = block_idx_xy_1d[idx], p = scan8[idx];
         int za = cache[p-1], zb = cache[p-8];
@@ -339,10 +461,14 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
         static const uint8_t ct_index_c[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
         uint8_t ccache[128] = {0};
         /* top edge of the first AC row of each chroma plane */
-        ccache[cscan8[0]-8] = ccache[cscan8[1]-8] = 0x80;
-        ccache[cscan8[4]-8] = ccache[cscan8[5]-8] = 0x80;
-        ccache[cscan8[0]-1] = ccache[cscan8[2]-1] = 0x80;  /* Cb left */
-        ccache[cscan8[4]-1] = ccache[cscan8[6]-1] = 0x80;  /* Cr left */
+        for (int i = 0; i < 2; ++i) {
+            int tp = cscan8[i]-8, lp = cscan8[i*2]-1;
+            ccache[tp] = (nb && nb->top_chroma[0]) ? nb->top_chroma[0][i] : 0x80;
+            ccache[lp] = (nb && nb->left_chroma[0]) ? nb->left_chroma[0][i] : 0x80;
+            int tp2 = cscan8[4+i]-8, lp2 = cscan8[4+i*2]-1;
+            ccache[tp2] = (nb && nb->top_chroma[1]) ? nb->top_chroma[1][i] : 0x80;
+            ccache[lp2] = (nb && nb->left_chroma[1]) ? nb->left_chroma[1][i] : 0x80;
+        }
         /* chroma DC nnz feeds the neighbouring AC blocks */
         ccache[40] = cdnz[0];
         ccache[80] = cdnz[1];
@@ -360,5 +486,56 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
     memcpy(recon_y, pred_y, 256);
     memcpy(recon_u, pred_u, 64);
     memcpy(recon_v, pred_v, 64);
-    (void)recon_y; (void)recon_u; (void)recon_v;
+
+    /* ---- reconstruction: dequant + IDCT + add to prediction ---- */
+    int dcq[16];
+    for (int i = 0; i < 16; ++i) dcq[i] = dcdc[i]; /* quantised DC, raster */
+    if (dcnz) { idct4x4dc(dcq); dequant4dc(dcq, dequant, qp); }
+    for (int b = 0; b < 16; ++b) {
+        int by = (b/4)*4, bx = (b%4)*4;
+        uint8_t *dst = recon_y + by*16+bx;
+        if ((cbp_luma & (1 << (b/4))) && nnz[b]) {
+            int blk[16];
+            for (int i = 0; i < 16; ++i) blk[i] = dct4[b][i];
+            dequant4(blk, dequant, qp);
+            blk[0] = dcnz ? dcq[b] : 0;
+            idct4(blk);
+            add_block(dst, 16, blk);
+        } else if (dcnz) {
+            add_block_dc(dst, 16, dcq[b]);
+        }
+    }
+    if (out_nnz) {
+        for (int i = 0; i < 16; ++i) out_nnz[i] = (uint8_t)nnz[i];
+        for (int p = 0; p < 2; ++p)
+            for (int b = 0; b < 4; ++b) out_cnnz[p][b] = (uint8_t)cnnz[p][b];
+        *out_dcnz = (uint8_t)dcnz;
+    }
+
+    /* chroma reconstruction */
+    for (int p = 0; p < 2; ++p) {
+        uint8_t *dst = p ? recon_v : recon_u;
+        /* x264 encoder/macroblock.c:72 idct_dequant_2x2_dconly */
+        int d0 = chad[p][0]+chad[p][1], d1 = chad[p][2]+chad[p][3];
+        int d2 = chad[p][0]-chad[p][1], d3 = chad[p][2]-chad[p][3];
+        int dmf = cdeq[0] << (qp/6);
+        int cdq[16] = {0};
+        cdq[0] = ((d0+d1)*dmf)>>5; cdq[1] = ((d0-d1)*dmf)>>5;
+        cdq[2] = ((d2+d3)*dmf)>>5; cdq[3] = ((d2-d3)*dmf)>>5;
+        for (int b = 0; b < 4; ++b) {
+            int by = (b/2)*4, bx = (b%2)*4;
+            uint8_t *d = dst + by*8+bx;
+            if (cacbp && cnnz[p][b]) {
+                int blk[16];
+                for (int i = 0; i < 16; ++i) blk[i] = cdct[p][b][i];
+                dequant4(blk, cdeq, qp);
+                blk[0] = cdnz[p] ? cdq[b] : 0;
+                idct4(blk);
+                add_block(d, 8, blk);
+            } else if (cdnz[p]) {
+                add_block_dc(d, 8, cdq[b]);
+            }
+        }
+    }
 }
+

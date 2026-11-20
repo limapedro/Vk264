@@ -7,6 +7,9 @@ add_test(NAME rewrite_oracle_flat_sweep
 add_test(NAME rewrite_oracle_real_crops
     COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/test_real_crops.py"
             "$<TARGET_FILE:vk264_oracle_cli>" "${CMAKE_BINARY_DIR}")
+add_test(NAME rewrite_oracle_multimb
+    COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/test_multimb.py"
+            "$<TARGET_FILE:vk264_oracle_cli>" "${CMAKE_BINARY_DIR}")
 
 add_executable(vk264_test_bitstream test_bitstream.c)
 target_link_libraries(vk264_test_bitstream PRIVATE vk264_rewrite_ref)
