@@ -221,3 +221,23 @@ roadmap. Multi-MB staging is issue #30.
 
 This matrix is updated as mismatches are found and fixed. See the PRs referenced
 in `docs/PROGRESS.dm` and issue #18. Each row that is not EXACT is a candidate.
+
+
+## Issue #30 CLOSED - full real-footage parity for ultrafast (PR #37)
+
+Root cause #4 (final): x264 `encoder.c::mbcmp_init` selects the intra mode
+metric with `satd = !b_lossless && i_subpel_refine > 1`. Ultrafast (subme=0)
+and superfast (subme=1) therefore score I16x16 / chroma modes with **SAD**,
+not SATD. vk264 always used SATD. An extracted-oracle fixture calling x264's
+own `x264_pixel_satd_16x16` on the exact MB(3,1) proved the transform was not
+the cause. Fix: carry an x264-faithful bit2 flag in `frameInput[13]` and use
+`sad16()`/`sad8()` when subpel_refine <= 1.
+
+Verified with `parity_check.py` (BYTE-EXACT, ignoring encoder-identity SEI):
+- real 16x16, 32x32, 64x64 crops from the forza clip
+- full 1920x1080 frames, 1 and 3 frames
+- 10/10 real 16x16 crops sampled across the frame
+- two other 1080p clips (forza_F5eKZa, warzone Verdansk)
+
+58/58 CTests and 4/4 byte-exact parity gates. Issue #30 is closed.
+Remaining: #2 (I4x4 emission for superfast) and the MISSING families below.
