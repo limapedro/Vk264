@@ -283,6 +283,24 @@ void vk_slice_header_write(vk_bs_t *s, const vk_slice_header_t *sh,
     }
 }
 
+void vk_write_pskip_slice(vk_bs_t *s, const vk_sps_t *sps, const vk_pps_t *pps,
+                          int frame_num, int slice_qp, int num_mbs)
+{
+    (void)pps;
+    vk_bs_write_ue(s, 0);   /* first_mb_in_slice */
+    vk_bs_write_ue(s, 5);   /* slice_type: P (x264 writes i_type+5) */
+    vk_bs_write_ue(s, 0);   /* pps_id */
+    vk_bs_write(s, (unsigned)sps->i_log2_max_frame_num, (uint32_t)frame_num);
+    /* pic_order_cnt_type==2: no POC fields in the slice header */
+    vk_bs_write1(s, 0);     /* num_ref_idx_active_override_flag */
+    vk_bs_write1(s, 0);     /* ref_pic_list_modification_flag_l0 */
+    vk_bs_write1(s, 0);     /* adaptive_ref_pic_marking_mode_flag */
+    vk_bs_write_se(s, slice_qp - pps->i_pic_init_qp);
+    vk_bs_write_ue(s, 1);   /* disable_deblocking_filter_idc (x264 ultrafast) */
+    vk_bs_write_ue(s, (uint32_t)num_mbs);  /* mb_skip_run: all MBs skipped */
+    vk_bs_rbsp_trailing(s);
+}
+
 void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
                       const uint8_t *src_v, uint8_t *recon_y, uint8_t *recon_u,
                       uint8_t *recon_v, int qp, int mb_x, int mb_y,

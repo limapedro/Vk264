@@ -32,6 +32,10 @@ typedef struct {
     int qp;
 } vk_neighbours_t;
 
+/* Write a P-slice where every MB is P_SKIP (static-frame first milestone). */
+void vk_write_pskip_slice(vk_bs_t *s, const vk_sps_t *sps, const vk_pps_t *pps,
+                          int frame_num, int slice_qp, int num_mbs);
+
 /* Oracle entry points for GPU-vs-C equivalence tests. */
 void vk_ref_dct4x4(int dct[16], const uint8_t src[16], const uint8_t pred[16]);
 void vk_ref_dct4x4dc(int d[16]);
