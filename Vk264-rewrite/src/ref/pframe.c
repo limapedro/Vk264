@@ -225,7 +225,7 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
     const uint8_t *ry = refp + LPAD*rs + LPAD;
     const uint8_t *ru = refp + ysz, *rv = ru + csz;
 
-    int q[16][16], nnz[16] = {0}, dec8 = 0, dec_total = 0, cbp_luma = 0;
+    int q[16][16], nnz[16] = {0};
     for (int b = 0; b < 16; ++b) {
         int by = (b/4)*4, bx = (b%4)*4;
         uint8_t sb[16], pb[16];
@@ -239,17 +239,32 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
         for (int i = 0; i < 16; ++i) d[i] = vk_ref_quant_one(d[i], mf[i], bias[i]);
         for (int i = 0; i < 16; ++i) q[b][i] = d[rz4[i]];
         for (int i = 0; i < 16; ++i) nnz[b] += d[i] != 0;
-        int zs[16];
-        for (int i = 0; i < 16; ++i) zs[i] = q[b][i];
-        if (dec8 < 6) dec8 += decimate_score(zs, 16);
-        if ((b & 3) == 3) {  /* end of an 8x8 group */
-            if (dec8 >= 4) cbp_luma |= 1 << (b/4);
-            else for (int k = b-3; k <= b; ++k) {
-                memset(q[k], 0, sizeof(q[k]));
-                nnz[k] = 0;
-            }
+    }
+    /* x264 groups 4x4 DCT blocks into 8x8 spatial groups via
+     * block_idx_xy_1d: group g holds raster blocks {0,1,4,5}+2*(g&1)+8*(g>>1). */
+    static const uint8_t grp_blocks[4][4] = {
+        {0,1,4,5}, {2,3,6,7}, {8,9,12,13}, {10,11,14,15}
+    };
+    uint8_t block_group[16];
+    for (int g = 0; g < 4; ++g)
+        for (int i = 0; i < 4; ++i) block_group[grp_blocks[g][i]] = (uint8_t)g;
+    int cbp_luma = 0, dec_total = 0;
+    for (int g = 0; g < 4; ++g) {
+        int dec8 = 0, any = 0;
+        for (int i = 0; i < 4; ++i) {
+            int b = grp_blocks[g][i];
+            if (!nnz[b]) continue;
+            any = 1;
+            if (dec8 < 6) dec8 += decimate_score(q[b], 16);
+        }
+        if (any) {
             dec_total += dec8;
-            dec8 = 0;
+            if (dec8 >= 4) cbp_luma |= 1 << g;
+            else for (int i = 0; i < 4; ++i) {
+                int b = grp_blocks[g][i];
+                memset(q[b], 0, sizeof(q[b]));
+                nnz[b] = 0;
+            }
         }
     }
     if (dec_total < 6) {
@@ -314,7 +329,7 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
         for (int i = 0; i < 4; ++i) { cache[tp[i]] = tl[i]; cache[lp[i]] = ll[i]; }
         for (int idx = 0; idx < 16; ++idx) {
             int b = rblock_idx[idx], p = rscan8[idx];
-            if (!(cbp_luma & (1 << (b/4)))) continue;
+            if (!(cbp_luma & (1 << block_group[b]))) continue;
             int sum = cache[p-1] + cache[p-8];
             int pred = sum < 0x80 ? (sum+1)>>1 : sum & 0x7f;
             vk_cavlc_block_residual(bs, VK_DCT_LUMA_4x4, q[b],
