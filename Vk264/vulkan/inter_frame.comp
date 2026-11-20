@@ -306,21 +306,41 @@ void prepare(uint f, uint motion, uint width, uint x, uint y, bool intra) {
             }
         }
     uint mbCount = words[0]*words[1], luma = words[7]+7u+3u*mbCount;
+    uint pos = 16u*y*width+16u*x;
+    // Stage reconstructed neighbours (from p_fdec) for intra16 prediction.
+    // Needed both for I-slices and for the intra-vs-inter decision in P-slices.
+    if (x != 0u) for (uint r = 0u; r < 16u; ++r)
+        luma4[f].pixels[origin+stride*r-1u] = sampleByte(luma, pos+r*width-1u);
+    if (y != 0u) for (uint c = 0u; c < 16u; ++c)
+        luma4[f].pixels[origin-stride+c] = sampleByte(luma, pos-width+c);
+    if (x != 0u && y != 0u)
+        luma4[f].pixels[origin-stride-1u] = sampleByte(luma, pos-width-1u);
+    luma4[f].intraInP = 0;
     if (intra) {
-        uint pos = 16u*y*width+16u*x;
-        if (x != 0u) for (uint r = 0u; r < 16u; ++r)
-            luma4[f].pixels[origin+stride*r-1u] = sampleByte(luma, pos+r*width-1u);
-        if (y != 0u) for (uint c = 0u; c < 16u; ++c)
-            luma4[f].pixels[origin-stride+c] = sampleByte(luma, pos-width+c);
-        // x264's macroblock_cache_load provides p_fdec[-1-FDEC_STRIDE] (the
-        // top-left corner) used by I16x16 plane prediction; stage it here too
-        // or the plane mode scores against a stale/zero corner (issue #30).
-        if (x != 0u && y != 0u)
-            luma4[f].pixels[origin-stride-1u] = sampleByte(luma, pos-width-1u);
         if ((words[13] & 2u) != 0u)
             luma4[f].mode = selectIntra16Mode(f, x, y, int(words[q4]));
         else
             luma4[f].mode = dcMode(x, y, 2);
+    } else if (!eight && (words[13] & 8u) != 0u) {
+        // Issue #2: x264 codes ~15.6% of P-slice MBs as intra when inter
+        // prediction fails. Compare the inter prediction SAD with the best
+        // intra16 SAD; choose intra when it is cheaper (with x264's small
+        // mode-cost bias via ueBits).
+        int interCost = sad16(f);
+        // Stash the inter prediction before predictIntra overwrites the pixels.
+        for (uint i = 0u; i < 256u; ++i)
+            luma4[f].interPixels[i] = luma4[f].pixels[origin+(i/16u)*stride+i%16u];
+        int intraMode = selectIntra16Mode(f, x, y, int(words[q4]));
+        int qp = clamp(int(words[q4]), 0, 51);
+        int intraCost = sad16(f) + lambdaTab[qp] * ueBits(predFix(intraMode));
+        if (intraCost <= interCost) {
+            luma4[f].mode = intraMode;
+            luma4[f].intraInP = 1;
+        } else {
+            for (uint i = 0u; i < 256u; ++i)
+                luma4[f].pixels[origin+(i/16u)*stride+i%16u] = luma4[f].interPixels[i];
+            luma4[f].mode = -1;
+        }
     }
     for (uint plane = 0u; plane < 2u; ++plane) {
         uint fc = 2u*f+plane;

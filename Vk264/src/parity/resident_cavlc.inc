@@ -242,9 +242,11 @@ ResidentFrameResult encodeResidentCavlcFrame(const std::filesystem::path& shader
     // bit2 = x264 mbcmp_init() uses SAD (not SATD) when subpel_refine <= 1.
     const auto* presetInfo = preset ? x264_vulkan::presets::find(preset) : nullptr;
     const bool useSad = presetInfo && presetInfo->subpelRefine <= 1;
+    const bool x264Mode = preset && x264_vulkan::presets::find(preset) != nullptr;
     frameInput[13] = (inter ? 0u : 1u) |
         ((preset && std::strcmp(preset, "ultrafast") == 0) ? 2u : 0u) |
-        (useSad ? 4u : 0u);
+        (useSad ? 4u : 0u) |
+        (x264Mode ? 8u : 0u);  // bit3: enable intra-vs-inter decision in P-slices
     const auto append = [&frameInput](const void* bytes, std::size_t length) {
         const auto start = static_cast<std::uint32_t>(frameInput.size());
         frameInput.resize(frameInput.size()+(length+3)/4);
