@@ -722,7 +722,7 @@ x264_vulkan::EncodeResult encodeCabacClip(const char* parameterShader, const cha
                 auto encodedFrame = encodeResidentCabacFrame(std::filesystem::path(motionShader).parent_path(),
                     header.front(), reader->read(i), reconstructed[current], reconstructedChroma[current],
                     width, height, qp, chromaQp(qp), motionSearchParameters(qp, options ? options->preset : nullptr), inter, i, reconstruction.is_open(), !baselineProfile, options && options->preset != nullptr,
-                     bFrameHeaders && inter);
+                     bFrameHeaders && inter, options ? options->preset : nullptr);
                 codedInter8x8 += encodedFrame.inter8x8;
                 bytes = std::move(encodedFrame.packet);
             }
