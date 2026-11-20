@@ -1049,3 +1049,24 @@ implementing x264's 8x8 CABAC residual path (`x264_cabac_block_residual_8x8_rd_c
 plus the correct modes/coefficients from the decoded bin sequence. The host
 emitter is diagnostic only; CTest gates are unaffected (58/58).
 
+
+### Issue #2 — production gap precisely scoped (Subaru, 2026-11-20)
+
+PR #41 made the HOST `i4x4_cabac` fixture byte-exact with x264's superfast/flat
+20-byte slice. Inspecting the production path shows the remaining work is
+architectural, not a small bug:
+
+- `Vk264/vulkan/cabac_syntax.glsl` implements `encodeIntra16Macroblock`,
+  `encodeInter16Macroblock`, `encodeMacroblockSkip` — but **no I4x4 macroblock
+  encoder**. `encodeIntra4x4Mode` exists only as a helper used by fixture ops.
+- `Vk264/vulkan/inter_frame.comp` computes only I16x16 modes
+  (`selectIntra16Mode` / `dcMode`); there is no 16-block I4x4 mode decision.
+- Chroma DC residual (cbf ctx100, coefficients U=89/V=-71 in the flat case) is
+  likewise not wired in the production CABAC frame path.
+
+Therefore `parity_check.py --preset superfast flat 16x16` still diverges at
+offset 41. Making it byte-exact requires: (1) a GPU I4x4 mode-decision shader,
+(2) an I4x4 macroblock encoder in `cabac_syntax.glsl`, (3) chroma DC residual
+support. These are substantial but now fully specified by PR #41's exact
+bin sequence. Issue #2 remains OPEN.
+
