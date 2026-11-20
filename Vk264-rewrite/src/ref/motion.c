@@ -27,7 +27,7 @@ static int mv_cost(int mvd_qp, int lambda)
 int vk_me16_dia(const uint8_t *cur, int cur_stride,
                 const uint8_t *ref, int ref_stride, int pad,
                 int x, int y, int mvpx, int mvpy, int range, int lambda,
-                int *best_x, int *best_y)
+                const int *cands, int ncands, int *best_x, int *best_y)
 {
     const uint8_t *rpad = ref + pad*ref_stride + pad;
     int bmx = mvpx, bmy = mvpy;
@@ -35,12 +35,26 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
     int bcost = sad16(cur, cur_stride, rpad, ref_stride, x, y, bmx, bmy);
     *best_x = bmx; *best_y = bmy;
 
+    /* x264 tests the spatial neighbour MV candidates (with MVD cost) and
+     * starts the diamond search from the cheapest one. */
+    if (ncands > 0) {
+        int bestc = bcost + mv_cost(0, lambda);
+        for (int i = 0; i < ncands; ++i) {
+            int cx = cands[2*i], cy = cands[2*i+1];
+            int c = sad16(cur, cur_stride, rpad, ref_stride, x, y, cx, cy)
+                  + mv_cost((cx-mvpx)*4, lambda) + mv_cost((cy-mvpy)*4, lambda);
+            if (c < bestc) { bestc = c; bmx = cx; bmy = cy; }
+        }
+        bcost = bestc;
+    }
+
     /* Test the zero vector with full cost if the MVP is non-zero. */
     if (bmx || bmy) {
         int c = sad16(cur, cur_stride, rpad, ref_stride, x, y, 0, 0)
               + mv_cost((0-bmx)*4, lambda) + mv_cost((0-bmy)*4, lambda);
-        if (c < bcost) { bcost = c; bmx = 0; bmy = 0; *best_x = 0; *best_y = 0; }
+        if (c < bcost) { bcost = c; bmx = 0; bmy = 0; }
     }
+    *best_x = bmx; *best_y = bmy;
 
     bcost <<= 4;
     for (int i = range; i > 0; --i) {
