@@ -189,7 +189,7 @@ void verifyCabac(const char* shader) {
         }
     }
     const auto inputs = cases;
-    execute(shader, cases, 1, tables);
+    vk264::cabac::encode(shader, cases, tables);
     x264_t encoder{};
     encoder.chroma444 = true;
     x264_cabac_init(&encoder);
@@ -379,7 +379,7 @@ void verifyCabacRefIdx(const char* shader) {
                         cases.push_back(input);
                     }
     const auto inputs = cases;
-    execute(shader, cases, 1, tables);
+    vk264::cabac::encode(shader, cases, tables);
     x264_t encoder{};
     encoder.chroma444 = true;
     x264_cabac_init(&encoder);

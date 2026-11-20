@@ -2,12 +2,13 @@
 // Mirrors: x264 common/dct.c + common/quant.c
 // Split from dct_parity.cpp lines 866-1435.
 
+template<int Side, int Group>
 void verify(const char* shader) {
     static_assert(sizeof(Block<Group>) == 5 * Group * Group * sizeof(std::uint32_t));
     constexpr int blocksPerGroup = Group * Group / (Side * Side);
     auto blocks = fixtures<Group>();
     const auto inputs = blocks;
-    execute(shader, blocks, blocksPerGroup);
+    vk264::dct::transform<Side, Group>(shader, blocks);
     for (std::size_t i = 0; i < blocks.size(); ++i) {
         const auto& block = blocks[i];
         const auto& input = inputs[i];
@@ -80,7 +81,7 @@ void verifyQuant(const char* shader) {
             block.bias.fill(0);
         }
     }
-    execute(shader, cases);
+    vk264::quant::quantize(shader, cases);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& block = cases[i];
         dctcoef dct[count];
@@ -130,7 +131,7 @@ void verifyQuantGroup(const char* shader) {
             if ((i >> block) & 1) input.coefficients[block*16] = block % 2 == 0 ? 32767 : -32768;
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::quant::quantize(shader, cases);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];

@@ -866,4 +866,3 @@ bool matchesNativeBytes(const std::array<Wire, Count>& gpu, const Native (&cpu)[
     return std::memcmp(packed.data(), cpu, sizeof(cpu)) == 0;
 }
 
-template<int Side, int Group>

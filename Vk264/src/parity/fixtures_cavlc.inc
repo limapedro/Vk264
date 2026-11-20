@@ -141,7 +141,7 @@ void verifyCavlcResidual(const char* shader) {
     tables.reserve(std::size(x264CavlcCodes));
     for (const auto code : x264CavlcCodes) tables.push_back(static_cast<std::int32_t>(code));
     const auto inputs = cases;
-    execute(shader, cases, 1, tables);
+    vk264::cavlc::encode(shader, cases, tables);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];

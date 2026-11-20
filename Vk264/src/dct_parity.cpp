@@ -9,6 +9,14 @@
 // documents the x264 files it mirrors. See docs/parity-layout.md.
 
 #include "parity/x264_reference.inc"
+// 1:1 x264 mirror modules (see docs/parity-layout.md); included before the
+// fixtures so vk264::* shader wrappers are visible to them.
+#include "../common/dct.cpp"
+#include "../common/quant.cpp"
+#include "../common/predict.cpp"
+#include "../common/deblock.cpp"
+#include "../encoder/cabac.cpp"
+#include "../encoder/cavlc.cpp"
 #include "parity/fixtures_transform.inc"
 #include "parity/fixtures_intra.inc"
 #include "parity/fixtures_deblock.inc"

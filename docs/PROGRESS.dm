@@ -7,6 +7,18 @@ Vk264-Vulkan port: `Vk264/vulkan/*.comp`, shader SPIR-V shader pipelines registe
 fixture tests in `Vk264/src/dct_parity.cpp` (the `verifyXxx` functions and the
 `x264_*_parity` CTest registrations).
 
+## 1:1 x264 source mirror (issue #18, Subaru) — IN PROGRESS
+
+Goal: mirror `references/x264-master` file-for-file under `Vk264/common/` and
+`Vk264/encoder/`, where each `vk264::<x264 function>` is the GPU-compute
+equivalent of its x264 C counterpart, launched by a shader. A fixture calls
+both the verbatim x264 oracle and the Vulkan wrapper with identical inputs and
+compares byte for byte. First module: `Vk264/common/dct.cpp` (mirrors
+`common/dct.c`, wraps `dct4x4.comp`/`dct8x8.comp`). Data-parallel x264 files map
+to shaders that already exist; scalar/control files stay C++. The verification
+layer uses one launch per function; production keeps fused kernels for speed.
+Plan and module list: issue #18, `docs/parity-layout.md`.
+
 ## Source organisation (Subaru, 2026-11-19) — parity fixtures split into x264-mirroring modules
 
 The 6,700-line `Vk264/src/dct_parity.cpp` monolith is now a 24-line master

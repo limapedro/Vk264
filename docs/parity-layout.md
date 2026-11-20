@@ -22,7 +22,28 @@ of scope.
 Reconstruction proof: concatenating the module bodies reproduces the original
 `dct_parity.cpp` **byte for byte** (355,633 bytes). Reproduce it with
 `python harness/check_parity_layout.py --base 1c6c50b`. The full suite (52/52)
-plus the 4 automated parity gates pass unchanged.
+plus the 4 automated parity gates pass unchanged. (This is a one-time audit of
+the initial split; intentional edits afterwards naturally make the byte
+comparison fail.)
+
+## 1:1 x264 mirror (issue #18)
+
+Alongside the fixture modules, `Vk264/common/` and `Vk264/encoder/` mirror
+`references/x264-master/common/` and `encoder/` **file for file**. Each module
+exposes `vk264::<x264 function>` — the GPU compute as an ordinary function call
+with the same intent as its x264 counterpart — and its fixture calls both the
+verbatim x264 C oracle and the Vulkan wrapper with identical inputs, comparing
+outputs byte for byte. Wired so far (6): `Vk264/common/dct.cpp` (mirrors
+`common/dct.c`, wraps the DCT shaders as `vk264::dct::transform`),
+`common/quant.cpp`, `common/predict.cpp`, `common/deblock.cpp`,
+`encoder/cabac.cpp`, `encoder/cavlc.cpp`.
+
+Data-parallel x264 files map to shaders that already exist (DCT, quant,
+predict, deblock, MC, ME, CAVLC); scalar/control files (base, set, tables,
+osdep, api, slicetype, ratecontrol, lookahead, threadpool) stay C++.
+CABAC maps to one shader per MB/slice because it is inherently serial.
+The verification layer uses one launch per function; the production encoder
+keeps its existing fused/batched kernels for speed.
 
 ## Module map
 
@@ -42,6 +63,12 @@ plus the 4 automated parity gates pass unchanged.
 | `resident_pipeline.inc` | resident pipeline | B-frame config, `encodeCabacClip`, public `x264_vulkan::encode` |
 | `fixtures_aq.inc` | `encoder/ratecontrol.c` | `verifyAqVariance` |
 | `dispatch.inc` | — | `runParityTests` — the name → `verify*` mapping |
+| `../common/dct.cpp` | `common/dct.c` | `vk264::dct::transform` — GPU DCT wrapper (issue #18) |
+| `../common/quant.cpp` | `common/quant.c` | `vk264::quant::quantize` |
+| `../common/predict.cpp` | `common/predict.c` | `vk264::predict::intra`, `::directional` |
+| `../common/deblock.cpp` | `common/deblock.c` | `vk264::deblock::filter`, `::strength` |
+| `../encoder/cabac.cpp` | `encoder/cabac.c` | `vk264::cabac::encode` |
+| `../encoder/cavlc.cpp` | `encoder/cavlc.c` | `vk264::cavlc::encode` |
 
 The shader side is already split the same way: `Vk264/vulkan/*.comp` and
 `*.glsl` mirror the x264 C modules (for example `cabac.comp` mirrors

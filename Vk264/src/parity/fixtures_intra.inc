@@ -46,7 +46,7 @@ void verifyPredictIntra(const char* shader) {
     }
 
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::predict::intra(shader, cases);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];
@@ -323,7 +323,7 @@ void verifyPredictDirectional(const char* shader) {
         }
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::predict::directional(shader, cases);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];

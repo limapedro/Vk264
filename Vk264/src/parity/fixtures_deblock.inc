@@ -48,7 +48,7 @@ void verifyDeblockFilter(const char* shader) {
         if (pattern == 1) input.alpha = input.beta = 0;
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::deblock::filter(shader, cases);
     int changed[2][geometryCount][2]{};
     int skipped[2][geometryCount][2]{};
     for (std::size_t i = 0; i < cases.size(); ++i) {
@@ -124,7 +124,7 @@ void verifyDeblockStrength(const char* shader) {
                                            static_cast<int>(random() % 7) - 3;
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::deblock::strength(shader, cases);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];
