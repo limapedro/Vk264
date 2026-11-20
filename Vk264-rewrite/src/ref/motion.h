@@ -28,6 +28,13 @@ int vk_me16(const uint8_t *cur, int cur_stride,
             int x, int y, int mvpx, int mvpy, int range,
             int *mvx, int *mvy);
 
+/* x264-compatible diamond (DIA) search at subme=0. `lambda` is
+ * x264_lambda_tab[qp] and mvp is in pixels. Returns the best SAD. */
+int vk_me16_dia(const uint8_t *cur, int cur_stride,
+                const uint8_t *ref, int ref_stride, int pad,
+                int x, int y, int mvpx, int mvpy, int range, int lambda,
+                int *mvx, int *mvy);
+
 /* Pad a plane by replicating edge pixels into `dst` (stride ds, pad border). */
 void vk_pad_plane(uint8_t *dst, int ds, const uint8_t *src, int ss,
                   int w, int h, int pad);

@@ -15,6 +15,30 @@
 #define LPAD 16   /* luma reference border */
 #define CPAD 8    /* chroma reference border */
 
+/* x264_lambda_tab (common/tables.c), QP 0..51. */
+static const uint16_t lambda_tab[52] = {
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    2,2,2,2,3,3,3,4, 4,4,5,6,6,7,8,9,
+    10,11,13,14,16,18,20,23, 25,29,32,36,40,45,51,57,
+    64,72,81,91
+};
+
+/* 16x16 MV predictor with x264's reference-availability logic: with a
+ * single valid neighbour use it directly, otherwise the component median. */
+static void mvp16_avail(int lx, int ly, int tx, int ty, int cx, int cy,
+                        int have_l, int have_t, int have_c,
+                        int *px, int *py)
+{
+    int n = have_l + have_t + have_c;
+    if (n == 1) {
+        if (have_l) { *px = lx; *py = ly; }
+        else if (have_t) { *px = tx; *py = ty; }
+        else { *px = cx; *py = cy; }
+        return;
+    }
+    vk_mvp16(lx, ly, tx, ty, cx, cy, px, py);
+}
+
 /* P_SKIP MV predictor (quarter-pel): zero if left/top unavailable or zero,
  * otherwise the 16x16 median of left/top/top-right. */
 static void pskip_mv(int lx, int ly, int tx, int ty, int cx, int cy,
@@ -160,10 +184,13 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
             if (skip_run) { vk_bs_write_ue(bs, (uint32_t)skip_run); skip_run = 0; }
 
             int mvpx, mvpy;
-            vk_mvp16(lx, ly, tx, ty, cx, cy, &mvpx, &mvpy);
+            mvp16_avail(lx, ly, tx, ty, cx, cy, have_l, have_t, have_tl,
+                        &mvpx, &mvpy);
             int mvx, mvy;
-            vk_me16(cur, w, refp, rs, LPAD, mx*16, my*16,
-                    mvpx/4, mvpy/4, 16, &mvx, &mvy);
+            vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
+                        mvpx/4, mvpy/4, 16,
+                        lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
+                        &mvx, &mvy);
             mv[idx][0] = mvx*4; mv[idx][1] = mvy*4;
             vk_bs_write_ue(bs, 0);                          /* P_L0_16x16 */
             vk_bs_write_se(bs, mvx*4 - mvpx);               /* mvd_x */
