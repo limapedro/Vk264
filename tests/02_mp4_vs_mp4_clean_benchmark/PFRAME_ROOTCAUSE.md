@@ -1,49 +1,43 @@
-# P-frame quality root cause (investigation, 2026-11-20)
+# P-frame quality root cause — VERIFIED (2026-11-20)
 
 ## Symptom
 - IDR frames byte-exact and 44.55 dB (x264 identical)
-- P-frames: vk264 24.68 dB vs x264 41.43 dB at QP28 gop2
+- P-frames: vk264 25.8 dB vs x264 41.43 dB at QP28 gop2
 - Encoder reconstruction == decoder reconstruction EXACTLY (self-consistent)
-- All GOPs decode CLEAN after PR #61
+- All GOPs decode CLEAN after PR #61; encoder is not emitting corrupt syntax
 
-## Root cause: per-MB nonzero mask is zero for P-frames
+## Root cause: no intra macroblock coding in P-slices
 
-VK264_DUMP_COEF on the P-frame macroblock records (all MBs):
+x264's own stats on the same 1080p QP28 gop2 source:
 ```
-VK264META mb=0    mode=0 luma=0 dcNZ=0   mask=00020000 chroma=0
-VK264META mb=35   mode=20 luma=0 dcNZ=36 mask=00020000 chroma=0
-VK264META mb=8000 mode=40 luma=0 dcNZ=32 mask=00020000 chroma=0
-VK264META mb=8159 mode=0 luma=0 dcNZ=-64 mask=00020000 chroma=0
+x264 --preset ultrafast --qp 28 --keyint 2 --frames 2 --stats ...
+x264 [info]: mb P  I16..4: 15.6%  0.0%  0.0%  P16..4: 23.9%  skip:60.6%
 ```
-The mask is `0x00020000` = bit 17 only (the "inter" flag set in `join`).
-Bits 0-15 (the 16 luma 4x4 nonzero flags) are ALL ZERO even though
-`dcNZ` shows large nonzero DC coefficients (±32/64).
+So x264 codes **15.6% of P-slice macroblocks as I16x16 intra** (where inter
+prediction fails). 60.6% are skip, 23.9% P16x16.
 
-The CAVLC shader `writeMacroblock` uses `luma` (cbp, also 0) to decide which
-blocks to code: `ue(interPattern[luma+16*chroma])` → cbp=0 → NO luma
-residual emitted. That is why P-NALs are smaller (25832 vs x264 29738 B)
-and quality collapses: residual energy is computed but never bitstreamed.
+Vk264's `cavlc_frame.comp::writeMacroblock` inter branch (lines 141-155)
+ALWAYS emits `ue(0)` mb_skip_run then `ue(0)` P_L0_16x16 — there is no
+intra-in-P path. For the 15.6% of MBs that need intra, vk264 is forced to
+code a poor inter prediction, producing heavily-quantized residual and
+collapsing quality.
 
-## Where the mask should be set
-`intra16.comp:107` writes `fixtures[f].nonzero[nonzeroIndex] = uint(nonzero)`
-where `nonzeroIndex = cacheBase + raster/4*8 + raster%4`, `cacheBase = 12+40*channel`.
-`join()` in `inter_frame.comp:377` reads `luma4[f].nonzero[12 + 8*by + bx]`.
-For luma (channel=0) these match (12 + raster/4*8 + raster%4 == 12 + by*8 + bx).
-But the dumped fixture shows `nonzero[12..27]` all zero in the P-frame —
-so `intra16.comp` is either not writing them or writing zeros.
+Supporting evidence:
+- 65% of 4x4 blocks (5305/8160 MBs) have mean abs frame-to-frame residual
+  >40/255 (huge motion/change) — exactly the case where x264 falls back to intra.
+- Simple synthetic motion (8px shift) gives 36.67 dB P-frames — intra not needed.
+- Disabling P-frame DCT decimation: no effect (decimation is NOT the cause).
+- Larger MV search range (PR #64): 24.68 -> 25.8 dB, insufficient alone.
+- IDR frames are byte-exact, so transform/quant/CABAC are correct; only the
+  P-slice mode decision is missing.
 
-## Hypothesis
-For P-frames `luma4[f].decimate = 1`; `intra16.comp:129` does
-`if (macroblockScore < 6) cbp = 0` and line 136/143 zero out `nonzero[]`.
-The decimation score threshold may be firing for all P MBs on this content,
-discarding coefficients x264 keeps. x264's P-frame decimation uses different
-thresholds (enc/macroblock.c:347 i_decimate_score<7, 262 b_decimate gate,
-283 i_qp>=18). Note Vk264 sets `decimate=1` unconditionally for P-frames,
-but x264 only decimates when `b_dct_decimate` AND `i_qp >= 18`.
+## Retraction
+An earlier analysis claimed the P-frame nonzero mask/CBP was zero. That was
+WRONG: the dump prints only macroblock 0, and for inter records base+2 is the
+MV y-component, not DC-nonzero. Corrected in issue #2 / PR #63 comments.
 
-## Next step
-Align P-frame DCT decimation with x264: only decimate when QP>=18 and score
-below x264's threshold, and verify nonzero[12..27] becomes nonzero for
-P MBs with residual energy. Then re-measure P-frame PSNR.
+## Fix
+Add intra-vs-inter mode decision for P-slices and emit I16 mb_type from
+`cavlc_frame.comp`. This is a real feature (multi-step), tracked in PR #63.
 
 Evidence scripts: `frame_psnr.py`, `investigate_frames.ps1`, `error_map.py`.
