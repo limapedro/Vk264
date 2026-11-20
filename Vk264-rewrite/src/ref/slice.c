@@ -284,7 +284,8 @@ void vk_slice_header_write(vk_bs_t *s, const vk_slice_header_t *sh,
 void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
                       const uint8_t *src_v, uint8_t *recon_y, uint8_t *recon_u,
                       uint8_t *recon_v, int qp, int mb_x, int mb_y,
-                      const vk_neighbours_t *nb, int stride_y, int stride_c)
+                      const vk_neighbours_t *nb, int stride_y, int stride_c,
+                      uint8_t out_nnz[16], uint8_t out_cnnz[2][4], uint8_t *out_dcnz)
 {
     (void)mb_x; (void)mb_y;
     int mf[16], bias[16], dequant[16], cmf[16], cbias[16], cdeq[16];
@@ -412,7 +413,14 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
     vk_bs_write_ue(s, (uint32_t)(chroma_pred_mode <= 3 ? chroma_pred_mode : 0));
     vk_bs_write_se(s, 0);  /* mb_qp_delta */
 
-    vk_cavlc_block_residual(s, VK_DCT_LUMA_DC, dc_q, nb ? nb->luma_dc_nc : 0, 1, 16);
+    /* x264 predicts luma DC nz from neighbours of luma block 0 */
+    {
+        static const uint8_t ctt[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
+        int za = (nb && nb->left_luma) ? nb->left_luma[0] : 0x80;
+        int zb = (nb && nb->top_luma) ? nb->top_luma[0] : 0x80;
+        int sum = za+zb, pred = sum < 0x80 ? (sum+1)>>1 : sum & 0x7f;
+        vk_cavlc_block_residual(s, VK_DCT_LUMA_DC, dc_q, ctt[pred & 0x7f], 1, 16);
+    }
     /* x264's dct4x4[idx] enumeration maps to raster through block_idx_xy_1d;
      * entropy coding walks idx order, not raster order. */
     static const uint8_t block_idx_xy_1d[16] = {
@@ -424,11 +432,12 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
         12,13,20,21, 14,15,22,23, 28,29,36,37, 30,31,38,39
     };
     uint8_t cache[64] = {0};
+    static const int lpos[4] = {11,19,27,35};
+    static const int tpos[4] = {4,5,6,7};
     for (int i = 0; i < 4; ++i) {
-        cache[4+i] = 0x80;                       /* top edge */
+        cache[tpos[i]] = (nb && nb->top_luma) ? nb->top_luma[i] : 0x80;
+        cache[lpos[i]] = (nb && nb->left_luma) ? nb->left_luma[i] : 0x80;
     }
-    /* left edge of each 4x4 block row (scan8 first column of each row pair) */
-    cache[scan8[0]-1] = cache[scan8[2]-1] = cache[scan8[8]-1] = cache[scan8[10]-1] = 0x80;
     if (cbp_luma) for (int idx = 0; idx < 16; ++idx) {
         int b = block_idx_xy_1d[idx], p = scan8[idx];
         int za = cache[p-1], zb = cache[p-8];
@@ -453,10 +462,14 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
         static const uint8_t ct_index_c[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
         uint8_t ccache[128] = {0};
         /* top edge of the first AC row of each chroma plane */
-        ccache[cscan8[0]-8] = ccache[cscan8[1]-8] = 0x80;
-        ccache[cscan8[4]-8] = ccache[cscan8[5]-8] = 0x80;
-        ccache[cscan8[0]-1] = ccache[cscan8[2]-1] = 0x80;  /* Cb left */
-        ccache[cscan8[4]-1] = ccache[cscan8[6]-1] = 0x80;  /* Cr left */
+        for (int i = 0; i < 2; ++i) {
+            int tp = cscan8[i]-8, lp = cscan8[i*2]-1;
+            ccache[tp] = (nb && nb->top_chroma[0]) ? nb->top_chroma[0][i] : 0x80;
+            ccache[lp] = (nb && nb->left_chroma[0]) ? nb->left_chroma[0][i] : 0x80;
+            int tp2 = cscan8[4+i]-8, lp2 = cscan8[4+i*2]-1;
+            ccache[tp2] = (nb && nb->top_chroma[1]) ? nb->top_chroma[1][i] : 0x80;
+            ccache[lp2] = (nb && nb->left_chroma[1]) ? nb->left_chroma[1][i] : 0x80;
+        }
         /* chroma DC nnz feeds the neighbouring AC blocks */
         ccache[40] = cdnz[0];
         ccache[80] = cdnz[1];
@@ -493,6 +506,13 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
             add_block_dc(dst, 16, dcq[b]);
         }
     }
+    if (out_nnz) {
+        for (int i = 0; i < 16; ++i) out_nnz[i] = (uint8_t)nnz[i];
+        for (int p = 0; p < 2; ++p)
+            for (int b = 0; b < 4; ++b) out_cnnz[p][b] = (uint8_t)cnnz[p][b];
+        *out_dcnz = (uint8_t)dcnz;
+    }
+
     /* chroma reconstruction */
     for (int p = 0; p < 2; ++p) {
         uint8_t *dst = p ? recon_v : recon_u;

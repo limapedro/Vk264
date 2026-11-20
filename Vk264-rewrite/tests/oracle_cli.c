@@ -30,6 +30,10 @@ int main(int argc, char **argv)
 
     /* Reconstruction planes with a 16-pixel border, initialised to 128. */
     int rs = w + 32, rh = h + 32, ro = 16*rs + 16;
+    /* per-MB non_zero_count caches carried across macroblock boundaries */
+    uint8_t (*nnz_c)[16] = calloc((size_t)mw*mh, 16);
+    uint8_t (*cnnz_c)[2][4] = calloc((size_t)mw*mh, 2*4);
+    uint8_t *dcnz_c = calloc((size_t)mw*mh, 1);
     uint8_t *ry = malloc((size_t)rs*rh), *ru = malloc((size_t)(w/2+32)*(h/2+32));
     uint8_t *rv = malloc((size_t)(w/2+32)*(h/2+32));
     memset(ry, 128, (size_t)rs*rh);
@@ -72,7 +76,20 @@ int main(int argc, char **argv)
             memset(&nb, 0, sizeof(nb));
             nb.avail = avail;
             nb.qp = slice_qp;
-            nb.luma_dc_nc = mx ? 1 : 0;  /* neighbour DC nnz (x264 cache) */
+            /* non_zero_count edge values from neighbour macroblocks */
+            uint8_t ll[4], tl[4], lc[2][2], tc[2][2];
+            for (int i = 0; i < 4; ++i) {
+                ll[i] = mx ? nnz_c[my*mw+mx-1][i*4+3] : 0x80;
+                tl[i] = my ? nnz_c[(my-1)*mw+mx][12+i] : 0x80;
+            }
+            for (int p = 0; p < 2; ++p)
+                for (int i = 0; i < 2; ++i) {
+                    lc[p][i] = mx ? cnnz_c[my*mw+mx-1][p][i*2+1] : 0x80;
+                    tc[p][i] = my ? cnnz_c[(my-1)*mw+mx][p][i] : 0x80;
+                }
+            nb.left_luma = ll; nb.top_luma = tl;
+            nb.left_chroma[0] = lc[0]; nb.left_chroma[1] = lc[1];
+            nb.top_chroma[0] = tc[0]; nb.top_chroma[1] = tc[1];
             uint8_t top[16], left[16], tup[8], lup[8], tvp[8], lvp[8];
             if (my) for (int i = 0; i < 16; ++i) top[i] = ry[ro+(py-1)*rs+px+i];
             else   for (int i = 0; i < 16; ++i) top[i] = 128;
@@ -91,8 +108,12 @@ int main(int argc, char **argv)
             uint8_t *su = frame + w*h + (py/2)*(w/2) + px/2;
             uint8_t *sv = su + (w/2)*(h/2);
             uint8_t out_y[256], out_u[64], out_v[64];
+            uint8_t on[16], oc[2][4], od;
             vk_encode_i16_mb(&bs, sy, su, sv, out_y, out_u, out_v,
-                             slice_qp, mx, my, &nb, w, w/2);
+                             slice_qp, mx, my, &nb, w, w/2, on, oc, &od);
+            memcpy(nnz_c[my*mw+mx], on, 16);
+            memcpy(cnnz_c[my*mw+mx], oc, 8);
+            dcnz_c[my*mw+mx] = od;
             for (int y = 0; y < 16; ++y)
                 memcpy(ry + ro + (py+y)*rs + px, out_y + y*16, 16);
             for (int y = 0; y < 8; ++y) {
@@ -120,3 +141,4 @@ int main(int argc, char **argv)
     free(frame); free(ry); free(ru); free(rv);
     return 0;
 }
+
