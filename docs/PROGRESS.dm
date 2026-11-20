@@ -4,8 +4,22 @@ Date: 2026-11-19
 Source: `references/x264-master` (x264 snapshot `c24e06c2e184345ceb33eb20a15d1024d9fd3497`,
 extracted from `x264-master.zip` into a stable location so `Remove-Item build` cannot wipe it)
 Vk264-Vulkan port: `Vk264/vulkan/*.comp`, shader SPIR-V shader pipelines registered in `Vk264/vulkan/CMakeLists.txt`,
-fixture tests in `Vk264/vulkan/dct_parity.cpp` (the `verifyXxx` functions and the
+fixture tests in `Vk264/src/dct_parity.cpp` (the `verifyXxx` functions and the
 `x264_*_parity` CTest registrations).
+
+## Source organisation (Subaru, 2026-11-19) — parity fixtures split into x264-mirroring modules
+
+The 6,700-line `Vk264/src/dct_parity.cpp` monolith is now a 24-line master
+that textually includes 14 domain modules from `Vk264/src/parity/`, each
+(C++ source now lives in `Vk264/src/`; `Vk264/vulkan/` holds shaders only). Each
+mirroring the x264 C file(s) it checks. `docs/parity-layout.md` documents the
+module map, how to trace a CTest name to its fixture, and how to add a fixture.
+This is a layout-only change: concatenating the module bodies reproduces the
+original file **byte for byte** (355,633 bytes); `ctest` stays **52/52** with
+all **4** automated parity gates passing, and the CABAC fixture still reports
+9946 matched sequences. The split is textual (not separate translation units)
+because the extracted x264 `.inc` files contain static functions and
+external-linkage definitions — see the layout doc for details.
 
 ## Superfast I4x4 CABAC (issue #2 — Ram, 2026-11-19) — bin-level investigation, NOT byte-exact yet
 

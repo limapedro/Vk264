@@ -1,7 +1,7 @@
 #pragma once
 
 #include "gpu.hpp"
-#include "../vulkan/x264_levels.hpp"
+#include "x264_levels.hpp"
 #include <algorithm>
 #include <numeric>
 #include <stdexcept>
