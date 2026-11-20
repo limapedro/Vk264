@@ -150,6 +150,47 @@ also uses (`min_qp:25`), and the intra16 compute shader matches x264 on the
 exact source at QP 25. Therefore the divergence is in production staging or a
 side channel, not in the DCT/quant/predict functions. Tracked in issue #25.
 
+
+
+## Reclassification: platform/accelerator-only functions are N/A
+
+The x264 inventory includes functions that have no meaningful counterpart in a
+Vulkan encoder. They are **not** parity gaps and are now classified N/A:
+
+| x264 file | functions | reason |
+|---|---|---|
+| `common/opencl.c` | 11 | OpenCL lookahead acceleration, replaced by Vulkan compute |
+| `encoder/slicetype-cl.c` | 8 | OpenCL slicetype acceleration, replaced by Vulkan compute |
+| `common/threadpool.c`, `common/win32thread.c`, `common/osdep.c` | 23 | host threading / OS abstraction, not part of encoded output |
+
+Genuinely missing for full preset parity (still open): `encoder/lookahead.c`
+(9), `encoder/slicetype.c` (26), `encoder/rdo.c` trellis/RD (26), mbtree
+(`common/mc.c` + `ratecontrol.c`), B-frame inter analysis (`encoder/analyse.c`,
+`encoder/cabac.c`, `encoder/cavlc.c`), CQM scaling lists. These are tracked as
+issues #4 (B-frames/reordering), #2 (I4x4 emission), and the broader preset
+roadmap. Multi-MB staging is issue #30.
+
+## Round 2 verification (Subaru, 2026-11-20)
+
+- **Issue #25 FIXED** (PR #28): vk264 was applying DCT decimation to intra MBs,
+  while x264's `mb_encode_i16x16` starts `decimate_score` at 9 for I-slices
+  (decimation is P-frame only). The (1792,896) real 16x16 gradient crop is now
+  BYTE-EXACT, and 10/10 sampled real single-MB crops pass.
+- New byte-exact fixture: chroma mode selection (`x264_chroma_mode_parity`,
+  16640/16640 cases). Together with `x264_intra16_mode_parity`, both mode
+  decision algorithms are verified against x264's oracle. Suite is 58/58.
+- **Multi-MB divergence localised**: on a 32x32 tiled-real crop, x264 and vk264
+  agree on I16x16 mode (H), luma cbp, and the luma AC/DC coefficient arrays for
+  MB(1,1). They differ in chroma prediction mode (x264=H, vk264=DC) and in
+  reconstructed Y for the first 4x4 block column of MB(1,1). Chroma reconstruction
+  itself is byte-exact. Forcing chroma mode H moved the first bitstream mismatch
+  from offset 76 to 102 but did not make it exact, so there are further staging
+  differences. Tracked in issue #30.
+- **Untested production shader variants**: `motion_frame{, _parallel, _batched,
+  _tiled}.spv` are compiled from `motion_search.comp` with FRAME_MOTION defines
+  and have a different fixture struct layout (extra source/reference stride
+  fields). They cannot be tested with the existing `motion_search` fixture; a
+  dedicated frame-motion fixture is needed.
 ## Summary
 
 | Status | Count (approx, function families) |
