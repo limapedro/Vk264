@@ -127,8 +127,8 @@ inline bool annexBToMp4(const std::filesystem::path& path,
 
     // Assembly: ftyp + free + mdat + moov. Compute mdat data offset.
     std::vector<std::uint8_t> ftyp;
-    put32(ftyp, 0x200); tag(ftyp, "isom"); tag(ftyp, "isom"); tag(ftyp, "iso2"); tag(ftyp, "avc1"); tag(ftyp, "mp41");
-    // ftyp payload is minor_version + brands -> call box adds 8
+    // ftyp payload: major_brand, minor_version, then compatible brands.
+    tag(ftyp, "isom"); put32(ftyp, 0x200); tag(ftyp, "isom"); tag(ftyp, "iso2"); tag(ftyp, "avc1"); tag(ftyp, "mp41");
     std::vector<std::uint8_t> ftypBox;
     box(ftypBox, "ftyp", ftyp);
 
