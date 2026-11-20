@@ -30,7 +30,7 @@ int main(void)
     vk_bs_write(&bs, 8, 0x65);                    /* NAL IDR, nal_ref_idc=3 */
     vk_slice_header_init(&sh, &sps, &pps, 25);
     vk_slice_header_write(&bs, &sh, &sps, &pps, 3);
-    vk_encode_i16_mb(&bs, y, u, v, ry, ru, rv, 25, 0, 0);
+    vk_encode_i16_mb(&bs, y, u, v, ry, ru, rv, 25, 0, 0, NULL);
     vk_bs_rbsp_trailing(&bs);
 
     size_t len = (size_t)((vk_bs_pos(&bs) + 7) / 8);

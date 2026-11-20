@@ -7,6 +7,7 @@
  */
 #include "slice.h"
 #include "cavlc.h"
+#include "intra16.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -207,14 +208,31 @@ void vk_slice_header_write(vk_bs_t *s, const vk_slice_header_t *sh,
 
 void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
                       const uint8_t *src_v, uint8_t *recon_y, uint8_t *recon_u,
-                      uint8_t *recon_v, int qp, int mb_x, int mb_y)
+                      uint8_t *recon_v, int qp, int mb_x, int mb_y,
+                      const vk_neighbours_t *nb)
 {
     (void)mb_x; (void)mb_y;
     int mf[16], bias[16], dequant[16], cmf[16], cbias[16], cdeq[16];
     uint8_t pred_y[256], pred_u[64], pred_v[64];
-    predict_dc(pred_y, 16, 128);
-    predict_dc(pred_u, 8, 128);
-    predict_dc(pred_v, 8, 128);
+    int mode = 2; /* I16 DC */
+    if (nb) {
+        uint8_t top[16], left[16];
+        for (int i = 0; i < 16; ++i) { top[i] = nb->top_y[i]; left[i] = nb->left_y[i]; }
+        mode = vk_select16(src_y, top, left, nb->tl_y, nb->avail, qp);
+        vk_predict16(pred_y, top, left, nb->tl_y, mode);
+        /* chroma DC from neighbours (DC mode), fallback 128 */
+        int su = 0, sv = 0;
+        if (nb->avail & 1) for (int i = 0; i < 8; ++i) { su += nb->top_u[i]; sv += nb->top_v[i]; }
+        if (nb->avail & 2) for (int i = 0; i < 8; ++i) { su += nb->left_u[i]; sv += nb->left_v[i]; }
+        int cu = 128, cv = 128;
+        if (nb->avail & 3) { cu = (su + 8) >> 4; cv = (sv + 8) >> 4; }
+        memset(pred_u, cu, 64);
+        memset(pred_v, cv, 64);
+    } else {
+        predict_dc(pred_y, 16, 128);
+        predict_dc(pred_u, 8, 128);
+        predict_dc(pred_v, 8, 128);
+    }
     quant_tables(qp, 0, mf, bias, dequant);
     quant_tables(qp, 2, cmf, cbias, cdeq);
 
@@ -292,7 +310,8 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
     if (cacbp) cbp_chroma = 2;
 
     /* ---- entropy ---- */
-    uint32_t mb_type = 1u + 2u /* I16 DC */ + 4u*(uint32_t)cbp_chroma
+    int fix = mode <= 3 ? mode : 2;
+    uint32_t mb_type = 1u + (uint32_t)fix + 4u*(uint32_t)cbp_chroma
                      + (cbp_luma ? 12u : 0u);
     vk_bs_write_ue(s, mb_type);
     vk_bs_write_ue(s, 0);  /* chroma pred mode = DC */
