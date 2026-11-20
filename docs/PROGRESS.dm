@@ -7,6 +7,43 @@ Vk264-Vulkan port: `Vk264/vulkan/*.comp`, shader SPIR-V shader pipelines registe
 fixture tests in `Vk264/src/dct_parity.cpp` (the `verifyXxx` functions and the
 `x264_*_parity` CTest registrations).
 
+## Issue #8 FIXED — multi-MB CABAC tail divergence (Ram, 2026-11-20)
+
+**Root cause: the resident CABAC frame fixture's `count` field was set to the
+macroblock count instead of the operation count.** In
+`Vk264/src/parity/resident_cabac.inc::encodeResidentCabacFrame`, `fixtureHeader[4]`
+(fixture `count`, the number of entries in `operations[]`) was `macroblocks`, but
+only **one** operation (kind 15, `wholeFrame`) is uploaded. `cabac.comp::encodeOperations`
+loops `for (i = 0; i < fixtures[f].count; ++i)`, so for N>1 MBs it also executed
+N-1 stale/zero operations *after* the whole-frame op and before the flush — extra
+bins confined to the tail of the arithmetic stream. With 1 MB, count==1 and the
+stream was correct, exactly matching the "1 MB exact / 2+ MBs off in last 1–2
+bytes" symptom. Fix: set the operation count to **1**.
+
+Evidence (actual output after fix):
+```
+python harness/parity_check.py --preset fast --pattern flat --width 16 --height 16 --frames 1 --gop 1
+BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+python harness/parity_check.py --preset fast --pattern flat --width 32 --height 16 --frames 1 --gop 1
+BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+python harness/parity_check.py --preset fast --pattern flat --width 64 --height 64 --frames 1 --gop 1
+BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+```
+Full size sweep (all 1 frame, gop=1, `fast`/flat): 16x16, 32x16, 16x32, 32x32,
+48x16, 16x48, 64x16, 16x64, 64x32, 32x64, 64x64 — **11/11 BYTE-EXACT**.
+
+Diagnostic path (for the record): `VK264_DUMP_DIR` dumps the resident bank;
+`dct_parity record_bank <bank> cabac_record.spv 25 2 0 63 <columns> <out>` replayed
+the *same* bank and produced x264's `... b8 79` tail, proving the bank/MB
+decisions and CABAC syntax were correct and isolating the fault to the fixture
+setup (operation count) rather than the sweep-tested context formulas
+(`lumaCodedFlag`/`chromaAcFlag`/chroma-mode neighbours were each tested and
+ruled out). The flush constant/frame-index premise was already disproven in PR
+#13 and was not revisited. No unrelated parity case regressed: the remaining
+failing broader cases (multi-frame inter, noise/motion mode decision) were
+verified to fail identically with the fix stashed.
+
+Regression gate added: `x264_parity_fast_64x64` in `Vk264/vulkan/CMakeLists.txt`.
 ## Issue #3 intra-mode-decision scope verified (Rem, 2026-11-20)
 
 On current main 03caa14 (after the merged I4x4/SAD-flag work #43/#45/#46), all

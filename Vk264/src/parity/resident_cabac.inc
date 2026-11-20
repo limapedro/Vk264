@@ -193,7 +193,7 @@ ResidentFrameResult encodeResidentCabacFrame(const std::filesystem::path& shader
     const std::uint32_t fixtureHeader[9]{
         static_cast<std::uint32_t>(qp), static_cast<std::uint32_t>(inter ? 1 : 0),
         static_cast<std::uint32_t>(columns), static_cast<std::uint32_t>(pictureIndex),
-        static_cast<std::uint32_t>(macroblocks), 1, 0, 0, 0};
+        1, 1, 0, 0, 0};
     // Whole-frame op (kind 15) drives every macroblock from the residual bank.
     const std::uint32_t fixtureOps[3]{
         static_cast<std::uint32_t>(cabacCorpus::wholeFrame),
