@@ -85,11 +85,11 @@ void verifyLuma4x4(const char* shader, bool inter) {
     // diverges in the full encode (offset 42) while simple gradients do not.
     if (!inter) {
         Fixture repro{};
-        repro.qp = 28;
+        repro.qp = 25;
         repro.mode = 6;            // DC_128, the only mode for a first MB
         repro.plane = 0;
         repro.field = 0;
-        repro.decimate = 0;
+        repro.decimate = 1;
         repro.denoise = 0;
         repro.cbp = 0;
         setFlatQuant(repro, 21);

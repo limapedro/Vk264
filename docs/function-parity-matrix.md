@@ -126,6 +126,30 @@ architecture yet. This blocks `medium+` presets (issue #4).
 | `x264_encoder_headers` | `parameters.comp`, `slice_header.comp` | EXACT | header fixtures |
 | `slice_write`, `nal_end`, `encoder_frame_end` | `packAnnexB` | EXACT | bitstream/NAL fixtures |
 
+
+## Verification additions this session (Subaru, 2026-11-20)
+
+| New byte-exact fixture | CTest | Cases |
+|---|---|---|
+| I16x16 mode decision (`encoder/analyse.cpp`) | `x264_intra16_mode_parity` | 16640 (5 neighbour configs x QP 0..51 x 64) |
+| CAVLC neighbour context (`encoder/cavlc.cpp`) | `x264_cavlc_context_parity` | 400 |
+| Production `intra16_frame.spv` | `x264_intra16_frame_parity` | full intra16 suite |
+| Production `inter8x8_frame.spv` | `x264_inter8x8_frame_parity` | full inter8x8 suite (frame subset) |
+| Production `intra_chroma_frame.spv` | `x264_intra_chroma_frame_parity` | full chroma suite (frame subset) |
+| Real-gradient single-MB reproducer | `x264_intra16_parity` | +1 case |
+
+Full suite is now **57/57**. The added fixtures close gaps where the algorithm
+was correct but unverified; none of them changed production compute logic.
+
+## Open integration mismatch (not function-level)
+
+Real-footage tracking (`docs/real-content-verification.md`) still shows a
+single-MB divergence for a narrow gradient crop at (1792,896): x264 (verified
+with a locally built, patched CLI) encodes it at I-frame QP 25, which vk264
+also uses (`min_qp:25`), and the intra16 compute shader matches x264 on the
+exact source at QP 25. Therefore the divergence is in production staging or a
+side channel, not in the DCT/quant/predict functions. Tracked in issue #25.
+
 ## Summary
 
 | Status | Count (approx, function families) |

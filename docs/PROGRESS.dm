@@ -7,6 +7,16 @@ Vk264-Vulkan port: `Vk264/vulkan/*.comp`, shader SPIR-V shader pipelines registe
 fixture tests in `Vk264/src/dct_parity.cpp` (the `verifyXxx` functions and the
 `x264_*_parity` CTest registrations).
 
+## Function-parity PR loops (Subaru, 2026-11-20)
+
+Five PRs landed: #20 (I16x16 mode fixture, 16640/16640), #22 (CAVLC context
+fixture, 400/400), #23 (mirror extended to 15 modules), #24 (byte-exact tests
+for production `*_frame.spv` variants, previously untested), #26 (real-gradient
+single-MB regression case). Suite grew 52 -> 57 CTests, all passing. x264 source
+tree fully inventoried (669 functions / 35 files) in `docs/function-parity-matrix.md`.
+Real 16x16 crops are byte-exact in 9/10 sampled locations; the one failure at
+(1792,896) is narrow and content-dependent (issue #25).
+
 ## Real-content bottom-up verification (Subaru, 2026-11-20)
 
 `docs/real-content-verification.md` records the full evidence. Headline: all 52
