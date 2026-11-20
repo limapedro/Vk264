@@ -40,6 +40,9 @@ void vk_write_pskip_slice(vk_bs_t *s, const vk_sps_t *sps, const vk_pps_t *pps,
 void vk_ref_dct4x4(int dct[16], const uint8_t src[16], const uint8_t pred[16]);
 void vk_ref_dct4x4dc(int d[16]);
 int vk_ref_quant4x4(int dct[16], const int mf[16], const int bias[16]);
+/* Exposed for the P-frame probe path. */
+void vk_ref_quant_tables(int qp, int list, int mf[16], int bias[16], int dequant[16]);
+int vk_ref_quant_one(int coef, int mf, int bias);
 void vk_ref_predict16x16(uint8_t out[256], const uint8_t top[16],
                          const uint8_t left[16], int mode);
 

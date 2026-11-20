@@ -70,6 +70,12 @@ static int quant_one(int coef, int mf, int bias)
     return -(int)(((uint32_t)bias + (uint32_t)(-coef)) * (uint32_t)mf >> 16);
 }
 
+int vk_ref_quant_one(int coef, int mf, int bias) { return quant_one(coef, mf, bias); }
+void vk_ref_quant_tables(int qp, int list, int mf[16], int bias[16], int dequant[16])
+{
+    quant_tables(qp, list, mf, bias, dequant);
+}
+
 static void sub4x4_dct(int dct[16], const uint8_t *src, const uint8_t *pred);
 
 void vk_ref_dct4x4(int dct[16], const uint8_t src[16], const uint8_t pred[16])
