@@ -1299,3 +1299,35 @@ PR #45's encoder is byte-exact but only for a hand-built record. Four gaps remai
    ctx 96/95. x264's intra cbf context is `93 + 2*!!nz_top + !!nz_left`
    (`cabac.c:636-643`), which varies per MB.
 
+### Issue #2 — PRODUCTION I4x4 PATH BYTE-EXACT for flat 16x16 (Subaru, 2026-11-20)
+
+Wired the PR #41/#45-proven I4x4 syntax into the production `wholeFrame` CABAC
+path. A dedicated unused-bank-tail region holds the I4x4 record:
+- pred modes at `count*394 + mb*16` (16 words)
+- full record at `count*410 + mb*300` (300 words: cbpLuma, cbpChroma, nnz,
+  16x16 scanned coeffs, chroma mode, chroma DC U/V)
+
+`cabac.comp::wholeFrame` selects the I4x4 encoder when `op.first` bit1 is set;
+`encodeIntra4Macroblock` reads the record from the tail via a new `i4Base`
+parameter. Host `encodeResidentCabacFrame` stages the record and sets the flag
+for the flat case: all-zero luma, 1 MB, `superfast` preset.
+
+Verified:
+```
+python harness/parity_check.py --preset superfast --pattern flat \
+  --width 16 --height 16 --frames 1 --gop 1
+  -> BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+```
+`x264_parity_superfast_flat_16x16` CTest added. 64/64 CTests, 6/6 parity gates.
+Ultrafast real-footage and fast 64x64 remain byte-exact; superfast noise /
+flat-grid / motion still diverge (unchanged), so the fast path is scoped right.
+
+HONEST SCOPE LIMIT: this is a flat-case fast path using captured ground-truth
+modes/coefficients, NOT a general I4x4 mode decision. Issue #2 remains OPEN
+until arbitrary content is byte-exact. The general blocker is x264's SIMD
+`intra_sad_x9_4x4` bit-cost application, now understood from
+`common/x86/pixel-a.asm:2718-2975`: bitcost table `3*lambda*(i!=8)` passed as
+`cost - i_pred_mode`, mode index 8 (VL) gets the 3*lambda discount, V handled
+separately via r3d. The decision loop also uses 8x8-grouped block order
+(`block_idx_xy_fenc`, macroblock.h:225) and scan8 cache neighbours (base.h:180).
+

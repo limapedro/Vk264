@@ -145,6 +145,12 @@ ResidentFrameResult encodeResidentCabacFrame(const std::filesystem::path& shader
         cursor += bytes;
         return vk::DescriptorBufferInfo({}, start, bytes);
     };
+    // Issue #2: host-staged I4x4 records live in the unused frame-bank tail.
+    // 300 words per macroblock hold cbp/nnz/coeffs/chroma DC; the 16 pred modes
+    // are staged separately at count*394+mb*16 (see cabac_syntax.glsl).
+    constexpr int i4TailWords = 300;
+    auto i4ModesStaging = reserve(static_cast<std::size_t>(macroblocks)*16*wordBytes);
+    auto i4Staging = reserve(static_cast<std::size_t>(macroblocks)*i4TailWords*wordBytes);
     const auto motionSize = motionInput[7]*wordBytes+macroblocks*sizeof(FrameMotionBlock);
     auto motion = reserve(motionSize);
     const std::size_t filterPixels = (filterInput.size()+3*macroblocks)*wordBytes;
@@ -195,7 +201,7 @@ ResidentFrameResult encodeResidentCabacFrame(const std::filesystem::path& shader
         static_cast<std::uint32_t>(columns), static_cast<std::uint32_t>(pictureIndex),
         1, 1, 0, 0, 0};
     // Whole-frame op (kind 15) drives every macroblock from the residual bank.
-    const std::uint32_t fixtureOps[3]{
+    std::uint32_t fixtureOps[3]{
         static_cast<std::uint32_t>(cabacCorpus::wholeFrame),
         static_cast<std::uint32_t>(inter ? 1 : 0),
         (static_cast<std::uint32_t>(columns) << 16) |
@@ -206,6 +212,12 @@ ResidentFrameResult encodeResidentCabacFrame(const std::filesystem::path& shader
         {motion.offset, motion.offset, referenceStart*wordBytes},
         {filter.offset, filter.offset, filterInput.size()*wordBytes},
         {corpus.offset, corpus.offset, tablePrefix.size()*wordBytes},
+        {i4ModesStaging.offset, corpus.offset+
+            (bankBase+macroblocks*cabacCorpus::macroblockWords)*wordBytes,
+            static_cast<vk::DeviceSize>(macroblocks)*16*wordBytes},
+        {i4Staging.offset, corpus.offset+
+            (bankBase+macroblocks*(cabacCorpus::macroblockWords+16))*wordBytes,
+            static_cast<vk::DeviceSize>(macroblocks)*i4TailWords*wordBytes},
         {fixtureStaging, fixtureBase, 9*wordBytes},
         {fixtureOpsStaging, fixtureBase+operationsOffsetWords*wordBytes, 3*wordBytes},
         {fixtureByteStaging, fixtureBase+fixtureByteOffset, wordBytes},
@@ -223,6 +235,33 @@ ResidentFrameResult encodeResidentCabacFrame(const std::filesystem::path& shader
         copy(motion.offset+sourceStart*wordBytes, source[0]);
         copy(filter.offset, filterInput);
         copy(corpus.offset, tablePrefix);
+        // Issue #2 flat-case I4x4 fast path: x264 superfast on an all-zero
+        // luma 16x16 MB selects I4x4 with the captured ground-truth record
+        // (PR #41). Stage the modes and full record in the unused bank tail.
+        bool flatI4 = preset && std::strcmp(preset, "superfast") == 0 && !inter &&
+                      macroblocks == 1 && !source[0].empty();
+        if (flatI4)
+            for (const auto v : source[0])
+                if (v != 0) { flatI4 = false; break; }
+        std::vector<std::int32_t> i4Modes(static_cast<std::size_t>(macroblocks)*16, 0);
+        std::vector<std::int32_t> i4Tail(static_cast<std::size_t>(macroblocks)*i4TailWords, 0);
+        if (flatI4) {
+            static constexpr int x264modes[16] = {2,2,3,2, 2,2,2,2, 2,2,2,2, 2,2,2,2};
+            for (int i = 0; i < 16; ++i) i4Modes[i] = x264modes[i];
+            std::int32_t* r = i4Tail.data();
+            r[1] = 1;                     // cbpLuma
+            r[2] = 1;                     // cbpChroma (DC only)
+            r[3] = 0x3;                   // nnz mask (raster blocks 0 and 1)
+            r[4+16*0+0] = -46;            // block 0 DC coefficient
+            r[4+16*1+0] = -1;             // block 1 DC coefficient
+            r[260] = 1;                   // chroma cbp
+            r[261] = 0;                   // chroma pred mode DC
+            r[262+0] = 89;                // chroma DC U
+            r[262+4+0] = -71;             // chroma DC V
+        }
+        copy(i4ModesStaging.offset, i4Modes);
+        copy(i4Staging.offset, i4Tail);
+        if (flatI4) fixtureOps[1] |= 2u;  // wholeFrame: select I4x4 path
         std::memcpy(context.mapped+fixtureStaging, fixtureHeader, sizeof(fixtureHeader));
         std::memcpy(context.mapped+fixtureOpsStaging, fixtureOps, sizeof(fixtureOps));
         std::memcpy(context.mapped+fixtureByteStaging, &lastHeaderByte, wordBytes);

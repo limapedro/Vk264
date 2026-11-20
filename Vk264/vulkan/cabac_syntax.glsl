@@ -245,7 +245,7 @@ void encodeChroma420Residual(int f, int frameBase, int base, int width,
 // base+4+16*b..+15 = 4x4 scanned coeffs of raster block b, base+260 = chroma
 // cbp, base+261 = chroma mode, base+262/266 = chroma DC U/V. The 16 pred modes
 // live in the unused bank tail at frameBase+macroblocks*394+mb*16.
-void encodeIntra4Macroblock(int f, int frameBase, int position, int frame, int macroblocks) {
+void encodeIntra4Macroblock(int f, int frameBase, int position, int frame, int macroblocks, int i4Base) {
     int mb = position & 65535, width = position >> 16;
     int x = mb%width, y = mb/width;
     int base = frameBase+mb*macroblockWords;
@@ -270,23 +270,23 @@ void encodeIntra4Macroblock(int f, int frameBase, int position, int frame, int m
         else if (y4 > 0) pred = min(modes4[idx-4], 2);
         encodeIntra4x4Mode(f, pred, modes4[idx]);
     }
-    encodeIntraChromaMode(f, residualBank[base+261], 0);
-    int cbpLuma = residualBank[base+1], cbpChroma = residualBank[base+260];
+    encodeIntraChromaMode(f, residualBank[i4Base+261], 0);
+    int cbpLuma = residualBank[i4Base+1], cbpChroma = residualBank[i4Base+260];
     encodeLumaCbp(f, cbpLuma, -1, -1);
     encodeChromaCbp(f, cbpChroma, -1, -1);
     encodeQpDelta(f, fixtures[f].qp, fixtures[f].qp, false, false);
-    int nnz = residualBank[base+3];
+    int nnz = residualBank[i4Base+3];
     for (int idx = 0; idx < 16; ++idx) {
         if (((nnz >> idx) & 1) == 0) continue;
         emitDecision(f, 96, 1);                       // cbf, first MB intra
-        encodeResidual(f, 2, 0, false, base+4+16*idx);
+        encodeResidual(f, 2, 0, false, i4Base+4+16*idx);
     }
     emitDecision(f, 96, 0);                           // trailing cbf bins
     emitDecision(f, 95, 0);
     if (cbpChroma != 0)
         for (int plane = 0; plane < 2; ++plane) {
             emitDecision(f, 100, 1);                  // chroma DC cbf
-            encodeResidual(f, 3, 0, false, base+262+plane*4);
+            encodeResidual(f, 3, 0, false, i4Base+262+plane*4);
         }
 }
 
