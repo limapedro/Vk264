@@ -24,6 +24,7 @@ void vk_slice_header_write(vk_bs_t *s, const vk_slice_header_t *sh,
 /* Oracle entry points for GPU-vs-C equivalence tests. */
 void vk_ref_dct4x4(int dct[16], const uint8_t src[16], const uint8_t pred[16]);
 void vk_ref_dct4x4dc(int d[16]);
+int vk_ref_quant4x4(int dct[16], const int mf[16], const int bias[16]);
 
 void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
                       const uint8_t *src_v, uint8_t *recon_y, uint8_t *recon_u,

@@ -42,6 +42,18 @@ static void quant_tables(int qp, int list, int mf[16], int bias[16], int dequant
     }
 }
 
+static int quant_one(int coef, int mf, int bias);
+
+int vk_ref_quant4x4(int dct[16], const int mf[16], const int bias[16])
+{
+    int nz = 0;
+    for (int i = 0; i < 16; ++i) {
+        dct[i] = quant_one(dct[i], mf[i], bias[i]);
+        nz |= dct[i] != 0;
+    }
+    return nz;
+}
+
 static int quant_one(int coef, int mf, int bias)
 {
     if (coef > 0) return (int)(((uint32_t)bias + (uint32_t)coef) * (uint32_t)mf >> 16);

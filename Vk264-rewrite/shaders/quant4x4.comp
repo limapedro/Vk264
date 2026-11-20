@@ -1,0 +1,18 @@
+#version 450
+// Per-coefficient quantisation (x264 common/quant.c:50 QUANT_ONE).
+// In-place: dct[i] = sign(dct) * ((bias[i] + |dct[i]|) * mf[i] >> 16).
+layout(local_size_x = 1) in;
+
+struct Block { int dct[16]; int mf[16]; int bias[16]; int pad[16]; };
+layout(std430, binding = 0) buffer Buf { Block blocks[]; };
+
+void main()
+{
+    uint b = gl_GlobalInvocationID.x;
+    for (int i = 0; i < 16; ++i) {
+        int c = blocks[b].dct[i];
+        uint mag = uint(abs(c));
+        uint q = (uint(blocks[b].bias[i]) + mag) * uint(blocks[b].mf[i]) >> 16;
+        blocks[b].dct[i] = c > 0 ? int(q) : -int(q);
+    }
+}
