@@ -1097,3 +1097,64 @@ excluded is therefore NOT a faithful oracle. Production superflat parity needs
 the exact x9 cost/shortcut behaviour ported to inter_frame.comp - this is the
 true blocker for item (1), not just "add a 4x4 path". Issue #2 remains OPEN.
 
+### Corrigendum: cabac_decoder.py is NOT an authoritative oracle (Subaru, 2026-11-20)
+
+A full read-only audit verified three concrete bugs in `harness/cabac_decoder.py`
+against `references/x264-master`. This RETRACTS the "decoder is authoritative"
+claim above at lines 1042-1044 and invalidates the decoded syntax values there
+(transform_size=1, cbp_luma=0xe, dqp=1, nonzero blocks 4/5/7/10/13/15) — they
+contradict PR #41/#45's byte-proven ground truth (transform_size=0, cbp_luma=1,
+blocks 0/1, 20-byte target) precisely because of these bugs:
+
+1. **Off-by-one mode fix** (`cabac_decoder.py:33,95-96`): `FIX` is x264's
+   `x264_mb_pred_mode4x4_fix[13]` table whose index 0 is the -1 sentinel; x264's
+   macro is `fix(t) = table[t+1]` (`common/predict.h:92`). The decoder indexes
+   `FIX[modes[i-1]]` directly, so `fix(2)` reads 1 (H) instead of 2 (DC). Every
+   neighbour-mode prediction is wrong.
+2. **qp_delta truncated** (`:133`): `dqp0 = d.decision(60)` consumes only the
+   first bin; x264 emits more at ctx 60 with context transitions when the delta
+   is nonzero (`encoder/cabac.c:168-181`). Residual parsing after a nonzero dqp
+   is misaligned.
+3. **cbf context wrong for intra** (`:148-151`): uses
+   `93 + 2*!!top_nz + !!left_nz` with unavailable neighbours = 0, giving 93.
+   x264's `cabac_cbf_ctxidxinc` masks with `0x7f + (b_intra << 7)` so unavailable
+   neighbours count as available (`encoder/cabac.c:612-643`), giving 96 for the
+   first intra MB — which is exactly the bin sequence PR #41 proved.
+
+`harness/cabac_decoder_selftest.py` only round-trips random decision bins at
+QP 0/25/51; it does not cover syntax ordering, residual, qp_delta, ue-bypass or
+terminal, so it cannot catch any of these. **Byte comparison against x264's
+actual stream remains the only trustworthy oracle.** Agents: do not use the
+decoder to derive ground-truth syntax until these three bugs are fixed and the
+selftest is extended.
+
+### Harness caveats (same audit)
+
+- `parity_check.py:55-57` `strip_sei()` removes ALL NAL type 6 units from both
+  streams, not only encoder-identity SEI — "encoder-identity only" is asserted,
+  not verified.
+- `parity_check.py:45-52` `split_nals()` matches only 4-byte start codes; 3-byte
+  `00 00 01` slices are mislabelled. The "first mismatch at offset 41 in PPS
+  NAL" message is therefore mislabelled — it is slice data.
+- The harness compares against the installed ffmpeg/libx264
+  (`N-126335…20260830`), NOT the pinned `references/x264-master` `c24e06c2`
+  used by the fixtures. "Fixture byte-exact" and "harness byte-exact" are
+  different oracles.
+
+### Full production-superflat work inventory (same audit)
+
+PR #45's encoder is byte-exact but only for a hand-built record. Four gaps remain:
+1. **Dispatch unreachable**: `cabac.comp:310-315` selects I4x4 only when
+   `op.first` bit1 is set; `resident_cabac.inc:198-202` never sets it.
+2. **No GPU I4x4 mode decision** writing the 16 modes to the bank tail
+   (`inter_frame.comp` has only `selectIntra16Mode`/`dcMode`).
+3. **Residual staging layout mismatch**: production `join()` writes I16 layout
+   (`level+1` boolean cbp, DC at `+4..19`, AC at `+20+15*b`, chroma DC at
+   `+262+66*plane+2`), but `encodeIntra4Macroblock` expects 4-bit cbpLuma at
+   `+1`, 16 scanned coeffs per block at `+4+16*b`, chroma DC at `+262+plane*4`
+   (V-plane offset +266 CONFLICTS with production +330..333).
+4. **First-MB-only contexts** in `encodeIntra4Macroblock` (`:273-289`):
+   hardcoded neighbour cbp/chroma/nnz, zero QP delta, transform_size=0, cbf
+   ctx 96/95. x264's intra cbf context is `93 + 2*!!nz_top + !!nz_left`
+   (`cabac.c:636-643`), which varies per MB.
+

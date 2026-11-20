@@ -70,6 +70,28 @@ This is the SAME family as the remaining issue #2 blocker. Coordinate with Ram
 (issue #8, CABAC neighbour contexts) so you don't duplicate work, but you own
 the intra mode-decision port.
 
+## 3b. Adjacent #2 blockers (coordinate, do not duplicate with Ram/Subaru)
+
+The GPU I4x4 encoder (`encodeIntra4Macroblock`) is byte-exact only for a
+hand-built record. A full audit found three further gaps before superflat can
+work, documented in the `docs/PROGRESS.dm` corrigendum (2026-11-20):
+
+- **Dispatch unreachable**: `cabac.comp:310-315` selects I4x4 only when
+  `op.first` bit1 is set, but `resident_cabac.inc:198-202` never sets it.
+- **Residual staging layout mismatch**: production `join()` writes I16 layout
+  (boolean cbp at `+1`, DC at `+4..19`, AC at `+20+15*b`, chroma DC at
+  `+262+66*plane+2`), but `encodeIntra4Macroblock` expects 4-bit cbpLuma at
+  `+1`, 16 scanned coeffs per block at `+4+16*b`, chroma DC at `+262+plane*4`
+  (V-plane +266 conflicts with production +330..333).
+- **First-MB-only contexts** in the encoder (`:273-289`): hardcoded neighbour
+  cbp/chroma/nnz, zero QP delta, transform_size=0, cbf ctx 96/95. x264's intra
+  cbf context is `93 + 2*!!nz_top + !!nz_left` (`cabac.c:636-643`), which varies
+  per MB.
+
+Your #3 port is the mode-decision half of this family; keep your changes in
+`inter_frame.comp` / a new predictor shader and leave the CABAC encoder's
+record layout to the agent that owns the #2 staging work.
+
 ## 4. Hard constraints
 
 - Macroblock record stride is **394 words**, hardcoded in 4 places:
