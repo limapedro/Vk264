@@ -26,6 +26,9 @@ add_test(NAME rewrite_oracle_pskip
 add_executable(vk264_oracle_pcli oracle_pcli.c)
 target_link_libraries(vk264_oracle_pcli PRIVATE vk264_rewrite_ref)
 
+add_executable(vk264_oracle_pme_cli oracle_pme_cli.c)
+target_link_libraries(vk264_oracle_pme_cli PRIVATE vk264_rewrite_ref)
+
 add_executable(vk264_test_bitstream test_bitstream.c)
 target_link_libraries(vk264_test_bitstream PRIVATE vk264_rewrite_ref)
 add_test(NAME rewrite_bitstream COMMAND vk264_test_bitstream)
