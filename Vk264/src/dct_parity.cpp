@@ -29,6 +29,7 @@
 #include "../encoder/ratecontrol.cpp"
 #include "parity/fixtures_transform.inc"
 #include "parity/fixtures_intra.inc"
+#include "parity/i4_analysis.inc"
 #include "parity/fixtures_deblock.inc"
 #include "parity/fixtures_cabac.inc"
 #include "parity/fixtures_cavlc.inc"

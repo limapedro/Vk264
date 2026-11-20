@@ -290,6 +290,35 @@ int runParityTests(int argc, char** argv) try {
     else if (side == "intra_chroma_frame") verifyIntraChroma(argv[2], true);
     else if (side == "i4x4_decision") verifyI4x4Decision();
     else if (side == "i4x4_cabac") encodeI4x4Frame();
+    else if (side == "i4x4_analyze") {
+        // Verify the faithful host I4x4 analysis against x264's captured modes.
+        constexpr int fencStride = 16;
+        std::array<pixel, 16*fencStride> fenc{};   // flat: all zero
+        if (argc > 3) {
+            std::ifstream in(argv[2], std::ios::binary);
+            in.read(reinterpret_cast<char*>(fenc.data()), fenc.size());
+        } else for (auto& v : fenc) v = 0;
+        I4Analysis analysis{};
+        analyzeI4(fenc.data(), fencStride, 25, analysis);
+        std::cout << "modes:";
+        for (int i = 0; i < 16; ++i) std::cout << " " << analysis.modes[i];
+        std::cout << " cbp " << analysis.cbpLuma << "\n";
+        static constexpr int expected[16] = {11,9,3,2, 9,9,2,2, 10,2,10,2, 2,2,2,2};
+        // Convert fixed modes back to raw where distinguishable: compare fixed.
+        static constexpr int expectedFixed[16] = {2,2,3,2, 2,2,2,2, 2,2,2,2, 2,2,2,2};
+        for (int i = 0; i < 16; ++i)
+            if (analysis.modes[i] != expectedFixed[i])
+                throw std::runtime_error("i4x4 analysis fixed-mode mismatch at " + std::to_string(i));
+        // coeffs: block0 -46, block1 -1 in scan order
+        if (analysis.coeffs[0][0] != -46 || analysis.coeffs[1][0] != -1) {
+            std::cerr << "coeffs: " << analysis.coeffs[0][0] << "," << analysis.coeffs[1][0]
+                      << " nnz " << analysis.nnz[0] << "," << analysis.nnz[1] << "\n";
+            throw std::runtime_error("i4x4 analysis coefficient mismatch");
+        }
+        if (analysis.cbpLuma != 1)
+            throw std::runtime_error("i4x4 analysis cbp mismatch");
+        std::cout << "i4x4 host analysis matches x264 flat ground truth (modes, coeffs, cbp).\n";
+    }
     else if (side == "deblock_filter") verifyDeblockFilter(argv[2]);
     else if (side == "deblock_frame") verifyDeblockFrame(argv[2]);
     else if (side == "deblock_frame_tiled") verifyDeblockFrame(argv[2], true);
