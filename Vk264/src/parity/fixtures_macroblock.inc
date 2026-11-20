@@ -82,7 +82,7 @@ void verifyLuma4x4(const char* shader, bool inter) {
         }
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::macroblock::encode(shader, cases);
     Intra16Reference reference{};
     std::copy(predictors.begin(), predictors.end(), reference.predict_16x16);
     reference.dctf = {sub16x16_dct, add16x16_idct, add16x16_idct_dc, dct4x4dc, idct4x4dc};
@@ -197,7 +197,7 @@ void verifyInter8x8(const char* shader) {
             }
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::macroblock::inter(shader, cases);
     Intra16Reference ref{};
     ref.param.b_cabac = 1;
     ref.dctf.sub16x16_dct8 = sub16x16_dct8;

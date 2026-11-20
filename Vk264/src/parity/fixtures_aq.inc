@@ -48,7 +48,7 @@ void verifyAqVariance(const char* shader) {
     }
     for (auto& marker : cases) { marker.sumLuma = 0xdeadbeefu; marker.energy = 0xdeadbeefu; }
     const auto input = cases; // captured pre-dispatch state (pixels only)
-    execute(shader, cases);
+    vk264::ratecontrol::aq(shader, cases);
     const auto acEnergyVar = [](std::uint32_t sum, std::uint32_t ssd, int shift) -> std::uint32_t {
         return std::uint32_t(uint64_t(ssd) - (((uint64_t)sum * sum) >> shift));
     };

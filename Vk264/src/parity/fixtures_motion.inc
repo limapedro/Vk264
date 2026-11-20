@@ -39,7 +39,7 @@ void verifyMvPrediction(const char* shader) {
         }
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::mvpred::predict(shader, cases);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];
@@ -130,7 +130,7 @@ void verifyMotionCompensation(const char* shader) {
         input.chromaV.fill(243);
     }
     const auto inputs = cases;
-    execute(shader, cases, 64);
+    vk264::mc::compensate(shader, cases, 64);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];
@@ -296,7 +296,7 @@ void verifyMotionMetrics(const char* shader) {
         input.sa8d.fill(untouched);
     }
     const auto inputs = cases;
-    execute(shader, cases, 4);
+    vk264::pixel::metrics(shader, cases, 4);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];
@@ -370,7 +370,7 @@ void verifyMotionElimination(const char* shader) {
         }
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::me::refine(shader, cases);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];
@@ -416,7 +416,7 @@ void verifyMotionIntegral(const char* shader) {
         input.sum8v = input.sum8From4;
     }
     const auto inputs = cases;
-    execute(shader, cases, 64);
+    vk264::me::metrics(shader, cases, 64);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];
@@ -478,7 +478,7 @@ void verifyMotionLowres(const char* shader) {
         input.outputPlanes.fill(207);
     }
     const auto inputs = cases;
-    execute(shader, cases, 64);
+    vk264::me::metrics(shader, cases, 64);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
         const auto& output = cases[i];
@@ -670,7 +670,7 @@ void verifyMotionSearch(const char* shader, bool exhaustive) {
         }
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::me::search(shader, cases);
     x264_t encoder{};
     encoder.mc.get_ref = get_ref;
     encoder.mc.mc_luma = mc_luma;
@@ -911,7 +911,7 @@ void verifyMotionBidir(const char* shader) {
         for (auto& sample : input.scratch) sample = random() & 255;
     }
     const auto inputs = cases;
-    execute(shader, cases);
+    vk264::me::refine(shader, cases);
     int changed = 0, returned = 0;
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const auto& input = inputs[i];
