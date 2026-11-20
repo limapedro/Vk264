@@ -64,11 +64,26 @@ Reproduce with `fast`, flat, 1 frame, gop=1:
 - 64x64: `vk264 [... d6 94 bb e1]` vs `x264 [... d6 94 d1 61]`
 
 **Your task:** identify the exact first differing CABAC bin/context at the tail
-of the 64x64 flat case. Approach: use/validate the byte-level CABAC decoder
-(`harness/cabac_decoder.py` now exists; the old `build/cabac_valid.py` was never
-committed), dump bin+context sequences for both streams at the tail, and find
-the first divergence. Check `lumaCodedFlag` / `chromaAcFlag` neighbour contexts
+of the 64x64 flat case. Check `lumaCodedFlag` / `chromaAcFlag` neighbour contexts
 in `Vk264/vulkan/cabac_syntax.glsl` and the multi-MB neighbour record layout.
+
+**WARNING (CORRECTION to earlier advice):** `harness/cabac_decoder.py` has THREE
+verified bugs and is NOT an authoritative oracle — do NOT derive ground truth
+from it. See the corrigendum in `docs/PROGRESS.dm` (2026-11-20):
+
+- `:33,95-96` — `FIX[]` indexed as `fix[t]` instead of x264's `fix[t+1]`
+  (`common/predict.h:92`); every neighbour-mode prediction is off by one.
+- `:133` — only the first qp_delta bin is consumed; x264 emits more when
+  delta != 0 (`encoder/cabac.c:168-181`).
+- `:148-151` — cbf context uses unavailable-neighbour = 0 giving 93; x264
+  intra counts them as available giving 96 for the first MB
+  (`encoder/cabac.c:612-643`). This is why the decoder's decoded syntax
+  (transform_size=1, cbp=0xe, dqp=1, blocks 4/5/7/10/13/15) contradicts the
+  byte-proven PR #41 target (transform_size=0, cbp=1, blocks 0/1).
+
+Its selftest only round-trips random decision bins, so it cannot catch these.
+Either fix the decoder first (own PR, extend the selftest to syntax/residual/
+qp_delta/terminal), or use raw byte comparison against x264 as the oracle.
 
 ## 3. Hard constraints
 
