@@ -263,7 +263,9 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
                          int mvx_qp, int mvy_qp, int qp,
                          uint8_t on[16], uint8_t oc[2][4], uint8_t *od,
                          const uint8_t *ll, const uint8_t *tl,
-                         const uint8_t lc[2][2], const uint8_t tc[2][2])
+                         const uint8_t lc[2][2], const uint8_t tc[2][2],
+                         uint8_t *rcony, uint8_t *rconu, uint8_t *rconv,
+                         int rdy, int rdu, int rdv)
 {
     int mf[16], bias[16], deq[16], cmf[16], cbias[16], cdeq[16];
     vk_ref_quant_tables(qp, 1, mf, bias, deq);
@@ -412,6 +414,44 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
                 }
         }
     }
+    /* ---- residual reconstruction into the current-frame ref planes ---- */
+    if (cbp_luma) {
+        for (int b = 0; b < 16; ++b) {
+            if (!nnz[b]) continue;
+            int blk[16];
+            for (int i = 0; i < 16; ++i) blk[rz4[i]] = q[b][i];
+            vk_ref_dequant4(blk, deq, qp);
+            vk_ref_idct4(blk);
+            int by = (b/4)*4, bx = (b%4)*4;
+            vk_ref_add_block(rcony + by*rdy + bx, rdy, blk);
+        }
+    }
+    if (cbp_chroma) {
+        for (int pl = 0; pl < 2; ++pl) {
+            int d0 = chroma_dc[pl][0]+chroma_dc[pl][1];
+            int d1 = chroma_dc[pl][2]+chroma_dc[pl][3];
+            int d2 = chroma_dc[pl][0]-chroma_dc[pl][1];
+            int d3 = chroma_dc[pl][2]-chroma_dc[pl][3];
+            int dmf = cdeq[0] << (qp/6);
+            int cdq[4] = { ((d0+d1)*dmf)>>5, ((d0-d1)*dmf)>>5,
+                           ((d2+d3)*dmf)>>5, ((d2-d3)*dmf)>>5 };
+            uint8_t *dst = pl ? rconv : rconu;
+            int stride = pl ? rdv : rdu;
+            for (int b = 0; b < 4; ++b) {
+                int by = (b/2)*4, bx = (b%2)*4;
+                if (cnnz[pl][b]) {
+                    int blk[16];
+                    for (int i = 0; i < 16; ++i) blk[rz4[i]] = cacq[pl][b][i];
+                    vk_ref_dequant4(blk, cdeq, qp);
+                    blk[0] = cdnz[pl] ? cdq[b] : 0;
+                    vk_ref_idct4(blk);
+                    vk_ref_add_block(dst + by*stride + bx, stride, blk);
+                } else if (cdnz[pl]) {
+                    vk_ref_add_block_dc(dst + by*stride + bx, stride, cdq[b]);
+                }
+            }
+        }
+    }
     return cbp;
 }
 
@@ -539,10 +579,25 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
             if (!do_skip) {
                 mvp16_avail(lx, ly, tx, ty, cx, cy, have_l, have_t,
                             have_c || have_tl, &mvpx, &mvpy);
+                /* x264_mb_predict_mv_ref16x16: left/top/top-left/top-right
+                 * MVs, rounded to fullpel, zero and mvp excluded. */
+                int cand[8], nc = 0;
+                int cmv[4][2] = {
+                    {lx,ly}, {tx,ty},
+                    {have_tl ? mv[idx-mw-1][0] : 0, have_tl ? mv[idx-mw-1][1] : 0},
+                    {cx,cy}
+                };
+                for (int k = 0; k < 4; ++k) {
+                    int ax = (cmv[k][0]+2)>>2, ay = (cmv[k][1]+2)>>2;
+                    if ((ax == 0 && ay == 0) ||
+                        (ax == mvpx/4 && ay == mvpy/4)) continue;
+                    cand[2*nc] = ax; cand[2*nc+1] = ay;
+                    ++nc;
+                }
                 inter_cost = vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
                             mvpx/4, mvpy/4, 16,
                             lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
-                            &mvx, &mvy);
+                            cand, nc, &mvx, &mvy);
                 /* x264 promotes P16 to P_SKIP when cbp==0 and MV==pskip_mv. */
                 int qx = mvx*4, qy = mvy*4;
                 if (qx == psk_x && qy == psk_y &&
@@ -623,13 +678,7 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                     lc[p][i] = have_l ? cnnz_c[idx-1][p][i*2+1] : 0x80;
                     tc[p][i] = have_t ? cnnz_c[idx-mw][p][2+i] : 0x80;
                 }
-            uint8_t on[16], oc[2][4], od;
-            code_residual(bs, cur, refp, w, h, rs, mx*16, my*16,
-                          mvx*4, mvy*4, qp, on, oc, &od, ll, tl, lc, tc);
-            memcpy(nnz_c[idx], on, 16);
-            memcpy(cnnz_c[idx], oc, 8);
-            dcnz_c[idx] = od;
-            /* reconstruct P16 MB from reference (zero-residual case) */
+            /* MC prediction first, then code_residual adds the residual */
             int sx = mvx, sy = mvy;
             for (int yy = 0; yy < 16; ++yy)
                 memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
@@ -641,6 +690,16 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                 memcpy(rv + (my*8+yy+CPAD)*crs + CPAD + mx*8,
                        refp + rys + rcs + (my*8+yy+cyp+CPAD)*crs + CPAD + mx*8+cx, 8);
             }
+            uint8_t *rcony = ry + (my*16+LPAD)*rs + LPAD + mx*16;
+            uint8_t *rconu = ru + (my*8+CPAD)*crs + CPAD + mx*8;
+            uint8_t *rconv = rv + (my*8+CPAD)*crs + CPAD + mx*8;
+            uint8_t on[16], oc[2][4], od;
+            code_residual(bs, cur, refp, w, h, rs, mx*16, my*16,
+                          mvx*4, mvy*4, qp, on, oc, &od, ll, tl, lc, tc,
+                          rcony, rconu, rconv, rs, crs, crs);
+            memcpy(nnz_c[idx], on, 16);
+            memcpy(cnnz_c[idx], oc, 8);
+            dcnz_c[idx] = od;
         }
     if (skip_run) vk_bs_write_ue(bs, (uint32_t)skip_run);
     vk_bs_rbsp_trailing(bs);

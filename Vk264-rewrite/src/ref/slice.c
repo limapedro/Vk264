@@ -563,3 +563,10 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
     }
 }
 
+void vk_ref_dequant4(int d[16], const int dm[16], int qp) { dequant4(d, dm, qp); }
+void vk_ref_dequant4dc(int d[16], const int dm[16], int qp) { dequant4dc(d, dm, qp); }
+void vk_ref_idct4(int d[16]) { idct4(d); }
+void vk_ref_idct4x4dc(int d[16]) { idct4x4dc(d); }
+void vk_ref_add_block(uint8_t *dst, int stride, const int d[16]) { add_block(dst, stride, d); }
+void vk_ref_add_block_dc(uint8_t *dst, int stride, int dc) { add_block_dc(dst, stride, dc); }
+

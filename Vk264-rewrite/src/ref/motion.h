@@ -33,7 +33,7 @@ int vk_me16(const uint8_t *cur, int cur_stride,
 int vk_me16_dia(const uint8_t *cur, int cur_stride,
                 const uint8_t *ref, int ref_stride, int pad,
                 int x, int y, int mvpx, int mvpy, int range, int lambda,
-                int *mvx, int *mvy);
+                const int *cands, int ncands, int *mvx, int *mvy);
 
 /* Pad a plane by replicating edge pixels into `dst` (stride ds, pad border). */
 void vk_pad_plane(uint8_t *dst, int ds, const uint8_t *src, int ss,
