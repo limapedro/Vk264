@@ -221,14 +221,13 @@ void encodeI4x4Frame() {
     // modes in block order, cbp_luma=1, blocks 0/1 nonzero with scanned
     // coefficients -46 and -1. Using the real encoder's state isolates the
     // CABAC emission path from the mode-decision path.
-    static constexpr int x264modes[16] = {2,2,2,2, 2,1,0,2, 2,1,2,1, 2,3,1,0};
+    static constexpr int x264modes[16] = {2,2,3,2, 2,2,2,2, 2,2,2,2, 2,2,2,2};
     for (int i = 0; i < 16; ++i) modes[i] = x264modes[i];
     nnz.fill(0);
-    const int nzBlocks[] = {4,6,12,13,15};
-    const int levels[] = {2,2,2,2,3};
     for (auto& d : dcts) std::fill(std::begin(d), std::end(d), 0);
-    for (int i = 0; i < 5; ++i) { nnz[nzBlocks[i]] = 1; dcts[nzBlocks[i]][0] = levels[i]; }
-    cbpLuma = 0xa;
+    nnz[0] = nnz[1] = 1;
+    dcts[0][0] = -46; dcts[1][0] = -1;  // x264 CLI ground truth (scanned arrays)
+    cbpLuma = 1;
     // ---- CABAC emission (I-slice, QP, model 0) ----
     x264_t encoder{};
     encoder.i_frame = 0;
@@ -251,30 +250,52 @@ void encodeI4x4Frame() {
     for (int i = 0; i < 16; ++i) fixedModes[i] = fix4(modes[i]);
     for (int idx = 0; idx < 16; ++idx) {
         const int x = idx%4, y = idx/4;
-        int pred = 2; // DC default
+        // x264_mb_predict_intra4x4_mode: unavailable neighbours read as DC(2)
+        // via x264_mb_pred_mode4x4_fix(-1), so the min always includes 2.
+        int pred = 2;
         if (x>0 && y>0) pred = std::min(fixedModes[idx-1], fixedModes[idx-4]);
-        else if (x>0) pred = fixedModes[idx-1];
-        else if (y>0) pred = fixedModes[idx-4];
+        else if (x>0) pred = std::min(fixedModes[idx-1], 2);
+        else if (y>0) pred = std::min(fixedModes[idx-4], 2);
         cabac_intra4x4_pred_mode(&coder, pred, fixedModes[idx]);
     }
+    // x264 cabac_mb_header_i always codes intra_chroma_pred_mode (ctx64 for
+    // the first MB); omitting it shifted every subsequent bin.
+    encoder.mb.i_chroma_pred_mode = 0;
+    encoder.mb.i_neighbour = 0;
+    cabac_intra_chroma_pred_mode(&encoder, &coder);
     // cbp luma
     encoder.mb.i_cbp_luma = cbpLuma; // x264 superfast decoded cbp_luma
     encoder.mb.cache.i_cbp_left = -1;
     encoder.mb.cache.i_cbp_top = -1;
     cabac_cbp_luma(&encoder, &coder);
     // cbp chroma (assume 0 for now - flat chroma may still code DC; will verify)
-    encoder.mb.i_cbp_chroma = 0;
+    encoder.mb.i_cbp_chroma = 1;
     cabac_cbp_chroma(&encoder, &coder);
     // qp delta
-    encoder.mb.i_qp = qp; encoder.mb.i_last_qp = qp-1; // decoder ground truth: dqp=1
+    encoder.mb.i_qp = qp; encoder.mb.i_last_qp = qp;
     encoder.mb.i_type = I_4x4; encoder.mb.i_mb_xy = 0;
     const std::int16_t cbpArr[1]{0}; const std::uint8_t typeArr[1]{I_4x4};
     encoder.mb.cbp = cbpArr; encoder.mb.type = typeArr; encoder.mb.i_last_dqp = 0;
     cabac_qp_delta(&encoder, &coder);
-    // residuals: for each nonzero 4x4 luma block
-    encoder.quantf.coeff_last[1] = coeff_last15;
+    // residuals: x264 codes a cbf bin (cabac_cbf_ctxidxinc for DCT_LUMA_4x4,
+    // intra first MB => ctx 96) before each nonzero block's sigmap/levels.
+    encoder.quantf.coeff_last[2] = coeff_last16;
     for (int idx = 0; idx < 16; ++idx)
-        if (nnz[idx]) x264_cabac_block_residual_c(&encoder, &coder, 1, dcts[idx]);
+        if (nnz[idx]) {
+            x264_cabac_encode_decision_c(&coder, 96, 1);
+            x264_cabac_block_residual_c(&encoder, &coder, 2, dcts[idx]);
+        }
+    // x264 codes cbf=0 for the remaining luma 4x4 blocks of the group
+    x264_cabac_encode_decision_c(&coder, 96, 0);
+    x264_cabac_encode_decision_c(&coder, 95, 0);
+    // chroma DC residual (cbp_chroma=1): cbf at ctx100 then 4-coeff residual
+    encoder.quantf.coeff_last[3] = coeff_last4;
+    dctcoef chromaDC[2][16]{};
+    chromaDC[0][0] = 89; chromaDC[1][0] = -71;
+    for (int ch = 0; ch < 2; ++ch) {
+        x264_cabac_encode_decision_c(&coder, 100, 1);
+        x264_cabac_block_residual_c(&encoder, &coder, 3, chromaDC[ch]);
+    }
     // flush
     x264_cabac_encode_flush(&encoder, &coder);
     size_t len = coder.p - bytes;
