@@ -64,6 +64,53 @@ int runParityTests(int argc, char** argv) try {
         }
         return 0;
     }
+    if (argc == 3 && std::string_view(argv[1]) == "i4x4_frame") {
+        // Issue #2: prove the GPU I4x4 CABAC encoder emits x264's exact
+        // superfast flat 16x16 slice byte for byte (PR #41 ground truth).
+        constexpr int kMacroblocks = 1, kWidth = 1;
+        std::vector<std::int32_t> bank(cabacCorpus::frameResidualBankSize, 0);
+        std::int32_t* rec = bank.data();
+        rec[1] = 1;                       // cbpLuma
+        rec[2] = 1;                       // cbpChroma (DC only)
+        rec[3] = 0x3;                     // nnz mask, raster blocks 0 and 1
+        rec[4+16*0+0] = -46;              // block 0 DC coefficient
+        rec[4+16*1+0] = -1;               // block 1 DC coefficient
+        rec[260] = 1;                     // chroma cbp
+        rec[261] = 0;                     // chroma pred mode DC
+        rec[262+0] = 89;                  // chroma DC U
+        rec[262+4+0] = -71;               // chroma DC V
+        std::int32_t* modes = bank.data()+kMacroblocks*cabacCorpus::macroblockWords;
+        constexpr int x264modes[16] = {2,2,3,2, 2,2,2,2, 2,2,2,2, 2,2,2,2};
+        for (int i = 0; i < 16; ++i) modes[i] = x264modes[i];
+        std::vector<cabacCorpus::FrameFixture> body(1);
+        auto& slice = body.front();
+        slice.qp = 25;
+        slice.model = 0;                  // I-slice
+        slice.frame = 0;
+        slice.finish = 1;
+        slice.bytes[0] = 0x3f;            // last slice-header byte before CABAC
+        slice.operations[slice.count++] = {cabacCorpus::intra4Macroblock, 0,
+                                           (kWidth << 16) | kMacroblocks};
+        using Slice = cabacCorpus::FrameFixture;
+        execute(argv[2], body, 1, cabacTables(bank, cabacCorpus::frameResidualBankSize), 0,
+                {{offsetof(Slice, bytes), sizeof(Slice::bytes)}, {offsetof(Slice, position), sizeof(Slice::position)}},
+                0, true);
+        static constexpr std::uint8_t x264Target[20] = {
+            0x88,0x84,0x3f,0xea,0x40,0x35,0x70,0x9b,0xfe,0x0b,
+            0x72,0xbf,0x3e,0x1a,0xc9,0xb1,0x34,0xb4,0x31,0x81};
+        std::vector<std::uint8_t> sliceBytes{0x88, 0x84};
+        for (std::uint32_t i = 0; i < slice.position; ++i)
+            sliceBytes.push_back(static_cast<std::uint8_t>(slice.bytes[i] & 0xffu));
+        if (sliceBytes.size() != sizeof(x264Target) ||
+            std::memcmp(sliceBytes.data(), x264Target, sizeof(x264Target)) != 0) {
+            std::cerr << "GPU I4x4 slice mismatch: ";
+            for (auto b : sliceBytes) std::cerr << std::hex << (int)b << std::dec << " ";
+            std::cerr << "\n";
+            throw std::runtime_error("GPU I4x4 CABAC slice differs from x264 superfast flat");
+        }
+        std::cout << "GPU I4x4 CABAC slice matches x264 superfast flat byte for byte (20 bytes)\n";
+        return 0;
+    }
     if (argc == 9 && std::string_view(argv[1]) == "replay_gpu") {
         // Replays a dumped bin stream through the GPU arithmetic coder so the
         // direct shader coder and the host coder can be compared bin for bin.

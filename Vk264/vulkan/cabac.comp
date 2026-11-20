@@ -32,6 +32,8 @@ const int refIdx = 16;
 // the resident encode path, which is still P-only. Kept distinct from refIdx
 // so the union with the multi-ref fixture (#5) preserves both operations.
 const int mbTypeB = 17;
+// I4x4 intra macroblock (issue #2). first = mb, second = (width<<16)|macroblocks.
+const int intra4Macroblock = 18;
 struct Operation {
     int kind, first, second;
 };
@@ -295,13 +297,21 @@ void encodeOperations(uint fixture) {
                                                                     op.first, op.second >> 1);
                 break;
             case inter16Macroblock: encodeInter16Macroblock(int(fixture), op.first, op.second); break;
+            case intra4Macroblock: {
+                int width = op.second >> 16, macroblocks = op.second & 65535;
+                encodeIntra4Macroblock(int(fixture), 0, (width << 16) | op.first,
+                                       fixtures[fixture].frame, macroblocks);
+                break;
+            }
             case refIdx: encodeRefIdx(int(fixture), op.first, op.second); break;
             case mbTypeB: encodeMbTypeB(int(fixture), op.first); break;
             case wholeFrame: {
                 int width = (op.second >> 16) & 65535, count = op.second & 65535;
+                bool i4x4 = (op.first & 2) != 0;
                 for (int mb = 0; mb < count; ++mb) {
                     int position = (width << 16) | mb;
-                    if (op.first != 0) encodeInter16Macroblock(int(fixture), 0, position);
+                    if ((op.first & 1) != 0) encodeInter16Macroblock(int(fixture), 0, position);
+                    else if (i4x4) encodeIntra4Macroblock(int(fixture), 0, position, fixtures[fixture].frame, count);
                     else encodeIntra16Macroblock(int(fixture), 0, position, fixtures[fixture].frame);
                 }
                 break;
