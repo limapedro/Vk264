@@ -10,11 +10,13 @@ struct Fixture {
     std::array<std::int32_t, 16> dequant;
     std::array<std::uint32_t, 256> source;
     std::array<std::uint32_t, 17*FDEC_STRIDE> pixels;
+    std::array<std::uint32_t, 256> interPixels; // scratch: inter prediction backup
+    std::int32_t intraInP;                      // 1 => P-slice MB coded as intra
     std::array<std::int32_t, 256> ac;
     std::array<std::int32_t, 16> dc;
     std::array<std::uint32_t, X264_SCAN8_SIZE> nonzero;
 };
-static_assert(sizeof(Fixture) == (7+5*16+256+17*FDEC_STRIDE+256+16+X264_SCAN8_SIZE)*4);
+static_assert(sizeof(Fixture) == (7+5*16+256+17*FDEC_STRIDE+256+1+256+16+X264_SCAN8_SIZE)*4);
 
 template<class Block>
 void setFlatQuant(Block& block, int deadzone) {
