@@ -1011,3 +1011,21 @@ python harness/check.py --vulkan                                # fixture-based 
 python harness/check.py --vulkan --entropy cavlc                # same for CAVLC backend
 python harness/parity_check.py --preset ultrafast..fast         # byte-parity against libx264 for supported presets
 ```
+
+## Issue #2 — I4x4 ground truth captured (Subaru, 2026-11-20)
+
+For the exact superfast/flat 16x16 case (harness "flat" is Y=0), two independent
+ground-truth sources were captured:
+- patched x264 CLI dump (`x264_macroblock_encode`): qp=25, cbp_luma=1,
+  modes `11,9,3,2,9,9,2,2,10,2,10,2,2,2,2,2`, nonzero blocks 0/1 with
+  coefficients -46/-1.
+- `harness/cabac_decoder.py` on x264's actual slice: mb0=I4x4, fixed modes
+  `2,2,2,2, 2,1,0,2, 2,1,2,1, 2,3,1,0`, cbp_luma=0xa, cbp_chroma=0, dqp=1,
+  nonzero blocks 4/6/12/13/15 with levels 2/2/2/2/3.
+
+The two sources disagree, so the emitter's remaining divergence cannot be fixed
+by simply substituting one set. Next step: log the bin sequence from x264's
+`x264_macroblock_write_cabac` and from the host emitter side-by-side to identify
+the exact syntax element that differs. Issue #2 remains OPEN; the
+`i4x4_cabac` host emitter is diagnostic only and is not part of the CTest gates.
+

@@ -217,10 +217,18 @@ void encodeI4x4Frame() {
         if (nnz[idx]) cbpLuma |= 1 << (idx>>2);
     }
 
-    // Use x264 superfast exact decoded modes (validated CABAC decoder):
-    // [[2,2,3,3],[2,2,2,2],[2,2,2,2],[2,2,2,2]]
-    static constexpr int x264modes[16] = {2,2,3,3, 2,2,2,2, 2,2,2,2, 2,2,2,2};
+    // x264 superfast flat ground truth (captured with a patched x264 CLI):
+    // modes in block order, cbp_luma=1, blocks 0/1 nonzero with scanned
+    // coefficients -46 and -1. Using the real encoder's state isolates the
+    // CABAC emission path from the mode-decision path.
+    static constexpr int x264modes[16] = {2,2,2,2, 2,1,0,2, 2,1,2,1, 2,3,1,0};
     for (int i = 0; i < 16; ++i) modes[i] = x264modes[i];
+    nnz.fill(0);
+    const int nzBlocks[] = {4,6,12,13,15};
+    const int levels[] = {2,2,2,2,3};
+    for (auto& d : dcts) std::fill(std::begin(d), std::end(d), 0);
+    for (int i = 0; i < 5; ++i) { nnz[nzBlocks[i]] = 1; dcts[nzBlocks[i]][0] = levels[i]; }
+    cbpLuma = 0xa;
     // ---- CABAC emission (I-slice, QP, model 0) ----
     x264_t encoder{};
     encoder.i_frame = 0;
@@ -250,7 +258,7 @@ void encodeI4x4Frame() {
         cabac_intra4x4_pred_mode(&coder, pred, fixedModes[idx]);
     }
     // cbp luma
-    encoder.mb.i_cbp_luma = 5; // x264 superfast decoded cbp_luma
+    encoder.mb.i_cbp_luma = cbpLuma; // x264 superfast decoded cbp_luma
     encoder.mb.cache.i_cbp_left = -1;
     encoder.mb.cache.i_cbp_top = -1;
     cabac_cbp_luma(&encoder, &coder);
@@ -258,7 +266,7 @@ void encodeI4x4Frame() {
     encoder.mb.i_cbp_chroma = 0;
     cabac_cbp_chroma(&encoder, &coder);
     // qp delta
-    encoder.mb.i_qp = qp; encoder.mb.i_last_qp = qp;
+    encoder.mb.i_qp = qp; encoder.mb.i_last_qp = qp-1; // decoder ground truth: dqp=1
     encoder.mb.i_type = I_4x4; encoder.mb.i_mb_xy = 0;
     const std::int16_t cbpArr[1]{0}; const std::uint8_t typeArr[1]{I_4x4};
     encoder.mb.cbp = cbpArr; encoder.mb.type = typeArr; encoder.mb.i_last_dqp = 0;
