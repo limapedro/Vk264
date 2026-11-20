@@ -68,7 +68,8 @@ void vk_predict16(uint8_t out[256], const uint8_t top[16],
     }
 }
 
-void vk_predict_chroma8(uint8_t out[64], const uint8_t top[8], const uint8_t left[8], int mode)
+void vk_predict_chroma8(uint8_t out[64], const uint8_t top[8],
+                        const uint8_t left[8], uint8_t tl, int mode)
 {
     if (mode == 1) { /* H */
         for (int y = 0; y < 8; ++y)
@@ -90,7 +91,26 @@ void vk_predict_chroma8(uint8_t out[64], const uint8_t top[8], const uint8_t lef
             for (int x = 0; x < 8; ++x) out[y*8+x] = (uint8_t)(x < 4 ? d0 : d1);
     } else if (mode == 6) { /* DC_128 */
         for (int i = 0; i < 64; ++i) out[i] = 128;
-    } else { /* DC (0), P (3) approximated by DC: four quadrants */
+    } else if (mode == 3) { /* P: x264 predict_8x8c_p_c */
+        int H = 0, V = 0;
+        for (int i = 0; i < 4; ++i) {
+            int th = (i == 3) ? tl : top[2-i];
+            int tv = (i == 3) ? tl : left[2-i];
+            H += (i+1) * (top[4+i] - th);
+            V += (i+1) * (left[4+i] - tv);
+        }
+        int a = 16 * (left[7] + top[7]);
+        int b = (17*H+16)>>5, c = (17*V+16)>>5;
+        int i00 = a - 3*b - 3*c + 16;
+        for (int y = 0; y < 8; ++y) {
+            int pix = i00;
+            for (int x = 0; x < 8; ++x) {
+                out[y*8+x] = (uint8_t)clip_pixel(pix>>5);
+                pix += b;
+            }
+            i00 += c;
+        }
+    } else { /* DC (0): four quadrants */
         int s0=0,s1=0,s2=0,s3=0;
         for (int i = 0; i < 4; ++i) {
             s0 += top[i]; s1 += top[i+4];
@@ -106,7 +126,7 @@ void vk_predict_chroma8(uint8_t out[64], const uint8_t top[8], const uint8_t lef
 int vk_select_chroma(const uint8_t srcu[64], const uint8_t srcv[64],
                      const uint8_t topu[8], const uint8_t leftu[8],
                      const uint8_t topv[8], const uint8_t leftv[8],
-                     int avail, int qp)
+                     uint8_t tlu, uint8_t tlv, int avail, int qp)
 {
     static const int8_t modes[5][4] = {
         {6,-1,-1,-1}, {4,1,-1,-1}, {5,2,-1,-1}, {2,1,0,-1}, {2,1,0,3}
@@ -118,10 +138,10 @@ int vk_select_chroma(const uint8_t srcu[64], const uint8_t srcv[64],
     int best = modes[idx][0], bestcost = 0x7fffffff;
     for (int i = 0; modes[idx][i] >= 0; ++i) {
         int m = modes[idx][i];
-        vk_predict_chroma8(p, topu, leftu, m);
+        vk_predict_chroma8(p, topu, leftu, tlu, m);
         int cost = 0;
         for (int k = 0; k < 64; ++k) cost += srcu[k] > p[k] ? srcu[k]-p[k] : p[k]-srcu[k];
-        vk_predict_chroma8(p, topv, leftv, m);
+        vk_predict_chroma8(p, topv, leftv, tlv, m);
         for (int k = 0; k < 64; ++k) cost += srcv[k] > p[k] ? srcv[k]-p[k] : p[k]-srcv[k];
         int v = fix[m]+1, n = 0;
         while (v > 1) { v >>= 1; ++n; }

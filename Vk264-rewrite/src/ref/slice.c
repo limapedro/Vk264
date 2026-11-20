@@ -314,9 +314,9 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
         uint8_t t8v[8], l8v[8];
         for (int i = 0; i < 8; ++i) { t8v[i] = nb->top_v[i]; l8v[i] = nb->left_v[i]; }
         chroma_pred_mode = vk_select_chroma(su64, sv64, t8, l8, t8v, l8v,
-                                            nb->avail, qp);
-        vk_predict_chroma8(pred_u, t8, l8, chroma_pred_mode);
-        vk_predict_chroma8(pred_v, t8v, l8v, chroma_pred_mode);
+                                            nb->tl_u, nb->tl_v, nb->avail, qp);
+        vk_predict_chroma8(pred_u, t8, l8, nb->tl_u, chroma_pred_mode);
+        vk_predict_chroma8(pred_v, t8v, l8v, nb->tl_v, chroma_pred_mode);
     } else {
         predict_dc(pred_y, 16, 128);
         predict_dc(pred_u, 8, 128);

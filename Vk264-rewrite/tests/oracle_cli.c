@@ -85,7 +85,7 @@ int main(int argc, char **argv)
             for (int p = 0; p < 2; ++p)
                 for (int i = 0; i < 2; ++i) {
                     lc[p][i] = mx ? cnnz_c[my*mw+mx-1][p][i*2+1] : 0x80;
-                    tc[p][i] = my ? cnnz_c[(my-1)*mw+mx][p][i] : 0x80;
+                    tc[p][i] = my ? cnnz_c[(my-1)*mw+mx][p][2+i] : 0x80;
                 }
             nb.left_luma = ll; nb.top_luma = tl;
             nb.left_chroma[0] = lc[0]; nb.left_chroma[1] = lc[1];
@@ -103,7 +103,13 @@ int main(int argc, char **argv)
             if (mx) for (int i = 0; i < 8; ++i) { lup[i] = ru[co+(py/2+i)*cs+px/2-1]; lvp[i] = rv[co+(py/2+i)*cs+px/2-1]; }
             else   for (int i = 0; i < 8; ++i) { lup[i] = 128; lvp[i] = 128; }
             nb.top_u = tup; nb.left_u = lup; nb.top_v = tvp; nb.left_v = lvp;
-            nb.tl_u = nb.tl_v = 128;
+            if (my && mx) {
+                int cs0 = w/2+32, co0 = 8*cs0+8;
+                nb.tl_u = ru[co0+(py/2-1)*cs0+px/2-1];
+                nb.tl_v = rv[co0+(py/2-1)*cs0+px/2-1];
+            } else {
+                nb.tl_u = nb.tl_v = 128;
+            }
             uint8_t *sy = frame + py*w + px;
             uint8_t *su = frame + w*h + (py/2)*(w/2) + px/2;
             uint8_t *sv = su + (w/2)*(h/2);
