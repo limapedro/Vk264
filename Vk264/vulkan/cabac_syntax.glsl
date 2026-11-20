@@ -239,6 +239,57 @@ void encodeChroma420Residual(int f, int frameBase, int base, int width,
         }
     }
 }
+// I4x4 macroblock header/residual, transcribed from the byte-exact host
+// emitter (PR #41) and x264 encoder/macroblock.c. Record layout (394 words,
+// unchanged from I16): base+1 = cbpLuma, base+2 = cbpChroma, base+3 = nnz mask,
+// base+4+16*b..+15 = 4x4 scanned coeffs of raster block b, base+260 = chroma
+// cbp, base+261 = chroma mode, base+262/266 = chroma DC U/V. The 16 pred modes
+// live in the unused bank tail at frameBase+macroblocks*394+mb*16.
+void encodeIntra4Macroblock(int f, int frameBase, int position, int frame, int macroblocks) {
+    int mb = position & 65535, width = position >> 16;
+    int x = mb%width, y = mb/width;
+    int base = frameBase+mb*macroblockWords;
+    if (mb != 0) emitTerminal(f);
+    int typeContext = 3 + int(x != 0) + int(y != 0);
+    emitDecision(f, typeContext, 0);                 // mb_type I4x4
+    int tsN = 0;                                      // transform_size, 4x4
+    if (x != 0) tsN += residualBank[base-macroblockWords+2] & 1;
+    if (y != 0) tsN += (residualBank[base-width*macroblockWords+2] & 1) << 1;
+    encodeTransformSize(f, tsN, 0);
+    int modesBase = frameBase+macroblocks*macroblockWords+mb*16;
+    int modes4[16];
+    for (int i = 0; i < 16; ++i) {
+        int m = residualBank[modesBase+i];
+        modes4[i] = m <= 8 ? m : 2;                   // x264_mb_pred_mode4x4_fix
+    }
+    for (int idx = 0; idx < 16; ++idx) {
+        int x4 = idx&3, y4 = idx>>2;
+        int pred = 2;
+        if (x4 > 0 && y4 > 0) pred = min(modes4[idx-1], modes4[idx-4]);
+        else if (x4 > 0) pred = min(modes4[idx-1], 2);
+        else if (y4 > 0) pred = min(modes4[idx-4], 2);
+        encodeIntra4x4Mode(f, pred, modes4[idx]);
+    }
+    encodeIntraChromaMode(f, residualBank[base+261], 0);
+    int cbpLuma = residualBank[base+1], cbpChroma = residualBank[base+260];
+    encodeLumaCbp(f, cbpLuma, -1, -1);
+    encodeChromaCbp(f, cbpChroma, -1, -1);
+    encodeQpDelta(f, fixtures[f].qp, fixtures[f].qp, false, false);
+    int nnz = residualBank[base+3];
+    for (int idx = 0; idx < 16; ++idx) {
+        if (((nnz >> idx) & 1) == 0) continue;
+        emitDecision(f, 96, 1);                       // cbf, first MB intra
+        encodeResidual(f, 2, 0, false, base+4+16*idx);
+    }
+    emitDecision(f, 96, 0);                           // trailing cbf bins
+    emitDecision(f, 95, 0);
+    if (cbpChroma != 0)
+        for (int plane = 0; plane < 2; ++plane) {
+            emitDecision(f, 100, 1);                  // chroma DC cbf
+            encodeResidual(f, 3, 0, false, base+262+plane*4);
+        }
+}
+
 void encodeIntra16Macroblock(int f, int frameBase, int position, int frame) {
     int mb = position & 65535, width = position >> 16;
     int x = mb%width, y = mb/width;

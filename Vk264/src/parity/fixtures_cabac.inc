@@ -10,7 +10,7 @@ constexpr int frameResidualBankSize = frameMaxOperations*macroblockWords;
 enum Kind {
     decision, bypass, ueBypass, terminal, residual, intraType, intra4x4Mode, intraChromaMode,
     intra16Macroblock, codedBlockPattern, qpDelta, transformSize, macroblockSkip, mvdComponent, inter16Macroblock,
-    wholeFrame, refIdx, mbTypeB
+    wholeFrame, refIdx, mbTypeB, intra4Macroblock
 };
 struct Operation {
     std::int32_t kind, first, second;
