@@ -79,8 +79,10 @@ static int probe(const uint8_t *cur, const uint8_t *refp,
                  int x, int y, int mvx_qp, int mvy_qp, int qp)
 {
     int mf[16], bias[16], deq[16], cmf[16], cbias[16], cdeq[16];
-    vk_ref_quant_tables(qp, 0, mf, bias, deq);
-    vk_ref_quant_tables(qp, 2, cmf, cbias, cdeq);
+    /* P-frame probe uses the INTER quant categories CQM_4PY / CQM_4PC,
+     * whose deadzone is 11 (intra categories use 21). */
+    vk_ref_quant_tables(qp, 1, mf, bias, deq);
+    vk_ref_quant_tables(qp, 3, cmf, cbias, cdeq);
     int mx = mvx_qp / 4, my = mvy_qp / 4;
     int cs = w/2, crs = rs/2, cp = CPAD;
 
@@ -107,18 +109,30 @@ static int probe(const uint8_t *cur, const uint8_t *refp,
     for (int i = 0; i < 16; ++i)
         if (vk_ref_quant_one(had[i], mf[0] >> 1, bias[0] << 1)) return 0;
 
-    /* chroma */
-    int cmx = mvx_qp / 8, cmy = mvy_qp / 8;
+    /* chroma: x264 mc_chroma, MV in 1/8-chroma-pel units = luma qpel MV / 2 */
+    int cvx8 = mvx_qp / 2, cvy8 = mvy_qp / 2;
+    int d8x = cvx8 & 7, d8y = cvy8 & 7;
+    int cA = (8-d8x)*(8-d8y), cB = d8x*(8-d8y);
+    int cC = (8-d8x)*d8y, cD = d8x*d8y;
+    int coffx = (cvx8 >> 3) + CPAD, coffy = (cvy8 >> 3) + CPAD;
     for (int pl = 0; pl < 2; ++pl) {
         const uint8_t *c = pl ? cv : cu;
         const uint8_t *r = pl ? rv : ru;
         int cdc[4];
         for (int b = 0; b < 4; ++b) {
             int by = (b/2)*4, bx = (b%2)*4;
+            uint8_t pb[16];
+            for (int yy = 0; yy < 4; ++yy)
+                for (int xx = 0; xx < 4; ++xx) {
+                    int sx = x/2 + bx + xx + coffx;
+                    int sy = y/2 + by + yy + coffy;
+                    int a = r[sy*crs+sx], bb = r[sy*crs+sx+1];
+                    int cc = r[(sy+1)*crs+sx], dd = r[(sy+1)*crs+sx+1];
+                    pb[yy*4+xx] = (uint8_t)((cA*a + cB*bb + cC*cc + cD*dd + 32) >> 6);
+                }
             int dc;
             if (!block_zero(c + (y/2+by)*cs + (x/2+bx), cs,
-                            r + (y/2+by+cmy+CPAD)*crs + (x/2+bx+cmx+CPAD), crs,
-                            cmf, cbias, &dc))
+                            pb, 4, cmf, cbias, &dc))
                 return 0;
             cdc[b] = dc;
         }
