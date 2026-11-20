@@ -107,3 +107,23 @@ void vk_bs_align(vk_bs_t *s)
     if (s->nbits != 0)
         vk_bs_write(s, 8 - s->nbits, 0);
 }
+
+void vk_nal_write(FILE *f, uint8_t nal_header, const uint8_t *rbsp,
+                  size_t bytes, int long_startcode)
+{
+    if (long_startcode) {
+        fputc(0, f); fputc(0, f); fputc(0, f); fputc(1, f);
+    } else {
+        fputc(0, f); fputc(0, f); fputc(1, f);
+    }
+    fputc(nal_header, f);
+    int zeros = 0;
+    for (size_t i = 0; i < bytes; ++i) {
+        if (zeros >= 2 && rbsp[i] <= 3) {
+            fputc(3, f);
+            zeros = 0;
+        }
+        fputc(rbsp[i], f);
+        if (rbsp[i] == 0) ++zeros; else zeros = 0;
+    }
+}

@@ -131,9 +131,11 @@ void vk_cavlc_block_residual(vk_bs_t *s, int cat, const int *coef, int nC, int c
                  | ((((rl.level[1]+1) | (1-rl.level[1])) >> 31) & 2)
                  | ((((rl.level[2]+1) | (1-rl.level[2])) >> 31) & 4);
     trailing = ctz_index[trailing];
-    unsigned sign = ((uint32_t)rl.level[2] >> 31 & 1)
-                  | (((uint32_t)rl.level[1] >> 31) & 2)
-                  | (((uint32_t)rl.level[0] >> 31) & 4);
+    /* x264 uses arithmetic shift on signed levels: (-1 >> 31) & 4 == 4.
+     * Casting to uint32_t first would give (1 & 4) == 0 and lose the sign. */
+    unsigned sign = ((rl.level[2] >> 31) & 1)
+                  | ((rl.level[1] >> 31) & 2)
+                  | ((rl.level[0] >> 31) & 4);
     sign >>= 3 - trailing;
 
     vk_vlc_t tok = vk_coeff_token[nC][total-1][trailing];

@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdio.h>
 
 typedef struct {
     uint8_t *start;      /* beginning of the RBSP buffer */
@@ -26,6 +27,10 @@ void vk_bs_write_se(vk_bs_t *s, int32_t value);
 void vk_bs_write_te(vk_bs_t *s, uint32_t base, uint32_t value);
 void vk_bs_rbsp_trailing(vk_bs_t *s);
 void vk_bs_align(vk_bs_t *s);
+
+/* Annex-B NAL output with x264-compatible emulation prevention. */
+void vk_nal_write(FILE *f, uint8_t nal_header, const uint8_t *rbsp,
+                  size_t bytes, int long_startcode);
 
 unsigned vk_bs_size_ue(uint32_t value);
 unsigned vk_bs_size_se(int32_t value);
