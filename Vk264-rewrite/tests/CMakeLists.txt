@@ -1,14 +1,23 @@
 add_executable(vk264_oracle_cli oracle_cli.c)
 target_link_libraries(vk264_oracle_cli PRIVATE vk264_rewrite_ref)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# The x264 reference tree is READ-ONLY: never build binaries there. Use its
+# binary if present, otherwise the scratch build under build/x264-ref-src/.
+set(VK264_X264_EXE "${CMAKE_CURRENT_SOURCE_DIR}/../../references/x264-master/x264.exe")
+if(NOT EXISTS "${VK264_X264_EXE}")
+  set(VK264_X264_EXE "${CMAKE_BINARY_DIR}/../../build/x264-ref-src/x264.exe")
+endif()
 add_test(NAME rewrite_oracle_flat_sweep
-    COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/test_flat_sweep.py"
+    COMMAND "${CMAKE_COMMAND}" -E env "VK264_X264_EXE=${VK264_X264_EXE}"
+            "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_flat_sweep.py"
             "$<TARGET_FILE:vk264_oracle_cli>" "${CMAKE_BINARY_DIR}")
 add_test(NAME rewrite_oracle_real_crops
-    COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/test_real_crops.py"
+    COMMAND "${CMAKE_COMMAND}" -E env "VK264_X264_EXE=${VK264_X264_EXE}"
+            "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_real_crops.py"
             "$<TARGET_FILE:vk264_oracle_cli>" "${CMAKE_BINARY_DIR}")
 add_test(NAME rewrite_oracle_multimb
-    COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/test_multimb.py"
+    COMMAND "${CMAKE_COMMAND}" -E env "VK264_X264_EXE=${VK264_X264_EXE}"
+            "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_multimb.py"
             "$<TARGET_FILE:vk264_oracle_cli>" "${CMAKE_BINARY_DIR}")
 
 add_executable(vk264_test_bitstream test_bitstream.c)

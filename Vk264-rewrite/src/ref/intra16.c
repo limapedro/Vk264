@@ -57,8 +57,8 @@ void vk_predict16(uint8_t out[256], const uint8_t top[16],
             }
             i00 += c;
         }
-    } else { /* DC (2) */
-        int s = 16;
+    } else { /* DC (2): x264 predict_16x16_dc_c: (sum(left+top)+16)>>5 */
+        int s = 0;
         for (int i = 0; i < 16; ++i) s += left[i] + top[i];
         uint8_t v = (uint8_t)((s+16)>>5);
         for (int i = 0; i < 256; ++i) out[i] = v;

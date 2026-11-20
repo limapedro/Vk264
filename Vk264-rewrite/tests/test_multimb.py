@@ -5,7 +5,9 @@ with x264 and the oracle, and compares SPS/PPS/IDR NALs byte-for-byte.
 import pathlib, re, subprocess, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-X264 = ROOT / 'references' / 'x264-master' / 'x264.exe'
+import os
+X264 = pathlib.Path(os.environ.get('VK264_X264_EXE',
+    str(ROOT / 'references' / 'x264-master' / 'x264.exe')))
 ORACLE = pathlib.Path(sys.argv[1])
 BUILD = pathlib.Path(sys.argv[2])
 CLIP = pathlib.Path(r'E:\__PROJECTS__\Wx264-Vulkan-Opencode\clips\youtube'
