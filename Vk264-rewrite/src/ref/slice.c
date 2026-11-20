@@ -18,8 +18,11 @@ static const uint16_t quant4_scale[6][3] = {
 static const uint8_t dequant4_scale[6][3] = {
     {10,13,16},{11,14,18},{13,16,20},{14,18,23},{16,20,25},{18,23,29}
 };
+/* x264 common/dct.c:817 ZIGZAG4_FRAME with ZIG(i,y,x)=dct[x*4+y].
+ * This transposed order differs from the "standard" 0,1,4,8,... scan;
+ * flat frames hide the difference because only DC is nonzero. */
 static const uint8_t zigzag4[16] = {
-    0,1,4,8,5,2,3,6,9,12,13,10,7,11,14,15
+    0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15
 };
 
 static int shift_r(int x, int s)
@@ -230,7 +233,7 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
         dct4[b][0] = 0;                 /* DC goes through the Hadamard path */
         for (int i = 0; i < 16; ++i) {
             dct4[b][i] = quant_one(dct4[b][i], mf[i], bias[i]);
-            nnz[b] |= dct4[b][i] != 0;
+            nnz[b] += dct4[b][i] != 0;  /* x264 stores the coefficient count */
         }
         for (int i = 0; i < 16; ++i) acq[b][i] = dct4[b][zigzag4[i]];
     }
@@ -266,12 +269,12 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
             cdct[p][b][0] = 0;
             for (int i = 0; i < 16; ++i) {
                 cdct[p][b][i] = quant_one(cdct[p][b][i], cmf[i], cbias[i]);
-                cnnz[p][b] |= cdct[p][b][i] != 0;
+                cnnz[p][b] += cdct[p][b][i] != 0;  /* coefficient count, not bool */
             }
             for (int i = 0; i < 16; ++i) cacq[p][b][i] = cdct[p][b][zigzag4[i]];
         }
     }
-    int chroma_dc[2][4], cbp_chroma = 0, cacbp = 0;
+    int chroma_dc[2][4], cbp_chroma = 0, cacbp = 0, cdnz[2] = {0};
     for (int p = 0; p < 2; ++p) {
         int a = cdc[p][0] + cdc[p][1], b = cdc[p][2] + cdc[p][3];
         int c = cdc[p][0] - cdc[p][1], d = cdc[p][2] - cdc[p][3];
@@ -280,43 +283,77 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
             q[i] = quant_one(had[i], cmf[0] >> 1, cbias[0] << 1);
         chroma_dc[p][0] = q[0]; chroma_dc[p][1] = q[2];
         chroma_dc[p][2] = q[1]; chroma_dc[p][3] = q[3];
-        for (int i = 0; i < 4; ++i) cbp_chroma |= chroma_dc[p][i] != 0;
+        for (int i = 0; i < 4; ++i) {
+            cbp_chroma |= chroma_dc[p][i] != 0;
+            cdnz[p] += chroma_dc[p][i] != 0;
+        }
         for (int i = 0; i < 4; ++i) cacbp |= cnnz[p][i];
     }
     if (cacbp) cbp_chroma = 2;
 
     /* ---- entropy ---- */
-    uint32_t mb_type = 1u + 2u /* I16 DC */ + 4u*(uint32_t)(cbp_chroma ? 1 : 0)
+    uint32_t mb_type = 1u + 2u /* I16 DC */ + 4u*(uint32_t)cbp_chroma
                      + (cbp_luma ? 12u : 0u);
     vk_bs_write_ue(s, mb_type);
     vk_bs_write_ue(s, 0);  /* chroma pred mode = DC */
     vk_bs_write_se(s, 0);  /* mb_qp_delta */
 
-    vk_cavlc_block_residual(s, VK_DCT_LUMA_DC, dc_q, 0, 1);
-    for (int b = 0; b < 16; ++b) {
-        if (!(cbp_luma & (1 << (b/4))) || !nnz[b]) continue;
-        int left = (b % 4) ? nnz[b-1] : 0;
-        int top = (b >= 4) ? nnz[b-4] : 0;
-        static const uint8_t ct_index[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
-        int nC = ct_index[(left + top + 1) >> 1];
-        vk_cavlc_block_residual(s, VK_DCT_LUMA_AC, acq[b], nC, 1);
+    vk_cavlc_block_residual(s, VK_DCT_LUMA_DC, dc_q, 0, 1, 16);
+    /* x264's dct4x4[idx] enumeration maps to raster through block_idx_xy_1d;
+     * entropy coding walks idx order, not raster order. */
+    static const uint8_t block_idx_xy_1d[16] = {
+        0,1,4,5,2,3,6,7,8,9,12,13,10,11,14,15
+    };
+    static const uint8_t ct_index[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
+    /* x264_scan8[0..15]: luma 4x4 block positions on an 8-wide cache grid. */
+    static const uint8_t scan8[16] = {
+        12,13,20,21, 14,15,22,23, 28,29,36,37, 30,31,38,39
+    };
+    uint8_t cache[64] = {0};
+    for (int i = 0; i < 4; ++i) {
+        cache[4+i] = 0x80;                       /* top edge */
+    }
+    /* left edge of each 4x4 block row (scan8 first column of each row pair) */
+    cache[scan8[0]-1] = cache[scan8[2]-1] = cache[scan8[8]-1] = cache[scan8[10]-1] = 0x80;
+    if (cbp_luma) for (int idx = 0; idx < 16; ++idx) {
+        int b = block_idx_xy_1d[idx], p = scan8[idx];
+        int za = cache[p-1], zb = cache[p-8];
+        int sum = za + zb;
+        int pred = sum < 0x80 ? (sum+1)>>1 : sum & 0x7f;
+        int nC = ct_index[pred & 0x7f];
+        /* x264 passes h->dct.luma4x4[i]+1: AC blocks have 15 coefficients. */
+        vk_cavlc_block_residual(s, VK_DCT_LUMA_AC, acq[b]+1, nC, 1, 15);
+        cache[p] = (uint8_t)nnz[b];
     }
     if (cbp_chroma) {
         for (int p = 0; p < 2; ++p) {
+            /* chroma_dc is already in zigzag_scan_2x2_dc order (4 contiguous). */
             int block[16] = {0};
-            for (int i = 0; i < 4; ++i) block[zigzag4[i]] = chroma_dc[p][i];
-            vk_cavlc_block_residual(s, VK_DCT_CHROMA_DC, block, 4, 1);
+            for (int i = 0; i < 4; ++i) block[i] = chroma_dc[p][i];
+            vk_cavlc_block_residual(s, VK_DCT_CHROMA_DC, block, 4, 1, 4);
         }
     }
     if (cbp_chroma == 2) {
+        /* x264_scan8[16..19]=Cb AC, [32..35]=Cr AC, [49]/[50]=chroma DC. */
+        static const uint8_t cscan8[8] = { 52,53,60,61, 92,93,100,101 };
+        static const uint8_t ct_index_c[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
+        uint8_t ccache[128] = {0};
+        /* top edge of the first AC row of each chroma plane */
+        ccache[cscan8[0]-8] = ccache[cscan8[1]-8] = 0x80;
+        ccache[cscan8[4]-8] = ccache[cscan8[5]-8] = 0x80;
+        ccache[cscan8[0]-1] = ccache[cscan8[2]-1] = 0x80;  /* Cb left */
+        ccache[cscan8[4]-1] = ccache[cscan8[6]-1] = 0x80;  /* Cr left */
+        /* chroma DC nnz feeds the neighbouring AC blocks */
+        ccache[40] = cdnz[0];
+        ccache[80] = cdnz[1];
         for (int p = 0; p < 2; ++p)
             for (int b = 0; b < 4; ++b) {
-                if (!cnnz[p][b]) continue;
-                int left = (b % 2) ? cnnz[p][b-1] : 0;
-                int top = (b >= 2) ? cnnz[p][b-2] : 0;
-                static const uint8_t ct_index_c[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
-                int nC = ct_index_c[(left + top + 1) >> 1];
-                vk_cavlc_block_residual(s, VK_DCT_CHROMA_AC, cacq[p][b], nC, 1);
+                int k = p*4+b, pos = cscan8[k];
+                int sum = ccache[pos-1] + ccache[pos-8];
+                int pred = sum < 0x80 ? (sum+1)>>1 : sum & 0x7f;
+                int nC = ct_index_c[pred & 0x7f];
+                vk_cavlc_block_residual(s, VK_DCT_CHROMA_AC, cacq[p][b]+1, nC, 1, 15);
+                ccache[pos] = (uint8_t)cnnz[p][b];
             }
     }
 
