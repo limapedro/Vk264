@@ -7,6 +7,46 @@ Vk264-Vulkan port: `Vk264/vulkan/*.comp`, shader SPIR-V shader pipelines registe
 fixture tests in `Vk264/src/dct_parity.cpp` (the `verifyXxx` functions and the
 `x264_*_parity` CTest registrations).
 
+## Issue #3 intra-mode-decision scope verified (Rem, 2026-11-20)
+
+On current main 03caa14 (after the merged I4x4/SAD-flag work #43/#45/#46), all
+intra-only acceptance cases for issue #3 are byte-exact with **no new code**:
+the `selectIntra16Mode()` / `selectChromaMode()` SATD path in
+`Vk264/vulkan/inter_frame.comp` now matches x264 for these cases. `x264ModeSelection`
+(frameInput[13] bit1) and `useSad` (bit2) remain untouched.
+
+Evidence (actual output, build `cmake -S . -B build -A x64` + Release):
+```
+ctest --test-dir build -C Release --output-on-failure          -> 60/60 passed (16.82 s)
+ctest --test-dir build -C Release -R x264_parity_              ->  4/4 passed (12.70 s)
+python harness/parity_check.py --preset ultrafast --pattern flat-grid --width 64 --height 64 --frames 1 --gop 1
+  BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+python harness/parity_check.py --preset ultrafast --pattern motion --width 64 --height 64 --frames 1 --gop 1
+  BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+python harness/parity_check.py --preset ultrafast --pattern flat-grid --width 64 --height 64 --frames 3 --gop 1
+  BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+python harness/parity_check.py --preset ultrafast --pattern motion --width 64 --height 64 --frames 3 --gop 1
+  BYTE-EXACT MATCH (ignoring encoder-identity SEI)
+```
+
+Scope boundary — the remaining `gop=3` multi-frame mismatch is NOT intra:
+a NAL scan of `build/parity-ultrafast-flat-grid/` shows
+```
+vk264:  SPS, PPS, IDR(5), IDR(5), IDR(5)
+x264:   SEI, SPS, PPS, IDR(5), P(1), P(1)
+```
+vk264 codes every frame as a keyframe, so P-slice/GOP handling diverges before
+any intra-mode question. That belongs to the inter-frame track (#4/#5), not the
+SATD mode-decision port owned by #3. Earlier (pre-#43/#45) findings that
+flat-grid 32/48/64 diverged and 16x16 was exact are recorded in issue comment
+7025340614; they no longer reproduce on main.
+
+Coordination: per the #2 corrigendum, the I4x4 CABAC encoder record layout and
+first-MB-only contexts remain with the #2 staging owner; this work does not
+touch `cabac.comp`/`fixtures_cabac.inc` and does not alter the 394-word record
+stride. No 100% parity claim — lookahead/slicetype, RD/trellis, mbtree, CQM and
+B-frames remain missing families.
+
 ## Issue #25 fixed + round 2 (Subaru, 2026-11-20)
 
 PR #28 fixed issue #25: intra MBs no longer use DCT decimation (x264 decimates
