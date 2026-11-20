@@ -398,11 +398,13 @@ void join(uint f, uint mb, uint motion, uint width, uint x, uint y, bool intra) 
             mask |= nz << (4u*by+bx);
         }
     uint level = words[6]+levelWords*mb;
-    words[level] = intra ? uint(luma4[f].mode) : words[motion];
-    words[level+1u] = intra ? uint(cbp != 0u) : cbp;
-    words[level+2u] = intra ? luma4[f].nonzero[0] : words[motion+1u];
+    bool intraInP = !intra && luma4[f].intraInP != 0;
+    words[level] = (intra || intraInP) ? uint(luma4[f].mode) : words[motion];
+    words[level+1u] = (intra || intraInP) ? uint(cbp != 0u) : cbp;
+    words[level+2u] = (intra || intraInP) ? luma4[f].nonzero[0] : words[motion+1u];
+    if (intraInP) mask |= 1u << 18;  // mark P-slice MB as intra-coded
     words[level+3u] = mask;
-    if (intra) {
+    if (intra || intraInP) {
         if (luma4[f].nonzero[0] != 0u)
             for (uint i = 0u; i < 16u; ++i) words[level+4u+i] = uint(luma4[f].dcCoefficients[i]);
         for (uint block = 0u; block < 16u; ++block) {
@@ -427,8 +429,8 @@ void join(uint f, uint mb, uint motion, uint width, uint x, uint y, bool intra) 
     words[level+261u] = uint(chroma[2u*f].mode);
     uint mbCount = words[0]*words[1], deblock = words[7]+7u;
     words[deblock+3u*mb] = mask;
-    words[deblock+3u*mb+1u] = intra ? 0u : words[motion];
-    words[deblock+3u*mb+2u] = intra ? 0u : words[motion+1u];
+    words[deblock+3u*mb+1u] = (intra || intraInP) ? 0u : words[motion];
+    words[deblock+3u*mb+2u] = (intra || intraInP) ? 0u : words[motion+1u];
     uint luma = deblock+3u*mbCount, chromaOutput = luma+64u*mbCount;
     for (uint r = 0u; r < 16u; ++r)
         for (uint c = 0u; c < 16u; c += 4u) {
