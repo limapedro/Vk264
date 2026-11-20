@@ -7,6 +7,14 @@ Vk264-Vulkan port: `Vk264/vulkan/*.comp`, shader SPIR-V shader pipelines registe
 fixture tests in `Vk264/src/dct_parity.cpp` (the `verifyXxx` functions and the
 `x264_*_parity` CTest registrations).
 
+## Issue #25 fixed + round 2 (Subaru, 2026-11-20)
+
+PR #28 fixed issue #25: intra MBs no longer use DCT decimation (x264 decimates
+P-frames only). The real 16x16 gradient crop at (1792,896) is now BYTE-EXACT,
+and 10/10 real single-MB crops pass. PR #29 added a byte-exact chroma mode
+fixture (16640/16640); 58/58 CTests. Multi-MB divergence is now localised to
+chroma mode + Y reconstruction staging at MB(1,1) (issue #30).
+
 ## Function-parity PR loops (Subaru, 2026-11-20)
 
 Five PRs landed: #20 (I16x16 mode fixture, 16640/16640), #22 (CAVLC context
