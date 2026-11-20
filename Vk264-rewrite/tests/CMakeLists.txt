@@ -22,6 +22,10 @@ add_test(NAME rewrite_oracle_multimb
 add_test(NAME rewrite_oracle_pskip
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_pskip.py"
             "${VK264_X264_EXE}" "$<TARGET_FILE:vk264_oracle_pcli>" "${CMAKE_BINARY_DIR}")
+add_test(NAME rewrite_oracle_pme
+    COMMAND "${CMAKE_COMMAND}" -E env "VK264_X264_EXE=${VK264_X264_EXE}"
+            "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_pme.py"
+            "$<TARGET_FILE:vk264_oracle_pme_cli>" "${CMAKE_BINARY_DIR}")
 
 add_executable(vk264_oracle_pcli oracle_pcli.c)
 target_link_libraries(vk264_oracle_pcli PRIVATE vk264_rewrite_ref)

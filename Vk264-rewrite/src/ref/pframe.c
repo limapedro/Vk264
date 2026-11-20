@@ -53,9 +53,11 @@ static void pskip_mv(int lx, int ly, int tx, int ty, int cx, int cy,
 }
 
 /* Quantise one 4x4 residual block; return 1 if all 16 coefficients are zero.
- * `dc` receives the raw DC coefficient for the caller's Hadamard transform. */
+ * `dc` receives the raw DC coefficient for the caller's Hadamard transform.
+ * `include_dc`: inter luma quantises DC in-block; chroma DC goes via Hadamard. */
 static int block_zero(const uint8_t *src, int ss, const uint8_t *pred, int ps,
-                      const int mf[16], const int bias[16], int *dc)
+                      const int mf[16], const int bias[16], int *dc,
+                      int include_dc)
 {
     uint8_t s[16], p[16];
     for (int y = 0; y < 4; ++y)
@@ -66,7 +68,7 @@ static int block_zero(const uint8_t *src, int ss, const uint8_t *pred, int ps,
     int d[16];
     vk_ref_dct4x4(d, s, p);
     *dc = d[0];
-    d[0] = 0;
+    if (!include_dc) d[0] = 0;
     for (int i = 0; i < 16; ++i)
         if (vk_ref_quant_one(d[i], mf[i], bias[i])) return 0;
     return 1;
@@ -95,19 +97,15 @@ static int probe(const uint8_t *cur, const uint8_t *refp,
     const uint8_t *ru = refp + ysz;
     const uint8_t *rv = ru + csz;
 
-    /* luma AC + DC */
-    int dc4[16];
+    /* inter luma: 16 4x4 blocks, DC quantised in-block (no Hadamard) */
+    int unused;
     for (int b = 0; b < 16; ++b) {
         int by = (b/4)*4, bx = (b%4)*4;
         if (!block_zero(cy + (y+by)*w + (x+bx), w,
-                        ry + (y+by+my)*rs + (x+bx+mx), rs, mf, bias, &dc4[b]))
+                        ry + (y+by+my)*rs + (x+bx+mx), rs, mf, bias,
+                        &unused, 1))
             return 0;
     }
-    int had[16];
-    memcpy(had, dc4, sizeof(had));
-    vk_ref_dct4x4dc(had);
-    for (int i = 0; i < 16; ++i)
-        if (vk_ref_quant_one(had[i], mf[0] >> 1, bias[0] << 1)) return 0;
 
     /* chroma: x264 mc_chroma, MV in 1/8-chroma-pel units = luma qpel MV / 2 */
     int cvx8 = mvx_qp / 2, cvy8 = mvy_qp / 2;
@@ -115,24 +113,41 @@ static int probe(const uint8_t *cur, const uint8_t *refp,
     int cA = (8-d8x)*(8-d8y), cB = d8x*(8-d8y);
     int cC = (8-d8x)*d8y, cD = d8x*d8y;
     int coffx = (cvx8 >> 3) + CPAD, coffy = (cvy8 >> 3) + CPAD;
+    static const int lambda2_tab[52] = {
+        14,18,22,28,36,45,57,72,91,115,145,182,230,290,365,460,
+        580,731,921,1161,1462,1843,2322,2925,3686,4644,5851,7372,9289,
+        11703,14745,18578,23407,29491,37156,46814,58982,74313,93628,117964,
+        148626,187257,235929,297252,374514,471859,594505,749029,943740,
+        1189156,1500160,1891796
+    };
+    int l2 = lambda2_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)];
+    int thresh = (l2 + 32) >> 6;
     for (int pl = 0; pl < 2; ++pl) {
         const uint8_t *c = pl ? cv : cu;
         const uint8_t *r = pl ? rv : ru;
+        uint8_t p8[64];
+        int ssd = 0;
+        for (int yy = 0; yy < 8; ++yy)
+            for (int xx = 0; xx < 8; ++xx) {
+                int sx = x/2 + xx + coffx, sy = y/2 + yy + coffy;
+                int a = r[sy*crs+sx], bb = r[sy*crs+sx+1];
+                int cc = r[(sy+1)*crs+sx], dd = r[(sy+1)*crs+sx+1];
+                uint8_t v = (uint8_t)((cA*a + cB*bb + cC*cc + cD*dd + 32) >> 6);
+                p8[yy*8+xx] = v;
+                int e = c[(y/2+yy)*cs + (x/2+xx)] - v;
+                ssd += e*e;
+            }
+        if (ssd < thresh) continue;  /* x264: chroma SSD shortcut */
         int cdc[4];
         for (int b = 0; b < 4; ++b) {
             int by = (b/2)*4, bx = (b%2)*4;
             uint8_t pb[16];
             for (int yy = 0; yy < 4; ++yy)
-                for (int xx = 0; xx < 4; ++xx) {
-                    int sx = x/2 + bx + xx + coffx;
-                    int sy = y/2 + by + yy + coffy;
-                    int a = r[sy*crs+sx], bb = r[sy*crs+sx+1];
-                    int cc = r[(sy+1)*crs+sx], dd = r[(sy+1)*crs+sx+1];
-                    pb[yy*4+xx] = (uint8_t)((cA*a + cB*bb + cC*cc + cD*dd + 32) >> 6);
-                }
+                for (int xx = 0; xx < 4; ++xx)
+                    pb[yy*4+xx] = p8[(by+yy)*8 + bx+xx];
             int dc;
             if (!block_zero(c + (y/2+by)*cs + (x/2+bx), cs,
-                            pb, 4, cmf, cbias, &dc))
+                            pb, 4, cmf, cbias, &dc, 0))
                 return 0;
             cdc[b] = dc;
         }
@@ -141,6 +156,7 @@ static int probe(const uint8_t *cur, const uint8_t *refp,
         int ch[4] = { a+b2, a-b2, c1+d, c1-d };
         for (int i = 0; i < 4; ++i)
             if (vk_ref_quant_one(ch[i], cmf[0] >> 1, cbias[0] << 1)) return 0;
+        if (ssd < thresh*4) continue;  /* x264: skip chroma AC check */
     }
     return 1;
 }
@@ -218,7 +234,7 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
             }
 
             if (do_skip) {
-                mv[idx][0] = mv[idx][1] = 0;  /* cache convention for skips */
+                mv[idx][0] = psk_x; mv[idx][1] = psk_y;
                 is_skip[idx] = 1;
                 ++skip_run;
                 continue;
