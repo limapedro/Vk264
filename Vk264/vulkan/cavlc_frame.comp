@@ -129,7 +129,12 @@ void writeMacroblock(uint mb) {
         uint mode = data[base];
         uint fixedMode = mode <= 3u ? mode : 2u;
         ue(1u+fixedMode+4u*chroma+(luma != 0u ? 12u : 0u));
-        ue(0u); // chroma DC (flat frames use DC prediction)
+        // x264 cavlc.c::cavlc_mb_header_i writes the selected chroma prediction
+        // mode via x264_mb_chroma_pred_mode_fix (0..3 identity, 4..6 -> DC).
+        // Hardcoding DC here made the decoder use a different predictor than
+        // the encoder, corrupting chroma reconstruction (issue #30).
+        uint chromaPred = data[base+261u];
+        ue(chromaPred <= 3u ? chromaPred : 0u);
         se(0);
         writeBlock(mb, 24);
     } else {
