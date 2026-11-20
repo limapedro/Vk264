@@ -1,0 +1,274 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * SPS/PPS generation. Transcribed from x264 encoder/set.c:
+ *   x264_sps_init()            lines 101-247
+ *   x264_sps_write()           lines 305-477
+ *   x264_pps_init()            lines 479-503
+ *   x264_pps_write()           lines 505-...
+ * The subset below covers 8-bit 4:2:0 progressive CAVLC, which is enough for
+ * the first byte-exactness milestone. Extra fields are written in the same
+ * order as x264 so future presets only need new initialisation values. */
+
+#include "param.h"
+#include <string.h>
+
+#define PROFILE_BASELINE 66
+#define PROFILE_MAIN 77
+#define PROFILE_HIGH 100
+#define CHROMA_420 1
+#define QP_BD_OFFSET 0
+
+void vk_param_default(vk_param_t *p)
+{
+    memset(p, 0, sizeof(*p));
+    p->i_width = 16; p->i_height = 16;
+    p->i_fps_num = 1; p->i_fps_den = 60;
+    p->i_level_idc = 10;
+    p->i_frame_reference = 1;
+    p->i_keyint_max = 1;
+    p->i_csp = CHROMA_420;
+    p->i_qp_constant = 28;
+    p->b_vui = 1;
+    p->i_sar_width = 1; p->i_sar_height = 1;
+    p->i_vidformat = 5;    /* unspecified */
+    p->b_fullrange = 0;
+    p->i_colorprim = 2; p->i_transfer = 2; p->i_colmatrix = 2;
+}
+
+static int log2i(int v)
+{
+    int n = 0;
+    while ((1 << (n + 1)) <= v) ++n;
+    return n;
+}
+
+void vk_sps_init(vk_sps_t *s, int id, const vk_param_t *p)
+{
+    memset(s, 0, sizeof(*s));
+    s->i_id = id;
+    s->i_mb_width = (p->i_width + 15) / 16;
+    s->i_mb_height = (p->i_height + 15) / 16;
+    s->b_frame_mbs_only = !p->b_interlaced;
+    s->i_chroma_format_idc = CHROMA_420;
+
+    if (p->b_cabac || p->i_bframe > 0 || p->b_interlaced || p->b_transform_8x8)
+        s->i_profile_idc = p->b_transform_8x8 ? PROFILE_HIGH : PROFILE_MAIN;
+    else
+        s->i_profile_idc = PROFILE_BASELINE;
+
+    s->b_constraint_set0 = s->i_profile_idc == PROFILE_BASELINE;
+    s->b_constraint_set1 = s->i_profile_idc <= PROFILE_MAIN;
+    s->i_level_idc = p->i_level_idc;
+
+    s->vui.i_num_reorder_frames = p->i_bframe ? 1 : 0;
+    s->vui.i_max_dec_frame_buffering =
+        s->i_num_ref_frames = p->i_frame_reference > 1 ? p->i_frame_reference : 1;
+    if (p->i_keyint_max == 1) {
+        s->i_num_ref_frames = 0;
+        s->vui.i_max_dec_frame_buffering = 0;
+    }
+
+    int max_frame_num = s->vui.i_max_dec_frame_buffering + 1;
+    s->i_log2_max_frame_num = 4;
+    while ((1 << s->i_log2_max_frame_num) <= max_frame_num) ++s->i_log2_max_frame_num;
+
+    s->i_poc_type = p->i_bframe || p->b_interlaced ? 0 : 2;
+    if (s->i_poc_type == 0) {
+        int max_delta_poc = (p->i_bframe + 2) * 2;
+        s->i_log2_max_poc_lsb = 4;
+        while ((1 << s->i_log2_max_poc_lsb) <= max_delta_poc * 2) ++s->i_log2_max_poc_lsb;
+    }
+
+    s->b_gaps_in_frame_num_value_allowed = 0;
+    s->b_mb_adaptive_frame_field = p->b_interlaced;
+    s->b_direct8x8_inference = 1;
+    s->b_crop = 0;
+    s->b_vui = p->b_vui;
+
+    s->vui.b_aspect_ratio_info_present = 0;
+    s->vui.i_sar_width = p->i_sar_width;
+    s->vui.i_sar_height = p->i_sar_height;
+    s->vui.b_overscan_info_present = 0;
+    s->vui.i_vidformat = (p->i_vidformat >= 0 && p->i_vidformat <= 5) ? p->i_vidformat : 5;
+    s->vui.b_fullrange = p->b_fullrange;
+    s->vui.i_colorprim = p->i_colorprim;
+    s->vui.i_transfer = p->i_transfer;
+    s->vui.i_colmatrix = p->i_colmatrix;
+    s->vui.b_color_description_present =
+        (p->i_colorprim != 2 || p->i_transfer != 2 || p->i_colmatrix != 2);
+    s->vui.b_signal_type_present =
+        (s->vui.i_vidformat != 5 || s->vui.b_fullrange || s->vui.b_color_description_present);
+    s->vui.b_chroma_loc_info_present = 0;
+
+    s->vui.b_timing_info_present = p->i_fps_num > 0 && p->i_fps_den > 0;
+    if (s->vui.b_timing_info_present) {
+        s->vui.i_num_units_in_tick = p->i_fps_num;
+        s->vui.i_time_scale = p->i_fps_den * 2;
+        s->vui.b_fixed_frame_rate = 1;
+    }
+    s->vui.b_vcl_hrd_parameters_present = 0;
+    s->vui.b_nal_hrd_parameters_present = 0;
+    s->vui.b_pic_struct_present = 0;
+    s->vui.b_bitstream_restriction = 1;
+    s->vui.b_motion_vectors_over_pic_boundaries = 1;
+    s->vui.i_max_bytes_per_pic_denom = 0;
+    s->vui.i_max_bits_per_mb_denom = 0;
+    int mv_range = p->i_mv_range ? p->i_mv_range : 64; /* level 1.0 table */
+    int mv = mv_range * 4 - 1;
+    if (mv < 1) mv = 1;
+    s->vui.i_log2_max_mv_length_horizontal = log2i(mv) + 1;
+    s->vui.i_log2_max_mv_length_vertical = log2i(mv) + 1;
+}
+
+static const struct { unsigned char w, h, sar; } kSar[] = {
+    {1,1,1},{12,11,2},{10,11,3},{16,11,4},{40,33,5},{24,11,6},{20,11,7},{32,11,8},
+    {80,33,9},{18,11,10},{15,11,11},{64,33,12},{160,99,13},{4,3,14},{3,2,15},{2,1,16}
+};
+
+void vk_sps_write(vk_bs_t *s, const vk_sps_t *q)
+{
+    vk_bs_align(s); /* bs_realign */
+    vk_bs_write(s, 8, (uint32_t)q->i_profile_idc);
+    vk_bs_write1(s, (uint32_t)q->b_constraint_set0);
+    vk_bs_write1(s, (uint32_t)q->b_constraint_set1);
+    vk_bs_write1(s, (uint32_t)q->b_constraint_set2);
+    vk_bs_write1(s, (uint32_t)q->b_constraint_set3);
+    vk_bs_write(s, 4, 0);
+    vk_bs_write(s, 8, (uint32_t)q->i_level_idc);
+    vk_bs_write_ue(s, (uint32_t)q->i_id);
+
+    if (q->i_profile_idc >= PROFILE_HIGH) {
+        vk_bs_write_ue(s, (uint32_t)q->i_chroma_format_idc);
+        vk_bs_write_ue(s, 0); /* bit_depth_luma_minus8 */
+        vk_bs_write_ue(s, 0); /* bit_depth_chroma_minus8 */
+        vk_bs_write1(s, (uint32_t)q->b_qpprime_y_zero_transform_bypass);
+        vk_bs_write1(s, (uint32_t)q->b_avcintra_hd); /* seq_scaling_matrix_present_flag */
+        /* AVC-Intra scaling lists are not supported yet. */
+    }
+
+    vk_bs_write_ue(s, (uint32_t)(q->i_log2_max_frame_num - 4));
+    vk_bs_write_ue(s, (uint32_t)q->i_poc_type);
+    if (q->i_poc_type == 0)
+        vk_bs_write_ue(s, (uint32_t)(q->i_log2_max_poc_lsb - 4));
+    vk_bs_write_ue(s, (uint32_t)q->i_num_ref_frames);
+    vk_bs_write1(s, (uint32_t)q->b_gaps_in_frame_num_value_allowed);
+    vk_bs_write_ue(s, (uint32_t)(q->i_mb_width - 1));
+    vk_bs_write_ue(s, (uint32_t)((q->i_mb_height >> !q->b_frame_mbs_only) - 1));
+    vk_bs_write1(s, (uint32_t)q->b_frame_mbs_only);
+    if (!q->b_frame_mbs_only)
+        vk_bs_write1(s, (uint32_t)q->b_mb_adaptive_frame_field);
+    vk_bs_write1(s, (uint32_t)q->b_direct8x8_inference);
+
+    vk_bs_write1(s, (uint32_t)q->b_crop);
+    if (q->b_crop) {
+        int h_shift = q->i_chroma_format_idc == CHROMA_420 ? 1 : 0;
+        int v_shift = (q->i_chroma_format_idc == CHROMA_420) + !q->b_frame_mbs_only;
+        vk_bs_write_ue(s, (uint32_t)(q->crop_left >> h_shift));
+        vk_bs_write_ue(s, (uint32_t)(q->crop_right >> h_shift));
+        vk_bs_write_ue(s, (uint32_t)(q->crop_top >> v_shift));
+        vk_bs_write_ue(s, (uint32_t)(q->crop_bottom >> v_shift));
+    }
+
+    vk_bs_write1(s, (uint32_t)q->b_vui);
+    if (q->b_vui) {
+        vk_bs_write1(s, (uint32_t)q->vui.b_aspect_ratio_info_present);
+        if (q->vui.b_aspect_ratio_info_present) {
+            unsigned i;
+            unsigned char id = 255;
+            for (i = 0; i < sizeof(kSar)/sizeof(kSar[0]); ++i)
+                if (kSar[i].w == q->vui.i_sar_width && kSar[i].h == q->vui.i_sar_height) {
+                    id = kSar[i].sar; break;
+                }
+            vk_bs_write(s, 8, id);
+            if (id == 255) {
+                vk_bs_write(s, 16, (uint32_t)q->vui.i_sar_width);
+                vk_bs_write(s, 16, (uint32_t)q->vui.i_sar_height);
+            }
+        }
+        vk_bs_write1(s, (uint32_t)q->vui.b_overscan_info_present);
+        if (q->vui.b_overscan_info_present)
+            vk_bs_write1(s, (uint32_t)q->vui.b_overscan_info);
+        vk_bs_write1(s, (uint32_t)q->vui.b_signal_type_present);
+        if (q->vui.b_signal_type_present) {
+            vk_bs_write(s, 3, (uint32_t)q->vui.i_vidformat);
+            vk_bs_write1(s, (uint32_t)q->vui.b_fullrange);
+            vk_bs_write1(s, (uint32_t)q->vui.b_color_description_present);
+            if (q->vui.b_color_description_present) {
+                vk_bs_write(s, 8, (uint32_t)q->vui.i_colorprim);
+                vk_bs_write(s, 8, (uint32_t)q->vui.i_transfer);
+                vk_bs_write(s, 8, (uint32_t)q->vui.i_colmatrix);
+            }
+        }
+        vk_bs_write1(s, (uint32_t)q->vui.b_chroma_loc_info_present);
+        if (q->vui.b_chroma_loc_info_present) {
+            vk_bs_write_ue(s, (uint32_t)q->vui.i_chroma_loc_top);
+            vk_bs_write_ue(s, (uint32_t)q->vui.i_chroma_loc_bottom);
+        }
+        vk_bs_write1(s, (uint32_t)q->vui.b_timing_info_present);
+        if (q->vui.b_timing_info_present) {
+            vk_bs_write(s, 32, (uint32_t)q->vui.i_num_units_in_tick);
+            vk_bs_write(s, 32, (uint32_t)q->vui.i_time_scale);
+            vk_bs_write1(s, (uint32_t)q->vui.b_fixed_frame_rate);
+        }
+        vk_bs_write1(s, (uint32_t)q->vui.b_nal_hrd_parameters_present);
+        vk_bs_write1(s, (uint32_t)q->vui.b_vcl_hrd_parameters_present);
+        if (q->vui.b_nal_hrd_parameters_present || q->vui.b_vcl_hrd_parameters_present)
+            vk_bs_write1(s, 0); /* low_delay_hrd_flag */
+        vk_bs_write1(s, (uint32_t)q->vui.b_pic_struct_present);
+        vk_bs_write1(s, (uint32_t)q->vui.b_bitstream_restriction);
+        if (q->vui.b_bitstream_restriction) {
+            vk_bs_write1(s, (uint32_t)q->vui.b_motion_vectors_over_pic_boundaries);
+            vk_bs_write_ue(s, (uint32_t)q->vui.i_max_bytes_per_pic_denom);
+            vk_bs_write_ue(s, (uint32_t)q->vui.i_max_bits_per_mb_denom);
+            vk_bs_write_ue(s, (uint32_t)q->vui.i_log2_max_mv_length_horizontal);
+            vk_bs_write_ue(s, (uint32_t)q->vui.i_log2_max_mv_length_vertical);
+            vk_bs_write_ue(s, (uint32_t)q->vui.i_num_reorder_frames);
+            vk_bs_write_ue(s, (uint32_t)q->vui.i_max_dec_frame_buffering);
+        }
+    }
+    vk_bs_rbsp_trailing(s);
+}
+
+void vk_pps_init(vk_pps_t *p, int id, const vk_param_t *param, const vk_sps_t *sps)
+{
+    memset(p, 0, sizeof(*p));
+    p->i_id = id;
+    p->i_sps_id = sps->i_id;
+    p->b_cabac = param->b_cabac;
+    p->b_pic_order = 0;
+    p->i_num_slice_groups = 1;
+    p->i_num_ref_idx_l0_default_active = param->i_frame_reference;
+    p->i_num_ref_idx_l1_default_active = 1;
+    p->b_weighted_pred = 0;
+    p->b_weighted_bipred = 0;
+    p->i_pic_init_qp = param->i_qp_constant;
+    p->i_pic_init_qs = 26 + QP_BD_OFFSET;
+    p->i_chroma_qp_index_offset = param->i_chroma_qp_offset;
+    p->b_deblocking_filter_control = 1;
+    p->b_constrained_intra_pred = 0;
+    p->b_redundant_pic_cnt = 0;
+    p->b_transform_8x8_mode = param->b_transform_8x8 ? 1 : 0;
+}
+
+void vk_pps_write(vk_bs_t *s, const vk_sps_t *sps, const vk_pps_t *p)
+{
+    (void)sps;
+    vk_bs_align(s);
+    vk_bs_write_ue(s, (uint32_t)p->i_id);
+    vk_bs_write_ue(s, (uint32_t)p->i_sps_id);
+    vk_bs_write1(s, (uint32_t)p->b_cabac);
+    vk_bs_write1(s, (uint32_t)p->b_pic_order);
+    vk_bs_write_ue(s, (uint32_t)(p->i_num_slice_groups - 1));
+    vk_bs_write_ue(s, (uint32_t)(p->i_num_ref_idx_l0_default_active - 1));
+    vk_bs_write_ue(s, (uint32_t)(p->i_num_ref_idx_l1_default_active - 1));
+    vk_bs_write1(s, (uint32_t)p->b_weighted_pred);
+    vk_bs_write(s, 2, (uint32_t)p->b_weighted_bipred);
+    vk_bs_write_se(s, p->i_pic_init_qp - 26 - QP_BD_OFFSET);
+    vk_bs_write_se(s, p->i_pic_init_qs - 26 - QP_BD_OFFSET);
+    vk_bs_write_se(s, p->i_chroma_qp_index_offset);
+    vk_bs_write1(s, (uint32_t)p->b_deblocking_filter_control);
+    vk_bs_write1(s, (uint32_t)p->b_constrained_intra_pred);
+    vk_bs_write1(s, (uint32_t)p->b_redundant_pic_cnt);
+    /* No CQM and (for the baseline milestone) no 8x8dct: x264 omits the whole
+     * transform_8x8_mode / scaling_list block. */
+    vk_bs_rbsp_trailing(s);
+}

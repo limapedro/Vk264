@@ -1,3 +1,7 @@
 add_executable(vk264_test_bitstream test_bitstream.c)
 target_link_libraries(vk264_test_bitstream PRIVATE vk264_rewrite_core)
 add_test(NAME rewrite_bitstream COMMAND vk264_test_bitstream)
+
+add_executable(vk264_test_nal test_nal.c)
+target_link_libraries(vk264_test_nal PRIVATE vk264_rewrite_core)
+add_test(NAME rewrite_nal COMMAND vk264_test_nal)
