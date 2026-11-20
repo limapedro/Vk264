@@ -179,13 +179,16 @@ roadmap. Multi-MB staging is issue #30.
 - New byte-exact fixture: chroma mode selection (`x264_chroma_mode_parity`,
   16640/16640 cases). Together with `x264_intra16_mode_parity`, both mode
   decision algorithms are verified against x264's oracle. Suite is 58/58.
-- **Multi-MB divergence localised**: on a 32x32 tiled-real crop, x264 and vk264
-  agree on I16x16 mode (H), luma cbp, and the luma AC/DC coefficient arrays for
-  MB(1,1). They differ in chroma prediction mode (x264=H, vk264=DC) and in
-  reconstructed Y for the first 4x4 block column of MB(1,1). Chroma reconstruction
-  itself is byte-exact. Forcing chroma mode H moved the first bitstream mismatch
-  from offset 76 to 102 but did not make it exact, so there are further staging
-  differences. Tracked in issue #30.
+- **Multi-MB divergence localised (refined after #25)**: on a 32x32 tiled-real
+  crop, after the #25 fix the reconstructed **Y plane is byte-exact** (0 differing
+  bytes). Only chroma reconstruction differs (U 64 bytes, V 48 bytes), confined
+  to MB(1,1), caused by chroma prediction mode (x264=H, vk264=DC). x264's dumped
+  per-mode costs for that MB are V=330, H=102, DC=258, P=336 (lambda 4), so H is
+  the correct choice. vk264's staged chroma neighbours were dumped from the
+  shader and match x264's (mixed 129/135 left column), and both mode-selection
+  algorithms are byte-exact in isolation, so the remaining fault is inside the
+  GPU chroma-mode cost path. Forcing H unconditionally breaks other patterns and
+  is not a valid fix. Tracked in issue #30.
 - **Untested production shader variants**: `motion_frame{, _parallel, _batched,
   _tiled}.spv` are compiled from `motion_search.comp` with FRAME_MOTION defines
   and have a different fixture struct layout (extra source/reference stride
