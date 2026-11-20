@@ -25,7 +25,8 @@ void vk_slice_header_write(vk_bs_t *s, const vk_slice_header_t *sh,
 typedef struct {
     const uint8_t *top_y, *left_y, *top_u, *left_u, *top_v, *left_v;
     uint8_t tl_y, tl_u, tl_v;
-    int avail;   /* bit0=top, bit1=left, bit2=top-left */
+    int avail;   /* bit0=left, bit1=top, bit3=top-left (x264) */
+    int luma_dc_nc;  /* CAVLC nC for the luma DC block */
     int qp;
 } vk_neighbours_t;
 
@@ -39,6 +40,6 @@ void vk_ref_predict16x16(uint8_t out[256], const uint8_t top[16],
 void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
                       const uint8_t *src_v, uint8_t *recon_y, uint8_t *recon_u,
                       uint8_t *recon_v, int qp, int mb_x, int mb_y,
-                      const vk_neighbours_t *nb);
+                      const vk_neighbours_t *nb, int stride_y, int stride_c);
 
 #endif /* VK264_SLICE_H */

@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "intra16.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 static const int lambda_tab[52] = {
     1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,2,3,3,3,4,4,4,5,6,6,7,8,9,10,11,
@@ -63,6 +65,58 @@ void vk_predict16(uint8_t out[256], const uint8_t top[16],
     }
 }
 
+void vk_predict_chroma8(uint8_t out[64], const uint8_t top[8], const uint8_t left[8], int mode)
+{
+    if (mode == 1) { /* H */
+        for (int y = 0; y < 8; ++y)
+            for (int x = 0; x < 8; ++x) out[y*8+x] = left[y];
+    } else if (mode == 2) { /* V */
+        for (int y = 0; y < 8; ++y)
+            for (int x = 0; x < 8; ++x) out[y*8+x] = top[x];
+    } else if (mode == 4 || mode == 5 || mode == 6) {
+        int s = 0, n = 0;
+        if (mode != 5 && mode != 6) for (int i = 0; i < 8; ++i) { s += left[i]; ++n; }
+        if (mode != 4 && mode != 6) for (int i = 0; i < 8; ++i) { s += top[i]; ++n; }
+        int v = mode == 6 ? 128 : (n == 16 ? (s+16)>>5 : (s+8)>>4);
+        for (int i = 0; i < 64; ++i) out[i] = (uint8_t)v;
+    } else { /* DC (0) and P (3): P approximated by DC for now */
+        int s = 16;
+        for (int i = 0; i < 8; ++i) s += left[i] + top[i];
+        uint8_t v = (uint8_t)((s+8)>>4);
+        for (int i = 0; i < 64; ++i) out[i] = v;
+    }
+}
+
+int vk_select_chroma(const uint8_t srcu[64], const uint8_t srcv[64],
+                     const uint8_t topu[8], const uint8_t leftu[8],
+                     const uint8_t topv[8], const uint8_t leftv[8],
+                     int avail, int qp)
+{
+    static const int8_t modes[5][4] = {
+        {6,-1,-1,-1}, {4,1,-1,-1}, {5,2,-1,-1}, {2,1,0,-1}, {2,1,0,3}
+    };
+    int idx = avail & (1|2|8);
+    idx = (idx == (1|2|8)) ? 4 : (idx & 3);
+    static const int fix[7] = {0,1,2,3,0,0,0};
+    uint8_t p[64];
+    int best = modes[idx][0], bestcost = 0x7fffffff;
+    for (int i = 0; modes[idx][i] >= 0; ++i) {
+        int m = modes[idx][i];
+        vk_predict_chroma8(p, topu, leftu, m);
+        int cost = 0;
+        for (int k = 0; k < 64; ++k) cost += srcu[k] > p[k] ? srcu[k]-p[k] : p[k]-srcu[k];
+        vk_predict_chroma8(p, topv, leftv, m);
+        for (int k = 0; k < 64; ++k) cost += srcv[k] > p[k] ? srcv[k]-p[k] : p[k]-srcv[k];
+        int v = fix[m]+1, n = 0;
+        while (v > 1) { v >>= 1; ++n; }
+        cost += vk_lambda(qp) * (2*n+1);
+        if (getenv("ORACLE_DBG_MODE"))
+            fprintf(stderr, "CCOST mode=%d cost=%d\n", m, cost);
+        if (cost < bestcost) { bestcost = cost; best = m; }
+    }
+    return best;
+}
+
 static int sad16(const uint8_t a[256], const uint8_t b[256])
 {
     int s = 0;
@@ -77,8 +131,9 @@ int vk_select16(const uint8_t src[256], const uint8_t top[16],
         {6,-1,-1,-1,-1}, {4,1,-1,-1,-1}, {5,0,-1,-1,-1},
         {0,1,2,-1,-1}, {0,1,2,3,-1}
     };
-    int idx = avail & 7;
-    idx = (idx == 7) ? 4 : (idx & 3);
+    /* x264: MB_LEFT=0x01, MB_TOP=0x02, MB_TOPLEFT=0x08. */
+    int idx = avail & (1|2|8);
+    idx = (idx == (1|2|8)) ? 4 : (idx & 3);
     uint8_t pred[256];
     int best = modes[idx][0], best_cost = 0x7fffffff;
     int lambda = vk_lambda(qp);
@@ -86,7 +141,11 @@ int vk_select16(const uint8_t src[256], const uint8_t top[16],
         int m = modes[idx][i];
         vk_predict16(pred, top, left, tl, m);
         int cost = sad16(src, pred) + lambda * vk_mode_bits(m);
+        if (getenv("ORACLE_DBG_MODE"))
+            fprintf(stderr, "MODECOST mode=%d sad=%d bits=%d cost=%d\n",
+                    m, cost - lambda*vk_mode_bits(m), vk_mode_bits(m), cost);
         if (cost < best_cost) { best_cost = cost; best = m; }
     }
     return best;
 }
+

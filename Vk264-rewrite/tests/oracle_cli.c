@@ -66,11 +66,13 @@ int main(int argc, char **argv)
     for (int my = 0; my < mh; ++my)
         for (int mx = 0; mx < mw; ++mx) {
             int px = mx*16, py = my*16;
-            int avail = (my ? 1 : 0) | (mx ? 2 : 0) | (my && mx ? 4 : 0);
+            /* x264: MB_LEFT=1, MB_TOP=2, MB_TOPLEFT=8 */
+            int avail = (mx ? 1 : 0) | (my ? 2 : 0) | (my && mx ? 8 : 0);
             vk_neighbours_t nb;
             memset(&nb, 0, sizeof(nb));
             nb.avail = avail;
             nb.qp = slice_qp;
+            nb.luma_dc_nc = mx ? 1 : 0;  /* neighbour DC nnz (x264 cache) */
             uint8_t top[16], left[16], tup[8], lup[8], tvp[8], lvp[8];
             if (my) for (int i = 0; i < 16; ++i) top[i] = ry[ro+(py-1)*rs+px+i];
             else   for (int i = 0; i < 16; ++i) top[i] = 128;
@@ -90,7 +92,7 @@ int main(int argc, char **argv)
             uint8_t *sv = su + (w/2)*(h/2);
             uint8_t out_y[256], out_u[64], out_v[64];
             vk_encode_i16_mb(&bs, sy, su, sv, out_y, out_u, out_v,
-                             slice_qp, mx, my, &nb);
+                             slice_qp, mx, my, &nb, w, w/2);
             for (int y = 0; y < 16; ++y)
                 memcpy(ry + ro + (py+y)*rs + px, out_y + y*16, 16);
             for (int y = 0; y < 8; ++y) {
@@ -99,6 +101,19 @@ int main(int argc, char **argv)
             }
         }
 
+    if (getenv("ORACLE_DUMP_RECON")) {
+        FILE *fr = fopen("oracle_recon.yuv", "wb");
+        int cs2 = w/2+32, co2 = 8*cs2+8;
+        if (fr) {
+            for (int y = 0; y < h; ++y)
+                fwrite(ry + ro + y*rs, 1, w, fr);
+            for (int y = 0; y < h/2; ++y) {
+                fwrite(ru + co2 + y*cs2, 1, w/2, fr);
+                fwrite(rv + co2 + y*cs2, 1, w/2, fr);
+            }
+            fclose(fr);
+        }
+    }
     vk_bs_rbsp_trailing(&bs);
     vk_nal_write(fo, 0x65, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 0);
     fclose(fo);
