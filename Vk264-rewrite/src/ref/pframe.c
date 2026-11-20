@@ -70,7 +70,7 @@ static int decimate_score(const int *d, int n)
 }
 
 static const uint8_t pframe_zz4[16] = {
-    0,1,4,8,5,2,3,6,9,12,13,10,7,11,14,15
+    0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15
 };
 
 /* Quantise one 4x4 residual block and return its decimate score. `raw_dc`
@@ -196,7 +196,7 @@ static int probe(const uint8_t *cur, const uint8_t *refp,
 }
 
 /* x264 tables for inter residual CAVLC. */
-static const uint8_t rz4[16] = {0,1,4,8,5,2,3,6,9,12,13,10,7,11,14,15};
+static const uint8_t rz4[16] = {0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
 static const uint8_t rblock_idx[16] = {0,1,4,5,2,3,6,7,8,9,12,13,10,11,14,15};
 static const uint8_t rscan8[16] = {12,13,20,21,14,15,22,23,28,29,36,37,30,31,38,39};
 static const uint8_t rct_index[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};

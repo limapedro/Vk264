@@ -18,7 +18,7 @@ CLIP = pathlib.Path(r'E:\__PROJECTS__\Wx264-Vulkan-Opencode\clips\youtube'
 SW, SH = 1920, 1080
 W, H = 64, 64
 CASES = [(320, 800, 8), (320, 720, 8), (1760, 480, 8),
-         (1280, 960, 8), (0, 0, 8)]
+         (1280, 960, 8), (0, 0, 8), (640, 360, 8)]
 
 
 def crop(data, x0, y0, dx):
