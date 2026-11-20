@@ -42,10 +42,13 @@ void vk_predict16(uint8_t out[256], const uint8_t top[16],
     } else if (mode == 3) { /* P */
         int H = 0, V = 0;
         for (int i = 0; i <= 7; ++i) {
-            H += (i+1) * (top[8+i] - top[6-i]);
-            V += (i+1) * (left[8+i] - left[6-i]);
+            /* x264 reads src[6-i-FDEC_STRIDE] / src[-1+(6-i)*FDEC_STRIDE];
+             * at i=7 this is the top-left corner, not an in-array sample. */
+            int th = (i == 7) ? tl : top[6-i];
+            int tv = (i == 7) ? tl : left[6-i];
+            H += (i+1) * (top[8+i] - th);
+            V += (i+1) * (left[8+i] - tv);
         }
-        (void)tl;
         int a = 16 * (left[15] + top[15]);
         int b = (5*H+32)>>6, c = (5*V+32)>>6;
         int i00 = a - b*7 - c*7 + 16;

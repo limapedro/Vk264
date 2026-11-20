@@ -1,5 +1,5 @@
 """Byte-exact oracle regression on multi-MB I-frames.
-Crops 32x16, 16x32 and 32x32 regions from real 1080p footage, encodes each
+Crops 32x16, 16x32, 32x32 and 64x64 regions from real 1080p footage, encodes each
 with x264 and the oracle, and compares SPS/PPS/IDR NALs byte-for-byte.
 """
 import pathlib, re, subprocess, sys
@@ -32,7 +32,7 @@ fs = SW*SH*3//2
 data = CLIP.read_bytes()[:fs]
 
 cases = []
-for w, h in ((32,16), (16,32), (32,32)):
+for w, h in ((32,16), (16,32), (32,32), (64,64)):
     src = BUILD / f'multimb_{w}x{h}.yuv'
     out = bytearray()
     for y in range(Y0, Y0+h): out += data[y*SW+X0:y*SW+X0+w]
