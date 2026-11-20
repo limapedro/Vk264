@@ -8,6 +8,8 @@
 #include "slice.h"
 #include "cavlc.h"
 #include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 static const uint16_t quant4_scale[6][3] = {
     {13107,8066,5243},{11916,7490,4660},{10082,6554,4194},
@@ -16,8 +18,11 @@ static const uint16_t quant4_scale[6][3] = {
 static const uint8_t dequant4_scale[6][3] = {
     {10,13,16},{11,14,18},{13,16,20},{14,18,23},{16,20,25},{18,23,29}
 };
+/* x264 common/dct.c:817 ZIGZAG4_FRAME with ZIG(i,y,x)=dct[x*4+y].
+ * This transposed order differs from the "standard" 0,1,4,8,... scan;
+ * flat frames hide the difference because only DC is nonzero. */
 static const uint8_t zigzag4[16] = {
-    0,1,4,8,5,2,3,6,9,12,13,10,7,11,14,15
+    0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15
 };
 
 static int shift_r(int x, int s)
@@ -29,7 +34,9 @@ static int div_r(int n, int d) { return (n + (d >> 1)) / d; }
 /* x264 common/set.c::x264_cqm_init, flat CQM, lists 0=IY 2=IC. */
 static void quant_tables(int qp, int list, int mf[16], int bias[16], int dequant[16])
 {
-    const int deadzone = (list == 0) ? 11 : 21; /* CQM_4IY / CQM_4IC */
+    /* x264 base.c:456: i_luma_deadzone[0]=21,[1]=11; set.c:81 deadzone =
+     * {32-[1], 32-[0], 32-11, 32-21} = {21, 11, 21, 11}. */
+    const int deadzone = (list == 0 || list == 2) ? 21 : 11;
     int q = qp % 6, s = qp / 6;
     for (int i = 0; i < 16; ++i) {
         int par = (i & 1) + ((i >> 2) & 1);
@@ -203,92 +210,153 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
                       uint8_t *recon_v, int qp, int mb_x, int mb_y)
 {
     (void)mb_x; (void)mb_y;
-    int mf[16], bias[16], dequant[16];
+    int mf[16], bias[16], dequant[16], cmf[16], cbias[16], cdeq[16];
     uint8_t pred_y[256], pred_u[64], pred_v[64];
-    predict_dc(pred_y, 16, 128);  /* fdec initial value at frame edge */
-    predict_dc(pred_u, 8, 128);  /* chroma DC_128 at frame corner */
+    predict_dc(pred_y, 16, 128);
+    predict_dc(pred_u, 8, 128);
     predict_dc(pred_v, 8, 128);
-
-    int dct4[16][16], dc4[16];
     quant_tables(qp, 0, mf, bias, dequant);
+    quant_tables(qp, 2, cmf, cbias, cdeq);
+
+    /* ---- luma: 16 4x4 DCTs, split DC, quantise AC ---- */
+    int dct4[16][16], dc4[16], nnz[16] = {0}, acq[16][16];
     for (int b = 0; b < 16; ++b) {
         int by = (b/4)*4, bx = (b%4)*4;
-        uint8_t src_block[16], pred_block[16];
+        uint8_t sb[16], pb[16];
         for (int y = 0; y < 4; ++y)
             for (int x = 0; x < 4; ++x) {
-                src_block[y*4+x] = src_y[(by+y)*16+bx+x];
-                pred_block[y*4+x] = pred_y[(by+y)*16+bx+x];
+                sb[y*4+x] = src_y[(by+y)*16+bx+x];
+                pb[y*4+x] = pred_y[(by+y)*16+bx+x];
             }
-        sub4x4_dct(dct4[b], src_block, pred_block);
+        sub4x4_dct(dct4[b], sb, pb);
         dc4[b] = dct4[b][0];
-        for (int i = 0; i < 16; ++i) dct4[b][i] = 0;
+        dct4[b][0] = 0;                 /* DC goes through the Hadamard path */
+        for (int i = 0; i < 16; ++i) {
+            dct4[b][i] = quant_one(dct4[b][i], mf[i], bias[i]);
+            nnz[b] += dct4[b][i] != 0;  /* x264 stores the coefficient count */
+        }
+        for (int i = 0; i < 16; ++i) acq[b][i] = dct4[b][zigzag4[i]];
     }
-    /* AC quantisation: ultrafast has no trellis; DCT decimation disabled. */
     int cbp_luma = 0;
-    int mf_ac[16], bias_ac[16];
-    quant_tables(qp, 0, mf_ac, bias_ac, dequant);
-    for (int b = 0; b < 16; ++b) {
-        (void)mf_ac; (void)bias_ac;
-        /* DC was extracted; AC coefficients are all zero in this milestone. */
-    }
+    for (int b = 0; b < 16; ++b)
+        if (nnz[b]) cbp_luma |= 1 << (b/4);
+    /* x264 ultrafast: b_dct_decimate = 0, so no coefficient decimation. */
 
-    /* Luma 16x16 DC: Hadamard + deadzone quantisation. */
+    /* ---- luma 16x16 DC Hadamard + quantisation ---- */
     int dcdc[16];
     memcpy(dcdc, dc4, sizeof(dcdc));
     dct4x4dc(dcdc);
     int dc_mf = mf[0] >> 1, dc_bias = bias[0] << 1;
-    int dcnz = 0;
-    for (int i = 0; i < 16; ++i) {
-        dcdc[i] = quant_one(dcdc[i], dc_mf, dc_bias);
-        dcnz |= dcdc[i] != 0;
-    }
+    for (int i = 0; i < 16; ++i) dcdc[i] = quant_one(dcdc[i], dc_mf, dc_bias);
     int dc_q[16];
     for (int i = 0; i < 16; ++i) dc_q[i] = dcdc[zigzag4[i]];
 
-    /* Chroma DC: 2x2 Hadamard. */
-    int cdc[2][4];
-    sub8x8_dct_dc(cdc[0], src_u, pred_u);
-    sub8x8_dct_dc(cdc[1], src_v, pred_v);
-    int cmf[16], cbias[16], cdeq[16];
-    quant_tables(qp, 2, cmf, cbias, cdeq);
-    int chroma_dc[2][4], cbp_chroma = 0;
+    /* ---- chroma: 2 planes x 4 4x4 DCTs ---- */
+    int cdct[2][4][16], cdc[2][4], cnnz[2][4] = {{0}}, cacq[2][4][16];
     for (int p = 0; p < 2; ++p) {
-        /* x264 encoder/macroblock.c:82 dct2x2dc */
-        int a = cdc[p][0] + cdc[p][1];
-        int b = cdc[p][2] + cdc[p][3];
-        int c = cdc[p][0] - cdc[p][1];
-        int d = cdc[p][2] - cdc[p][3];
-        int had[4] = { a+b, a-b, c+d, c-d };
-        int q[4];
+        const uint8_t *src = p ? src_v : src_u;
+        const uint8_t *prd = p ? pred_v : pred_u;
+        for (int b = 0; b < 4; ++b) {
+            int by = (b/2)*4, bx = (b%2)*4;
+            uint8_t sb[16], pb[16];
+            for (int y = 0; y < 4; ++y)
+                for (int x = 0; x < 4; ++x) {
+                    sb[y*4+x] = src[(by+y)*8+bx+x];
+                    pb[y*4+x] = prd[(by+y)*8+bx+x];
+                }
+            sub4x4_dct(cdct[p][b], sb, pb);
+            cdc[p][b] = cdct[p][b][0];
+            cdct[p][b][0] = 0;
+            for (int i = 0; i < 16; ++i) {
+                cdct[p][b][i] = quant_one(cdct[p][b][i], cmf[i], cbias[i]);
+                cnnz[p][b] += cdct[p][b][i] != 0;  /* coefficient count, not bool */
+            }
+            for (int i = 0; i < 16; ++i) cacq[p][b][i] = cdct[p][b][zigzag4[i]];
+        }
+    }
+    int chroma_dc[2][4], cbp_chroma = 0, cacbp = 0, cdnz[2] = {0};
+    for (int p = 0; p < 2; ++p) {
+        int a = cdc[p][0] + cdc[p][1], b = cdc[p][2] + cdc[p][3];
+        int c = cdc[p][0] - cdc[p][1], d = cdc[p][2] - cdc[p][3];
+        int had[4] = { a+b, a-b, c+d, c-d }, q[4];
         for (int i = 0; i < 4; ++i)
             q[i] = quant_one(had[i], cmf[0] >> 1, cbias[0] << 1);
-        /* zigzag_scan_2x2_dc: {dct[0],dct[2],dct[1],dct[3]} */
-        chroma_dc[p][0] = q[0];
-        chroma_dc[p][1] = q[2];
-        chroma_dc[p][2] = q[1];
-        chroma_dc[p][3] = q[3];
-        for (int i = 0; i < 4; ++i) cbp_chroma |= chroma_dc[p][i] != 0;
+        chroma_dc[p][0] = q[0]; chroma_dc[p][1] = q[2];
+        chroma_dc[p][2] = q[1]; chroma_dc[p][3] = q[3];
+        for (int i = 0; i < 4; ++i) {
+            cbp_chroma |= chroma_dc[p][i] != 0;
+            cdnz[p] += chroma_dc[p][i] != 0;
+        }
+        for (int i = 0; i < 4; ++i) cacbp |= cnnz[p][i];
     }
+    if (cacbp) cbp_chroma = 2;
 
     /* ---- entropy ---- */
-    uint32_t mb_type = 1u + 2u /* DC */ + 4u*(uint32_t)(cbp_chroma ? 1 : 0)
+    uint32_t mb_type = 1u + 2u /* I16 DC */ + 4u*(uint32_t)cbp_chroma
                      + (cbp_luma ? 12u : 0u);
     vk_bs_write_ue(s, mb_type);
     vk_bs_write_ue(s, 0);  /* chroma pred mode = DC */
     vk_bs_write_se(s, 0);  /* mb_qp_delta */
-    /* luma DC residual: 16 coefficients, nC = 0 for the first MB */
-    int luma_dc_coef[16];
-    for (int i = 0; i < 16; ++i) luma_dc_coef[i] = dc_q[i];
-    vk_cavlc_block_residual(s, VK_DCT_LUMA_DC, luma_dc_coef, 0, 1);
+
+    vk_cavlc_block_residual(s, VK_DCT_LUMA_DC, dc_q, 0, 1, 16);
+    /* x264's dct4x4[idx] enumeration maps to raster through block_idx_xy_1d;
+     * entropy coding walks idx order, not raster order. */
+    static const uint8_t block_idx_xy_1d[16] = {
+        0,1,4,5,2,3,6,7,8,9,12,13,10,11,14,15
+    };
+    static const uint8_t ct_index[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
+    /* x264_scan8[0..15]: luma 4x4 block positions on an 8-wide cache grid. */
+    static const uint8_t scan8[16] = {
+        12,13,20,21, 14,15,22,23, 28,29,36,37, 30,31,38,39
+    };
+    uint8_t cache[64] = {0};
+    for (int i = 0; i < 4; ++i) {
+        cache[4+i] = 0x80;                       /* top edge */
+    }
+    /* left edge of each 4x4 block row (scan8 first column of each row pair) */
+    cache[scan8[0]-1] = cache[scan8[2]-1] = cache[scan8[8]-1] = cache[scan8[10]-1] = 0x80;
+    if (cbp_luma) for (int idx = 0; idx < 16; ++idx) {
+        int b = block_idx_xy_1d[idx], p = scan8[idx];
+        int za = cache[p-1], zb = cache[p-8];
+        int sum = za + zb;
+        int pred = sum < 0x80 ? (sum+1)>>1 : sum & 0x7f;
+        int nC = ct_index[pred & 0x7f];
+        /* x264 passes h->dct.luma4x4[i]+1: AC blocks have 15 coefficients. */
+        vk_cavlc_block_residual(s, VK_DCT_LUMA_AC, acq[b]+1, nC, 1, 15);
+        cache[p] = (uint8_t)nnz[b];
+    }
     if (cbp_chroma) {
         for (int p = 0; p < 2; ++p) {
+            /* chroma_dc is already in zigzag_scan_2x2_dc order (4 contiguous). */
             int block[16] = {0};
-            for (int i = 0; i < 4; ++i) block[zigzag4[i]] = chroma_dc[p][i];
-            vk_cavlc_block_residual(s, VK_DCT_CHROMA_DC, block, 4, 1);
+            for (int i = 0; i < 4; ++i) block[i] = chroma_dc[p][i];
+            vk_cavlc_block_residual(s, VK_DCT_CHROMA_DC, block, 4, 1, 4);
         }
     }
+    if (cbp_chroma == 2) {
+        /* x264_scan8[16..19]=Cb AC, [32..35]=Cr AC, [49]/[50]=chroma DC. */
+        static const uint8_t cscan8[8] = { 52,53,60,61, 92,93,100,101 };
+        static const uint8_t ct_index_c[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
+        uint8_t ccache[128] = {0};
+        /* top edge of the first AC row of each chroma plane */
+        ccache[cscan8[0]-8] = ccache[cscan8[1]-8] = 0x80;
+        ccache[cscan8[4]-8] = ccache[cscan8[5]-8] = 0x80;
+        ccache[cscan8[0]-1] = ccache[cscan8[2]-1] = 0x80;  /* Cb left */
+        ccache[cscan8[4]-1] = ccache[cscan8[6]-1] = 0x80;  /* Cr left */
+        /* chroma DC nnz feeds the neighbouring AC blocks */
+        ccache[40] = cdnz[0];
+        ccache[80] = cdnz[1];
+        for (int p = 0; p < 2; ++p)
+            for (int b = 0; b < 4; ++b) {
+                int k = p*4+b, pos = cscan8[k];
+                int sum = ccache[pos-1] + ccache[pos-8];
+                int pred = sum < 0x80 ? (sum+1)>>1 : sum & 0x7f;
+                int nC = ct_index_c[pred & 0x7f];
+                vk_cavlc_block_residual(s, VK_DCT_CHROMA_AC, cacq[p][b]+1, nC, 1, 15);
+                ccache[pos] = (uint8_t)cnnz[p][b];
+            }
+    }
 
-    /* Reconstruction (needed for neighbouring MB prediction in later work). */
     memcpy(recon_y, pred_y, 256);
     memcpy(recon_u, pred_u, 64);
     memcpy(recon_v, pred_v, 64);

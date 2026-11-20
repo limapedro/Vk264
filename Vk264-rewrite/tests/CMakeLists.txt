@@ -1,3 +1,13 @@
+add_executable(vk264_oracle_cli oracle_cli.c)
+target_link_libraries(vk264_oracle_cli PRIVATE vk264_rewrite_ref)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(NAME rewrite_oracle_flat_sweep
+    COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/test_flat_sweep.py"
+            "$<TARGET_FILE:vk264_oracle_cli>" "${CMAKE_BINARY_DIR}")
+add_test(NAME rewrite_oracle_real_crops
+    COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/test_real_crops.py"
+            "$<TARGET_FILE:vk264_oracle_cli>" "${CMAKE_BINARY_DIR}")
+
 add_executable(vk264_test_bitstream test_bitstream.c)
 target_link_libraries(vk264_test_bitstream PRIVATE vk264_rewrite_ref)
 add_test(NAME rewrite_bitstream COMMAND vk264_test_bitstream)

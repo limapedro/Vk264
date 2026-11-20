@@ -19,16 +19,16 @@ static int clz32(uint32_t x)
     return n;
 }
 
-static int coeff_last16(const int *dct)
+static int coeff_last(const int *dct, int count)
 {
-    for (int i = 15; i >= 0; --i)
+    for (int i = count-1; i >= 0; --i)
         if (dct[i]) return i;
     return -1;
 }
 
-static int coeff_level_run(const int *dct, vk_run_level_t *rl)
+static int coeff_level_run(const int *dct, vk_run_level_t *rl, int count)
 {
-    int last = rl->last = coeff_last16(dct);
+    int last = rl->last = coeff_last(dct, count);
     int total = 0, mask = 0;
     while (last >= 0) {
         rl->level[total++] = dct[last];
@@ -74,7 +74,7 @@ void vk_cavlc_init(void)
         int dct[16];
         int size = 0, bits = 0;
         for (int j = 0; j < 16; ++j) dct[j] = (i >> j) & 1;
-        int total = coeff_level_run(dct, &rl);
+        int total = coeff_level_run(dct, &rl, 16);
         int zeros = rl.last + 1 - total;
         uint32_t mask = i << (clz32(i) + 1);
         for (int j = 0; j < total-1 && zeros > 0; ++j) {
@@ -112,12 +112,13 @@ static int block_residual_escape(vk_bs_t *s, int suffix, int level)
     return suffix;
 }
 
-void vk_cavlc_block_residual(vk_bs_t *s, int cat, const int *coef, int nC, int chroma_v_shift)
+void vk_cavlc_block_residual(vk_bs_t *s, int cat, const int *coef, int nC,
+                             int chroma_v_shift, int count)
 {
     static const uint8_t ctz_index[8] = {3,0,1,0,2,0,1,0};
     static const uint8_t count_cat[14] = {16,15,16,0,15,64,16,15,16,64,16,15,16,64};
     vk_run_level_t rl;
-    int total = coeff_level_run(coef, &rl);
+    int total = coeff_level_run(coef, &rl, count);
     if (total == 0) {
         vk_vlc_t t = vk_coeff0_token[nC];
         vk_bs_write(s, t.i_size, t.i_bits);
@@ -131,9 +132,11 @@ void vk_cavlc_block_residual(vk_bs_t *s, int cat, const int *coef, int nC, int c
                  | ((((rl.level[1]+1) | (1-rl.level[1])) >> 31) & 2)
                  | ((((rl.level[2]+1) | (1-rl.level[2])) >> 31) & 4);
     trailing = ctz_index[trailing];
-    unsigned sign = ((uint32_t)rl.level[2] >> 31 & 1)
-                  | (((uint32_t)rl.level[1] >> 31) & 2)
-                  | (((uint32_t)rl.level[0] >> 31) & 4);
+    /* x264 uses arithmetic shift on signed levels: (-1 >> 31) & 4 == 4.
+     * Casting to uint32_t first would give (1 & 4) == 0 and lose the sign. */
+    unsigned sign = ((rl.level[2] >> 31) & 1)
+                  | ((rl.level[1] >> 31) & 2)
+                  | ((rl.level[0] >> 31) & 4);
     sign >>= 3 - trailing;
 
     vk_vlc_t tok = vk_coeff_token[nC][total-1][trailing];
