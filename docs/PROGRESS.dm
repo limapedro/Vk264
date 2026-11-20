@@ -1331,3 +1331,35 @@ until arbitrary content is byte-exact. The general blocker is x264's SIMD
 separately via r3d. The decision loop also uses 8x8-grouped block order
 (`block_idx_xy_fenc`, macroblock.h:225) and scan8 cache neighbours (base.h:180).
 
+### Issue #2 — I4x4 mode decision EXACTLY REPRODUCED (Subaru, 2026-11-20)
+
+`build/i4_feedback2.py` reproduces x264's raw I4x4 modes 16/16 for the flat
+case. Six corrections were needed: (1) x264 uses 8x8-grouped block order
+(block_idx_xy_fenc, macroblock.h:225), not raster; (2) neighbours come from
+scan8[idx]-1/-8 cache positions (base.h:180), not raster x-1/y-4; (3) raw
+modes 0..11 with 9/10/11 fixing to DC(2) only at CABAC write time
+(predict.h:92); (4) candidate table i4x4_mode_available (analyse.c:512-528);
+(5) x9 bit cost cost_table[k]=3*lambda*(k!=8) passed as cost-i_pred_mode, so
+the free mode is m=pred+8 (only mode 8 when pred=0), all others cost 3*lambda,
+with V compared separately via r3d (pixel-a.asm:2718-2975); (6) exact
+quantised reconstruction feedback into fdec after each block. Verified:
+match 16/16 against x264's raw dump 11,9,3,2,9,9,2,2,10,2,10,2,2,2,2,2.
+See build/I4X4-ALGORITHM.md. This unblocks general I4x4 parity.
+
+Implemented as `Vk264/src/parity/i4_analysis.inc` (`analyzeI4`), which mirrors
+the algorithm in C++ using x264's own extracted primitives (predict_4x4_*,
+sub4x4_dct, quant_4x4, dequant_4x4, add4x4_idct, x264_pixel_sad_4x4). The
+production CABAC frame path now runs analyzeI4 per macroblock for i_mbrd=0
+presets (superfast/veryfast/faster), staging modes + quantised coefficients +
+cbp into the bank tail, replacing the flat-only fast path. New
+`x264_i4x4_analysis` CTest verifies modes, coeffs (-46/-1) and cbp against
+x264's flat ground truth. 65/65 CTests; superfast flat remains BYTE-EXACT.
+
+HONEST LIMIT: for non-flat content (noise/flat-grid/motion), the analysis modes
+do not yet match x264 — e.g. noise first divergence at decision block 3 where
+x264 picks mode 3 and analyzeI4 picks 2. The flat 16/16 match used FINAL
+reconstruction feedback in the Python model; the C++ path uses per-block
+quantised reconstruction (as x264 does), so the SAD/cost comparison on textured
+content still needs reconciliation. Chroma DC remains hardcoded (89/-71) for
+the flat case. Issue #2 stays OPEN for arbitrary content.
+

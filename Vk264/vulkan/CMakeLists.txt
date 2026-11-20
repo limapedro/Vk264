@@ -255,6 +255,8 @@ add_test(NAME x264_i4x4_cabac_parity
          COMMAND dct_parity i4x4_cabac "${CMAKE_CURRENT_BINARY_DIR}/cabac.spv")
 add_test(NAME x264_i4x4_frame_parity
          COMMAND dct_parity i4x4_frame "${CMAKE_CURRENT_BINARY_DIR}/cabac_frame.spv")
+add_test(NAME x264_i4x4_analysis
+         COMMAND dct_parity i4x4_analyze dummy)
 add_test(NAME x264_cabac_decoder_oracle
          COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/harness/cabac_decoder_selftest.py")
 add_test(NAME gop3_nal_structure

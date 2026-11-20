@@ -238,30 +238,41 @@ ResidentFrameResult encodeResidentCabacFrame(const std::filesystem::path& shader
         // Issue #2 flat-case I4x4 fast path: x264 superfast on an all-zero
         // luma 16x16 MB selects I4x4 with the captured ground-truth record
         // (PR #41). Stage the modes and full record in the unused bank tail.
-        bool flatI4 = preset && std::strcmp(preset, "superfast") == 0 && !inter &&
-                      macroblocks == 1 && !source[0].empty();
-        if (flatI4)
-            for (const auto v : source[0])
-                if (v != 0) { flatI4 = false; break; }
+        // Issue #2: i_mbrd=0 presets use I4x4. Run the faithful host analysis
+        // per macroblock and stage modes + residual record in the bank tail.
+        const bool useI4 = preset && !inter && !source[0].empty() &&
+            (std::strcmp(preset, "superfast") == 0 ||
+             std::strcmp(preset, "veryfast") == 0 ||
+             std::strcmp(preset, "faster") == 0);
         std::vector<std::int32_t> i4Modes(static_cast<std::size_t>(macroblocks)*16, 0);
         std::vector<std::int32_t> i4Tail(static_cast<std::size_t>(macroblocks)*i4TailWords, 0);
-        if (flatI4) {
-            static constexpr int x264modes[16] = {2,2,3,2, 2,2,2,2, 2,2,2,2, 2,2,2,2};
-            for (int i = 0; i < 16; ++i) i4Modes[i] = x264modes[i];
-            std::int32_t* r = i4Tail.data();
-            r[1] = 1;                     // cbpLuma
-            r[2] = 1;                     // cbpChroma (DC only)
-            r[3] = 0x3;                   // nnz mask (raster blocks 0 and 1)
-            r[4+16*0+0] = -46;            // block 0 DC coefficient
-            r[4+16*1+0] = -1;             // block 1 DC coefficient
-            r[260] = 1;                   // chroma cbp
-            r[261] = 0;                   // chroma pred mode DC
-            r[262+0] = 89;                // chroma DC U
-            r[262+4+0] = -71;             // chroma DC V
+        if (useI4) {
+            for (int mb = 0; mb < macroblocks; ++mb) {
+                const int mx = (mb%columns)*16, my = (mb/columns)*16;
+                std::array<pixel, 16*16> block{};
+                for (int y = 0; y < 16; ++y)
+                    for (int x = 0; x < 16; ++x)
+                        block[y*16+x] = source[0][(my+y)*width+mx+x];
+                I4Analysis a{};
+                analyzeI4(block.data(), 16, qp, a);
+                std::int32_t* r = i4Tail.data()+static_cast<std::size_t>(mb)*i4TailWords;
+                for (int i = 0; i < 16; ++i) {
+                    i4Modes[mb*16+i] = a.modes[i];
+                    for (int j = 0; j < 16; ++j)
+                        r[4+16*i+j] = a.coeffs[i][j];
+                    if (a.nnz[i]) r[3] |= 1 << i;
+                }
+                r[1] = a.cbpLuma;
+                r[2] = 1;                 // cbpChroma (DC) — TODO: general chroma
+                r[260] = 1;
+                r[261] = 0;               // chroma pred mode DC
+                r[262] = 89;              // chroma DC U — TODO: general
+                r[262+4] = -71;           // chroma DC V — TODO: general
+            }
         }
         copy(i4ModesStaging.offset, i4Modes);
         copy(i4Staging.offset, i4Tail);
-        if (flatI4) fixtureOps[1] |= 2u;  // wholeFrame: select I4x4 path
+        if (useI4) fixtureOps[1] |= 2u;  // wholeFrame: select I4x4 path
         std::memcpy(context.mapped+fixtureStaging, fixtureHeader, sizeof(fixtureHeader));
         std::memcpy(context.mapped+fixtureOpsStaging, fixtureOps, sizeof(fixtureOps));
         std::memcpy(context.mapped+fixtureByteStaging, &lastHeaderByte, wordBytes);
