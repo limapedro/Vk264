@@ -17,6 +17,7 @@
 #include "../common/deblock.cpp"
 #include "../encoder/cabac.cpp"
 #include "../encoder/cavlc.cpp"
+#include "../encoder/analyse.cpp"
 #include "parity/fixtures_transform.inc"
 #include "parity/fixtures_intra.inc"
 #include "parity/fixtures_deblock.inc"
