@@ -300,9 +300,13 @@ void encodeI4x4Frame() {
     x264_cabac_encode_flush(&encoder, &coder);
     size_t len = coder.p - bytes;
     { std::ofstream f("build/i4x4_emitted.bin", std::ios::binary); f.write(reinterpret_cast<const char*>(bytes), len); }
-    std::cout << "I4x4 CABAC slice len=" << len << " bytes:";
-    for (size_t i = 0; i < len; ++i) std::cout << " " << std::hex << (int)bytes[i] << std::dec;
-    std::cout << "\n";
+    static constexpr std::uint8_t x264Target[20] = {
+        0x88,0x84,0x3f,0xea,0x40,0x35,0x70,0x9b,0xfe,0x0b,
+        0x72,0xbf,0x3e,0x1a,0xc9,0xb1,0x34,0xb4,0x31,0x81};
+    if (len != sizeof(x264Target) || std::memcmp(bytes, x264Target, len) != 0)
+        throw std::runtime_error("I4x4 CABAC emitter does not match x264 superfast slice");
+    std::cout << "I4x4 CABAC emitter matches x264 superfast flat slice byte for byte ("
+              << len << " bytes).\n";
 }
 
 void verifyPredictDirectional(const char* shader) {
