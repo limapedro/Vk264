@@ -73,17 +73,30 @@ void vk_predict_chroma8(uint8_t out[64], const uint8_t top[8], const uint8_t lef
     } else if (mode == 2) { /* V */
         for (int y = 0; y < 8; ++y)
             for (int x = 0; x < 8; ++x) out[y*8+x] = top[x];
-    } else if (mode == 4 || mode == 5 || mode == 6) {
-        int s = 0, n = 0;
-        if (mode != 5 && mode != 6) for (int i = 0; i < 8; ++i) { s += left[i]; ++n; }
-        if (mode != 4 && mode != 6) for (int i = 0; i < 8; ++i) { s += top[i]; ++n; }
-        int v = mode == 6 ? 128 : (n == 16 ? (s+16)>>5 : (s+8)>>4);
-        for (int i = 0; i < 64; ++i) out[i] = (uint8_t)v;
-    } else { /* DC (0) and P (3): P approximated by DC for now */
-        int s = 16;
-        for (int i = 0; i < 8; ++i) s += left[i] + top[i];
-        uint8_t v = (uint8_t)((s+8)>>4);
-        for (int i = 0; i < 64; ++i) out[i] = v;
+    } else if (mode == 4) { /* DC_LEFT: two row groups */
+        int a = 0, b = 0;
+        for (int i = 0; i < 4; ++i) { a += left[i]; b += left[i+4]; }
+        int d0 = (a+2)>>2, d1 = (b+2)>>2;
+        for (int y = 0; y < 8; ++y)
+            for (int x = 0; x < 8; ++x) out[y*8+x] = (uint8_t)(y < 4 ? d0 : d1);
+    } else if (mode == 5) { /* DC_TOP: two column groups */
+        int a = 0, b = 0;
+        for (int i = 0; i < 4; ++i) { a += top[i]; b += top[i+4]; }
+        int d0 = (a+2)>>2, d1 = (b+2)>>2;
+        for (int y = 0; y < 8; ++y)
+            for (int x = 0; x < 8; ++x) out[y*8+x] = (uint8_t)(x < 4 ? d0 : d1);
+    } else if (mode == 6) { /* DC_128 */
+        for (int i = 0; i < 64; ++i) out[i] = 128;
+    } else { /* DC (0), P (3) approximated by DC: four quadrants */
+        int s0=0,s1=0,s2=0,s3=0;
+        for (int i = 0; i < 4; ++i) {
+            s0 += top[i]; s1 += top[i+4];
+            s2 += left[i]; s3 += left[i+4];
+        }
+        int d0=(s0+s2+4)>>3, d1=(s1+2)>>2, d2=(s3+2)>>2, d3=(s1+s3+4)>>3;
+        for (int y = 0; y < 8; ++y)
+            for (int x = 0; x < 8; ++x)
+                out[y*8+x] = (uint8_t)(y < 4 ? (x < 4 ? d0 : d1) : (x < 4 ? d2 : d3));
     }
 }
 
@@ -110,8 +123,6 @@ int vk_select_chroma(const uint8_t srcu[64], const uint8_t srcv[64],
         int v = fix[m]+1, n = 0;
         while (v > 1) { v >>= 1; ++n; }
         cost += vk_lambda(qp) * (2*n+1);
-        if (getenv("ORACLE_DBG_MODE"))
-            fprintf(stderr, "CCOST mode=%d cost=%d\n", m, cost);
         if (cost < bestcost) { bestcost = cost; best = m; }
     }
     return best;
@@ -141,9 +152,6 @@ int vk_select16(const uint8_t src[256], const uint8_t top[16],
         int m = modes[idx][i];
         vk_predict16(pred, top, left, tl, m);
         int cost = sad16(src, pred) + lambda * vk_mode_bits(m);
-        if (getenv("ORACLE_DBG_MODE"))
-            fprintf(stderr, "MODECOST mode=%d sad=%d bits=%d cost=%d\n",
-                    m, cost - lambda*vk_mode_bits(m), vk_mode_bits(m), cost);
         if (cost < best_cost) { best_cost = cost; best = m; }
     }
     return best;

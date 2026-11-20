@@ -1,6 +1,6 @@
-"""Byte-exact oracle regression on multi-MB frames (horizontal neighbours).
-Crops a 32x16 (2x1 MB) region from real 1080p footage, encodes with x264
-and the oracle, and compares SPS/PPS/IDR NALs byte-for-byte.
+"""Byte-exact oracle regression on multi-MB I-frames.
+Crops 32x16, 16x32 and 32x32 regions from real 1080p footage, encodes each
+with x264 and the oracle, and compares SPS/PPS/IDR NALs byte-for-byte.
 """
 import pathlib, re, subprocess, sys
 
@@ -28,26 +28,31 @@ if not X264.exists() or not CLIP.exists():
 
 fs = SW*SH*3//2
 data = CLIP.read_bytes()[:fs]
-src = BUILD / 'multimb.yuv'
-out = bytearray()
-for y in range(Y0, Y0+16): out += data[y*SW+X0:y*SW+X0+32]
-for p in (1, 2):
-    base = SW*SH + (p-1)*(SW*SH//4)
-    for y in range(Y0//2, Y0//2+8):
-        s = base + y*(SW//2) + X0//2
-        out += data[s:s+16]
-src.write_bytes(out)
 
-ref, got = BUILD / 'multimb_ref.h264', BUILD / 'multimb_oracle.h264'
-subprocess.run([str(X264),'--input-res','32x16','--fps','60','--qp','28',
-                '--preset','ultrafast','--keyint','1','--frames','1',
-                '--output',str(ref),str(src)], check=True, capture_output=True)
-subprocess.run([str(ORACLE),str(src),'32','16','28','25',str(got)],
-               check=True, capture_output=True)
-a, b = nals(ref.read_bytes()), nals(got.read_bytes())
-if a != b:
-    print('FAIL: multi-MB (32x16) NAL mismatch')
-    for (ta,pa),(tb,pb) in zip(a,b):
-        print(f'  NAL {ta}: ref {len(pa)}B oracle {len(pb)}B equal={pa==pb}')
+cases = []
+for w, h in ((32,16), (16,32), (32,32)):
+    src = BUILD / f'multimb_{w}x{h}.yuv'
+    out = bytearray()
+    for y in range(Y0, Y0+h): out += data[y*SW+X0:y*SW+X0+w]
+    for p in (1, 2):
+        base = SW*SH + (p-1)*(SW*SH//4)
+        for y in range(Y0//2, Y0//2+h//2):
+            s = base + y*(SW//2) + X0//2
+            out += data[s:s+w//2]
+    src.write_bytes(out)
+
+    ref, got = BUILD / f'mb_{w}x{h}_ref.h264', BUILD / f'mb_{w}x{h}_oracle.h264'
+    subprocess.run([str(X264),'--input-res',f'{w}x{h}','--fps','60','--qp','28',
+                    '--preset','ultrafast','--keyint','1','--frames','1',
+                    '--output',str(ref),str(src)], check=True, capture_output=True)
+    subprocess.run([str(ORACLE),str(src),str(w),str(h),'28','25',str(got)],
+                   check=True, capture_output=True)
+    a, b = nals(ref.read_bytes()), nals(got.read_bytes())
+    cases.append((f'{w}x{h}', a == b, [(t,len(p)) for t,p in a], [(t,len(p)) for t,p in b]))
+
+bad = [c for c in cases if not c[1]]
+for name, ok, sa, sb in cases:
+    print(f'  {name}: {"EXACT" if ok else "MISMATCH"} ref={sa} oracle={sb}')
+if bad:
     sys.exit(1)
-print('oracle multi-MB (32x16): byte-exact vs x264 (SPS/PPS/IDR)')
+print(f'oracle multi-MB: {len(cases)}/{len(cases)} byte-exact vs x264')
