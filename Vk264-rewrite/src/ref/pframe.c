@@ -170,17 +170,19 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
     vk_bs_write_se(bs, qp - pps->i_pic_init_qp);
     vk_bs_write_ue(bs, 1);
 
-    /* MV cache in quarter-pel units. */
+    /* MV cache (quarter-pel) and skip flags. x264 stores MV=0 in the cache
+     * for skipped MBs even though the bitstream carries the predictor MV. */
     int (*mv)[2] = calloc((size_t)mw*mh, 2*sizeof(int));
+    uint8_t *is_skip = calloc((size_t)mw*mh, 1);
     int skip_run = 0;
     for (int my = 0; my < mh; ++my)
         for (int mx = 0; mx < mw; ++mx) {
             int idx = my*mw+mx;
             int have_l = mx > 0, have_t = my > 0;
-            int have_c = my > 0 && mx+1 < mw;
+            int have_c = have_t && mx+1 < mw;
+            int have_tl = have_t && (have_c || mx > 0);
             int lx = have_l ? mv[idx-1][0] : 0, ly = have_l ? mv[idx-1][1] : 0;
             int tx = have_t ? mv[idx-mw][0] : 0, ty = have_t ? mv[idx-mw][1] : 0;
-            int have_tl = have_t && (have_c || mx > 0);
             int cx = have_c ? mv[idx-mw+1][0]
                             : (have_tl ? mv[idx-mw-1][0] : 0);
             int cy = have_c ? mv[idx-mw+1][1]
@@ -190,21 +192,40 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
             pskip_mv(lx, ly, tx, ty, cx, cy, have_l, have_t, have_tl,
                      &psk_x, &psk_y);
 
-            if (probe(cur, refp, w, h, rs, mx*16, my*16, psk_x, psk_y, qp)) {
-                mv[idx][0] = psk_x; mv[idx][1] = psk_y;
+            /* Fast P_SKIP is only probed when a neighbour is already P_SKIP. */
+            int skip_neigh = (have_l && is_skip[idx-1])
+                           || (have_t && is_skip[idx-mw])
+                           || (have_tl && is_skip[idx-mw-1])
+                           || (have_c && is_skip[idx-mw+1]);
+            int do_skip = 0;
+            if (skip_neigh &&
+                probe(cur, refp, w, h, rs, mx*16, my*16, psk_x, psk_y, qp))
+                do_skip = 1;
+
+            int mvpx = 0, mvpy = 0, mvx = 0, mvy = 0;
+            if (!do_skip) {
+                mvp16_avail(lx, ly, tx, ty, cx, cy, have_l, have_t, have_tl,
+                            &mvpx, &mvpy);
+                vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
+                            mvpx/4, mvpy/4, 16,
+                            lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
+                            &mvx, &mvy);
+                /* x264 promotes P16 to P_SKIP when cbp==0 and MV==pskip_mv. */
+                int qx = mvx*4, qy = mvy*4;
+                if (qx == psk_x && qy == psk_y &&
+                    probe(cur, refp, w, h, rs, mx*16, my*16, qx, qy, qp))
+                    do_skip = 1;
+            }
+
+            if (do_skip) {
+                mv[idx][0] = mv[idx][1] = 0;  /* cache convention for skips */
+                is_skip[idx] = 1;
                 ++skip_run;
                 continue;
             }
-            if (skip_run) { vk_bs_write_ue(bs, (uint32_t)skip_run); skip_run = 0; }
-
-            int mvpx, mvpy;
-            mvp16_avail(lx, ly, tx, ty, cx, cy, have_l, have_t, have_tl,
-                        &mvpx, &mvpy);
-            int mvx, mvy;
-            vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
-                        mvpx/4, mvpy/4, 16,
-                        lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
-                        &mvx, &mvy);
+            /* CAVLC requires mb_skip_run before every coded MB, including 0. */
+            vk_bs_write_ue(bs, (uint32_t)skip_run);
+            skip_run = 0;
             mv[idx][0] = mvx*4; mv[idx][1] = mvy*4;
             vk_bs_write_ue(bs, 0);                          /* P_L0_16x16 */
             vk_bs_write_se(bs, mvx*4 - mvpx);               /* mvd_x */
@@ -213,5 +234,5 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
         }
     if (skip_run) vk_bs_write_ue(bs, (uint32_t)skip_run);
     vk_bs_rbsp_trailing(bs);
-    free(mv); free(refp);
+    free(is_skip); free(mv); free(refp);
 }
