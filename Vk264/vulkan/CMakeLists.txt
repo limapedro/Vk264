@@ -327,6 +327,8 @@ if(FFMPEG_EXECUTABLE)
     add_preset_parity_test(fast_flat_16x16 fast flat 16 16)
     # Issue #8: multi-MB CABAC neighbour path (was 1-2 trailing bytes off).
     add_preset_parity_test(fast_flat_64x64 fast flat 64 64)
+    # Issue #2: production I4x4 path (flat 16x16 fast path).
+    add_preset_parity_test(superfast_flat_16x16 superfast flat 16 16)
 endif()
 foreach(side IN ITEMS 4 8)
     foreach(group IN ITEMS 4 8 16)
