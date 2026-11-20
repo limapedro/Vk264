@@ -22,7 +22,7 @@ void vk_param_default(vk_param_t *p)
     memset(p, 0, sizeof(*p));
     p->i_width = 16; p->i_height = 16;
     p->i_fps_num = 1; p->i_fps_den = 60;
-    p->i_level_idc = 10;
+    p->i_level_idc = 0;  /* 0 = auto-select from size/framerate, like x264 */
     p->i_frame_reference = 1;
     p->i_keyint_max = 1;
     p->i_csp = CHROMA_420;
@@ -57,7 +57,31 @@ void vk_sps_init(vk_sps_t *s, int id, const vk_param_t *p)
 
     s->b_constraint_set0 = s->i_profile_idc == PROFILE_BASELINE;
     s->b_constraint_set1 = s->i_profile_idc <= PROFILE_MAIN;
-    s->i_level_idc = p->i_level_idc;
+    /* x264 auto-selects the smallest level for the frame size and frame rate
+     * (common/tables.c x264_levels + encoder.c x264_validate_levels). */
+    if (p->i_level_idc == 0) {
+        /* fps is the reciprocal of the timebase (default 1/60 -> 60 fps). */
+        int fps = (p->i_fps_num ? p->i_fps_den/p->i_fps_num : 30);
+        int mbps = ((p->i_width+15)/16) * ((p->i_height+15)/16) * fps;
+        /* level_idc, max_mbps, max_frame_size_in_MBs, max_mv_range */
+        static const int levels[][4] = {
+            {10,1485,99,64}, {9,1485,99,128}, {11,3000,396,128}, {12,6000,396,128},
+            {13,11880,396,128}, {20,11880,396,128}, {21,19800,792,256}, {22,20250,1620,256}
+        };
+        int fs = ((p->i_width+15)/16)*((p->i_height+15)/16);
+        s->i_level_idc = 52;
+        int mv_range = 8192;
+        for (unsigned i = 0; i < sizeof(levels)/sizeof(levels[0]); ++i)
+            if (mbps <= levels[i][1] && fs <= levels[i][2]) {
+                s->i_level_idc = levels[i][0];
+                mv_range = levels[i][3];
+                break;
+            }
+        s->vui.i_log2_max_mv_length_horizontal =
+        s->vui.i_log2_max_mv_length_vertical = log2i(mv_range*4-1)+1;
+    } else {
+        s->i_level_idc = p->i_level_idc;
+    }
 
     s->vui.i_num_reorder_frames = p->i_bframe ? 1 : 0;
     s->vui.i_max_dec_frame_buffering =
@@ -112,11 +136,13 @@ void vk_sps_init(vk_sps_t *s, int id, const vk_param_t *p)
     s->vui.b_motion_vectors_over_pic_boundaries = 1;
     s->vui.i_max_bytes_per_pic_denom = 0;
     s->vui.i_max_bits_per_mb_denom = 0;
-    int mv_range = p->i_mv_range ? p->i_mv_range : 64; /* level 1.0 table */
-    int mv = mv_range * 4 - 1;
-    if (mv < 1) mv = 1;
-    s->vui.i_log2_max_mv_length_horizontal = log2i(mv) + 1;
-    s->vui.i_log2_max_mv_length_vertical = log2i(mv) + 1;
+    /* Auto-selected level already set these; explicit mv_range overrides. */
+    if (p->i_mv_range) {
+        int mv = p->i_mv_range * 4 - 1;
+        if (mv < 1) mv = 1;
+        s->vui.i_log2_max_mv_length_horizontal = log2i(mv) + 1;
+        s->vui.i_log2_max_mv_length_vertical = log2i(mv) + 1;
+    }
 }
 
 static const struct { unsigned char w, h, sar; } kSar[] = {
