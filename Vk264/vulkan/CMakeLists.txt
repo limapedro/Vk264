@@ -249,6 +249,8 @@ add_test(NAME x264_reference_frame_parity
          COMMAND dct_parity reference_frame "${reference_frame}")
 add_test(NAME x264_intra16_mode_parity
          COMMAND dct_parity i16_mode "${CMAKE_CURRENT_BINARY_DIR}/intra16.spv")
+add_test(NAME x264_chroma_mode_parity
+         COMMAND dct_parity chroma_mode "${CMAKE_CURRENT_BINARY_DIR}/intra_chroma.spv")
 add_test(NAME x264_cavlc_context_parity
          COMMAND dct_parity cavlc_context "${CMAKE_CURRENT_BINARY_DIR}/cavlc_residual_test.spv")
 # Production *_frame.spv shaders (-DRESIDUAL_FRAME=1, binding 1) use the same
