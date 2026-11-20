@@ -23,12 +23,12 @@ constexpr int CACHE_OWNER[40] = {
     -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, 0,1,-1,-1, -1,-1,-1,-1,
     2,3,-1,-1, 4,5,-1,-1, 6,7,-1,-1, 8,9,-1,-1, 10,11,-1,-1};
 // i4x4_mode_available[0][class] (analyse.c:512-528).
-constexpr int MODE_AVAIL[5][9] = {
+constexpr int MODE_AVAIL[5][10] = {
     {11,-1,-1,-1,-1,-1,-1,-1,-1},
     {9,1,8,-1,-1,-1,-1,-1,-1},
     {10,0,3,7,-1,-1,-1,-1,-1},
     {2,1,0,3,7,8,-1,-1,-1},
-    {2,1,0,3,4,5,6,7,8}};
+    {2,1,0,3,4,5,6,7,8,-1}};
 // i_neighbour4 class for first MB of a frame (macroblock.c:489-498,1340-1351).
 constexpr int NB4[16] = {0,1,2,4, 1,1,4,4, 2,4,2,4, 4,4,4,4};
 
@@ -74,7 +74,9 @@ inline void analyzeI4(const pixel* fenc, int fencStride, int qp, I4Analysis& out
         }
     }
     constexpr int origin = FDEC_STRIDE + 8;
-    std::array<pixel, 16*FDEC_STRIDE> fdec{};
+    // origin = FDEC_STRIDE+8 puts 16 rows of content in rows 1..16, so we
+    // need 17 rows plus the top border; allocate 32 to be safe.
+    std::array<pixel, 32*FDEC_STRIDE> fdec{};
     for (auto& v : fdec) v = 128;
     std::array<int, 16> raw{};
     raw.fill(0);
@@ -95,7 +97,7 @@ inline void analyzeI4(const pixel* fenc, int fencStride, int qp, I4Analysis& out
         int best = INT_MAX, bestMode = 2;
         for (int k = 0; avail[k] >= 0; ++k) {
             const int m = avail[k];
-            pixel predBuf[17*FDEC_STRIDE];
+            pixel predBuf[32*FDEC_STRIDE];
             std::copy(fdec.begin(), fdec.end(), predBuf);
             pred4(m, predBuf+origin+py*FDEC_STRIDE+px, qp);
             int cost = sad4(fenc+py*fencStride+px, fencStride,
@@ -103,6 +105,10 @@ inline void analyzeI4(const pixel* fenc, int fencStride, int qp, I4Analysis& out
             if (useX9) {
                 // cost_table[k]=3*lambda*(k!=8) passed as cost-pred: free at m=pred+8.
                 if (m != pred+8) cost += 3*lambda;
+                // INTRA_X9_END (pixel-a.asm:2841) adds tie-break constants
+                // 0..7 in order [h,dc,ddl,ddr,vr,hd,vl,hu] (SAD path).
+                // SSE4 phminposuw: first minimum wins (packed order
+                // h,dc,ddl,ddr,vr,hd,vl,hu); no tie constants are added.
             } else if (fix4(m) == pred) {
                 cost -= 3*lambda;
             }
