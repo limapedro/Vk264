@@ -52,12 +52,32 @@ static void pskip_mv(int lx, int ly, int tx, int ty, int cx, int cy,
     vk_mvp16(lx, ly, tx, ty, have_c ? cx : lx, have_c ? cy : ly, px, py);
 }
 
-/* Quantise one 4x4 residual block; return 1 if all 16 coefficients are zero.
- * `dc` receives the raw DC coefficient for the caller's Hadamard transform.
- * `include_dc`: inter luma quantises DC in-block; chroma DC goes via Hadamard. */
-static int block_zero(const uint8_t *src, int ss, const uint8_t *pred, int ps,
-                      const int mf[16], const int bias[16], int *dc,
-                      int include_dc)
+/* x264 JVT-B118 decimate score: low score means coefficients can be emptied
+ * to zero during P_SKIP probing. */
+static int decimate_score(const int *d, int n)
+{
+    static const uint8_t ds[16] = {3,2,2,1,1,1,0,0,0,0,0,0,0,0,0,0};
+    int score = 0, idx = n-1;
+    while (idx >= 0 && d[idx] == 0) idx--;
+    while (idx >= 0) {
+        if ((unsigned)(d[idx--] + 1) > 2) return 9;
+        int run = 0;
+        while (idx >= 0 && d[idx] == 0) { idx--; run++; }
+        score += ds[run];
+    }
+    return score;
+}
+
+static const uint8_t pframe_zz4[16] = {
+    0,1,4,8,5,2,3,6,9,12,13,10,7,11,14,15
+};
+
+/* Quantise one 4x4 residual block and return its decimate score. `raw_dc`
+ * receives the raw DC coefficient (for the chroma Hadamard). `include_dc`
+ * selects inter-luma (DC in-block) vs chroma AC (DC is zeroed). */
+static int block_decimate(const uint8_t *src, int ss, const uint8_t *pred, int ps,
+                          const int mf[16], const int bias[16], int *raw_dc,
+                          int include_dc)
 {
     uint8_t s[16], p[16];
     for (int y = 0; y < 4; ++y)
@@ -67,11 +87,13 @@ static int block_zero(const uint8_t *src, int ss, const uint8_t *pred, int ps,
         }
     int d[16];
     vk_ref_dct4x4(d, s, p);
-    *dc = d[0];
+    *raw_dc = d[0];
     if (!include_dc) d[0] = 0;
     for (int i = 0; i < 16; ++i)
-        if (vk_ref_quant_one(d[i], mf[i], bias[i])) return 0;
-    return 1;
+        d[i] = vk_ref_quant_one(d[i], mf[i], bias[i]);
+    int z[16];
+    for (int i = 0; i < 16; ++i) z[i] = d[pframe_zz4[i]];
+    return include_dc ? decimate_score(z, 16) : decimate_score(z+1, 15);
 }
 
 /* Decide P_SKIP: 1 iff the residual at the P_SKIP MV predictor quantises
@@ -97,18 +119,20 @@ static int probe(const uint8_t *cur, const uint8_t *refp,
     const uint8_t *ru = refp + ysz;
     const uint8_t *rv = ru + csz;
 
-    /* inter luma: 16 4x4 blocks, DC quantised in-block (no Hadamard) */
-    int unused;
+    /* inter luma: 16 4x4 blocks, DC quantised in-block; x264's probe only
+     * fails when the accumulated JVT-B118 decimate score reaches 6. */
+    int unused, dec = 0;
     for (int b = 0; b < 16; ++b) {
         int by = (b/4)*4, bx = (b%4)*4;
-        if (!block_zero(cy + (y+by)*w + (x+bx), w,
-                        ry + (y+by+my)*rs + (x+bx+mx), rs, mf, bias,
-                        &unused, 1))
-            return 0;
+        dec += block_decimate(cy + (y+by)*w + (x+bx), w,
+                              ry + (y+by+my)*rs + (x+bx+mx), rs, mf, bias,
+                              &unused, 1);
+        if (dec >= 6) return 0;
     }
 
-    /* chroma: x264 mc_chroma, MV in 1/8-chroma-pel units = luma qpel MV / 2 */
-    int cvx8 = mvx_qp / 2, cvy8 = mvy_qp / 2;
+    /* x264 mc_chroma takes the luma qpel MV directly: one luma qpel
+     * (1/4 luma px) equals 1/8 chroma px in 4:2:0. */
+    int cvx8 = mvx_qp, cvy8 = mvy_qp;
     int d8x = cvx8 & 7, d8y = cvy8 & 7;
     int cA = (8-d8x)*(8-d8y), cB = d8x*(8-d8y);
     int cC = (8-d8x)*d8y, cD = d8x*d8y;
@@ -145,11 +169,8 @@ static int probe(const uint8_t *cur, const uint8_t *refp,
             for (int yy = 0; yy < 4; ++yy)
                 for (int xx = 0; xx < 4; ++xx)
                     pb[yy*4+xx] = p8[(by+yy)*8 + bx+xx];
-            int dc;
-            if (!block_zero(c + (y/2+by)*cs + (x/2+bx), cs,
-                            pb, 4, cmf, cbias, &dc, 0))
-                return 0;
-            cdc[b] = dc;
+            block_decimate(c + (y/2+by)*cs + (x/2+bx), cs,
+                           pb, 4, cmf, cbias, &cdc[b], 0);
         }
         int a = cdc[0] + cdc[1], b2 = cdc[2] + cdc[3];
         int c1 = cdc[0] - cdc[1], d = cdc[2] - cdc[3];
@@ -157,6 +178,18 @@ static int probe(const uint8_t *cur, const uint8_t *refp,
         for (int i = 0; i < 4; ++i)
             if (vk_ref_quant_one(ch[i], cmf[0] >> 1, cbias[0] << 1)) return 0;
         if (ssd < thresh*4) continue;  /* x264: skip chroma AC check */
+        int cdec = 0;
+        for (int b = 0; b < 4; ++b) {
+            int by = (b/2)*4, bx = (b%2)*4;
+            uint8_t pb[16];
+            for (int yy = 0; yy < 4; ++yy)
+                for (int xx = 0; xx < 4; ++xx)
+                    pb[yy*4+xx] = p8[(by+yy)*8 + bx+xx];
+            int tmp;
+            cdec += block_decimate(c + (y/2+by)*cs + (x/2+bx), cs,
+                                   pb, 4, cmf, cbias, &tmp, 0);
+            if (cdec >= 7) return 0;
+        }
     }
     return 1;
 }
@@ -196,7 +229,7 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
             int idx = my*mw+mx;
             int have_l = mx > 0, have_t = my > 0;
             int have_c = have_t && mx+1 < mw;
-            int have_tl = have_t && (have_c || mx > 0);
+            int have_tl = have_t && mx > 0;
             int lx = have_l ? mv[idx-1][0] : 0, ly = have_l ? mv[idx-1][1] : 0;
             int tx = have_t ? mv[idx-mw][0] : 0, ty = have_t ? mv[idx-mw][1] : 0;
             int cx = have_c ? mv[idx-mw+1][0]
@@ -205,7 +238,7 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                             : (have_tl ? mv[idx-mw-1][1] : 0);
 
             int psk_x, psk_y;
-            pskip_mv(lx, ly, tx, ty, cx, cy, have_l, have_t, have_tl,
+            pskip_mv(lx, ly, tx, ty, cx, cy, have_l, have_t, have_c || have_tl,
                      &psk_x, &psk_y);
 
             /* Fast P_SKIP is only probed when a neighbour is already P_SKIP. */
@@ -220,8 +253,8 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
 
             int mvpx = 0, mvpy = 0, mvx = 0, mvy = 0;
             if (!do_skip) {
-                mvp16_avail(lx, ly, tx, ty, cx, cy, have_l, have_t, have_tl,
-                            &mvpx, &mvpy);
+                mvp16_avail(lx, ly, tx, ty, cx, cy, have_l, have_t,
+                            have_c || have_tl, &mvpx, &mvpy);
                 vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
                             mvpx/4, mvpy/4, 16,
                             lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
