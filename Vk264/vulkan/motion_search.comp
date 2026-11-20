@@ -707,7 +707,11 @@ ivec2 encodeMotion(int x, int y, int width, uint mbLane, uint mbLanes
 #endif
     int refStride = referenceStride();
     int refOrigin = (16*y+border)*refStride + 16*x+border;
-    Search search = Search(uint(mb), ivec2(16), mvp, ivec2(-8), ivec2(8), false, false, 0, 0, 0, 0, 0,
+    // x264 uses i_me_range (default 16) as the MV search radius. The old
+    // hardcoded +/-8 clamped the search to half x264's range and lost fast
+    // motion on real footage, collapsing P-frame quality.
+    int radius = frameSearchRange();
+    Search search = Search(uint(mb), ivec2(16), mvp, ivec2(-radius), ivec2(radius), false, false, 0, 0, 0, 0, 0,
                            16*y*frameWidth()+16*x, refOrigin, frameWidth(), refStride);
     int threshold = 0, mvCost = 0;
 #ifdef FRAME_MOTION
