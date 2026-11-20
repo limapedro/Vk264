@@ -1168,6 +1168,33 @@ actual stream remains the only trustworthy oracle.** Agents: do not use the
 decoder to derive ground-truth syntax until these three bugs are fixed and the
 selftest is extended.
 
+### Decoder bugs FIXED; header is now a proven oracle (Subaru, 2026-11-20)
+
+A follow-up found a FOURTH and decisive bug: x264 stores context states as
+`(min(s,127-s)<<1)|(s>>6)` (`common/cabac.c`, `cabac_contexts` init), but both
+the decoder and its selftest mirror encoder used the raw clamped value 1..126.
+Because both sides were wrong in the same way, the round-trip selftest passed
+while decoding real x264 output produced garbage. Fixed both sides.
+
+Also fixed the three bugs above: `FIX` -> `fix4(t) = FIX_TABLE[t+1]`, full
+unary qp_delta decode with context transitions, and intra cbf context 96 for
+unavailable neighbours.
+
+Verified with a new selftest regression that decodes x264's byte-exact
+superfast/flat CABAC payload (`ea4035709bfe0b72bf3e1ac9b134b43181`, QP25)
+and asserts the PR #41 ground truth: mb0=0, ts0=0,
+modes={2,2,3,2,2,2,2,2,2,2,2,2,2,2,2,2}, chroma=0, cbp_luma=1,
+cbp_chroma=1, dqp=0, leading bins `3:0 399:0 68:1 68:1`.
+Registered as `x264_cabac_decoder_oracle` CTest; 61/61 CTests.
+
+Remaining decoder limitation: residual coefficient levels >=15 need
+`x264_cabac_encode_ue_bypass` after the run of 13 ones; the decoder still
+stops at 15 and misparses the following bins, so decoded nnz/levels are NOT
+yet trustworthy. Header syntax is trustworthy; residual still needs byte
+comparison. Input to `cabac_decoder.py` must be the CABAC payload only
+(bytes after the 88 84 3f slice header), contrary to the earlier note at
+line 1044.
+
 ### Harness caveats (same audit)
 
 - `parity_check.py:55-57` `strip_sei()` removes ALL NAL type 6 units from both
