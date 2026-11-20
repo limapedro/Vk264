@@ -4,8 +4,44 @@ Date: 2026-11-19
 Source: `references/x264-master` (x264 snapshot `c24e06c2e184345ceb33eb20a15d1024d9fd3497`,
 extracted from `x264-master.zip` into a stable location so `Remove-Item build` cannot wipe it)
 Vk264-Vulkan port: `Vk264/vulkan/*.comp`, shader SPIR-V shader pipelines registered in `Vk264/vulkan/CMakeLists.txt`,
-fixture tests in `Vk264/vulkan/dct_parity.cpp` (the `verifyXxx` functions and the
+fixture tests in `Vk264/src/dct_parity.cpp` (the `verifyXxx` functions and the
 `x264_*_parity` CTest registrations).
+
+## Real-content bottom-up verification (Subaru, 2026-11-20)
+
+`docs/real-content-verification.md` records the full evidence. Headline: all 52
+shader fixtures are byte-exact; a single 16x16 MB of real gameplay is byte-exact
+(bitstream and reconstruction); divergence begins at the second MB row — first
+differing pixel at MB(1,1), the first MB with both left and top neighbours.
+`fast` diverges at MB(0,0) on textured content; `superfast` from pixel 0. This
+localises the remaining gap to the decision/orchestration layer (mode selection,
+neighbour context, I4x4 emission), not the GPU primitives.
+
+## 1:1 x264 source mirror (issue #18, Subaru) — IN PROGRESS
+
+Goal: mirror `references/x264-master` file-for-file under `Vk264/common/` and
+`Vk264/encoder/`, where each `vk264::<x264 function>` is the GPU-compute
+equivalent of its x264 C counterpart, launched by a shader. A fixture calls
+both the verbatim x264 oracle and the Vulkan wrapper with identical inputs and
+compares byte for byte. First module: `Vk264/common/dct.cpp` (mirrors
+`common/dct.c`, wraps `dct4x4.comp`/`dct8x8.comp`). Data-parallel x264 files map
+to shaders that already exist; scalar/control files stay C++. The verification
+layer uses one launch per function; production keeps fused kernels for speed.
+Plan and module list: issue #18, `docs/parity-layout.md`.
+
+## Source organisation (Subaru, 2026-11-19) — parity fixtures split into x264-mirroring modules
+
+The 6,700-line `Vk264/src/dct_parity.cpp` monolith is now a 24-line master
+that textually includes 14 domain modules from `Vk264/src/parity/`, each
+(C++ source now lives in `Vk264/src/`; `Vk264/vulkan/` holds shaders only). Each
+mirroring the x264 C file(s) it checks. `docs/parity-layout.md` documents the
+module map, how to trace a CTest name to its fixture, and how to add a fixture.
+This is a layout-only change: concatenating the module bodies reproduces the
+original file **byte for byte** (355,633 bytes); `ctest` stays **52/52** with
+all **4** automated parity gates passing, and the CABAC fixture still reports
+9946 matched sequences. The split is textual (not separate translation units)
+because the extracted x264 `.inc` files contain static functions and
+external-linkage definitions — see the layout doc for details.
 
 ## Superfast I4x4 CABAC (issue #2 — Ram, 2026-11-19) — bin-level investigation, NOT byte-exact yet
 

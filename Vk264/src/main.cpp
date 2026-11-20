@@ -1,7 +1,7 @@
 #include "presets.hpp"
 #include "encoder_backend.hpp"
-#include "../vulkan/x264_presets.hpp"
-#include "../vulkan/x264_cavlc_codes.hpp"
+#include "x264_presets.hpp"
+#include "x264_cavlc_codes.hpp"
 
 #include <algorithm>
 #include <charconv>

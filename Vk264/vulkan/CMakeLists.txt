@@ -227,7 +227,7 @@ add_custom_command(OUTPUT "${rate_control}"
 list(APPEND shaders "${rate_control}")
 add_custom_target(dct_inputs DEPENDS ${shaders} ${references})
 
-add_library(x264_vulkan_backend STATIC dct_parity.cpp)
+add_library(x264_vulkan_backend STATIC ../src/dct_parity.cpp)
 add_dependencies(x264_vulkan_backend dct_inputs)
 target_compile_features(x264_vulkan_backend PUBLIC cxx_std_17)
 target_compile_definitions(x264_vulkan_backend PRIVATE X264_VULKAN_SHADER_DIR="${CMAKE_CURRENT_BINARY_DIR}")
@@ -235,9 +235,10 @@ if(MSVC)
     target_compile_options(x264_vulkan_backend PRIVATE /Zc:preprocessor)
 endif()
 target_include_directories(x264_vulkan_backend
-    PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+    PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 target_link_libraries(x264_vulkan_backend PRIVATE Vulkan::Vulkan)
-add_executable(dct_parity parity_main.cpp)
+add_executable(dct_parity ../src/parity_main.cpp)
 target_link_libraries(dct_parity PRIVATE x264_vulkan_backend)
 include(CTest)
 foreach(stage IN LISTS stages)
