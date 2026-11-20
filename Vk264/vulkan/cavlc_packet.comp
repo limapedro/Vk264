@@ -48,7 +48,10 @@ uint summarize(uint start, uint begin, uint end) {
 }
 
 void indexChunks(uint scratch, uint bytes, uint chunks) {
-    uint offset = 4u, zeros = 0u;
+    // x264's Annex B layout: IDR slices use a 3-byte start code (matches the
+    // byte-exact single-frame gates); P-slice access units use 4-byte starts.
+    bool idr = (words[13] & 1u) != 0u;
+    uint offset = idr ? 4u : 5u, zeros = 0u;
     for (uint chunk = 0u; chunk < chunks; ++chunk) {
         uint entry = (words[scratch+chunk] >> (10u*zeros)) & 1023u;
         words[scratch+chunk] = offset | (zeros << 24u);
@@ -57,7 +60,12 @@ void indexChunks(uint scratch, uint bytes, uint chunks) {
     }
     // words[13] bit0 is the I/IDR flag; bits 1/2 carry ultrafast and SAD
     // mode-selection flags for the analysis stages and must not force IDR.
-    packet[1] = (words[13] & 1u) != 0u ? 0x65010000u : 0x61010000u;
+    if (idr) {
+        packet[1] = 0x65010000u;  // 00 00 01 65 (3-byte start, IDR)
+    } else {
+        packet[1] = 0x01000000u;  // 00 00 00 01 (4-byte start, P-slice)
+        atomicOr(packet[2], 0x41u); // NAL header nal_ref_idc=2
+    }
     packet[0] = offset;
 }
 
