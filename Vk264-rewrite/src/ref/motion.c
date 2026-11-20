@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "motion.h"
+#include <math.h>
 
 void vk_mvp16(int lx, int ly, int tx, int ty, int cx, int cy,
               int *mvpx, int *mvpy)
@@ -12,6 +13,56 @@ void vk_mvp16(int lx, int ly, int tx, int ty, int cx, int cy,
             if (b[j] < b[i]) { int t=b[i]; b[i]=b[j]; b[j]=t; }
         }
     *mvpx = a[1]; *mvpy = b[1];
+}
+
+/* x264's precomputed MV bit cost: round(lambda * logs[|mvd_qp|]). */
+static int mv_cost(int mvd_qp, int lambda)
+{
+    int i = mvd_qp < 0 ? -mvd_qp : mvd_qp;
+    double logs = i ? 2.0*log2((double)i + 1.0) + 1.718 : 0.718;
+    int c = (int)(lambda*logs + 0.5);
+    return c > 65535 ? 65535 : c;
+}
+
+int vk_me16_dia(const uint8_t *cur, int cur_stride,
+                const uint8_t *ref, int ref_stride, int pad,
+                int x, int y, int mvpx, int mvpy, int range, int lambda,
+                int *best_x, int *best_y)
+{
+    const uint8_t *rpad = ref + pad*ref_stride + pad;
+    int bmx = mvpx, bmy = mvpy;
+    /* At subme=0 x264 omits the MV cost of the rounded MVP. */
+    int bcost = sad16(cur, cur_stride, rpad, ref_stride, x, y, bmx, bmy);
+    *best_x = bmx; *best_y = bmy;
+
+    /* Test the zero vector with full cost if the MVP is non-zero. */
+    if (bmx || bmy) {
+        int c = sad16(cur, cur_stride, rpad, ref_stride, x, y, 0, 0)
+              + mv_cost((0-bmx)*4, lambda) + mv_cost((0-bmy)*4, lambda);
+        if (c < bcost) { bcost = c; bmx = 0; bmy = 0; *best_x = 0; *best_y = 0; }
+    }
+
+    bcost <<= 4;
+    for (int i = range; i > 0; --i) {
+        /* COST_MV_X4_DIR(0,-1, 0,1, -1,0, 1,0) */
+        static const int dx[4] = {0,0,-1,1};
+        static const int dy[4] = {-1,1,0,0};
+        static const int dirbits[4] = {1,3,4,12};
+        int best_dir = 0;
+        for (int d = 0; d < 4; ++d) {
+            int cx = bmx+dx[d], cy = bmy+dy[d];
+            int c = (sad16(cur, cur_stride, rpad, ref_stride, x, y, cx, cy)
+                     + mv_cost((cx-mvpx)*4, lambda) + mv_cost((cy-mvpy)*4, lambda)) << 4;
+            c |= dirbits[d];
+            if (c < bcost) { bcost = c; best_dir = dirbits[d]; }
+        }
+        if (!best_dir) break;
+        bmx -= (int32_t)((uint32_t)bcost << 28) >> 30;
+        bmy -= (int32_t)((uint32_t)bcost << 30) >> 30;
+        bcost &= ~15;
+    }
+    *best_x = bmx; *best_y = bmy;
+    return sad16(cur, cur_stride, rpad, ref_stride, x, y, bmx, bmy);
 }
 
 void vk_pad_plane(uint8_t *dst, int ds, const uint8_t *src, int ss,
