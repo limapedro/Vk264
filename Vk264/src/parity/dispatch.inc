@@ -294,10 +294,15 @@ int runParityTests(int argc, char** argv) try {
         // Verify the faithful host I4x4 analysis against x264's captured modes.
         constexpr int fencStride = 16;
         std::array<pixel, 16*fencStride> fenc{};   // flat: all zero
-        if (argc > 3) {
+        bool readFlat = true;
+        if (argc > 2) {
             std::ifstream in(argv[2], std::ios::binary);
-            in.read(reinterpret_cast<char*>(fenc.data()), fenc.size());
-        } else for (auto& v : fenc) v = 0;
+            if (in) {
+                in.read(reinterpret_cast<char*>(fenc.data()), fenc.size());
+                readFlat = false;
+            }
+        }
+        if (readFlat) for (auto& v : fenc) v = 0;
         I4Analysis analysis{};
         analyzeI4(fenc.data(), fencStride, 25, analysis);
         std::cout << "modes:";
