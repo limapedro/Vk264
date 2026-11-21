@@ -35,11 +35,10 @@ target_link_libraries(vk264_oracle_pme_cli PRIVATE vk264_rewrite_ref)
 
 add_executable(vk264_oracle_cabac_cli oracle_cabac_cli.c)
 target_link_libraries(vk264_oracle_cabac_cli PRIVATE vk264_rewrite_ref)
-add_test(NAME rewrite_cabac_replay
+add_test(NAME rewrite_cabac
     COMMAND "${CMAKE_COMMAND}" -E env "VK264_X264_EXE=${VK264_X264_EXE}"
             "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_cabac.py"
-            "$<TARGET_FILE:vk264_oracle_cabac_cli>" "${CMAKE_BINARY_DIR}"
-            "${CMAKE_CURRENT_SOURCE_DIR}/cabac_flat_decisions.txt")
+            "$<TARGET_FILE:vk264_oracle_cabac_cli>" "${CMAKE_BINARY_DIR}")
 
 add_executable(vk264_test_bitstream test_bitstream.c)
 target_link_libraries(vk264_test_bitstream PRIVATE vk264_rewrite_ref)
