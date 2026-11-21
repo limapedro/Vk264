@@ -160,7 +160,7 @@ static void compute_i16_dc(const uint8_t *cur, int w, int x, int y,
 static void compute_i16_full(const uint8_t *cur, int w, int x, int y,
                              const uint8_t pred[256], int qp,
                              int q[16], int acq[16][15], int nnz[16],
-                             int *cbp_luma, uint8_t recon[256])
+                             int *cbp_luma, uint8_t recon[256], int b_decimate)
 {
     int mf[16], bias[16], deq[16];
     vk_ref_quant_tables(qp, 0, mf, bias, deq);
@@ -187,11 +187,30 @@ static void compute_i16_full(const uint8_t *cur, int w, int x, int y,
     int nat[16];
     for (int i = 0; i < 16; ++i) nat[i] = vk_ref_quant_one(dc[i], dcmf, dcbias);
     for (int i = 0; i < 16; ++i) q[i] = nat[zz[i]];
-    /* x264 ultrafast has b_dct_decimate=0: decimate_score starts at 9, so
-     * no I16 blocks are ever discarded; cbp_luma is 0 or 15. */
+    /* x264: I-frames have b_dct_decimate=0 (score starts at 9, no decimation);
+     * P-frames have it enabled (score starts at 0, decimate when < 6). */
     int any_nz = 0;
     for (int b = 0; b < 16; ++b) any_nz |= nnz[b] != 0;
     *cbp_luma = any_nz ? 15 : 0;
+    if (b_decimate && any_nz) {
+        static const uint8_t ds[16] = {3,2,2,1,1,1,0,0,0,0,0,0,0,0,0,0};
+        int dec = 0;
+        for (int b = 0; b < 16; ++b) {
+            if (!nnz[b] || dec >= 6) continue;
+            int idx = 14;
+            while (idx >= 0 && acq[b][idx] == 0) idx--;
+            while (idx >= 0) {
+                if ((unsigned)(acq[b][idx--] + 1) > 2) { dec = 9; break; }
+                int run = 0;
+                while (idx >= 0 && acq[b][idx] == 0) { idx--; run++; }
+                dec += ds[run < 16 ? run : 15];
+            }
+        }
+        if (dec < 6) {
+            *cbp_luma = 0;
+            for (int b = 0; b < 16; ++b) { nnz[b] = 0; memset(acq[b], 0, 15*sizeof(int)); }
+        }
+    }
     /* reconstruct: DC + AC */
     memcpy(recon, pred, 256);
     int dcq[16];
@@ -382,7 +401,7 @@ int vk_cabac_encode_idr_recon(vk_bs_t *bs, vk_cabac_t *cb,
             vk_predict16(pred, t, l, tl, imode);
             int q[16] = {0}, acq[16][15], nnz[16], cbp_luma = 0;
             compute_i16_full(frame, w, mx*16, my*16, pred, qp,
-                             q, acq, nnz, &cbp_luma, rmb);
+                             q, acq, nnz, &cbp_luma, rmb, 0);
             int nz = 0;
             for (int i = 0; i < 16; ++i) if (q[i]) nz = 1;
             /* chroma neighbours */
@@ -1043,7 +1062,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                 int q[16] = {0}, acq[16][15], nnz[16], cbp_luma = 0;
                 uint8_t rmb[256];
                 compute_i16_full(cur, w, mx*16, my*16, pred16, qp,
-                                 q, acq, nnz, &cbp_luma, rmb);
+                                 q, acq, nnz, &cbp_luma, rmb, 1);
                 int qu[4], qv[4], acu[4][15], acv[4][15], nnzu[4], nnzv[4];
                 uint8_t pu[64], pv[64];
                 compute_chroma_dc(cu, w/2, mx*8, my*8, itu, ilu, itlu, icmode, qp,
