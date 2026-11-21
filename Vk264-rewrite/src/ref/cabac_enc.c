@@ -750,6 +750,11 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
     uint8_t (*mvd_c)[16][2] = calloc((size_t)mw*mh, 32);
     int *cbp_c = calloc((size_t)mw*mh, sizeof(int));
     for (int i = 0; i < mw*mh; ++i) cbp_c[i] = 0;
+    /* intra-in-P neighbour caches (mirrors the I-slice path) */
+    int *mbcbp = calloc((size_t)mw*mh, sizeof(int));
+    uint8_t (*nnzc)[16] = calloc((size_t)mw*mh, 16);
+    uint8_t (*cnnzc)[2][4] = calloc((size_t)mw*mh, 8);
+    uint8_t *cmode_fix = calloc((size_t)mw*mh, 1);
 
     static const uint16_t lambda_tab[52] = {
         1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
@@ -784,7 +789,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                 p_probe(cur, refp, w, h, rs, mx*16, my*16, psk_x, psk_y, qp))
                 do_skip = 1;
 
-            int mvpx = 0, mvpy = 0, mvx = 0, mvy = 0;
+            int mvpx = 0, mvpy = 0, mvx = 0, mvy = 0, inter_cost = 0;
             if (!do_skip) {
                 p_mvp16_avail(lx, ly, tx, ty, cx, cy, have_l, have_t,
                               have_c || have_tl, &mvpx, &mvpy);
@@ -801,7 +806,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                     cand[2*nc] = ax; cand[2*nc+1] = ay;
                     ++nc;
                 }
-                vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
+                inter_cost = vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
                             mvpx/4, mvpy/4, 16,
                             lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
                             cand, nc, &mvx, &mvy);
@@ -809,6 +814,41 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                 if (qx == psk_x && qy == psk_y &&
                     p_probe(cur, refp, w, h, rs, mx*16, my*16, qx, qy, qp))
                     do_skip = 1;
+            }
+
+            /* ---- intra-vs-inter decision (subme=0: SAD + lambda*bits) ---- */
+            int do_intra = 0, imode = 2, icmode = 0;
+            int i_lambda = vk_lambda(qp);
+            uint8_t it[16], il[16], itl;
+            if (!do_skip && inter_cost > 0) {
+                uint8_t *rbase = ry + LPAD*rs + LPAD;
+                for (int i = 0; i < 16; ++i) {
+                    it[i] = have_t ? rbase[(my*16-1)*rs + mx*16+i]
+                                   : (mx == 0 ? 128 : rbase[(my*16)*rs + mx*16-16+i]);
+                    il[i] = have_l ? rbase[(my*16+i)*rs + mx*16-1] : 128;
+                }
+                itl = (have_t && have_l) ? rbase[(my*16-1)*rs + mx*16-1] : 128;
+                static const int8_t pi16av[5][5] = {
+                    {6,-1,-1,-1,-1}, {4,1,-1,-1,-1}, {5,0,-1,-1,-1},
+                    {0,1,2,3,-1},   {0,1,2,3,-1}
+                };
+                int pmidx = (have_l&&have_t) ? ((mx>0&&my>0)?4:3)
+                                            : (have_l?1:(have_t?2:0));
+                uint8_t trial[256];
+                int ibest = 0x7fffffff, bm = 2;
+                for (int k = 0; pi16av[pmidx][k] >= 0; ++k) {
+                    int m = pi16av[pmidx][k];
+                    vk_predict16(trial, it, il, itl, m);
+                    int sad = 0;
+                    for (int yy = 0; yy < 16; ++yy)
+                        for (int xx = 0; xx < 16; ++xx) {
+                            int dv = cur[(my*16+yy)*w + mx*16+xx] - trial[yy*16+xx];
+                            sad += dv < 0 ? -dv : dv;
+                        }
+                    int c = sad + i_lambda*vk_mode_bits(m);
+                    if (c < ibest) { ibest = c; bm = m; }
+                }
+                if (ibest < inter_cost) { do_intra = 1; imode = bm; }
             }
 
             /* ---- CABAC: mb_skip_flag ---- */
@@ -833,6 +873,172 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                     memcpy(rv + (my*8+yy+CPAD)*crs + CPAD + mx*8,
                            refp + ysz + csz + (my*8+yy+cy8+CPAD)*crs + CPAD + mx*8+cx8, 8);
                 }
+                continue;
+            }
+
+            if (do_intra) {
+                /* ---- I16 macroblock inside a P-slice ---- */
+                uint8_t itu[8], ilu[8], itv[8], ilv[8], itlu, itlv;
+                uint8_t *rbu = ru + CPAD*crs + CPAD, *rbv = rv + CPAD*crs + CPAD;
+                for (int i = 0; i < 8; ++i) {
+                    itu[i] = have_t ? rbu[(my*8-1)*crs + mx*8+i]
+                                    : (mx == 0 ? 128 : rbu[(my*8)*crs + mx*8-8+i]);
+                    itv[i] = have_t ? rbv[(my*8-1)*crs + mx*8+i]
+                                    : (mx == 0 ? 128 : rbv[(my*8)*crs + mx*8-8+i]);
+                    ilu[i] = have_l ? rbu[(my*8+i)*crs + mx*8-1] : 128;
+                    ilv[i] = have_l ? rbv[(my*8+i)*crs + mx*8-1] : 128;
+                }
+                itlu = (have_t && have_l) ? rbu[(my*8-1)*crs + mx*8-1] : 128;
+                itlv = (have_t && have_l) ? rbv[(my*8-1)*crs + mx*8-1] : 128;
+                /* chroma mode: availability-based, SAD + lambda*bits */
+                static const int8_t pcav[5][5] = {
+                    {6,-1,-1,-1,-1}, {4,1,-1,-1,-1}, {5,2,-1,-1,-1},
+                    {2,1,0,-1,-1},   {2,1,0,3,-1}
+                };
+                int cav = (have_l?1:0)|(have_t?2:0)|((have_l&&have_t&&mx>0&&my>0)?4:0);
+                int cidx = (cav & 3); if (cav == 7) cidx = 4;
+                icmode = 6;
+                int cbest = 0x7fffffff;
+                uint8_t cp8[64];
+                const uint8_t *cu = cur + (size_t)w*h, *cv = cu + (size_t)(w/2)*(h/2);
+                for (int k = 0; pcav[cidx][k] >= 0; ++k) {
+                    int m = pcav[cidx][k], fix = m <= 3 ? m : 0, sad = 0;
+                    vk_predict_chroma8(cp8, itu, ilu, itlu, m);
+                    for (int yy=0; yy<8; ++yy) for (int xx=0; xx<8; ++xx) {
+                        int dv = cu[(my*8+yy)*(w/2)+mx*8+xx] - cp8[yy*8+xx];
+                        sad += dv<0?-dv:dv;
+                    }
+                    vk_predict_chroma8(cp8, itv, ilv, itlv, m);
+                    for (int yy=0; yy<8; ++yy) for (int xx=0; xx<8; ++xx) {
+                        int dv = cv[(my*8+yy)*(w/2)+mx*8+xx] - cp8[yy*8+xx];
+                        sad += dv<0?-dv:dv;
+                    }
+                    int c = sad + i_lambda*vk_mode_bits(fix);
+                    if (c < cbest) { cbest = c; icmode = m; }
+                }
+                uint8_t pred16[256];
+                vk_predict16(pred16, it, il, itl, imode);
+                int q[16] = {0}, acq[16][15], nnz[16], cbp_luma = 0;
+                uint8_t rmb[256];
+                compute_i16_full(cur, w, mx*16, my*16, pred16, qp,
+                                 q, acq, nnz, &cbp_luma, rmb);
+                int qu[4], qv[4], acu[4][15], acv[4][15], nnzu[4], nnzv[4];
+                uint8_t pu[64], pv[64];
+                compute_chroma_dc(cu, w/2, mx*8, my*8, itu, ilu, itlu, icmode, qp,
+                                  qu, acu, nnzu, pu);
+                compute_chroma_dc(cv, w/2, mx*8, my*8, itv, ilv, itlv, icmode, qp,
+                                  qv, acv, nnzv, pv);
+                int has_dc = 0, has_ac = 0;
+                for (int i = 0; i < 4; ++i) {
+                    has_dc |= qu[i] || qv[i];
+                    has_ac |= nnzu[i] || nnzv[i];
+                }
+                int cbp_chroma = has_ac ? 2 : (has_dc ? 1 : 0);
+                int nzl = 0;
+                for (int i = 0; i < 16; ++i) if (q[i]) nzl = 1;
+
+                /* CABAC mb_type: I16 in P-slice */
+                vk_cabac_decision_noup(cb, 14, 1);
+                vk_cabac_decision_noup(cb, 17, 1);
+                vk_cabac_terminal(cb);
+                vk_cabac_decision_noup(cb, 18, !!cbp_luma);
+                if (!cbp_chroma)
+                    vk_cabac_decision_noup(cb, 19, 0);
+                else {
+                    vk_cabac_decision(cb, 19, 1);
+                    vk_cabac_decision_noup(cb, 19, cbp_chroma >> 1);
+                }
+                int predmode = imode <= 3 ? imode : 2;
+                vk_cabac_decision(cb, 20, predmode >> 1);
+                vk_cabac_decision_noup(cb, 20, predmode & 1);
+                int cmctx = (have_l && cmode_fix[idx-1] != 0)
+                          + (have_t && cmode_fix[idx-mw] != 0);
+                cabac_chroma_mode(cb, icmode, cmctx);
+                cmode_fix[idx] = (uint8_t)(icmode <= 3 ? icmode : 0);
+                cabac_qp_delta0(cb);
+
+                /* residual: luma DC */
+                int lc = have_l ? mbcbp[idx-1] : 0x7ff;
+                int tc = have_t ? mbcbp[idx-mw] : 0x7ff;
+                int nza = (lc >> 8) & 1, nzb = (tc >> 8) & 1;
+                vk_cabac_decision(cb, 85 + 2*nzb + nza, nzl);
+                if (nzl) cabac_coeffs(cb, q, 0);
+                /* luma AC */
+                if (cbp_luma) {
+                    static const uint8_t bidx[16] = {0,1,4,5,2,3,6,7,8,9,12,13,10,11,14,15};
+                    static const int s8[16] = {12,13,20,21,14,15,22,23,28,29,36,37,30,31,38,39};
+                    uint8_t cache[64] = {0};
+                    for (int i = 0; i < 4; ++i) {
+                        cache[11+i*8] = have_l ? nnzc[idx-1][i*4+3] : 0x80;
+                        cache[4+i] = have_t ? nnzc[idx-mw][12+i] : 0x80;
+                    }
+                    for (int i = 0; i < 16; ++i) {
+                        int b = bidx[i], p = s8[i];
+                        int za = cache[p-1], zb = cache[p-8];
+                        int ctx = 89 + 2*!!(zb & 0xff) + !!(za & 0xff);
+                        if (nnz[b]) {
+                            vk_cabac_decision(cb, ctx, 1);
+                            cabac_coeffs(cb, acq[b], 1);
+                        } else
+                            vk_cabac_decision(cb, ctx, 0);
+                        cache[p] = (uint8_t)nnz[b];
+                    }
+                }
+                for (int i = 0; i < 16; ++i) nnzc[idx][i] = (uint8_t)nnz[i];
+                /* chroma DC */
+                if (cbp_chroma) {
+                    int ca = (lc>>9)&1, cb2 = (tc>>9)&1, nu = 0, nv = 0;
+                    for (int i = 0; i < 4; ++i) { nu |= qu[i]!=0; nv |= qv[i]!=0; }
+                    vk_cabac_decision(cb, 97+2*cb2+ca, nu);
+                    if (nu) cabac_coeffs(cb, qu, 3);
+                    int cv_a = (lc>>10)&1, cv_b = (tc>>10)&1;
+                    vk_cabac_decision(cb, 97+2*cv_b+cv_a, nv);
+                    if (nv) cabac_coeffs(cb, qv, 3);
+                }
+                if (cbp_chroma == 2) {
+                    uint8_t ccache[128] = {0};
+                    ccache[51] = have_l ? cnnzc[idx-1][0][1] : 0x80;
+                    ccache[59] = have_l ? cnnzc[idx-1][0][3] : 0x80;
+                    ccache[44] = have_t ? cnnzc[idx-mw][0][2] : 0x80;
+                    ccache[45] = have_t ? cnnzc[idx-mw][0][3] : 0x80;
+                    ccache[91] = have_l ? cnnzc[idx-1][1][1] : 0x80;
+                    ccache[99] = have_l ? cnnzc[idx-1][1][3] : 0x80;
+                    ccache[84] = have_t ? cnnzc[idx-mw][1][2] : 0x80;
+                    ccache[85] = have_t ? cnnzc[idx-mw][1][3] : 0x80;
+                    static const int cp8[8] = {52,53,60,61, 92,93,100,101};
+                    for (int k = 0; k < 8; ++k) {
+                        int pl = k>>2, b = k&3, p = cp8[k];
+                        int za = ccache[p-1], zb = ccache[p-8];
+                        int ctx = 101 + 2*!!(zb&0xff) + !!(za&0xff);
+                        int n = pl ? nnzv[b] : nnzu[b];
+                        if (n) {
+                            vk_cabac_decision(cb, ctx, 1);
+                            cabac_coeffs(cb, pl?acv[b]:acu[b], 4);
+                        } else
+                            vk_cabac_decision(cb, ctx, 0);
+                        ccache[p] = (uint8_t)n;
+                    }
+                }
+                for (int i = 0; i < 4; ++i) {
+                    cnnzc[idx][0][i] = (uint8_t)nnzu[i];
+                    cnnzc[idx][1][i] = (uint8_t)nnzv[i];
+                }
+                int nu_dc = 0, nv_dc = 0;
+                for (int i = 0; i < 4; ++i) { nu_dc |= qu[i]!=0; nv_dc |= qv[i]!=0; }
+                mbcbp[idx] = cbp_luma | (nzl?0x100:0) | (nu_dc?0x200:0) | (nv_dc?0x400:0);
+                cbp_c[idx] = mbcbp[idx] & 0x3f;
+
+                /* reconstruct I16 MB into the current-frame buffers */
+                uint8_t *rbase = ry + LPAD*rs + LPAD;
+                for (int yy = 0; yy < 16; ++yy)
+                    memcpy(rbase + (my*16+yy)*rs + mx*16, rmb + yy*16, 16);
+                for (int yy = 0; yy < 8; ++yy) {
+                    memcpy(rbu + (my*8+yy)*crs + mx*8, pu + yy*8, 8);
+                    memcpy(rbv + (my*8+yy)*crs + mx*8, pv + yy*8, 8);
+                }
+                mv[idx][0] = mv[idx][1] = 0;
+                is_skip[idx] = 0;
+                memset(mvd_c[idx], 0, 32);
                 continue;
             }
 
@@ -889,6 +1095,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
         }
 
     free(ry); free(ru); free(rv);
+    free(cmode_fix); free(cnnzc); free(nnzc); free(mbcbp);
     free(mvd_c); free(cbp_c); free(is_skip); free(mv); free(refp);
     int bytes = vk_cabac_flush(cb, 1);
     bs->p = data + bytes;
