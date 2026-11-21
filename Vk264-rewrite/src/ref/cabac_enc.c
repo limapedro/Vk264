@@ -934,10 +934,12 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                            || (have_t && is_skip[idx-mw])
                            || (have_tl && is_skip[idx-mw-1])
                            || (have_c && is_skip[idx-mw+1]);
-            int do_skip = 0;
+            int do_skip = 0, fast_skip = 0;
             if (skip_neigh &&
-                p_probe(cur, refp, w, h, rs, mx*16, my*16, psk_x, psk_y, qp))
+                p_probe(cur, refp, w, h, rs, mx*16, my*16, psk_x, psk_y, qp)) {
                 do_skip = 1;
+                fast_skip = 1;  /* x264 returns early: intra not considered */
+            }
 
             int mvpx = 0, mvpy = 0, mvx = 0, mvy = 0, inter_cost = 0;
             if (!do_skip) {
@@ -980,7 +982,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
             int do_intra = 0, imode = 2, icmode = 0;
             int i_lambda = vk_lambda(qp);
             uint8_t it[16], il[16], itl;
-            if (!do_skip && inter_cost > 0) {
+            if (!fast_skip && inter_cost > 0) {
                 uint8_t *rbase = ry + LPAD*rs + LPAD;
                 for (int i = 0; i < 16; ++i) {
                     it[i] = have_t ? rbase[(my*16-1)*rs + mx*16+i]
@@ -1008,7 +1010,10 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                     int c = sad + i_lambda*vk_mode_bits(m);
                     if (c < ibest) { ibest = c; bm = m; }
                 }
-                if (ibest < inter_cost) { do_intra = 1; imode = bm; }
+                if (ibest < inter_cost) {
+                    do_intra = 1; imode = bm;
+                    do_skip = 0;  /* x264: intra overrides tentative P_SKIP */
+                }
             }
 
             /* ---- CABAC: mb_skip_flag ---- */
