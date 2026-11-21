@@ -882,6 +882,9 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
     memset(ry, 128, ysz); memset(ru, 128, csz); memset(rv, 128, csz);
 
     int (*mv)[2] = calloc((size_t)mw*mh, 2*sizeof(int));
+    /* x264 mvr: inter MV considered during analysis, retained even for MBs that
+     * end up intra (only P_SKIP zeroes it). Used for ME candidate generation. */
+    int (*mvr)[2] = calloc((size_t)mw*mh, 2*sizeof(int));
     int *mv_ref = calloc((size_t)mw*mh, sizeof(int));  /* -1 for intra, 0 inter */
     uint8_t *is_skip = calloc((size_t)mw*mh, 1);
     /* mvd cache per 4x4 block, packed {abs_x,abs_y} capped at 66 */
@@ -935,10 +938,13 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                 p_mvp16_avail(lx, ly, tx, ty, cx, cy, have_l, have_t,
                               have_c || have_tl, &mvpx, &mvpy);
                 int cand[8], nc = 0;
+                /* x264 x264_mb_predict_mv_ref16x16: 4 mvr spatial predictors
+                 * (left, top, top-left, top-right), zero when unavailable. */
                 int cmv[4][2] = {
-                    {lx,ly}, {tx,ty},
-                    {have_tl ? mv[idx-mw-1][0] : 0, have_tl ? mv[idx-mw-1][1] : 0},
-                    {cx,cy}
+                    {have_l ? mvr[idx-1][0] : 0,   have_l ? mvr[idx-1][1] : 0},
+                    {have_t ? mvr[idx-mw][0] : 0,  have_t ? mvr[idx-mw][1] : 0},
+                    {have_tl ? mvr[idx-mw-1][0] : 0, have_tl ? mvr[idx-mw-1][1] : 0},
+                    {have_c ? mvr[idx-mw+1][0] : 0,  have_c ? mvr[idx-mw+1][1] : 0}
                 };
                 for (int k = 0; k < 4; ++k) {
                     int ax = (cmv[k][0]+2)>>2, ay = (cmv[k][1]+2)>>2;
@@ -951,6 +957,9 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                             mvpx/4, mvpy/4, 16,
                             lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
                             cand, nc, &mvx, &mvy);
+                /* x264 stores the inter MV in mvr immediately after inter
+                 * analysis, before skip/intra decisions may override the type. */
+                mvr[idx][0] = mvx*4; mvr[idx][1] = mvy*4;
                 int qx = mvx*4, qy = mvy*4;
                 if (qx == psk_x && qy == psk_y &&
                     p_probe(cur, refp, w, h, rs, mx*16, my*16, qx, qy, qp))
@@ -999,6 +1008,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
 
             if (do_skip) {
                 mv[idx][0] = psk_x; mv[idx][1] = psk_y;
+                mvr[idx][0] = mvr[idx][1] = 0;  /* x264 P_SKIP zeroes mvr */
                 is_skip[idx] = 1;
                 memset(mvd_c[idx], 0, 32);
                 /* reconstruct from reference at predictor MV */
@@ -1338,7 +1348,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
 
     free(ry); free(ru); free(rv);
     free(cmode_fix); free(cnnzc); free(nnzc); free(mbcbp);
-    free(mvd_c); free(cbp_c); free(is_skip); free(mv); free(mv_ref); free(refp);
+    free(mvd_c); free(cbp_c); free(is_skip); free(mv); free(mvr); free(mv_ref); free(refp);
     int bytes = vk_cabac_flush(cb, 1);
     bs->p = data + bytes;
     return bytes;
