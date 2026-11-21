@@ -47,18 +47,22 @@ static void mvp16_avail(int lx, int ly, int tx, int ty, int cx, int cy,
     }
 }
 
-/* P_SKIP MV predictor (quarter-pel), ref-aware like x264. */
+/* P_SKIP MV predictor (quarter-pel), ref-aware like x264_mb_predict_mv_pskip.
+ * x264 bails to MV=0 only for an edge-neighbour (ref=-2) or a ref==0 neighbour
+ * whose MV is zero; intra neighbours (ref=-1) still participate, and the
+ * ref-aware 16x16 selection picks the single valid neighbour directly rather
+ * than taking a component median. */
 static void pskip_mv(int lx, int ly, int tx, int ty, int cx, int cy,
-                     int have_l, int have_t, int have_c,
-                     int lref, int tref, int *px, int *py)
+                     int lref, int tref, int cref,
+                     int *px, int *py)
 {
-    if (!have_l || !have_t ||
+    if (lref == -2 || tref == -2 ||
         (lref == 0 && lx == 0 && ly == 0) ||
         (tref == 0 && tx == 0 && ty == 0)) {
         *px = *py = 0;
         return;
     }
-    vk_mvp16(lx, ly, tx, ty, have_c ? cx : lx, have_c ? cy : ly, px, py);
+    mvp16_avail(lx, ly, tx, ty, cx, cy, lref, tref, cref, px, py);
 }
 
 /* x264 JVT-B118 decimate score: low score means coefficients can be emptied
@@ -798,9 +802,11 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
             }
 
             int psk_x, psk_y;
-            pskip_mv(lx, ly, tx, ty, cx, cy, have_l, have_t, have_c || have_tl,
+            pskip_mv(lx, ly, tx, ty, cx, cy,
                      have_l ? mv_ref[idx-1] : -2,
                      have_t ? mv_ref[idx-mw] : -2,
+                     have_c ? mv_ref[idx-mw+1]
+                            : (have_tl ? mv_ref[idx-mw-1] : -2),
                      &psk_x, &psk_y);
 
             /* Fast P_SKIP is only probed when a neighbour is already P_SKIP. */
