@@ -198,7 +198,16 @@ FUNC_EXACT = _weight.get("EXACT", 0)
 FUNC_TOTAL = sum(v for k, v in _weight.items() if k != "N/A")
 FUNC_PCT = FUNC_EXACT / FUNC_TOTAL * 100
 
-W, H = 1680, 1760
+# Layout — compute the height from the content so the legend and the last
+# sweep row are never clipped as more PRs are added.
+W = 1680
+gx, gy = 32, 214
+cols, rows = 4, 3
+gap = 14
+ch_base = 180          # tight cards; tiles need ~110px plus a 54px header
+sweep_row_h = 17
+sweep_top = gy + 14 + rows*(ch_base+gap) + 40
+H = sweep_top + len(SWEEPS)*sweep_row_h + 110   # 60px sweep gap + legend + margin
 add(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
     f'viewBox="0 0 {W} {H}" font-family="Consolas, SFMono-Regular, Menlo, monospace">')
 add(f'''<defs>
@@ -239,7 +248,7 @@ ox, oy, ow = 32, 92, W - 64
 add(f'<rect x="{ox}" y="{oy}" width="{ow}" height="10" fill="#21262d" rx="5"/>')
 add(f'<rect x="{ox}" y="{oy}" width="{ow*FUNC_EXACT/FUNC_TOTAL:.1f}" height="10" '
     f'fill="{COLOR["EXACT"]}" rx="5"/>')
-add(f'<text x="{ox+ow-4}" y="{oy+9}" fill="#8b949e" font-size="12" text-anchor="end">'
+add(f'<text x="{ox+ow-4}" y="{oy+10}" fill="#c9d1d9" font-size="15" text-anchor="end">'
     f'byte-exact function coverage {FUNC_PCT:.1f}% ({FUNC_EXACT}/{FUNC_TOTAL} weighted families)</text>')
 
 # Stat cards
@@ -255,11 +264,7 @@ for i, (label, value, percent, color) in enumerate(STATS):
     add(f'<text x="{x+sw-12}" y="{sy+48}" fill="{color}" font-size="18" text-anchor="end">{esc(percent)}</text>')
 
 # Stage treemap — 4 columns x 3 rows
-gx, gy = 32, 214
-cols, rows = 4, 3
-gap = 14
 cw = (W - 64 - gap*(cols-1)) // cols
-ch_base = 300
 add(f'<text x="{gx}" y="{gy-10}" fill="#e6edf3" font-size="17" font-weight="bold">'
     'Pipeline stage coverage (tile size ~ function count)</text>')
 
@@ -298,12 +303,12 @@ for idx, (title, subtitle, fams) in enumerate(STAGES):
         curx += fw + tgap
 
 # Sweep progression section
-by = gy + 14 + rows*(ch_base+gap) + 8
+by = sweep_top
 add(f'<text x="{gx}" y="{by}" fill="#e6edf3" font-size="17" font-weight="bold">'
     'CAVLC P-slice byte-exact sweep — progress by merged PR</text>')
 bar_x, bar_w = gx+240, W-64-240-120
 for i, (label, val, color) in enumerate(SWEEPS):
-    y = by + 24 + i*19
+    y = by + 24 + i*sweep_row_h
     add(f'<text x="{gx+8}" y="{y+11}" fill="#8b949e" font-size="12">{esc(label)}</text>')
     add(f'<rect x="{bar_x}" y="{y}" width="{bar_w}" height="13" fill="#21262d" rx="3"/>')
     add(f'<rect x="{bar_x}" y="{y}" width="{bar_w*val/1360:.1f}" height="13" fill="{color}" rx="3"/>')
