@@ -522,7 +522,11 @@ static int code_i16_dc(vk_bs_t *bs, const uint8_t *cur, int w, int x, int y,
         if (decimate < 6) {
             int z[16];
             for (int i = 0; i < 16; ++i) z[i] = dct[b][zz[i]];
-            decimate += decimate_score(z, 16);
+            /* x264 uses decimate_score15 for I16 luma AC, i.e. it skips the
+             * DC coefficient (z[0], already zeroed here). Scoring all 16
+             * inflates the leading zero run by one and lowers the score,
+             * wrongly decimating blocks x264 keeps. */
+            decimate += decimate_score(z+1, 15);
         }
     }
     if (decimate < 6) {
