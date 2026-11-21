@@ -10,8 +10,9 @@ static int clip3(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v)
 
 static const int8_t (*ctx_init(int slice_type, int model))[2]
 {
-    (void)model;
-    return vk_cabac_context_init_I; /* I-slice contexts; P/B added later */
+    if (slice_type == 2) return vk_cabac_context_init_I;  /* SLICE_TYPE_I */
+    int m = model < 0 ? 0 : (model > 2 ? 2 : model);
+    return vk_cabac_context_init_PB[m];
 }
 
 void vk_cabac_init_ctx(vk_cabac_t *cb, int slice_type, int qp, int model)

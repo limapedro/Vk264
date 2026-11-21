@@ -15,4 +15,8 @@ int vk_cabac_encode_idr(vk_bs_t *bs, vk_cabac_t *cb,
                         const uint8_t *frame, int w, int h, int qp,
                         int frame_num);
 
+/* Write a P-slice where every MB is P_SKIP (static-frame milestone).
+ * bs has the P slice header written and 1-aligned; cb starts at bs->p. */
+int vk_cabac_encode_pskip(vk_bs_t *bs, vk_cabac_t *cb, int w, int h);
+
 #endif
