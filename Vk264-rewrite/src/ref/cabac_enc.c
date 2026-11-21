@@ -585,19 +585,21 @@ static void p_mvp16_avail(int lx, int ly, int tx, int ty, int cx, int cy,
     }
 }
 
+/* x264_mb_predict_mv_pskip: bail to MV=0 only for an edge neighbour
+ * (ref=-2) or a ref==0 neighbour whose MV is zero. Intra neighbours
+ * (ref=-1) still participate, and the ref-aware 16x16 selection picks
+ * a single valid neighbour directly rather than a component median. */
 static void p_pskip_mv(int lx, int ly, int tx, int ty, int cx, int cy,
-                       int have_l, int have_t, int have_c,
-                       int lref, int tref, int *px, int *py)
+                       int lref, int tref, int cref,
+                       int *px, int *py)
 {
-    /* x264_mb_predict_mv_pskip: intra MBs carry ref=-1 so a zero MV still
-     * participates; only ref==0 with mv==0 is treated as unavailable. */
-    if (!have_l || !have_t ||
+    if (lref == -2 || tref == -2 ||
         (lref == 0 && lx == 0 && ly == 0) ||
         (tref == 0 && tx == 0 && ty == 0)) {
         *px = *py = 0;
         return;
     }
-    vk_mvp16(lx, ly, tx, ty, have_c ? cx : lx, have_c ? cy : ly, px, py);
+    p_mvp16_avail(lx, ly, tx, ty, cx, cy, lref, tref, cref, px, py);
 }
 
 static int p_decimate_score(const int *d, int n)
@@ -924,10 +926,11 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                             : (have_tl ? mv[idx-mw-1][1] : 0);
 
             int psk_x, psk_y;
-            p_pskip_mv(lx, ly, tx, ty, cx, cy, have_l, have_t,
-                       have_c || have_tl,
+            p_pskip_mv(lx, ly, tx, ty, cx, cy,
                        have_l ? mv_ref[idx-1] : -2,
                        have_t ? mv_ref[idx-mw] : -2,
+                       have_c ? mv_ref[idx-mw+1]
+                              : (have_tl ? mv_ref[idx-mw-1] : -2),
                        &psk_x, &psk_y);
 
             int skip_neigh = (have_l && is_skip[idx-1])
