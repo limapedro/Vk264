@@ -553,7 +553,9 @@ static int code_i16_dc(vk_bs_t *bs, const uint8_t *cur, int w, int x, int y,
                 int ac[16];
                 for (int j = 0; j < 15; ++j) ac[j] = dct[b][zz[j+1]];  /* skips DC */
                 vk_cavlc_block_residual(bs, VK_DCT_LUMA_4x4, ac, ctt[pred & 0x7f], 1, 15);
-                cache[p] = (uint8_t)(nnz[b] ? 1 : 0);
+                /* x264 stores the coefficient COUNT in non_zero_count, not a
+                 * boolean — the next block's nC depends on the exact count. */
+                cache[p] = (uint8_t)nnz[b];
             }
         }
         /* reconstruction */
