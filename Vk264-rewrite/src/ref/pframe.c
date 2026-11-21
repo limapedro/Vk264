@@ -621,15 +621,19 @@ static int code_i16_dc(vk_bs_t *bs, const uint8_t *cur, int w, int x, int y,
     return cbp_luma;
 }
 
-/* Compute and CAVLC-code the 2x2 chroma DC residual for an I16 MB in a
- * P-slice. Returns cbp_chroma (0/1/2) and writes reconstruction into rconu/rconv. */
+/* Compute and CAVLC-code the chroma residual for an I16 MB in a P-slice.
+ * Returns cbp_chroma (0/1/2) and writes reconstruction into rconu/rconv. */
 static int code_i16_chroma_dc(vk_bs_t *bs, const uint8_t *cur, int w, int h,
                               int x, int y, const uint8_t *tu, const uint8_t *lu,
                               uint8_t tlu, const uint8_t *tv, const uint8_t *lv,
                               uint8_t tlv, int cmode, int qp,
+                              const uint8_t lc[2][2], const uint8_t tc[2][2],
                               uint8_t *rconu, uint8_t *rconv, int rdu, int rdv,
-                              int write, int recon)
+                              int write, int recon, uint8_t cnnz_out[2][4])
 {
+    static const uint8_t zz4[16] = {0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
+    static const uint8_t cs8[8] = {52,53,60,61,92,93,100,101};
+    static const int ct[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
     int cmf[16], cbias[16], cdeq[16];
     vk_ref_quant_tables(qp, 2, cmf, cbias, cdeq);
     const uint8_t *cu = cur + (size_t)w*h, *cv = cu + (size_t)(w/2)*(h/2);
@@ -637,55 +641,99 @@ static int code_i16_chroma_dc(vk_bs_t *bs, const uint8_t *cur, int w, int h,
     uint8_t pu[64], pv[64];
     vk_predict_chroma8(pu, tu, lu, tlu, cmode);
     vk_predict_chroma8(pv, tv, lv, tlv, cmode);
-    int cdc[2][4], cbp = 0, q[2][4];
+    int cdc[2][4], cnnz[2][4] = {{0}}, cacq[2][4][16];
     for (int pl = 0; pl < 2; ++pl) {
         const uint8_t *src = pl ? cv : cu, *pred = pl ? pv : pu;
         for (int b = 0; b < 4; ++b) {
             int by = (b/2)*4, bx = (b%2)*4;
-            int sum = 0;
+            uint8_t sb[16], pb[16];
             for (int yy = 0; yy < 4; ++yy)
-                for (int xx = 0; xx < 4; ++xx)
-                    sum += src[(y/2+by+yy)*cs + x/2+bx+xx] - pred[(by+yy)*8+bx+xx];
-            cdc[pl][b] = sum;
+                for (int xx = 0; xx < 4; ++xx) {
+                    sb[yy*4+xx] = src[(y/2+by+yy)*cs + x/2+bx+xx];
+                    pb[yy*4+xx] = pred[(by+yy)*8+bx+xx];
+                }
+            int d[16];
+            vk_ref_dct4x4(d, sb, pb);
+            cdc[pl][b] = d[0];
+            d[0] = 0;
+            for (int i = 0; i < 16; ++i) d[i] = vk_ref_quant_one(d[i], cmf[i], cbias[i]);
+            for (int i = 0; i < 16; ++i) cacq[pl][b][i] = d[zz4[i]];
+            for (int i = 0; i < 16; ++i) cnnz[pl][b] += d[i] != 0;
         }
-        int a = cdc[pl][0]+cdc[pl][1], b = cdc[pl][2]+cdc[pl][3];
-        int c = cdc[pl][0]-cdc[pl][1], d = cdc[pl][2]-cdc[pl][3];
-        int had[4] = {a+b,a-b,c+d,c-d};
+    }
+    int cdnz[2] = {0}, q[2][4], cbp = 0;
+    for (int pl = 0; pl < 2; ++pl) {
+        int a=cdc[pl][0]+cdc[pl][1], b=cdc[pl][2]+cdc[pl][3];
+        int c=cdc[pl][0]-cdc[pl][1], d=cdc[pl][2]-cdc[pl][3];
+        int had[4]={a+b,a-b,c+d,c-d};
         for (int i = 0; i < 4; ++i) {
             q[pl][i] = vk_ref_quant_one(had[i], cmf[0]>>1, cbias[0]<<1);
             cbp |= q[pl][i] != 0;
+            cdnz[pl] += q[pl][i] != 0;
+        }
+        /* x264 decimates chroma AC when the JVT-B118 score is below 7. */
+        int dec = 0;
+        for (int b = 0; b < 4; ++b) {
+            if (!cnnz[pl][b] || dec >= 7) continue;
+            dec += decimate_score(cacq[pl][b]+1, 15);
+        }
+        if (dec >= 7) cbp = 2;
+        else for (int b = 0; b < 4; ++b) {
+            cnnz[pl][b] = 0;
+            memset(cacq[pl][b], 0, sizeof(cacq[pl][b]));
         }
     }
+    if (cnnz_out)
+        for (int pl = 0; pl < 2; ++pl)
+            for (int b = 0; b < 4; ++b) cnnz_out[pl][b] = (uint8_t)cnnz[pl][b];
+
     if (cbp && write) {
         for (int pl = 0; pl < 2; ++pl) {
             int block[16] = {0};
-            /* zigzag_scan_2x2_dc: {0,2,1,3} */
             block[0]=q[pl][0]; block[1]=q[pl][2];
             block[2]=q[pl][1]; block[3]=q[pl][3];
             vk_cavlc_block_residual(bs, VK_DCT_CHROMA_DC, block, 4, 1, 4);
         }
+        if (cbp == 2) {
+            uint8_t cc[128] = {0};
+            for (int i = 0; i < 2; ++i) {
+                cc[cs8[i]-8] = tc[0][i]; cc[cs8[i*2]-1] = lc[0][i];
+                cc[cs8[4+i]-8] = tc[1][i]; cc[cs8[4+i*2]-1] = lc[1][i];
+            }
+            cc[40] = (uint8_t)cdnz[0]; cc[80] = (uint8_t)cdnz[1];
+            for (int pl = 0; pl < 2; ++pl)
+                for (int b = 0; b < 4; ++b) {
+                    int k = pl*4+b, pos = cs8[k];
+                    int sum = cc[pos-1] + cc[pos-8];
+                    int pred = sum < 0x80 ? (sum+1)>>1 : sum & 0x7f;
+                    vk_cavlc_block_residual(bs, VK_DCT_CHROMA_AC, cacq[pl][b]+1,
+                                            ct[pred & 0x7f], 1, 15);
+                    cc[pos] = (uint8_t)cnnz[pl][b];
+                }
+        }
     }
     if (cbp && recon) {
-        /* DC reconstruction: idct_dequant_2x2_dconly + add to prediction */
         int dmf = cdeq[0] << (qp/6);
         for (int pl = 0; pl < 2; ++pl) {
             int a=q[pl][0]+q[pl][1], b=q[pl][2]+q[pl][3];
             int c=q[pl][0]-q[pl][1], d=q[pl][2]-q[pl][3];
             int had2[4]={a+b,a-b,c+d,c-d};
-            int rr[4];
-            for (int i = 0; i < 4; ++i) rr[i]=((had2[i]*dmf)>>5);
-            /* rconu/rconv are already positioned at this MB by the caller;
-             * adding mby/mbx again writes past the plane for lower-right MBs. */
+            int cdq[4];
+            for (int i = 0; i < 4; ++i) cdq[i]=((had2[i]*dmf)>>5);
             uint8_t *dst = pl ? rconv : rconu;
             int stride = pl ? rdv : rdu;
-            const uint8_t *p = pl ? pv : pu;
             for (int i = 0; i < 4; ++i) {
                 int by=(i/2)*4, bx=(i%2)*4;
-                for (int yy=0; yy<4; ++yy)
-                    for (int xx=0; xx<4; ++xx) {
-                        int v = p[(by+yy)*8+bx+xx] + ((rr[i]+32)>>6);
-                        dst[(by+yy)*stride+bx+xx] = (uint8_t)(v<0?0:v>255?255:v);
-                    }
+                if (cbp == 2 && cnnz[pl][i]) {
+                    int blk[16];
+                    for (int j = 0; j < 16; ++j) blk[zz4[j]] = cacq[pl][i][j];
+                    vk_ref_dequant4(blk, cdeq, qp);
+                    blk[0] = cdnz[pl] ? cdq[i] : 0;
+                    vk_ref_idct4(blk);
+                    vk_ref_add_block(dst + by*stride + bx, stride, blk);
+                } else if (cdnz[pl]) {
+                    vk_ref_add_block_dc(dst + by*stride + bx, stride, cdq[i]);
+                }
             }
         }
     }
@@ -937,9 +985,15 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                  * cbp_chroma is encoded in the I16 mb_type value) */
                 uint8_t *rconu_i = ru + (my*8+CPAD)*crs + CPAD + mx*8;
                 uint8_t *rconv_i = rv + (my*8+CPAD)*crs + CPAD + mx*8;
+                uint8_t lc_i[2][2], tc_i[2][2];
+                for (int p = 0; p < 2; ++p)
+                    for (int i = 0; i < 2; ++i) {
+                        lc_i[p][i] = have_l ? cnnz_c[idx-1][p][i*2+1] : 0x80;
+                        tc_i[p][i] = have_t ? cnnz_c[idx-mw][p][2+i] : 0x80;
+                    }
                 int cbp_chroma_i = code_i16_chroma_dc(bs, cur, w, h, mx*16, my*16,
                         topu, leftu, tlu, topv, leftv, tlv, icmode, qp,
-                        rconu_i, rconv_i, crs, crs, 0, 0);
+                        lc_i, tc_i, rconu_i, rconv_i, crs, crs, 0, 0, NULL);
                 uint8_t pred16[256], pred8[64];
                 vk_predict16(pred16, top, left, tly, imode);
                 uint8_t il[4], it[4];
@@ -971,7 +1025,7 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                 if (cbp_chroma_i)
                     code_i16_chroma_dc(bs, cur, w, h, mx*16, my*16,
                         topu, leftu, tlu, topv, leftv, tlv, icmode, qp,
-                        rconu_i, rconv_i, crs, crs, 1, 1);
+                        lc_i, tc_i, rconu_i, rconv_i, crs, crs, 1, 1, cnnz_c[idx]);
                 continue;
             }
             mv[idx][0] = mvx*4; mv[idx][1] = mvy*4;
