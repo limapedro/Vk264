@@ -362,7 +362,7 @@ int vk_cabac_encode_idr_recon(vk_bs_t *bs, vk_cabac_t *cb,
              * thresh=COST_MAX so plane mode 3 is always included. */
             static const int8_t pi16av[5][5] = {
                 {6,-1,-1,-1,-1}, {4,1,-1,-1,-1}, {5,0,-1,-1,-1},
-                {2,1,0,3,-1},   {2,1,0,3,-1}
+                {0,1,2,3,-1},   {0,1,2,3,-1}
             };
             int pmidx = (left&&top) ? ((mx>0&&my>0) ? 4 : 3)
                                     : (left ? 1 : (top ? 2 : 0));
