@@ -216,15 +216,48 @@ static void compute_i16_full(const uint8_t *cur, int w, int x, int y,
 
 /* Compute the 2x2 chroma DC Hadamard coefficients (zigzag_2x2_dc order)
  * for one 8x8 chroma plane; returns its intra prediction in pred[64]. */
+/* x264 optimize_chroma_dc_internal (common/quant.c:254): try reducing each
+ * quantized DC coefficient until the dequantised residual no longer rounds
+ * to the same pixels. Returns 0 if all DC can be zeroed. */
+static int chroma_dc_opt(int dct[4], int dmf)
+{
+    int orig[4];
+    #define CHROMA_DC_OUT(d, o) do { \
+        int a=d[0]+d[1], b=d[2]+d[3], c=d[0]-d[1], e=d[2]-d[3]; \
+        o[0]=((a+b)*dmf>>5)+32; o[1]=((a-b)*dmf>>5)+32; \
+        o[2]=((c+e)*dmf>>5)+32; o[3]=((c-e)*dmf>>5)+32; } while (0)
+    CHROMA_DC_OUT(dct, orig);
+    int sum = 0;
+    for (int i = 0; i < 4; ++i) sum |= orig[i];
+    if (!(sum >> 6)) return 0;
+    int nz = 0;
+    for (int coeff = 3; coeff >= 0; --coeff) {
+        int level = dct[coeff];
+        int sign = (level >> 31) | 1;
+        while (level) {
+            dct[coeff] = level - sign;
+            int out[4];
+            CHROMA_DC_OUT(dct, out);
+            int s = 0;
+            for (int i = 0; i < 4; ++i) s |= orig[i] ^ out[i];
+            if (s >> 6) { nz = 1; dct[coeff] = level; break; }
+            level -= sign;
+        }
+    }
+    #undef CHROMA_DC_OUT
+    return nz;
+}
+
 static void compute_chroma_dc(const uint8_t *src, int cs, int x, int y,
                               const uint8_t top[8], const uint8_t left[8],
                               uint8_t tl, int mode, int qp, int q[4],
-                              uint8_t pred[64])
+                              int acq[4][15], int nnz[4], uint8_t pred[64])
 {
     vk_predict_chroma8(pred, top, left, tl, mode);
     int cmf[16], cbias[16], cdeq[16];
     vk_ref_quant_tables(qp, 2, cmf, cbias, cdeq);
-    int dc[4];
+    static const uint8_t zz[16] = {0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
+    int dct[4][16], dc[4];
     for (int b = 0; b < 4; ++b) {
         int by = (b/2)*4, bx = (b%2)*4;
         uint8_t s[16], p[16];
@@ -233,9 +266,15 @@ static void compute_chroma_dc(const uint8_t *src, int cs, int x, int y,
                 s[yy*4+xx] = src[(y+by+yy)*cs + x+bx+xx];
                 p[yy*4+xx] = pred[(by+yy)*8 + bx+xx];
             }
-        int d[16];
-        vk_ref_dct4x4(d, s, p);
-        dc[b] = d[0];
+        vk_ref_dct4x4(dct[b], s, p);
+        dc[b] = dct[b][0];
+        /* quantize AC (DC zeroed), zigzag-scan into acq[b] */
+        dct[b][0] = 0;
+        for (int i = 0; i < 16; ++i)
+            dct[b][i] = vk_ref_quant_one(dct[b][i], cmf[i], cbias[i]);
+        nnz[b] = 0;
+        for (int i = 0; i < 16; ++i) nnz[b] += dct[b][i] != 0;
+        for (int i = 0; i < 15; ++i) acq[b][i] = dct[b][zz[i+1]];
     }
     int a = dc[0]+dc[1], b = dc[2]+dc[3];
     int c = dc[0]-dc[1], d = dc[2]-dc[3];
@@ -243,19 +282,37 @@ static void compute_chroma_dc(const uint8_t *src, int cs, int x, int y,
     int dmf = cmf[0] >> 1, dbias = cbias[0] << 1;
     int qt[4];
     for (int i = 0; i < 4; ++i) qt[i] = vk_ref_quant_one(had[i], dmf, dbias);
+    /* x264 mb_optimize_chroma_dc: zero out DC that rounds to the same pixels */
+    int optmf = cdeq[0] << (qp/6);  /* x264 dequant4_mf already includes *16 */
+    if (optmf <= 32*64 && !chroma_dc_opt(qt, optmf))
+        for (int i = 0; i < 4; ++i) qt[i] = 0;
     /* x264 zigzag_scan_2x2_dc: {0,2,1,3} */
     q[0]=qt[0]; q[1]=qt[2]; q[2]=qt[1]; q[3]=qt[3];
-    /* DC-only chroma reconstruction: idct_dequant_2x2_dconly */
-    int d0=qt[0]+qt[2], d1=qt[1]+qt[3];
-    int d2=qt[0]-qt[2], d3=qt[1]-qt[3];
+    /* DC dequant (idct_dequant_2x2_dc / _dconly) */
+    /* x264 idct_dequant_2x2_dconly operates on natural-order dct_dc */
+    int d0=qt[0]+qt[1], d1=qt[2]+qt[3];
+    int d2=qt[0]-qt[1], d3=qt[2]-qt[3];
     int cdmf = cdeq[0] << (qp/6);
     int rr[4] = {((d0+d1)*cdmf)>>5, ((d0-d1)*cdmf)>>5,
                  ((d2+d3)*cdmf)>>5, ((d2-d3)*cdmf)>>5};
     for (int b = 0; b < 4; ++b) {
         int by=(b/2)*4, bx=(b%2)*4;
-        for (int yy=0; yy<4; ++yy)
-            for (int xx=0; xx<4; ++xx)
-                pred[(by+yy)*8+bx+xx] = clip8(pred[(by+yy)*8+bx+xx] + ((rr[b]+32)>>6));
+        uint8_t *dst = pred + by*8+bx;
+        if (nnz[b]) {
+            /* DC+AC reconstruction: add8x8_idct with quantized AC blocks */
+            int blk[16];
+            for (int i = 0; i < 16; ++i) blk[zz[i]] = dct[b][zz[i]];
+            vk_ref_dequant4(blk, cdeq, qp);
+            blk[0] = rr[b];
+            vk_ref_idct4(blk);
+            for (int yy=0; yy<4; ++yy)
+                for (int xx=0; xx<4; ++xx)
+                    dst[yy*8+xx] = clip8(dst[yy*8+xx] + blk[yy*4+xx]);
+        } else {
+            for (int yy=0; yy<4; ++yy)
+                for (int xx=0; xx<4; ++xx)
+                    dst[yy*8+xx] = clip8(dst[yy*8+xx] + ((rr[b]+32)>>6));
+        }
     }
 }
 
@@ -284,6 +341,7 @@ int vk_cabac_encode_idr_recon(vk_bs_t *bs, vk_cabac_t *cb,
     uint8_t *rcu = recon + ysz, *rcv = rcu + csz;
     int *mbcbp = calloc((size_t)mw*mh, sizeof(int));
     uint8_t (*nnzc)[16] = calloc((size_t)mw*mh, 16);
+    uint8_t (*cnnzc)[2][4] = calloc((size_t)mw*mh, 8);
     uint8_t *cmode_fix = calloc((size_t)mw*mh, 1);
     int mbnum = 0;
     for (int my = 0; my < mh; ++my)
@@ -367,12 +425,16 @@ int vk_cabac_encode_idr_recon(vk_bs_t *bs, vk_cabac_t *cb,
                 int c = sad + lambda*vk_mode_bits(fix);
                 if (c < cbest) { cbest = c; cmode = m; }
             }
-            int qu[4], qv[4];
+            int qu[4], qv[4], acu[4][15], acv[4][15], nnzu[4], nnzv[4];
             uint8_t pu[64], pv[64];
-            compute_chroma_dc(cu, w/2, mx*8, my*8, tu, lu, tlu, cmode, qp, qu, pu);
-            compute_chroma_dc(cv, w/2, mx*8, my*8, tv, lv, tlv, cmode, qp, qv, pv);
-            int cbp_chroma = 0;
-            for (int i=0;i<4;++i) if (qu[i]||qv[i]) cbp_chroma = 1;
+            compute_chroma_dc(cu, w/2, mx*8, my*8, tu, lu, tlu, cmode, qp, qu, acu, nnzu, pu);
+            compute_chroma_dc(cv, w/2, mx*8, my*8, tv, lv, tlv, cmode, qp, qv, acv, nnzv, pv);
+            int cbp_chroma = 0, has_dc = 0, has_ac = 0;
+            for (int i=0;i<4;++i) {
+                has_dc |= qu[i] || qv[i];
+                has_ac |= nnzu[i] || nnzv[i];
+            }
+            cbp_chroma = has_ac ? 2 : (has_dc ? 1 : 0);
             int lc = left ? mbcbp[my*mw+mx-1] : 0x7ff;
             int tc = top ? mbcbp[(my-1)*mw+mx] : 0x7ff;
             int nza = (lc >> 8) & 1, nzb = (tc >> 8) & 1;
@@ -417,6 +479,37 @@ int vk_cabac_encode_idr_recon(vk_bs_t *bs, vk_cabac_t *cb,
                 vk_cabac_decision(cb, 97 + 2*cv_b + cv_a, nv);
                 if (nv) cabac_coeffs(cb, qv, 3);
             }
+            if (cbp_chroma == 2) {
+                /* x264 macroblock_write_cabac_internal: chroma AC cbf at
+                 * base 101, scan8 positions 52..61 (U) and 68..77 (V). */
+                uint8_t ccache[128] = {0};
+                /* x264_scan8: U blocks 52,53,60,61; V blocks 92,93,100,101 */
+                ccache[51] = left ? cnnzc[my*mw+mx-1][0][1] : 0x80;
+                ccache[59] = left ? cnnzc[my*mw+mx-1][0][3] : 0x80;
+                ccache[44] = top  ? cnnzc[(my-1)*mw+mx][0][2] : 0x80;
+                ccache[45] = top  ? cnnzc[(my-1)*mw+mx][0][3] : 0x80;
+                ccache[91] = left ? cnnzc[my*mw+mx-1][1][1] : 0x80;
+                ccache[99] = left ? cnnzc[my*mw+mx-1][1][3] : 0x80;
+                ccache[84] = top  ? cnnzc[(my-1)*mw+mx][1][2] : 0x80;
+                ccache[85] = top  ? cnnzc[(my-1)*mw+mx][1][3] : 0x80;
+                static const int cp8[8] = {52,53,60,61, 92,93,100,101};
+                for (int k = 0; k < 8; ++k) {
+                    int pl = k >> 2, b = k & 3, p = cp8[k];
+                    int za = ccache[p-1], zb = ccache[p-8];
+                    int ctx = 101 + 2*!!(zb & 0xff) + !!(za & 0xff);
+                    int n = pl ? nnzv[b] : nnzu[b];
+                    if (n) {
+                        vk_cabac_decision(cb, ctx, 1);
+                        cabac_coeffs(cb, pl ? acv[b] : acu[b], 4);
+                    } else
+                        vk_cabac_decision(cb, ctx, 0);
+                    ccache[p] = (uint8_t)n;
+                }
+            }
+            for (int i = 0; i < 4; ++i) {
+                cnnzc[my*mw+mx][0][i] = (uint8_t)nnzu[i];
+                cnnzc[my*mw+mx][1][i] = (uint8_t)nnzv[i];
+            }
             int nu_dc = 0, nv_dc = 0;
             for (int i = 0; i < 4; ++i) { nu_dc |= qu[i] != 0; nv_dc |= qv[i] != 0; }
             mbcbp[my*mw+mx] = cbp_luma | (nz ? 0x100 : 0)
@@ -440,6 +533,7 @@ int vk_cabac_encode_idr_recon(vk_bs_t *bs, vk_cabac_t *cb,
         }
     }
     free(nnzc);
+    free(cnnzc);
     free(mbcbp);
     free(cmode_fix);
     free(recon);
