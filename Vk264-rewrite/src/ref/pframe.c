@@ -671,17 +671,11 @@ static int code_i16_chroma_dc(vk_bs_t *bs, const uint8_t *cur, int w, int h,
             any_dc |= q[pl][i] != 0;
             cdnz[pl] += q[pl][i] != 0;
         }
-        /* x264 decimates chroma AC when the JVT-B118 score is below 7. */
-        int dec = 0;
-        for (int b = 0; b < 4; ++b) {
-            if (!cnnz[pl][b] || dec >= 7) continue;
-            dec += decimate_score(cacq[pl][b]+1, 15);
-        }
-        if (dec >= 7) any_ac = 1;
-        else for (int b = 0; b < 4; ++b) {
-            cnnz[pl][b] = 0;
-            memset(cacq[pl][b], 0, sizeof(cacq[pl][b]));
-        }
+        /* x264's mb_encode_chroma_internal seeds i_decimate_score with
+         * b_decimate ? 0 : 7. For intra MBs (b_inter=0) b_decimate is 0,
+         * so the score starts at 7 and chroma AC is never decimated. */
+        if (cnnz[pl][0] || cnnz[pl][1] || cnnz[pl][2] || cnnz[pl][3])
+            any_ac = 1;
     }
     /* cbp_chroma is 0=none, 1=DC, 2=DC+AC — not a per-plane bitmask. */
     int cbp = any_ac ? 2 : (any_dc ? 1 : 0);
