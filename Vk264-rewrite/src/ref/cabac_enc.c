@@ -1042,6 +1042,10 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
             }
 
             /* ---- CABAC: mb_skip_flag ---- */
+            /* x264 promotes P_L0/cbp==0/MV==pskip_mv to P_SKIP at encode time
+             * (encoder/macroblock.c:953-964). Save the whole CABAC state so
+             * the header bits can be replaced by skip_flag=1 if that happens. */
+            vk_cabac_t mb_start = *cb;
             int skip_ctx = 11 + (have_l && !is_skip[idx-1])
                               + (have_t && !is_skip[idx-mw]);
             vk_cabac_decision(cb, skip_ctx, do_skip);
@@ -1262,6 +1266,27 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
             int cl = have_l ? cbp_c[idx-1] : -1;
             int ct = have_t ? cbp_c[idx-mw] : -1;
             int cb_l = rr.cbp_luma, cb_c = rr.cbp_chroma;
+            if (!do_skip && !do_intra && cb_l == 0 && cb_c == 0 &&
+                mvx*4 == psk_x && mvy*4 == psk_y) {
+                /* Encode-time P_SKIP promotion: discard the mb_type/mvd/cbp
+                 * decisions and emit only skip_flag=1 from the saved state. */
+                *cb = mb_start;
+                vk_cabac_decision(cb, skip_ctx, 1);
+                mv[idx][0] = psk_x; mv[idx][1] = psk_y;
+                mvr[idx][0] = mvr[idx][1] = 0;
+                is_skip[idx] = 1;
+                memset(mvd_c[idx], 0, 32);
+                const uint8_t *ryref = refp + LPAD*rs + LPAD;
+                int psx = psk_x/4, psy = psk_y/4;
+                for (int yy = 0; yy < 16; ++yy)
+                    memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
+                           ryref + (my*16+yy+psy)*rs + mx*16+psx, 16);
+                cabac_mc_chroma8(ru + (my*8+CPAD)*crs + CPAD + mx*8,
+                                 rv + (my*8+CPAD)*crs + CPAD + mx*8, crs,
+                                 refp + ysz, refp + ysz + csz, crs,
+                                 mx*16, my*16, psk_x, psk_y);
+                continue;
+            }
             /* cbp luma (4 decisions, P-slice neighbour contexts) */
             vk_cabac_decision(cb, 76 - ((cl>>1)&1) - ((ct>>1)&2), (cb_l>>0)&1);
             vk_cabac_decision(cb, 76 - ((cb_l>>0)&1) - ((ct>>2)&2), (cb_l>>1)&1);
