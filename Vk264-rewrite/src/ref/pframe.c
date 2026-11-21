@@ -929,7 +929,7 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                 inter_cost = vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
                             mvpx/4, mvpy/4, 16,
                             lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
-                            cand, nc, &mvx, &mvy);
+                            cand, nc, &mvx, &mvy, h);
                 mvr[idx][0] = mvx*4; mvr[idx][1] = mvy*4;
                 /* x264 promotes P16 to P_SKIP when cbp==0 and MV==pskip_mv. */
                 int qx = mvx*4, qy = mvy*4;

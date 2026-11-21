@@ -27,9 +27,21 @@ static int mv_cost(int mvd_qp, int lambda)
 int vk_me16_dia(const uint8_t *cur, int cur_stride,
                 const uint8_t *ref, int ref_stride, int pad,
                 int x, int y, int mvpx, int mvpy, int range, int lambda,
-                const int *cands, int ncands, int *best_x, int *best_y)
+                const int *cands, int ncands, int *best_x, int *best_y,
+                int frame_h)
 {
     const uint8_t *rpad = ref + pad*ref_stride + pad;
+    /* x264's mv_limit_fpel (analyse.c:330-349): the searchable MV range is
+     * clipped by the MB's position relative to the frame border, with a
+     * 6-pel guard band (i_fpel_border). Default i_mv_range is 64 qpel*4. */
+    int mbx = x/16, mby = y/16, mbw = cur_stride/16, mbh = frame_h/16;
+    int rx0 = 4*(-16*mbx-24), rx1 = 4*(16*(mbw-mbx-1)+24);
+    int ry0 = 4*(-16*mby-24), ry1 = 4*(16*(mbh-mby-1)+24);
+    int lim_xmin = ((rx0 > -256 ? rx0 : -256) >> 2) + 6;
+    int lim_xmax = ((rx1 <  255 ? rx1 :  255) >> 2) - 6;
+    int lim_ymin = ((ry0 > -256 ? ry0 : -256) >> 2) + 6;
+    int lim_ymax = ((ry1 <  255 ? ry1 :  255) >> 2) - 6;
+#define MV_IN_RANGE(mx,my) ((mx)>=lim_xmin && (mx)<=lim_xmax && (my)>=lim_ymin && (my)<=lim_ymax)
     int bmx = mvpx, bmy = mvpy;
     /* At subme=0 x264 omits the MV cost of the rounded MVP. */
     int bcost = sad16(cur, cur_stride, rpad, ref_stride, x, y, bmx, bmy);
@@ -43,6 +55,7 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
         int bestc = bcost;
         for (int i = 0; i < ncands; ++i) {
             int cx = cands[2*i], cy = cands[2*i+1];
+            if (!MV_IN_RANGE(cx, cy)) continue;
             int c = sad16(cur, cur_stride, rpad, ref_stride, x, y, cx, cy)
                   + mv_cost((cx-mvpx)*4, lambda) + mv_cost((cy-mvpy)*4, lambda);
             if (c < bestc) { bestc = c; bmx = cx; bmy = cy; }
@@ -67,6 +80,7 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
         int best_dir = 0;
         for (int d = 0; d < 4; ++d) {
             int cx = bmx+dx[d], cy = bmy+dy[d];
+            if (!MV_IN_RANGE(cx, cy)) continue;
             int c = (sad16(cur, cur_stride, rpad, ref_stride, x, y, cx, cy)
                      + mv_cost((cx-mvpx)*4, lambda) + mv_cost((cy-mvpy)*4, lambda)) << 4;
             c |= dirbits[d];
@@ -81,6 +95,7 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
     /* x264's me16x16.cost = SAD + lambda-weighted MVD bits. */
     return sad16(cur, cur_stride, rpad, ref_stride, x, y, bmx, bmy)
          + mv_cost((bmx-mvpx)*4, lambda) + mv_cost((bmy-mvpy)*4, lambda);
+#undef MV_IN_RANGE
 }
 
 void vk_pad_plane(uint8_t *dst, int ds, const uint8_t *src, int ss,
