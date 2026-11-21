@@ -458,8 +458,10 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
                     int k = pl*4+b, p = cs8[k];
                     int sum = cc[p-1] + cc[p-8];
                     int pred = sum < 0x80 ? (sum+1)>>1 : sum & 0x7f;
+                    /* cacq[0] is the zeroed DC slot; x264 passes l+1 to
+                     * skip it, matching the I16 path's +1. */
                     vk_cavlc_block_residual(bs, VK_DCT_CHROMA_AC,
-                                            cacq[pl][b], rct_index[pred & 0x7f], 1, 15);
+                                            cacq[pl][b]+1, rct_index[pred & 0x7f], 1, 15);
                     cc[p] = (uint8_t)cnnz[pl][b];
                 }
         }
