@@ -541,9 +541,12 @@ static int code_i16_dc(vk_bs_t *bs, const uint8_t *cur, int w, int x, int y,
             static const int s8[16] = {12,13,20,21,14,15,22,23,28,29,36,37,30,31,38,39};
             static const int bgrp[16] = {0,0,1,1,0,0,1,1,2,2,3,3,2,2,3,3};
             uint8_t cache[64] = {0};
+            /* ll[i]/tl[i] are already the neighbour MB's relevant nnz
+             * counts (left blocks i*4+3, top blocks 12+i) — packed by the
+             * caller. Do not index them again (out-of-bounds read). */
             for (int i = 0; i < 4; ++i) {
-                cache[11+i*8] = ll[i*4+3];
-                cache[4+i] = tl[12+i];
+                cache[11+i*8] = ll[i];
+                cache[4+i] = tl[i];
             }
             for (int i = 0; i < 16; ++i) {
                 int b = bidx[i], p = s8[i];
