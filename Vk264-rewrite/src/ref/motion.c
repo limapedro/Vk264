@@ -35,6 +35,7 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
      * clipped by the MB's position relative to the frame border, with a
      * 6-pel guard band (i_fpel_border). Default i_mv_range is 64 qpel*4. */
     int mbx = x/16, mby = y/16, mbw = cur_stride/16, mbh = frame_h/16;
+    int ph = frame_h + 2*pad;   /* padded reference plane height */
     int rx0 = 4*(-16*mbx-24), rx1 = 4*(16*(mbw-mbx-1)+24);
     int ry0 = 4*(-16*mby-24), ry1 = 4*(16*(mbh-mby-1)+24);
     int lim_xmin = ((rx0 > -256 ? rx0 : -256) >> 2) + 6;
@@ -44,7 +45,7 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
 #define MV_IN_RANGE(mx,my) ((mx)>=lim_xmin && (mx)<=lim_xmax && (my)>=lim_ymin && (my)<=lim_ymax)
     int bmx = mvpx, bmy = mvpy;
     /* At subme=0 x264 omits the MV cost of the rounded MVP. */
-    int bcost = sad16(cur, cur_stride, rpad, ref_stride, x, y, bmx, bmy);
+    int bcost = sad16(cur, cur_stride, rpad, ref_stride, pad, ph, x, y, bmx, bmy);
     *best_x = bmx; *best_y = bmy;
 
     /* x264 tests the spatial neighbour MV candidates (with MVD cost) and
@@ -56,7 +57,7 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
         for (int i = 0; i < ncands; ++i) {
             int cx = cands[2*i], cy = cands[2*i+1];
             if (!MV_IN_RANGE(cx, cy)) continue;
-            int c = sad16(cur, cur_stride, rpad, ref_stride, x, y, cx, cy)
+            int c = sad16(cur, cur_stride, rpad, ref_stride, pad, ph, x, y, cx, cy)
                   + mv_cost((cx-mvpx)*4, lambda) + mv_cost((cy-mvpy)*4, lambda);
             if (c < bestc) { bestc = c; bmx = cx; bmy = cy; }
         }
@@ -65,7 +66,7 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
 
     /* Test the zero vector with full cost if the MVP is non-zero. */
     if (bmx || bmy) {
-        int c = sad16(cur, cur_stride, rpad, ref_stride, x, y, 0, 0)
+        int c = sad16(cur, cur_stride, rpad, ref_stride, pad, ph, x, y, 0, 0)
               + mv_cost((0-bmx)*4, lambda) + mv_cost((0-bmy)*4, lambda);
         if (c < bcost) { bcost = c; bmx = 0; bmy = 0; }
     }
@@ -81,7 +82,7 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
         for (int d = 0; d < 4; ++d) {
             int cx = bmx+dx[d], cy = bmy+dy[d];
             if (!MV_IN_RANGE(cx, cy)) continue;
-            int c = (sad16(cur, cur_stride, rpad, ref_stride, x, y, cx, cy)
+            int c = (sad16(cur, cur_stride, rpad, ref_stride, pad, ph, x, y, cx, cy)
                      + mv_cost((cx-mvpx)*4, lambda) + mv_cost((cy-mvpy)*4, lambda)) << 4;
             c |= dirbits[d];
             if (c < bcost) { bcost = c; best_dir = dirbits[d]; }
@@ -93,7 +94,7 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
     }
     *best_x = bmx; *best_y = bmy;
     /* x264's me16x16.cost = SAD + lambda-weighted MVD bits. */
-    return sad16(cur, cur_stride, rpad, ref_stride, x, y, bmx, bmy)
+    return sad16(cur, cur_stride, rpad, ref_stride, pad, ph, x, y, bmx, bmy)
          + mv_cost((bmx-mvpx)*4, lambda) + mv_cost((bmy-mvpy)*4, lambda);
 #undef MV_IN_RANGE
 }
@@ -116,18 +117,28 @@ void vk_pad_plane(uint8_t *dst, int ds, const uint8_t *src, int ss,
     }
 }
 
+/* `ref` is the padded plane offset to the unpadded frame origin.  x264's
+ * reference planes carry a wide replicated-edge border, so an ME SAD window
+ * that runs past the frame edge reads replicated border pixels.  The oracle's
+ * padded plane has only `pad` columns/rows of border, so clamp each sample to
+ * the plane bounds instead of letting it wrap into the next row. */
 static int sad16(const uint8_t *cur, int cs,
-                 const uint8_t *ref, int rs,
+                 const uint8_t *ref, int rs, int pad, int ph,
                  int x, int y, int mx, int my)
 {
     const uint8_t *c = cur + y*cs + x;
-    const uint8_t *r = ref + (y+my)*rs + x + mx;  /* ref already padded */
+    int xmin = -pad, xmax = rs-1-pad, ymin = -pad, ymax = ph-1-pad;
     int sad = 0;
-    for (int yy = 0; yy < 16; ++yy)
+    for (int yy = 0; yy < 16; ++yy) {
+        int ry = y + my + yy;
+        if (ry < ymin) ry = ymin; else if (ry > ymax) ry = ymax;
         for (int xx = 0; xx < 16; ++xx) {
-            int cv = c[yy*cs+xx], rv = r[yy*rs+xx];
+            int rx = x + mx + xx;
+            if (rx < xmin) rx = xmin; else if (rx > xmax) rx = xmax;
+            int cv = c[yy*cs+xx], rv = ref[ry*rs+rx];
             sad += cv > rv ? cv-rv : rv-cv;
         }
+    }
     return sad;
 }
 
@@ -139,12 +150,13 @@ int vk_me16(const uint8_t *cur, int cur_stride,
     /* ref pointer is the padded plane; the caller offsets x,y in unpadded
      * coordinates, so shift by pad here. */
     const uint8_t *rpad = ref + pad*ref_stride + pad;
-    int best = sad16(cur, cur_stride, rpad, ref_stride, x, y, mvpx, mvpy);
+    int ph = 1 << 25;   /* test-only: no row clamp */
+    int best = sad16(cur, cur_stride, rpad, ref_stride, pad, ph, x, y, mvpx, mvpy);
     *best_x = mvpx; *best_y = mvpy;
     for (int my = mvpy-range; my <= mvpy+range; ++my)
         for (int mx = mvpx-range; mx <= mvpx+range; ++mx) {
             if (mx == mvpx && my == mvpy) continue;
-            int sad = sad16(cur, cur_stride, rpad, ref_stride, x, y, mx, my);
+            int sad = sad16(cur, cur_stride, rpad, ref_stride, pad, ph, x, y, mx, my);
             if (sad < best) { best = sad; *best_x = mx; *best_y = my; }
         }
     return best;
