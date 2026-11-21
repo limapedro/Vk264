@@ -28,26 +28,33 @@ static const uint16_t lambda_tab[52] = {
 /* 16x16 MV predictor with x264's reference-availability logic: with a
  * single valid neighbour use it directly, otherwise the component median. */
 static void mvp16_avail(int lx, int ly, int tx, int ty, int cx, int cy,
-                        int have_l, int have_t, int have_c,
+                        int lref, int tref, int cref,
                         int *px, int *py)
 {
-    int n = have_l + have_t + have_c;
-    if (n == 1) {
-        if (have_l) { *px = lx; *py = ly; }
-        else if (have_t) { *px = tx; *py = ty; }
+    /* x264_mb_predict_mv_16x16: only ref==0 neighbours participate.
+     * Intra MBs carry ref=-1; unavailable edges ref=-2. */
+    int cnt = (lref == 0) + (tref == 0) + (cref == 0);
+    if (cnt > 1) {
+        vk_mvp16(lx, ly, tx, ty, cx, cy, px, py);
+    } else if (cnt == 1) {
+        if (lref == 0) { *px = lx; *py = ly; }
+        else if (tref == 0) { *px = tx; *py = ty; }
         else { *px = cx; *py = cy; }
-        return;
+    } else if (tref == -2 && cref == -2 && lref != -2) {
+        *px = lx; *py = ly;
+    } else {
+        vk_mvp16(lx, ly, tx, ty, cx, cy, px, py);
     }
-    vk_mvp16(lx, ly, tx, ty, cx, cy, px, py);
 }
 
-/* P_SKIP MV predictor (quarter-pel): zero if left/top unavailable or zero,
- * otherwise the 16x16 median of left/top/top-right. */
+/* P_SKIP MV predictor (quarter-pel), ref-aware like x264. */
 static void pskip_mv(int lx, int ly, int tx, int ty, int cx, int cy,
                      int have_l, int have_t, int have_c,
-                     int *px, int *py)
+                     int lref, int tref, int *px, int *py)
 {
-    if (!have_l || !have_t || (lx == 0 && ly == 0) || (tx == 0 && ty == 0)) {
+    if (!have_l || !have_t ||
+        (lref == 0 && lx == 0 && ly == 0) ||
+        (tref == 0 && tx == 0 && ty == 0)) {
         *px = *py = 0;
         return;
     }
@@ -593,6 +600,8 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
     /* MV cache (quarter-pel) and skip flags. x264 stores MV=0 in the cache
      * for skipped MBs even though the bitstream carries the predictor MV. */
     int (*mv)[2] = calloc((size_t)mw*mh, 2*sizeof(int));
+    int (*mvr)[2] = calloc((size_t)mw*mh, 2*sizeof(int));
+    int *mv_ref = calloc((size_t)mw*mh, sizeof(int));
     uint8_t *is_skip = calloc((size_t)mw*mh, 1);
     uint8_t (*nnz_c)[16] = calloc((size_t)mw*mh, 16);
     uint8_t (*cnnz_c)[2][4] = calloc((size_t)mw*mh, 8);
@@ -637,6 +646,8 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
 
             int psk_x, psk_y;
             pskip_mv(lx, ly, tx, ty, cx, cy, have_l, have_t, have_c || have_tl,
+                     have_l ? mv_ref[idx-1] : -2,
+                     have_t ? mv_ref[idx-mw] : -2,
                      &psk_x, &psk_y);
 
             /* Fast P_SKIP is only probed when a neighbour is already P_SKIP. */
@@ -644,22 +655,29 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                            || (have_t && is_skip[idx-mw])
                            || (have_tl && is_skip[idx-mw-1])
                            || (have_c && is_skip[idx-mw+1]);
-            int do_skip = 0;
+            int do_skip = 0, fast_skip = 0;
             if (skip_neigh &&
-                probe(cur, refp, w, h, rs, mx*16, my*16, psk_x, psk_y, qp))
+                probe(cur, refp, w, h, rs, mx*16, my*16, psk_x, psk_y, qp)) {
                 do_skip = 1;
+                fast_skip = 1;
+            }
 
             int mvpx = 0, mvpy = 0, mvx = 0, mvy = 0, inter_cost = 0;
             if (!do_skip) {
-                mvp16_avail(lx, ly, tx, ty, cx, cy, have_l, have_t,
-                            have_c || have_tl, &mvpx, &mvpy);
+                mvp16_avail(lx, ly, tx, ty, cx, cy,
+                            have_l ? mv_ref[idx-1] : -2,
+                            have_t ? mv_ref[idx-mw] : -2,
+                            have_c ? mv_ref[idx-mw+1]
+                                   : (have_tl ? mv_ref[idx-mw-1] : -2),
+                            &mvpx, &mvpy);
                 /* x264_mb_predict_mv_ref16x16: left/top/top-left/top-right
                  * MVs, rounded to fullpel, zero and mvp excluded. */
                 int cand[8], nc = 0;
                 int cmv[4][2] = {
-                    {lx,ly}, {tx,ty},
-                    {have_tl ? mv[idx-mw-1][0] : 0, have_tl ? mv[idx-mw-1][1] : 0},
-                    {cx,cy}
+                    {have_l ? mvr[idx-1][0] : 0,   have_l ? mvr[idx-1][1] : 0},
+                    {have_t ? mvr[idx-mw][0] : 0,  have_t ? mvr[idx-mw][1] : 0},
+                    {have_tl ? mvr[idx-mw-1][0] : 0, have_tl ? mvr[idx-mw-1][1] : 0},
+                    {have_c ? mvr[idx-mw+1][0] : 0,  have_c ? mvr[idx-mw+1][1] : 0}
                 };
                 for (int k = 0; k < 4; ++k) {
                     int ax = (cmv[k][0]+2)>>2, ay = (cmv[k][1]+2)>>2;
@@ -672,6 +690,7 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                             mvpx/4, mvpy/4, 16,
                             lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
                             cand, nc, &mvx, &mvy);
+                mvr[idx][0] = mvx*4; mvr[idx][1] = mvy*4;
                 /* x264 promotes P16 to P_SKIP when cbp==0 and MV==pskip_mv. */
                 int qx = mvx*4, qy = mvy*4;
                 if (qx == psk_x && qy == psk_y &&
@@ -679,8 +698,20 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                     do_skip = 1;
             }
 
+            /* x264 subme=0 intra-vs-inter decision (before skip override) */
+            int imode = 2, icmode = 0, icost = 0;
+            int use_intra = !fast_skip && inter_cost > 0 &&
+                intra_decide(cur, cur + (size_t)w*h,
+                             cur + (size_t)w*h + (size_t)(w/2)*(h/2),
+                             w, mx*16, my*16, top, left, tly,
+                             topu, leftu, tlu, topv, leftv, tlv,
+                             have_l, have_t, have_tl,
+                             qp, inter_cost, &imode, &icmode, &icost);
+            if (use_intra) do_skip = 0;  /* intra overrides tentative P_SKIP */
+
             if (do_skip) {
                 mv[idx][0] = psk_x; mv[idx][1] = psk_y;
+                mvr[idx][0] = mvr[idx][1] = 0;
                 is_skip[idx] = 1;
                 ++skip_run;
                 /* reconstruct skip MB from reference */
@@ -698,22 +729,13 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                 continue;
             }
 
-            /* x264 subme=0 intra-vs-inter decision */
-            int imode = 2, icmode = 0, icost = 0;
-            int use_intra = !do_skip && inter_cost > 0 &&
-                intra_decide(cur, cur + (size_t)w*h,
-                             cur + (size_t)w*h + (size_t)(w/2)*(h/2),
-                             w, mx*16, my*16, top, left, tly,
-                             topu, leftu, tlu, topv, leftv, tlv,
-                             have_l, have_t, have_tl,
-                             qp, inter_cost, &imode, &icmode, &icost);
-
             /* CAVLC requires mb_skip_run before every coded MB, including 0. */
             vk_bs_write_ue(bs, (uint32_t)skip_run);
             skip_run = 0;
             mv[idx][0] = mvx*4; mv[idx][1] = mvy*4;
 
             if (use_intra) {
+                mv_ref[idx] = -1;  /* intra: ref=-1 for neighbour predictors */
                 vk_bs_write_ue(bs, (uint32_t)(5 + 1 + imode));  /* I16 in P */
                 vk_bs_write_ue(bs, (uint32_t)(icmode <= 3 ? icmode : 0));  /* chroma mode fix */
                 vk_bs_write_se(bs, 0);                           /* mb_qp_delta */
@@ -778,5 +800,5 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
     vk_bs_rbsp_trailing(bs);
     free(dcnz_c); free(cnnz_c); free(nnz_c);
     free(ry); free(ru); free(rv);
-    free(is_skip); free(mv); free(refp);
+    free(is_skip); free(mv); free(mvr); free(mv_ref); free(refp);
 }
