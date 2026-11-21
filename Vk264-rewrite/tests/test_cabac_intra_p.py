@@ -16,7 +16,8 @@ CLIP = pathlib.Path(r'E:\__PROJECTS__\Wx264-Vulkan-Opencode\clips\youtube'
 SW, SH = 1920, 1080
 W, H = 64, 64
 CASES = [(640, 960, 16), (320, 800, 8), (1120, 960, 16), (320, 720, 2),
-         (0, 360, 4), (640, 960, 4), (640, 960, 8), (1120, 960, 8)]
+         (0, 360, 4), (640, 960, 4), (640, 960, 8), (1120, 960, 8),
+         (960, 960, 4)]
 
 if not X264.exists() or not CLIP.exists():
     print('x264.exe or clip missing; skipping'); sys.exit(77)
