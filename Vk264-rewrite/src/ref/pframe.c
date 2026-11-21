@@ -109,6 +109,28 @@ static int block_decimate(const uint8_t *src, int ss, const uint8_t *pred, int p
     return include_dc ? decimate_score(z, 16) : decimate_score(z+1, 15);
 }
 
+/* x264's mc_chroma: the luma qpel MV is a 1/8-chroma-pixel offset, so even
+ * integer luma MVs land on fractional chroma positions and need bilinear
+ * interpolation. mvx8/mvy8 are the luma-quarter-pel MVs. */
+static void mc_chroma8(uint8_t *du, uint8_t *dv, int dstride,
+                       const uint8_t *ru, const uint8_t *rv, int rstride,
+                       int x, int y, int mvx8, int mvy8)
+{
+    int dx = mvx8 & 7, dy = mvy8 & 7;
+    int cA=(8-dx)*(8-dy), cB=dx*(8-dy), cC=(8-dx)*dy, cD=dx*dy;
+    int ox = (mvx8 >> 3) + CPAD, oy = (mvy8 >> 3) + CPAD;
+    for (int yy = 0; yy < 8; ++yy)
+        for (int xx = 0; xx < 8; ++xx) {
+            int sx = x/2 + xx + ox, sy = y/2 + yy + oy;
+            int a=ru[sy*rstride+sx], b=ru[sy*rstride+sx+1];
+            int c=ru[(sy+1)*rstride+sx], d=ru[(sy+1)*rstride+sx+1];
+            du[yy*dstride+xx] = (uint8_t)((cA*a+cB*b+cC*c+cD*d+32)>>6);
+            a=rv[sy*rstride+sx]; b=rv[sy*rstride+sx+1];
+            c=rv[(sy+1)*rstride+sx]; d=rv[(sy+1)*rstride+sx+1];
+            dv[yy*dstride+xx] = (uint8_t)((cA*a+cB*b+cC*c+cD*d+32)>>6);
+        }
+}
+
 /* Decide P_SKIP: 1 iff the residual at the P_SKIP MV predictor quantises
  * to zero in both planes (x264 macroblock_probe_pskip). */
 static int probe(const uint8_t *cur, const uint8_t *refp,
@@ -894,13 +916,10 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                 for (int yy = 0; yy < 16; ++yy)
                     memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
                            refp + (my*16+yy+sy+LPAD)*rs + LPAD + mx*16+sx, 16);
-                for (int yy = 0; yy < 8; ++yy) {
-                    int cx = mv[idx][0]/8, cyp = mv[idx][1]/8;
-                    memcpy(ru + (my*8+yy+CPAD)*crs + CPAD + mx*8,
-                           refp + rys + (my*8+yy+cyp+CPAD)*crs + CPAD + mx*8+cx, 8);
-                    memcpy(rv + (my*8+yy+CPAD)*crs + CPAD + mx*8,
-                           refp + rys + rcs + (my*8+yy+cyp+CPAD)*crs + CPAD + mx*8+cx, 8);
-                }
+                mc_chroma8(ru + (my*8+CPAD)*crs + CPAD + mx*8,
+                           rv + (my*8+CPAD)*crs + CPAD + mx*8, crs,
+                           refp + rys, refp + rys + rcs, crs,
+                           mx*16, my*16, mv[idx][0], mv[idx][1]);
                 continue;
             }
 
@@ -975,13 +994,10 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
             for (int yy = 0; yy < 16; ++yy)
                 memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
                        refp + (my*16+yy+sy+LPAD)*rs + LPAD + mx*16+sx, 16);
-            for (int yy = 0; yy < 8; ++yy) {
-                int cx = mvx/2, cyp = mvy/2;
-                memcpy(ru + (my*8+yy+CPAD)*crs + CPAD + mx*8,
-                       refp + rys + (my*8+yy+cyp+CPAD)*crs + CPAD + mx*8+cx, 8);
-                memcpy(rv + (my*8+yy+CPAD)*crs + CPAD + mx*8,
-                       refp + rys + rcs + (my*8+yy+cyp+CPAD)*crs + CPAD + mx*8+cx, 8);
-            }
+            mc_chroma8(ru + (my*8+CPAD)*crs + CPAD + mx*8,
+                       rv + (my*8+CPAD)*crs + CPAD + mx*8, crs,
+                       refp + rys, refp + rys + rcs, crs,
+                       mx*16, my*16, mvx*4, mvy*4);
             uint8_t *rcony = ry + (my*16+LPAD)*rs + LPAD + mx*16;
             uint8_t *rconu = ru + (my*8+CPAD)*crs + CPAD + mx*8;
             uint8_t *rconv = rv + (my*8+CPAD)*crs + CPAD + mx*8;
