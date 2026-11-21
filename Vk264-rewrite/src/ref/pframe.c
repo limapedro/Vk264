@@ -374,8 +374,25 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
             cdnz[pl] += t[i] != 0;
         }
     }
-    for (int pl = 0; pl < 2; ++pl)
-        for (int b = 0; b < 4; ++b) if (cnnz[pl][b]) cbp_chroma = 2;
+    /* x264 mb_encode_chroma_internal: b_dct_decimate=1 for P-slices, so
+     * each chroma plane's AC is decimated when its JVT-B118 score < 7.
+     * decimate_score() ignores the zeroed DC at index 0, matching
+     * x264's decimate_score15() on the zigzag-scanned AC coefficients. */
+    for (int pl = 0; pl < 2; ++pl) {
+        int dec = 0;
+        for (int b = 0; b < 4; ++b) {
+            if (!cnnz[pl][b] || dec >= 7) continue;
+            dec += decimate_score(cacq[pl][b], 16);
+        }
+        if (dec < 7) {
+            for (int b = 0; b < 4; ++b) {
+                cnnz[pl][b] = 0;
+                memset(cacq[pl][b], 0, sizeof(cacq[pl][b]));
+            }
+        } else {
+            cbp_chroma = 2;   /* AC survives decimation */
+        }
+    }
     *od = (uint8_t)(cdnz[0] | (cdnz[1]<<4));
 
     int cbp = cbp_luma | (cbp_chroma<<4);
