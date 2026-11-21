@@ -464,14 +464,17 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
 
 /* Code the luma DC residual block of an I16 MB in a P-slice. x264 always
  * codes the 16x16 DC block for I16, even when cbp_luma==0. */
-static void code_i16_dc(vk_bs_t *bs, const uint8_t *cur, int w, int x, int y,
-                        const uint8_t pred[256], int qp,
-                        const uint8_t *ll, const uint8_t *tl,
-                        uint8_t *rcony, int rdy)
+static int code_i16_dc(vk_bs_t *bs, const uint8_t *cur, int w, int x, int y,
+                       const uint8_t pred[256], int qp,
+                       const uint8_t *ll, const uint8_t *tl,
+                       uint8_t *rcony, int rdy, int write)
 {
+    static const uint8_t zz[16] = {0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
+    static const uint8_t ds[16] = {3,2,2,1,1,1,0,0,0,0,0,0,0,0,0,0};
+    static const int ctt[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
     int mf[16], bias[16], deq[16];
     vk_ref_quant_tables(qp, 0, mf, bias, deq);
-    int dc[16];
+    int dc[16], dct[16][16], nnz[16];
     for (int b = 0; b < 16; ++b) {
         int by = (b/4)*4, bx = (b%4)*4;
         uint8_t s[16], p[16];
@@ -480,32 +483,89 @@ static void code_i16_dc(vk_bs_t *bs, const uint8_t *cur, int w, int x, int y,
                 s[yy*4+xx] = cur[(y+by+yy)*w + x+bx+xx];
                 p[yy*4+xx] = pred[(by+yy)*16 + bx+xx];
             }
-        int d[16];
-        vk_ref_dct4x4(d, s, p);
-        dc[b] = d[0];
+        vk_ref_dct4x4(dct[b], s, p);
+        dc[b] = dct[b][0];
+        dct[b][0] = 0;
+        for (int i = 0; i < 16; ++i) dct[b][i] = vk_ref_quant_one(dct[b][i], mf[i], bias[i]);
+        nnz[b] = 0;
+        for (int i = 0; i < 16; ++i) nnz[b] += dct[b][i] != 0;
     }
+    /* x264 decimation: per-8x8 score >=4, total >=6 */
+    int cbp_luma = 0, total = 0;
+    static const int grp[4][4] = {{0,1,4,5},{2,3,6,7},{8,9,12,13},{10,11,14,15}};
+    for (int g = 0; g < 4; ++g) {
+        int score = 0, any = 0;
+        for (int k = 0; k < 4; ++k) {
+            int b = grp[g][k];
+            if (!nnz[b]) continue;
+            any = 1;
+            if (score < 6) {
+                int z[16];
+                for (int i = 0; i < 16; ++i) z[i] = dct[b][zz[i]];
+                score += decimate_score(z, 16);
+            }
+        }
+        if (any) {
+            total += score;
+            if (score >= 4) cbp_luma |= 1 << g;
+            else for (int k = 0; k < 4; ++k) nnz[grp[g][k]] = 0;
+        }
+    }
+    if (total < 6) {
+        cbp_luma = 0;
+        for (int b = 0; b < 16; ++b) nnz[b] = 0;
+    }
+    /* DC Hadamard quantized */
     vk_ref_dct4x4dc(dc);
     int dcmf = mf[0] >> 1, dcbias = bias[0] << 1;
     int q[16];
     for (int i = 0; i < 16; ++i) q[i] = vk_ref_quant_one(dc[i], dcmf, dcbias);
-    /* nC from luma block 0's left/top neighbours */
-    int za = ll[0], zb = tl[0], sum = za+zb;
-    int prednc = sum < 0x80 ? (sum+1)>>1 : sum & 0x7f;
-    static const int ctt[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
-    /* x264's luma16x16_dc is zigzag-scanned before CAVLC */
-    static const uint8_t dczz[16] = {0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
-    int zq[16];
-    for (int i = 0; i < 16; ++i) zq[i] = q[dczz[i]];
-    vk_cavlc_block_residual(bs, VK_DCT_LUMA_DC, zq, ctt[prednc & 0x7f], 1, 16);
-    /* DC-only reconstruction: idct4x4dc + dequant4dc + add to prediction */
-    int rec[16];
-    for (int i = 0; i < 16; ++i) rec[i] = zq[i];
-    vk_ref_idct4x4dc(rec);
-    vk_ref_dequant4dc(rec, deq, qp);
-    for (int i = 0; i < 16; ++i) {
-        int by = (i/4)*4, bx = (i%4)*4;
-        vk_ref_add_block_dc(rcony + by*rdy + bx, rdy, rec[i]);
+    if (write) {
+        int za = ll[0], zb = tl[0], sum = za+zb;
+        int prednc = sum < 0x80 ? (sum+1)>>1 : sum & 0x7f;
+        int zq[16];
+        for (int i = 0; i < 16; ++i) zq[i] = q[zz[i]];
+        vk_cavlc_block_residual(bs, VK_DCT_LUMA_DC, zq, ctt[prednc & 0x7f], 1, 16);
+        if (cbp_luma) {
+            static const int bidx[16] = {0,1,4,5,2,3,6,7,8,9,12,13,10,11,14,15};
+            static const int s8[16] = {12,13,20,21,14,15,22,23,28,29,36,37,30,31,38,39};
+            static const int bgrp[16] = {0,0,1,1,0,0,1,1,2,2,3,3,2,2,3,3};
+            uint8_t cache[64] = {0};
+            for (int i = 0; i < 4; ++i) {
+                cache[11+i*8] = ll[i*4+3];
+                cache[4+i] = tl[12+i];
+            }
+            for (int i = 0; i < 16; ++i) {
+                int b = bidx[i], p = s8[i];
+                if (!(cbp_luma & (1<<bgrp[b]))) continue;
+                int s = cache[p-1] + cache[p-8];
+                int pred = s < 0x80 ? (s+1)>>1 : s & 0x7f;
+                int ac[16];
+                for (int j = 0; j < 16; ++j) ac[j] = dct[b][zz[j]];
+                vk_cavlc_block_residual(bs, VK_DCT_LUMA_4x4, ac, ctt[pred & 0x7f], 1, 16);
+                cache[p] = (uint8_t)(nnz[b] ? 1 : 0);
+            }
+        }
+        /* reconstruction */
+        int rec[16];
+        for (int i = 0; i < 16; ++i) rec[i] = q[i];
+        vk_ref_idct4x4dc(rec);
+        vk_ref_dequant4dc(rec, deq, qp);
+        for (int b = 0; b < 16; ++b) {
+            int by = (b/4)*4, bx = (b%4)*4;
+            uint8_t *dst = rcony + by*rdy + bx;
+            if (nnz[b]) {
+                int blk[16];
+                for (int i = 0; i < 16; ++i) blk[i] = dct[b][i];
+                vk_ref_dequant4(blk, deq, qp);
+                blk[0] = rec[b];
+                vk_ref_idct4(blk);
+                vk_ref_add_block(dst, rdy, blk);
+            } else
+                vk_ref_add_block_dc(dst, rdy, rec[b]);
+        }
     }
+    return cbp_luma;
 }
 
 /* Compute and CAVLC-code the 2x2 chroma DC residual for an I16 MB in a
@@ -824,11 +884,6 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                 int cbp_chroma_i = code_i16_chroma_dc(bs, cur, w, h, mx*16, my*16,
                         topu, leftu, tlu, topv, leftv, tlv, icmode, qp,
                         rconu_i, rconv_i, crs, crs, 0, 0);
-                /* x264: mb_type = 6 + fix + 4*cbp_chroma + 12*(cbp_luma!=0) */
-                int imode_fix = imode <= 3 ? imode : 2;
-                vk_bs_write_ue(bs, (uint32_t)(6 + imode_fix + 4*cbp_chroma_i));  /* I16 in P */
-                vk_bs_write_ue(bs, (uint32_t)(icmode <= 3 ? icmode : 0));  /* chroma mode fix */
-                vk_bs_write_se(bs, 0);                           /* mb_qp_delta */
                 uint8_t pred16[256], pred8[64];
                 vk_predict16(pred16, top, left, tly, imode);
                 uint8_t il[4], it[4];
@@ -836,8 +891,17 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                     il[i] = have_l ? nnz_c[idx-1][i*4+3] : 0x80;
                     it[i] = have_t ? nnz_c[idx-mw][12+i] : 0x80;
                 }
+                /* compute cbp_luma first (encoded in mb_type) */
+                int cbp_luma_i = code_i16_dc(bs, cur, w, mx*16, my*16, pred16, qp,
+                        il, it, ry + (my*16+LPAD)*rs + LPAD + mx*16, rs, 0);
+                /* x264: mb_type = 6 + fix + 4*cbp_chroma + 12*(cbp_luma!=0) */
+                int imode_fix = imode <= 3 ? imode : 2;
+                vk_bs_write_ue(bs, (uint32_t)(6 + imode_fix + 4*cbp_chroma_i
+                                              + (cbp_luma_i ? 12 : 0)));  /* I16 in P */
+                vk_bs_write_ue(bs, (uint32_t)(icmode <= 3 ? icmode : 0));  /* chroma mode fix */
+                vk_bs_write_se(bs, 0);                           /* mb_qp_delta */
                 code_i16_dc(bs, cur, w, mx*16, my*16, pred16, qp, il, it,
-                            ry + (my*16+LPAD)*rs + LPAD + mx*16, rs);
+                            ry + (my*16+LPAD)*rs + LPAD + mx*16, rs, 1);
                 /* chroma DC residual written after luma DC */
                 if (cbp_chroma_i)
                     code_i16_chroma_dc(bs, cur, w, h, mx*16, my*16,
