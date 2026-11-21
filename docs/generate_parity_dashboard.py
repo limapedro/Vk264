@@ -18,13 +18,13 @@ from datetime import date
 # ---------------------------------------------------------------------------
 # Data — update these after each parity PR, then regenerate the SVG.
 # ---------------------------------------------------------------------------
-SNAPSHOT = "2c6c5b7"
+SNAPSHOT = "30279d0"
 GENERATED = date.today().isoformat()
 
 # Overall numbers (from build/cavlc_parity_sweep.py, cavlc_iframe_sweep.py, ctest)
 # FUNCTION PARITY is derived from the weighted STAGES table below so the
 # dashboard stays self-consistent when a family changes status.
-CAVLC_P_EXACT, CAVLC_P_TOTAL = 1284, 1360
+CAVLC_P_EXACT, CAVLC_P_TOTAL = 1325, 1360
 CABAC_P_EXACT, CABAC_P_TOTAL = 960, 1360
 STATS = [
     ("CAVLC I-FRAMES", "72 / 72", "100.0%", "#2ea043"),
@@ -64,6 +64,7 @@ SWEEPS = [
     ("#140", 1215, "#2ea043"),
     ("#142", 1250, "#2ea043"),
     ("#144", 1284, "#2ea043"),
+    ("#146", 1325, "#2ea043"),
 ]
 
 # Pipeline stages → function families → (name, weight, status).
