@@ -488,7 +488,8 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
 static int code_i16_dc(vk_bs_t *bs, const uint8_t *cur, int w, int x, int y,
                        const uint8_t pred[256], int qp,
                        const uint8_t *ll, const uint8_t *tl,
-                       uint8_t *rcony, int rdy, int write)
+                       uint8_t *rcony, int rdy, int write,
+                       uint8_t nnz_out[16])
 {
     static const uint8_t zz[16] = {0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
     static const uint8_t ds[16] = {3,2,2,1,1,1,0,0,0,0,0,0,0,0,0,0};
@@ -588,6 +589,11 @@ static int code_i16_dc(vk_bs_t *bs, const uint8_t *cur, int w, int x, int y,
                 vk_ref_add_block_dc(dst, rdy, rec[b]);
         }
     }
+    /* x264 stores per-4x4 coefficient COUNTS in non_zero_count; neighbours
+     * derive their nN context from them. Without exporting these, every I16
+     * MB looks like an all-zero MB to the next MB's CAVLC nN prediction. */
+    if (nnz_out)
+        for (int b = 0; b < 16; ++b) nnz_out[b] = (uint8_t)nnz[b];
     return cbp_luma;
 }
 
@@ -921,7 +927,7 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                 }
                 /* compute cbp_luma first (encoded in mb_type) */
                 int cbp_luma_i = code_i16_dc(bs, cur, w, mx*16, my*16, pred16, qp,
-                        il, it, ry + (my*16+LPAD)*rs + LPAD + mx*16, rs, 0);
+                        il, it, ry + (my*16+LPAD)*rs + LPAD + mx*16, rs, 0, NULL);
                 /* x264: prediction written to fdec FIRST, then DC residual added */
                 for (int yy = 0; yy < 16; ++yy)
                     memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16, pred16 + yy*16, 16);
@@ -938,7 +944,7 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                 vk_bs_write_ue(bs, (uint32_t)(icmode <= 3 ? icmode : 0));  /* chroma mode fix */
                 vk_bs_write_se(bs, 0);                           /* mb_qp_delta */
                 code_i16_dc(bs, cur, w, mx*16, my*16, pred16, qp, il, it,
-                            ry + (my*16+LPAD)*rs + LPAD + mx*16, rs, 1);
+                            ry + (my*16+LPAD)*rs + LPAD + mx*16, rs, 1, nnz_c[idx]);
                 /* chroma DC residual written after luma DC */
                 if (cbp_chroma_i)
                     code_i16_chroma_dc(bs, cur, w, h, mx*16, my*16,
