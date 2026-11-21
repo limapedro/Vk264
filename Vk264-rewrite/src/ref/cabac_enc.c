@@ -1176,7 +1176,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                         cache[p] = (uint8_t)nnz[b];
                     }
                 }
-                for (int i = 0; i < 16; ++i) nnzc[idx][i] = (uint8_t)nnz[i];
+                for (int i = 0; i < 16; ++i) nnzc[idx][i] = nnz[i] ? 1 : 0;
                 /* chroma DC */
                 if (cbp_chroma) {
                     int ca = (lc>>9)&1, cb2 = (tc>>9)&1, nu = 0, nv = 0;
