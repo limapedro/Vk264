@@ -562,9 +562,13 @@ static void p_mvp16_avail(int lx, int ly, int tx, int ty, int cx, int cy,
 
 static void p_pskip_mv(int lx, int ly, int tx, int ty, int cx, int cy,
                        int have_l, int have_t, int have_c,
-                       int *px, int *py)
+                       int lref, int tref, int *px, int *py)
 {
-    if (!have_l || !have_t || (lx == 0 && ly == 0) || (tx == 0 && ty == 0)) {
+    /* x264_mb_predict_mv_pskip: intra MBs carry ref=-1 so a zero MV still
+     * participates; only ref==0 with mv==0 is treated as unavailable. */
+    if (!have_l || !have_t ||
+        (lref == 0 && lx == 0 && ly == 0) ||
+        (tref == 0 && tx == 0 && ty == 0)) {
         *px = *py = 0;
         return;
     }
@@ -858,6 +862,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
     memset(ry, 128, ysz); memset(ru, 128, csz); memset(rv, 128, csz);
 
     int (*mv)[2] = calloc((size_t)mw*mh, 2*sizeof(int));
+    int *mv_ref = calloc((size_t)mw*mh, sizeof(int));  /* -1 for intra, 0 inter */
     uint8_t *is_skip = calloc((size_t)mw*mh, 1);
     /* mvd cache per 4x4 block, packed {abs_x,abs_y} capped at 66 */
     uint8_t (*mvd_c)[16][2] = calloc((size_t)mw*mh, 32);
@@ -891,7 +896,10 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
 
             int psk_x, psk_y;
             p_pskip_mv(lx, ly, tx, ty, cx, cy, have_l, have_t,
-                       have_c || have_tl, &psk_x, &psk_y);
+                       have_c || have_tl,
+                       have_l ? mv_ref[idx-1] : -2,
+                       have_t ? mv_ref[idx-mw] : -2,
+                       &psk_x, &psk_y);
 
             int skip_neigh = (have_l && is_skip[idx-1])
                            || (have_t && is_skip[idx-mw])
@@ -1151,6 +1159,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                     memcpy(rbv + (my*8+yy)*crs + mx*8, pv + yy*8, 8);
                 }
                 mv[idx][0] = mv[idx][1] = 0;
+                mv_ref[idx] = -1;  /* intra: ref=-1, MV still participates */
                 is_skip[idx] = 0;
                 memset(mvd_c[idx], 0, 32);
                 continue;
@@ -1310,7 +1319,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
 
     free(ry); free(ru); free(rv);
     free(cmode_fix); free(cnnzc); free(nnzc); free(mbcbp);
-    free(mvd_c); free(cbp_c); free(is_skip); free(mv); free(refp);
+    free(mvd_c); free(cbp_c); free(is_skip); free(mv); free(mv_ref); free(refp);
     int bytes = vk_cabac_flush(cb, 1);
     bs->p = data + bytes;
     return bytes;
