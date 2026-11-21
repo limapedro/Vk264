@@ -1,9 +1,10 @@
-"""Byte-exact CABAC arithmetic-coder regression.
+"""Byte-exact CABAC production-path regression.
 
-Generates a flat 64x64 I-frame, encodes it with x264 --cabac, then replays
-x264's CABAC decision sequence through the oracle's arithmetic coder and
+Generates a flat 64x64 I-frame, encodes it with x264 --cabac, then encodes
+it with the oracle's production CABAC path (no captured decisions) and
 compares the complete Annex-B stream byte-for-byte. This validates the
-ported CABAC coder, context tables, slice-header alignment and flush.
+ported coder, context tables, I16 decision generation, residual coefficient
+coding, slice-header alignment and flush.
 """
 import pathlib, re, subprocess, sys, os
 
@@ -12,7 +13,7 @@ X264 = pathlib.Path(os.environ.get('VK264_X264_EXE',
     str(ROOT / 'references' / 'x264-master' / 'x264.exe')))
 ORACLE = pathlib.Path(sys.argv[1])
 BUILD = pathlib.Path(sys.argv[2])
-DECISIONS = pathlib.Path(sys.argv[3])
+
 
 if not X264.exists():
     print('x264.exe missing; skipping'); sys.exit(77)
@@ -30,9 +31,8 @@ ref, got = BUILD / 'cabac_ref.h264', BUILD / 'cabac_ora.h264'
 subprocess.run([str(X264), '--input-res', f'{W}x{H}', '--fps', '60', '--qp', '28',
                 '--preset', 'ultrafast', '--keyint', '1', '--frames', '1', '--cabac',
                 '--output', str(ref), str(src)], check=True, capture_output=True)
-env = dict(os.environ, CABAC_REPLAY=str(DECISIONS))
 subprocess.run([str(ORACLE), str(src), str(W), str(H), '28', '25', str(got)],
-               check=True, capture_output=True, env=env)
+               check=True, capture_output=True)
 
 def nals(data):
     out = []
