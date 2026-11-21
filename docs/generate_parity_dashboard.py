@@ -18,14 +18,14 @@ from datetime import date
 # ---------------------------------------------------------------------------
 # Data — update these after each parity PR, then regenerate the SVG.
 # ---------------------------------------------------------------------------
-SNAPSHOT = "b6d6c96"
+SNAPSHOT = "c3c0480"
 GENERATED = date.today().isoformat()
 
 # Overall numbers (from build/cavlc_parity_sweep.py, cavlc_iframe_sweep.py, ctest)
 # FUNCTION PARITY is derived from the weighted STAGES table below so the
 # dashboard stays self-consistent when a family changes status.
 CAVLC_P_EXACT, CAVLC_P_TOTAL = 1339, 1360
-CABAC_P_EXACT, CABAC_P_TOTAL = 1102, 1360
+CABAC_P_EXACT, CABAC_P_TOTAL = 1149, 1360
 STATS = [
     ("CAVLC I-FRAMES", "72 / 72", "100.0%", "#2ea043"),
     ("CAVLC P-SLICES", f"{CAVLC_P_EXACT} / {CAVLC_P_TOTAL}",
@@ -70,6 +70,21 @@ SWEEPS = [
     ("#153", 1339, "#2ea043"),
     ("#155", 1339, "#2ea043"),
     ("#157", 1339, "#2ea043"),
+]
+
+# CABAC P-slice byte-exact sweep progression (parallel to SWEEPS).  Values
+# are from build/cabac_parity_sweep.py at each merged PR (saved exact-case
+# files in build/).  CABAC was introduced in #127.
+CABAC_SWEEPS = [
+    ("#127",  920, "#484f58"),
+    ("#134",  952, "#6e7681"),
+    ("#138",  960, "#8b949e"),
+    ("#148",  987, "#a5a5a5"),
+    ("#151",  987, "#a5a5a5"),
+    ("#153",  990, "#c9a227"),
+    ("#155", 1079, "#388bfd"),
+    ("#157", 1102, "#388bfd"),
+    ("#159", 1149, "#2ea043"),
 ]
 
 # Pipeline stages → function families → (name, weight, status).
@@ -211,7 +226,9 @@ gap = 14
 ch_base = 180          # tight cards; tiles need ~110px plus a 54px header
 sweep_row_h = 17
 sweep_top = gy + 14 + rows*(ch_base+gap) + 40
-H = sweep_top + len(SWEEPS)*sweep_row_h + 110   # 60px sweep gap + legend + margin
+# two stacked sweep sections (CAVLC + CABAC), then legend + margin
+cabac_top = sweep_top + len(SWEEPS)*sweep_row_h + 45
+H = cabac_top + len(CABAC_SWEEPS)*sweep_row_h + 110
 add(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
     f'viewBox="0 0 {W} {H}" font-family="Consolas, SFMono-Regular, Menlo, monospace">')
 add(f'''<defs>
@@ -313,6 +330,17 @@ add(f'<text x="{gx}" y="{by}" fill="#e6edf3" font-size="17" font-weight="bold">'
 bar_x, bar_w = gx+240, W-64-240-120
 for i, (label, val, color) in enumerate(SWEEPS):
     y = by + 24 + i*sweep_row_h
+    add(f'<text x="{gx+8}" y="{y+11}" fill="#8b949e" font-size="12">{esc(label)}</text>')
+    add(f'<rect x="{bar_x}" y="{y}" width="{bar_w}" height="13" fill="#21262d" rx="3"/>')
+    add(f'<rect x="{bar_x}" y="{y}" width="{bar_w*val/1360:.1f}" height="13" fill="{color}" rx="3"/>')
+    add(f'<text x="{bar_x+bar_w+10}" y="{y+11}" fill="#e6edf3" font-size="12">{val}/1360</text>')
+
+# CABAC sweep progression (parallel section)
+cy = cabac_top
+add(f'<text x="{gx}" y="{cy}" fill="#e6edf3" font-size="17" font-weight="bold">'
+    'CABAC P-slice byte-exact sweep — progress by merged PR</text>')
+for i, (label, val, color) in enumerate(CABAC_SWEEPS):
+    y = cy + 24 + i*sweep_row_h
     add(f'<text x="{gx+8}" y="{y+11}" fill="#8b949e" font-size="12">{esc(label)}</text>')
     add(f'<rect x="{bar_x}" y="{y}" width="{bar_w}" height="13" fill="#21262d" rx="3"/>')
     add(f'<rect x="{bar_x}" y="{y}" width="{bar_w*val/1360:.1f}" height="13" fill="{color}" rx="3"/>')
