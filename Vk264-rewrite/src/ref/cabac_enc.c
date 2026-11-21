@@ -15,6 +15,28 @@ static uint8_t clip8(int v) { return v < 0 ? 0 : (v > 255 ? 255 : (uint8_t)v); }
 #define LPAD 16
 #define CPAD 8
 
+/* x264's mc_chroma: luma qpel MV is a 1/8-chroma-pixel offset, so integer
+ * luma MVs still land on fractional chroma positions and need bilinear
+ * interpolation (mvx8/mvy8 are luma quarter-pel MVs). */
+static void cabac_mc_chroma8(uint8_t *du, uint8_t *dv, int dstride,
+                             const uint8_t *ru, const uint8_t *rv, int rstride,
+                             int x, int y, int mvx8, int mvy8)
+{
+    int dx = mvx8 & 7, dy = mvy8 & 7;
+    int cA=(8-dx)*(8-dy), cB=dx*(8-dy), cC=(8-dx)*dy, cD=dx*dy;
+    int ox = (mvx8 >> 3) + CPAD, oy = (mvy8 >> 3) + CPAD;
+    for (int yy = 0; yy < 8; ++yy)
+        for (int xx = 0; xx < 8; ++xx) {
+            int sx = x/2 + xx + ox, sy = y/2 + yy + oy;
+            int a=ru[sy*rstride+sx], b=ru[sy*rstride+sx+1];
+            int c=ru[(sy+1)*rstride+sx], d=ru[(sy+1)*rstride+sx+1];
+            du[yy*dstride+xx] = (uint8_t)((cA*a+cB*b+cC*c+cD*d+32)>>6);
+            a=rv[sy*rstride+sx]; b=rv[sy*rstride+sx+1];
+            c=rv[(sy+1)*rstride+sx]; d=rv[(sy+1)*rstride+sx+1];
+            dv[yy*dstride+xx] = (uint8_t)((cA*a+cB*b+cC*c+cD*d+32)>>6);
+        }
+}
+
 /* x264's CABAC residual coefficient coder (encoder/cabac.c:665). */
 static void cabac_coeffs(vk_cabac_t *cb, const int *l, int cat)
 {
@@ -1035,13 +1057,10 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                 for (int yy = 0; yy < 16; ++yy)
                     memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
                            ryref + (my*16+yy+sy)*rs + mx*16+sx, 16);
-                for (int yy = 0; yy < 8; ++yy) {
-                    int cx8 = psk_x/8, cy8 = psk_y/8;
-                    memcpy(ru + (my*8+yy+CPAD)*crs + CPAD + mx*8,
-                           refp + ysz + (my*8+yy+cy8+CPAD)*crs + CPAD + mx*8+cx8, 8);
-                    memcpy(rv + (my*8+yy+CPAD)*crs + CPAD + mx*8,
-                           refp + ysz + csz + (my*8+yy+cy8+CPAD)*crs + CPAD + mx*8+cx8, 8);
-                }
+                cabac_mc_chroma8(ru + (my*8+CPAD)*crs + CPAD + mx*8,
+                                 rv + (my*8+CPAD)*crs + CPAD + mx*8, crs,
+                                 refp + ysz, refp + ysz + csz, crs,
+                                 mx*16, my*16, psk_x, psk_y);
                 continue;
             }
 
@@ -1337,13 +1356,10 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
             for (int yy = 0; yy < 16; ++yy)
                 memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
                        ryref + (my*16+yy+sy)*rs + mx*16+sx, 16);
-            for (int yy = 0; yy < 8; ++yy) {
-                int cx8 = mvx/2, cy8 = mvy/2;
-                memcpy(ru + (my*8+yy+CPAD)*crs + CPAD + mx*8,
-                       refp + ysz + (my*8+yy+cy8+CPAD)*crs + CPAD + mx*8+cx8, 8);
-                memcpy(rv + (my*8+yy+CPAD)*crs + CPAD + mx*8,
-                       refp + ysz + csz + (my*8+yy+cy8+CPAD)*crs + CPAD + mx*8+cx8, 8);
-            }
+            cabac_mc_chroma8(ru + (my*8+CPAD)*crs + CPAD + mx*8,
+                             rv + (my*8+CPAD)*crs + CPAD + mx*8, crs,
+                             refp + ysz, refp + ysz + csz, crs,
+                             mx*16, my*16, mvx*4, mvy*4);
             /* add luma residual */
             if (cb_l) {
                 int mfx[16], biasx[16], deqx[16];
