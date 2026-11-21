@@ -38,7 +38,9 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
     /* x264 tests the spatial neighbour MV candidates (with MVD cost) and
      * starts the diamond search from the cheapest one. */
     if (ncands > 0) {
-        int bestc = bcost + mv_cost(0, lambda);
+        /* x264 deliberately omits the MVD bit cost for the rounded MVP
+         * (me.c:283-291), so compare candidates against the bare SAD. */
+        int bestc = bcost;
         for (int i = 0; i < ncands; ++i) {
             int cx = cands[2*i], cy = cands[2*i+1];
             int c = sad16(cur, cur_stride, rpad, ref_stride, x, y, cx, cy)
