@@ -661,14 +661,14 @@ static int code_i16_chroma_dc(vk_bs_t *bs, const uint8_t *cur, int w, int h,
             for (int i = 0; i < 16; ++i) cnnz[pl][b] += d[i] != 0;
         }
     }
-    int cdnz[2] = {0}, q[2][4], cbp = 0;
+    int cdnz[2] = {0}, q[2][4], any_dc = 0, any_ac = 0;
     for (int pl = 0; pl < 2; ++pl) {
         int a=cdc[pl][0]+cdc[pl][1], b=cdc[pl][2]+cdc[pl][3];
         int c=cdc[pl][0]-cdc[pl][1], d=cdc[pl][2]-cdc[pl][3];
         int had[4]={a+b,a-b,c+d,c-d};
         for (int i = 0; i < 4; ++i) {
             q[pl][i] = vk_ref_quant_one(had[i], cmf[0]>>1, cbias[0]<<1);
-            cbp |= q[pl][i] != 0;
+            any_dc |= q[pl][i] != 0;
             cdnz[pl] += q[pl][i] != 0;
         }
         /* x264 decimates chroma AC when the JVT-B118 score is below 7. */
@@ -677,12 +677,14 @@ static int code_i16_chroma_dc(vk_bs_t *bs, const uint8_t *cur, int w, int h,
             if (!cnnz[pl][b] || dec >= 7) continue;
             dec += decimate_score(cacq[pl][b]+1, 15);
         }
-        if (dec >= 7) cbp = 2;
+        if (dec >= 7) any_ac = 1;
         else for (int b = 0; b < 4; ++b) {
             cnnz[pl][b] = 0;
             memset(cacq[pl][b], 0, sizeof(cacq[pl][b]));
         }
     }
+    /* cbp_chroma is 0=none, 1=DC, 2=DC+AC — not a per-plane bitmask. */
+    int cbp = any_ac ? 2 : (any_dc ? 1 : 0);
     if (cnnz_out)
         for (int pl = 0; pl < 2; ++pl)
             for (int b = 0; b < 4; ++b) cnnz_out[pl][b] = (uint8_t)cnnz[pl][b];
