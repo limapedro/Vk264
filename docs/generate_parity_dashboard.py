@@ -18,17 +18,20 @@ from datetime import date
 # ---------------------------------------------------------------------------
 # Data — update these after each parity PR, then regenerate the SVG.
 # ---------------------------------------------------------------------------
-SNAPSHOT = "036cdc6"
+SNAPSHOT = "85d674a"
 GENERATED = date.today().isoformat()
 
 # Overall numbers (from build/cavlc_parity_sweep.py, cavlc_iframe_sweep.py, ctest)
 # FUNCTION PARITY is derived from the weighted STAGES table below so the
 # dashboard stays self-consistent when a family changes status.
-CAVLC_P_EXACT, CAVLC_P_TOTAL = 1005, 1360
+CAVLC_P_EXACT, CAVLC_P_TOTAL = 1022, 1360
+CABAC_P_EXACT, CABAC_P_TOTAL = 944, 1360
 STATS = [
     ("CAVLC I-FRAMES", "72 / 72", "100.0%", "#2ea043"),
     ("CAVLC P-SLICES", f"{CAVLC_P_EXACT} / {CAVLC_P_TOTAL}",
      f"{CAVLC_P_EXACT/CAVLC_P_TOTAL*100:.1f}%", "#d29922"),
+    ("CABAC P-SLICES", f"{CABAC_P_EXACT} / {CABAC_P_TOTAL}",
+     f"{CABAC_P_EXACT/CABAC_P_TOTAL*100:.1f}%", "#d29922"),
     ("CTEST GATES", "65 + 18 / 83", "100.0%", "#2ea043"),
     ("x264 INVENTORY", "669 funcs / 35 files", "42 N/A", "#388bfd"),
 ]
@@ -50,6 +53,8 @@ SWEEPS = [
     ("#120", 933, "#2ea043"),
     ("#121", 975, "#2ea043"),
     ("#123", 1005, "#2ea043"),
+    ("#125", 1005, "#2ea043"),
+    ("#126", 1022, "#2ea043"),
 ]
 
 # Pipeline stages → function families → (name, weight, status).
@@ -182,7 +187,7 @@ FUNC_EXACT = _weight.get("EXACT", 0)
 FUNC_TOTAL = sum(v for k, v in _weight.items() if k != "N/A")
 FUNC_PCT = FUNC_EXACT / FUNC_TOTAL * 100
 
-W, H = 1680, 1560
+W, H = 1680, 1600
 add(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
     f'viewBox="0 0 {W} {H}" font-family="Consolas, SFMono-Regular, Menlo, monospace">')
 add(f'''<defs>
@@ -227,7 +232,8 @@ add(f'<text x="{ox+ow-4}" y="{oy+9}" fill="#8b949e" font-size="12" text-anchor="
     f'byte-exact function coverage {FUNC_PCT:.1f}% ({FUNC_EXACT}/{FUNC_TOTAL} weighted families)</text>')
 
 # Stat cards
-sx, sy, sw, sh = 32, 120, (W - 64 - 3*16)//4, 74
+sx, sy, sh = 32, 120, 74
+sw = (W - 64 - (len(STATS)-1)*16)//len(STATS)
 for i, (label, value, percent, color) in enumerate(STATS):
     x = sx + i*(sw+16)
     add(f'<rect x="{x}" y="{sy}" width="{sw}" height="{sh}" fill="#161b22" '
