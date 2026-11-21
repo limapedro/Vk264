@@ -743,6 +743,9 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
             mv[idx][0] = mvx*4; mv[idx][1] = mvy*4;
 
             if (use_intra) {
+                /* x264 zeroes the decoded-MV cache for intra MBs (ref=-1),
+                 * while mvr retains the inter MV for ME candidates. */
+                mv[idx][0] = mv[idx][1] = 0;
                 mv_ref[idx] = -1;  /* intra: ref=-1 for neighbour predictors */
                 /* x264: mb_type = 6 + x264_mb_pred_mode16x16_fix[imode];
                  * DC_LEFT/DC_TOP/DC_128 (4/5/6) all map to DC (2). */
