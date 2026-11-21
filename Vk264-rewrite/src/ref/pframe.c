@@ -842,7 +842,10 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
 
             if (do_skip) {
                 mv[idx][0] = psk_x; mv[idx][1] = psk_y;
-                mvr[idx][0] = mvr[idx][1] = 0;
+                /* x264 retains the ME MV in mvr[0][0] for P_SKIP found via
+                 * mb_analyse_inter_p16x16 early termination (analyse.c:1291,
+                 * 3040-3045). It is a motion-prediction candidate for later
+                 * MBs. Do not zero it here. */
                 is_skip[idx] = 1;
                 ++skip_run;
                 /* reconstruct skip MB from reference */
