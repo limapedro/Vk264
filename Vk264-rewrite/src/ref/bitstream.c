@@ -108,6 +108,12 @@ void vk_bs_align(vk_bs_t *s)
         vk_bs_write(s, 8 - s->nbits, 0);
 }
 
+void vk_bs_align_1(vk_bs_t *s)
+{
+    if (s->nbits != 0)
+        vk_bs_write(s, 8 - s->nbits, (1u << (8 - s->nbits)) - 1);
+}
+
 void vk_nal_write(FILE *f, uint8_t nal_header, const uint8_t *rbsp,
                   size_t bytes, int long_startcode)
 {
