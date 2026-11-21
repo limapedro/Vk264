@@ -1,0 +1,177 @@
+D ctx=3 b=1 st=32 range=1fe low=0 q=-9 lps=21
+TERM
+D ctx=6 b=0 st=89 range=14e low=1e90 q=-5 lps=65
+D ctx=7 b=0 st=119 range=104 low=7e74 q=-3 lps=116
+D ctx=9 b=1 st=104 range=1d0 low=1fc10 q=-1 lps=135
+D ctx=10 b=0 st=122 range=10e low=2b2 q=-8 lps=128
+D ctx=64 b=0 st=119 range=11c low=564 q=-7 lps=116
+D ctx=60 b=0 st=82 range=1d0 low=1830 q=-5 lps=76
+D ctx=88 b=1 st=61 range=184 low=1830 q=-5 lps=37
+D ctx=105 b=1 st=91 range=15f low=1830 q=-5 lps=69
+D ctx=166 b=1 st=74 range=11a low=1830 q=-5 lps=37
+D ctx=228 b=1 st=64 range=128 low=c928 q=-2 lps=29
+D ctx=232 b=1 st=116 range=1d0 low=330 q=-6 lps=185
+D ctx=232 b=1 st=118 range=172 low=88e q=-5 lps=142
+D ctx=232 b=1 st=122 range=11c low=12e4 q=-4 lps=128
+D ctx=232 b=1 st=124 range=100 low=2700 q=-3 lps=128
+D ctx=232 b=1 st=126 range=100 low=4f00 q=-2 lps=128
+D ctx=232 b=1 st=127 range=100 low=9f00 q=-1 lps=128
+D ctx=232 b=1 st=125 range=100 low=200 q=-8 lps=128
+D ctx=232 b=1 st=123 range=100 low=400 q=-7 lps=128
+D ctx=232 b=1 st=121 range=100 low=800 q=-6 lps=123
+D ctx=232 b=1 st=119 range=10a low=1000 q=-5 lps=116
+D ctx=232 b=1 st=117 range=12c low=2000 q=-4 lps=111
+D ctx=232 b=1 st=115 range=17a low=4000 q=-3 lps=128
+D ctx=232 b=1 st=113 range=1f4 low=8000 q=-2 lps=166
+UEB 0 26
+BYPASS -1
+TERM
+D ctx=4 b=1 st=114 range=14c low=282 q=-8 lps=128
+TERM
+D ctx=6 b=0 st=97 range=1fc low=d38 q=-6 lps=110
+D ctx=7 b=0 st=123 range=1b8 low=3b18 q=-4 lps=187
+D ctx=9 b=1 st=108 range=176 low=782a q=-3 lps=110
+D ctx=10 b=0 st=120 range=1b8 low=1e4c8 q=-1 lps=178
+D ctx=64 b=0 st=123 range=106 low=1e4c8 q=-1 lps=128
+D ctx=60 b=0 st=80 range=100 low=29c q=-8 lps=43
+D ctx=88 b=0 st=59 range=1aa low=538 q=-7 lps=35
+TERM
+D ctx=4 b=1 st=118 range=116 low=35f8 q=-4 lps=116
+TERM
+D ctx=6 b=0 st=103 range=1ce low=da68 q=-2 lps=128
+D ctx=7 b=0 st=125 range=100 low=1b76c q=-1 lps=128
+D ctx=9 b=1 st=112 range=100 low=3d8 q=-8 lps=100
+D ctx=10 b=0 st=118 range=190 low=11d0 q=-6 lps=169
+D ctx=64 b=0 st=125 range=1ce low=23a0 q=-5 lps=227
+D ctx=60 b=0 st=78 range=1c6 low=4916 q=-4 lps=69
+D ctx=87 b=0 st=61 range=181 low=4916 q=-4 lps=37
+TERM
+D ctx=4 b=1 st=122 range=126 low=25390 q=-1 lps=128
+TERM
+D ctx=6 b=0 st=109 range=1fc low=d8 q=-7 lps=150
+D ctx=7 b=0 st=127 range=12c low=47c q=-6 lps=128
+D ctx=9 b=1 st=116 range=100 low=a50 q=-5 lps=111
+D ctx=10 b=0 st=116 range=1bc low=2b84 q=-3 lps=160
+D ctx=64 b=0 st=127 range=11c low=2b84 q=-3 lps=128
+D ctx=60 b=0 st=76 range=100 low=5840 q=-2 lps=39
+D ctx=87 b=0 st=77 range=1b2 low=b080 q=-1 lps=56
+TERM
+D ctx=4 b=1 st=124 range=1be low=fd0 q=-6 lps=197
+TERM
+D ctx=6 b=0 st=113 range=188 low=2192 q=-5 lps=144
+D ctx=7 b=0 st=126 range=120 low=4514 q=-4 lps=128
+D ctx=9 b=0 st=118 range=140 low=8a28 q=-3 lps=142
+D ctx=10 b=0 st=114 range=164 low=11450 q=-2 lps=128
+D ctx=64 b=0 st=126 range=1c8 low=228a0 q=-1 lps=240
+D ctx=60 b=0 st=74 range=1b0 low=140 q=-8 lps=54
+D ctx=88 b=0 st=75 range=17a low=140 q=-8 lps=45
+TERM
+D ctx=5 b=1 st=99 range=166 low=1468 q=-5 lps=85
+TERM
+D ctx=6 b=0 st=117 range=10f low=1468 q=-5 lps=111
+D ctx=7 b=0 st=124 range=1bc low=5420 q=-3 lps=197
+D ctx=9 b=0 st=116 range=1ee low=a840 q=-2 lps=185
+D ctx=10 b=0 st=112 range=135 low=a840 q=-2 lps=100
+D ctx=64 b=0 st=124 range=1a2 low=15080 q=-1 lps=197
+D ctx=60 b=0 st=72 range=1ba low=100 q=-8 lps=51
+D ctx=85 b=0 st=63 range=187 low=100 q=-8 lps=39
+TERM
+D ctx=5 b=1 st=97 range=136 low=1300 q=-5 lps=66
+TERM
+D ctx=6 b=0 st=119 range=1e6 low=2600 q=-4 lps=195
+D ctx=7 b=0 st=122 range=186 low=4e46 q=-3 lps=187
+D ctx=9 b=0 st=114 range=196 low=9c8c q=-2 lps=152
+D ctx=10 b=0 st=110 range=1fc low=13918 q=-1 lps=158
+D ctx=64 b=0 st=122 range=15e low=13918 q=-1 lps=158
+D ctx=60 b=0 st=70 range=180 low=230 q=-8 lps=48
+D ctx=85 b=0 st=79 range=150 low=230 q=-8 lps=50
+TERM
+D ctx=5 b=1 st=95 range=18e low=1a70 q=-5 lps=90
+TERM
+D ctx=6 b=0 st=123 range=132 low=1a70 q=-5 lps=128
+D ctx=7 b=0 st=120 range=100 low=3644 q=-4 lps=123
+D ctx=9 b=0 st=112 range=10a low=6c88 q=-3 lps=100
+D ctx=10 b=0 st=108 range=14c low=d910 q=-2 lps=110
+D ctx=64 b=0 st=120 range=1bc low=1b220 q=-1 lps=178
+D ctx=60 b=0 st=68 range=10a low=1b220 q=-1 lps=32
+D ctx=85 b=0 st=89 range=1d4 low=40 q=-8 lps=89
+TERM
+D ctx=4 b=1 st=126 range=162 low=6ec q=-6 lps=176
+TERM
+D ctx=6 b=0 st=125 range=15e low=f3c q=-5 lps=167
+D ctx=7 b=0 st=118 range=14e low=1fe6 q=-4 lps=142
+D ctx=9 b=0 st=110 range=180 low=3fcc q=-3 lps=137
+D ctx=10 b=0 st=106 range=1ee low=7f98 q=-2 lps=142
+D ctx=64 b=0 st=118 range=160 low=7f98 q=-2 lps=142
+D ctx=60 b=0 st=66 range=1a4 low=ff30 q=-1 lps=43
+D ctx=86 b=0 st=63 range=179 low=ff30 q=-1 lps=33
+TERM
+D ctx=5 b=1 st=93 range=106 low=440 q=-6 lps=59
+TERM
+D ctx=6 b=0 st=127 range=194 low=880 q=-5 lps=208
+D ctx=7 b=0 st=116 range=1a0 low=1288 q=-4 lps=160
+D ctx=9 b=0 st=108 range=100 low=1288 q=-4 lps=90
+D ctx=10 b=0 st=104 range=14c low=2510 q=-3 lps=99
+D ctx=64 b=0 st=116 range=1d2 low=4a20 q=-2 lps=185
+D ctx=60 b=0 st=64 range=119 low=4a20 q=-2 lps=29
+D ctx=85 b=0 st=97 range=1f8 low=9440 q=-1 lps=110
+TERM
+D ctx=5 b=1 st=91 range=1b6 low=728 q=-7 lps=81
+TERM
+D ctx=6 b=0 st=126 range=163 low=728 q=-7 lps=176
+D ctx=7 b=0 st=114 range=166 low=e50 q=-6 lps=128
+D ctx=9 b=0 st=106 range=1cc low=1ca0 q=-5 lps=142
+D ctx=10 b=0 st=102 range=13e low=1ca0 q=-5 lps=77
+D ctx=64 b=0 st=114 range=1e2 low=3940 q=-4 lps=175
+D ctx=60 b=0 st=62 range=133 low=3940 q=-4 lps=27
+D ctx=85 b=0 st=103 range=118 low=3940 q=-4 lps=77
+TERM
+D ctx=5 b=1 st=89 range=132 low=e82c q=-2 lps=53
+TERM
+D ctx=6 b=0 st=124 range=1f8 low=1d058 q=-1 lps=227
+D ctx=7 b=0 st=112 range=115 low=1d058 q=-1 lps=100
+D ctx=9 b=0 st=104 range=162 low=b0 q=-8 lps=99
+D ctx=10 b=0 st=100 range=1fe low=160 q=-7 lps=122
+D ctx=64 b=0 st=112 range=184 low=160 q=-7 lps=144
+D ctx=60 b=0 st=60 range=1e8 low=2c0 q=-6 lps=43
+D ctx=85 b=0 st=109 range=1bd low=2c0 q=-6 lps=130
+TERM
+D ctx=4 b=1 st=127 range=102 low=7f6 q=-5 lps=128
+TERM
+D ctx=6 b=0 st=122 range=102 low=fec q=-4 lps=128
+D ctx=7 b=0 st=110 range=104 low=1fd8 q=-3 lps=95
+D ctx=9 b=0 st=102 range=14a low=3fb0 q=-2 lps=94
+D ctx=10 b=0 st=98 range=1d8 low=7f60 q=-1 lps=116
+D ctx=64 b=0 st=110 range=164 low=7f60 q=-1 lps=116
+D ctx=60 b=0 st=58 range=1e0 low=2c0 q=-8 lps=41
+D ctx=86 b=0 st=79 range=1b7 low=2c0 q=-8 lps=59
+TERM
+D ctx=5 b=1 st=87 range=1d6 low=21e0 q=-5 lps=85
+TERM
+D ctx=6 b=0 st=120 range=17f low=21e0 q=-5 lps=150
+D ctx=7 b=0 st=108 range=1d2 low=43c0 q=-4 lps=150
+D ctx=9 b=0 st=100 range=13c low=43c0 q=-4 lps=73
+D ctx=10 b=0 st=96 range=1e6 low=8780 q=-3 lps=110
+D ctx=64 b=0 st=108 range=178 low=8780 q=-3 lps=110
+D ctx=60 b=0 st=56 range=10a low=8780 q=-3 lps=23
+D ctx=85 b=0 st=113 range=1e6 low=10f00 q=-2 lps=166
+TERM
+D ctx=5 b=1 st=85 range=14a low=22080 q=-1 lps=59
+TERM
+D ctx=6 b=0 st=118 range=10d low=22080 q=-1 lps=116
+D ctx=7 b=0 st=106 range=132 low=100 q=-8 lps=85
+D ctx=9 b=0 st=98 range=1ba low=200 q=-7 lps=100
+D ctx=10 b=0 st=94 range=156 low=200 q=-7 lps=76
+D ctx=64 b=0 st=106 range=10a low=200 q=-7 lps=85
+D ctx=60 b=0 st=54 range=16a low=400 q=-6 lps=27
+D ctx=85 b=0 st=117 range=14f low=400 q=-6 lps=135
+TERM
+D ctx=5 b=1 st=83 range=10c low=990 q=-5 lps=46
+TERM
+D ctx=6 b=0 st=116 range=1ba low=1320 q=-4 lps=160
+D ctx=7 b=0 st=104 range=11a low=1320 q=-4 lps=81
+D ctx=9 b=0 st=96 range=192 low=2640 q=-3 lps=95
+D ctx=10 b=0 st=92 range=133 low=2640 q=-3 lps=59
+D ctx=64 b=0 st=104 range=1f0 low=4c80 q=-2 lps=135
+D ctx=60 b=0 st=52 range=169 low=4c80 q=-2 lps=26
+D ctx=85 b=0 st=119 range=14f low=4c80 q=-2 lps=142

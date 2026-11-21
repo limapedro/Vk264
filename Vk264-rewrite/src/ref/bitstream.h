@@ -27,6 +27,8 @@ void vk_bs_write_se(vk_bs_t *s, int32_t value);
 void vk_bs_write_te(vk_bs_t *s, uint32_t base, uint32_t value);
 void vk_bs_rbsp_trailing(vk_bs_t *s);
 void vk_bs_align(vk_bs_t *s);
+/* x264 bs_align_1: fill to byte with 1s (no extra byte if aligned). */
+void vk_bs_align_1(vk_bs_t *s);
 
 /* Annex-B NAL output with x264-compatible emulation prevention. */
 void vk_nal_write(FILE *f, uint8_t nal_header, const uint8_t *rbsp,
