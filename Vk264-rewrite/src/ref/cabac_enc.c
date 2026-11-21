@@ -993,7 +993,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                 inter_cost = vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
                             mvpx/4, mvpy/4, 16,
                             lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
-                            cand, nc, &mvx, &mvy);
+                            cand, nc, &mvx, &mvy, h);
                 /* x264 stores the inter MV in mvr immediately after inter
                  * analysis, before skip/intra decisions may override the type. */
                 mvr[idx][0] = mvx*4; mvr[idx][1] = mvy*4;
