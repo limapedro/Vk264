@@ -1394,7 +1394,9 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                     if (!(cb_l & (1 << rgrp[b]))) continue;
                     if (!rr.nnz[b]) continue;
                     int blk4[16];
-                    for (int i = 0; i < 16; ++i) blk4[i] = rr.q[b][i];
+                    /* rr.q is in zigzag order (as coded into the bitstream);
+                     * IDCT needs natural order, like CAVLC's blk[rz4[i]]=q[i]. */
+                    for (int i = 0; i < 16; ++i) blk4[p_zz4[i]] = rr.q[b][i];
                     vk_ref_dequant4(blk4, deqx, qp);
                     vk_ref_idct4(blk4);
                     uint8_t *dst = ry + (my*16+(b/4)*4+LPAD)*rs + LPAD + mx*16+(b%4)*4;
