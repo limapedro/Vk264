@@ -523,7 +523,15 @@ static int intra_decide(const uint8_t *cy, const uint8_t *cu, const uint8_t *cv,
     int lambda = vk_lambda(qp);
     uint8_t pred[256], p8[64];
     int best = 0x7fffffff, bm = 2;
-    for (int m = 0; m < 4; ++m) {
+    /* x264 predict_16x16_mode_available: availability-based mode list */
+    static const int8_t pi16av[5][5] = {
+        {6,-1,-1,-1,-1}, {4,1,-1,-1,-1}, {5,0,-1,-1,-1},
+        {0,1,2,3,-1},    {0,1,2,3,-1}
+    };
+    int iavail = (have_l?1:0)|(have_t?2:0)|(have_tl?4:0);
+    int midx = (iavail == 7) ? 4 : (iavail & 3);
+    for (int k = 0; pi16av[midx][k] >= 0; ++k) {
+        int m = pi16av[midx][k];
         vk_predict16(pred, top, left, tl, m);
         /* subme=0: x264 uses SAD (mbcmp = sad_aligned), not SATD. */
         const uint8_t *s = cy + y*w + x;
@@ -736,7 +744,10 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
 
             if (use_intra) {
                 mv_ref[idx] = -1;  /* intra: ref=-1 for neighbour predictors */
-                vk_bs_write_ue(bs, (uint32_t)(5 + 1 + imode));  /* I16 in P */
+                /* x264: mb_type = 6 + x264_mb_pred_mode16x16_fix[imode];
+                 * DC_LEFT/DC_TOP/DC_128 (4/5/6) all map to DC (2). */
+                int imode_fix = imode <= 3 ? imode : 2;
+                vk_bs_write_ue(bs, (uint32_t)(6 + imode_fix));  /* I16 in P */
                 vk_bs_write_ue(bs, (uint32_t)(icmode <= 3 ? icmode : 0));  /* chroma mode fix */
                 vk_bs_write_se(bs, 0);                           /* mb_qp_delta */
                 uint8_t pred16[256], pred8[64];
