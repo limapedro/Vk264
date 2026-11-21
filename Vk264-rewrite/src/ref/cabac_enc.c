@@ -172,11 +172,11 @@ static void compute_i16_full(const uint8_t *cur, int w, int x, int y,
             int b = grp[g][k];
             if (!nnz[b]) continue;
             any = 1;
-            int zs[16];
-            for (int i = 0; i < 16; ++i) zs[i] = dct[b][zz[i]];
-            /* simple decimate score via the shared helper logic */
+            /* x264 decimate_score15 on the 15 AC coefficients (DC skipped) */
+            int zs[15];
+            for (int i = 0; i < 15; ++i) zs[i] = dct[b][zz[i+1]];
             static const uint8_t ds[16] = {3,2,2,1,1,1,0,0,0,0,0,0,0,0,0,0};
-            int idx = 15;
+            int idx = 14;
             while (idx >= 0 && zs[idx] == 0) idx--;
             while (idx >= 0) {
                 if ((unsigned)(zs[idx--]+1) > 2) { dec = 9; break; }
@@ -288,7 +288,16 @@ int vk_cabac_encode_idr(vk_bs_t *bs, vk_cabac_t *cb,
             tl = top ? rbase[(my*16-1)*rs + mx*16-1] : frame[0];
             uint8_t pred[256], rmb[256], trial[256];
             int lambda = vk_lambda(qp), best = 0x7fffffff, bestmode = 0;
-            for (int m = 0; m < 4; ++m) {
+            /* x264 i16x16_mode_available with b_fast_intra=0 (I-slice):
+             * thresh=COST_MAX so plane mode 3 is always included. */
+            static const int8_t pi16av[5][5] = {
+                {6,-1,-1,-1,-1}, {4,1,-1,-1,-1}, {5,0,-1,-1,-1},
+                {2,1,0,3,-1},   {2,1,0,3,-1}
+            };
+            int pmidx = (left&&top) ? ((mx>0&&my>0) ? 4 : 3)
+                                    : (left ? 1 : (top ? 2 : 0));
+            for (int pk = 0; pi16av[pmidx][pk] >= 0; ++pk) {
+                int m = pi16av[pmidx][pk];
                 vk_predict16(trial, t, l, tl, m);
                 int sad = 0;
                 for (int yy = 0; yy < 16; ++yy)
@@ -299,7 +308,7 @@ int vk_cabac_encode_idr(vk_bs_t *bs, vk_cabac_t *cb,
                 int c = sad + lambda*vk_mode_bits(m);
                 if (c < best) { best = c; bestmode = m; }
             }
-            int imode = (my == 0) ? 2 : bestmode;
+            int imode = bestmode;
             vk_predict16(pred, t, l, tl, imode);
             int q[16] = {0}, acq[16][15], nnz[16], cbp_luma = 0;
             compute_i16_full(frame, w, mx*16, my*16, pred, qp,
