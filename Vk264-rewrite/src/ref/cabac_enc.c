@@ -566,17 +566,23 @@ int vk_cabac_encode_idr_recon(vk_bs_t *bs, vk_cabac_t *cb,
  * only the entropy writer differs. */
 
 static void p_mvp16_avail(int lx, int ly, int tx, int ty, int cx, int cy,
-                          int have_l, int have_t, int have_c,
+                          int lref, int tref, int cref,
                           int *px, int *py)
 {
-    int n = have_l + have_t + have_c;
-    if (n == 1) {
-        if (have_l) { *px = lx; *py = ly; }
-        else if (have_t) { *px = tx; *py = ty; }
+    /* x264_mb_predict_mv_16x16: only neighbours with ref==0 participate.
+     * Intra MBs carry ref=-1; unavailable edges carry ref=-2. */
+    int cnt = (lref == 0) + (tref == 0) + (cref == 0);
+    if (cnt > 1) {
+        vk_mvp16(lx, ly, tx, ty, cx, cy, px, py);
+    } else if (cnt == 1) {
+        if (lref == 0) { *px = lx; *py = ly; }
+        else if (tref == 0) { *px = tx; *py = ty; }
         else { *px = cx; *py = cy; }
-        return;
+    } else if (tref == -2 && cref == -2 && lref != -2) {
+        *px = lx; *py = ly;
+    } else {
+        vk_mvp16(lx, ly, tx, ty, cx, cy, px, py);
     }
-    vk_mvp16(lx, ly, tx, ty, cx, cy, px, py);
 }
 
 static void p_pskip_mv(int lx, int ly, int tx, int ty, int cx, int cy,
@@ -935,8 +941,12 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
 
             int mvpx = 0, mvpy = 0, mvx = 0, mvy = 0, inter_cost = 0;
             if (!do_skip) {
-                p_mvp16_avail(lx, ly, tx, ty, cx, cy, have_l, have_t,
-                              have_c || have_tl, &mvpx, &mvpy);
+                p_mvp16_avail(lx, ly, tx, ty, cx, cy,
+                              have_l ? mv_ref[idx-1] : -2,
+                              have_t ? mv_ref[idx-mw] : -2,
+                              have_c ? mv_ref[idx-mw+1]
+                                     : (have_tl ? mv_ref[idx-mw-1] : -2),
+                              &mvpx, &mvpy);
                 int cand[8], nc = 0;
                 /* x264 x264_mb_predict_mv_ref16x16: 4 mvr spatial predictors
                  * (left, top, top-left, top-right), zero when unavailable. */
