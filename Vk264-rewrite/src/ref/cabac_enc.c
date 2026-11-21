@@ -1405,6 +1405,36 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                             dst[yy*rs+xx] = clip8(dst[yy*rs+xx] + blk4[yy*4+xx]);
                 }
             }
+            /* add chroma residual into the reconstructed planes, like CAVLC's
+             * code_residual: without this, later MBs predict chroma from a
+             * prediction-only reconstruction and choose different modes. */
+            if (cb_c) {
+                int cmfx[16], cbiasx[16], cdeqx[16];
+                vk_ref_quant_tables(qp, 3, cmfx, cbiasx, cdeqx);
+                for (int pl = 0; pl < 2; ++pl) {
+                    int h0 = rr.dcq[pl][0], h1 = rr.dcq[pl][2];
+                    int h2 = rr.dcq[pl][1], h3 = rr.dcq[pl][3];
+                    int d0 = h0+h1, d1 = h2+h3, d2 = h0-h1, d3 = h2-h3;
+                    int dmf = cdeqx[0] << (qp/6);
+                    int cdq[4] = { ((d0+d1)*dmf)>>5, ((d0-d1)*dmf)>>5,
+                                   ((d2+d3)*dmf)>>5, ((d2-d3)*dmf)>>5 };
+                    uint8_t *dst = (pl ? rv : ru) + (my*8+CPAD)*crs + CPAD + mx*8;
+                    for (int b = 0; b < 4; ++b) {
+                        int by = (b/2)*4, bx = (b%2)*4;
+                        if (rr.cnnz[pl][b]) {
+                            int blk[16] = {0};
+                            for (int i = 0; i < 15; ++i)
+                                blk[p_zz4[i+1]] = rr.cacq[pl][b][i];
+                            vk_ref_dequant4(blk, cdeqx, qp);
+                            blk[0] = rr.dcnz[pl] ? cdq[b] : 0;
+                            vk_ref_idct4(blk);
+                            vk_ref_add_block(dst + by*crs + bx, crs, blk);
+                        } else if (rr.dcnz[pl]) {
+                            vk_ref_add_block_dc(dst + by*crs + bx, crs, cdq[b]);
+                        }
+                    }
+                }
+            }
         }
 
     free(ry); free(ru); free(rv);
