@@ -490,28 +490,21 @@ static int code_i16_dc(vk_bs_t *bs, const uint8_t *cur, int w, int x, int y,
         nnz[b] = 0;
         for (int i = 0; i < 16; ++i) nnz[b] += dct[b][i] != 0;
     }
-    /* x264 decimation: per-8x8 score >=4, total >=6 */
-    int cbp_luma = 0, total = 0;
-    static const int grp[4][4] = {{0,1,4,5},{2,3,6,7},{8,9,12,13},{10,11,14,15}};
-    for (int g = 0; g < 4; ++g) {
-        int score = 0, any = 0;
-        for (int k = 0; k < 4; ++k) {
-            int b = grp[g][k];
-            if (!nnz[b]) continue;
-            any = 1;
-            if (score < 6) {
-                int z[16];
-                for (int i = 0; i < 16; ++i) z[i] = dct[b][zz[i]];
-                score += decimate_score(z, 16);
-            }
-        }
-        if (any) {
-            total += score;
-            if (score >= 4) cbp_luma |= 1 << g;
-            else for (int k = 0; k < 4; ++k) nnz[grp[g][k]] = 0;
+    /* x264: cbp_luma is all-or-nothing. block_cbp=0xf if ANY 4x4 block is
+     * nonzero, and a single decimate_score accumulates over all nonzero
+     * blocks (capped at 6). If decimate_score < 6, all nnz are cleared and
+     * cbp becomes 0; otherwise cbp=0xf. Per-group cbp bits are NOT used. */
+    int cbp_luma = 0, decimate = 0;
+    for (int b = 0; b < 16; ++b) {
+        if (!nnz[b]) continue;
+        cbp_luma = 0xf;
+        if (decimate < 6) {
+            int z[16];
+            for (int i = 0; i < 16; ++i) z[i] = dct[b][zz[i]];
+            decimate += decimate_score(z, 16);
         }
     }
-    if (total < 6) {
+    if (decimate < 6) {
         cbp_luma = 0;
         for (int b = 0; b < 16; ++b) nnz[b] = 0;
     }
