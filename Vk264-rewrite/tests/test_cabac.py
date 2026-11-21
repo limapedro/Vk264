@@ -31,12 +31,19 @@ def nals(data):
 
 W = H = 64
 all_ok = True
-for name, luma, chroma in (('flat128', 100, 128), ('flat100', 42, 100)):
+for name, luma, chroma in (('flat128', 100, 128), ('flat100', 42, 100),
+                           ('gradient', None, None)):
     frame = bytearray()
-    for y in range(H):
-        frame += bytes([luma]*W)
-    for p in (1, 2):
-        frame += bytes([chroma]*(W//2)*(H//2))
+    if luma is None:  # gradient: luma = (x*4+y*2)%256, chroma = 128
+        for y in range(H):
+            frame += bytes([(x*4+y*2) % 256 for x in range(W)])
+        for p in (1, 2):
+            frame += bytes([128]*(W//2)*(H//2))
+    else:
+        for y in range(H):
+            frame += bytes([luma]*W)
+        for p in (1, 2):
+            frame += bytes([chroma]*(W//2)*(H//2))
     src = BUILD / f'cabac_{name}.yuv'
     src.write_bytes(frame)
     ref, got = BUILD / f'cabac_{name}_ref.h264', BUILD / f'cabac_{name}_ora.h264'
