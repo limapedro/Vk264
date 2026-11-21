@@ -508,6 +508,76 @@ static void code_i16_dc(vk_bs_t *bs, const uint8_t *cur, int w, int x, int y,
     }
 }
 
+/* Compute and CAVLC-code the 2x2 chroma DC residual for an I16 MB in a
+ * P-slice. Returns cbp_chroma (0/1/2) and writes reconstruction into rconu/rconv. */
+static int code_i16_chroma_dc(vk_bs_t *bs, const uint8_t *cur, int w, int h,
+                              int x, int y, const uint8_t *tu, const uint8_t *lu,
+                              uint8_t tlu, const uint8_t *tv, const uint8_t *lv,
+                              uint8_t tlv, int cmode, int qp,
+                              uint8_t *rconu, uint8_t *rconv, int rdu, int rdv,
+                              int write, int recon)
+{
+    int cmf[16], cbias[16], cdeq[16];
+    vk_ref_quant_tables(qp, 2, cmf, cbias, cdeq);
+    const uint8_t *cu = cur + (size_t)w*h, *cv = cu + (size_t)(w/2)*(h/2);
+    int cs = w/2;
+    uint8_t pu[64], pv[64];
+    vk_predict_chroma8(pu, tu, lu, tlu, cmode);
+    vk_predict_chroma8(pv, tv, lv, tlv, cmode);
+    int cdc[2][4], cbp = 0, q[2][4];
+    for (int pl = 0; pl < 2; ++pl) {
+        const uint8_t *src = pl ? cv : cu, *pred = pl ? pv : pu;
+        for (int b = 0; b < 4; ++b) {
+            int by = (b/2)*4, bx = (b%2)*4;
+            int sum = 0;
+            for (int yy = 0; yy < 4; ++yy)
+                for (int xx = 0; xx < 4; ++xx)
+                    sum += src[(y/2+by+yy)*cs + x/2+bx+xx] - pred[(by+yy)*8+bx+xx];
+            cdc[pl][b] = sum;
+        }
+        int a = cdc[pl][0]+cdc[pl][1], b = cdc[pl][2]+cdc[pl][3];
+        int c = cdc[pl][0]-cdc[pl][1], d = cdc[pl][2]-cdc[pl][3];
+        int had[4] = {a+b,a-b,c+d,c-d};
+        for (int i = 0; i < 4; ++i) {
+            q[pl][i] = vk_ref_quant_one(had[i], cmf[0]>>1, cbias[0]<<1);
+            cbp |= q[pl][i] != 0;
+        }
+    }
+    if (cbp && write) {
+        for (int pl = 0; pl < 2; ++pl) {
+            int block[16] = {0};
+            /* zigzag_scan_2x2_dc: {0,2,1,3} */
+            block[0]=q[pl][0]; block[1]=q[pl][2];
+            block[2]=q[pl][1]; block[3]=q[pl][3];
+            vk_cavlc_block_residual(bs, VK_DCT_CHROMA_DC, block, 4, 1, 4);
+        }
+    }
+    if (cbp && recon) {
+        /* DC reconstruction: idct_dequant_2x2_dconly + add to prediction */
+        int dmf = cdeq[0] << (qp/6);
+        for (int pl = 0; pl < 2; ++pl) {
+            int a=q[pl][0]+q[pl][1], b=q[pl][2]+q[pl][3];
+            int c=q[pl][0]-q[pl][1], d=q[pl][2]-q[pl][3];
+            int had2[4]={a+b,a-b,c+d,c-d};
+            int rr[4];
+            for (int i = 0; i < 4; ++i) rr[i]=((had2[i]*dmf)>>5);
+            int mby = y/16, mbx = x/16;
+            uint8_t *dst = pl ? rconv : rconu;
+            int stride = pl ? rdv : rdu;
+            const uint8_t *p = pl ? pv : pu;
+            for (int i = 0; i < 4; ++i) {
+                int by=(i/2)*4, bx=(i%2)*4;
+                for (int yy=0; yy<4; ++yy)
+                    for (int xx=0; xx<4; ++xx) {
+                        int v = p[(by+yy)*8+bx+xx] + ((rr[i]+32)>>6);
+                        dst[(mby*8+by+yy)*stride+mbx*8+bx+xx] = (uint8_t)(v<0?0:v>255?255:v);
+                    }
+            }
+        }
+    }
+    return cbp;
+}
+
 /* Decide whether to code a P MB as I16x16 (x264 subme=0 rule):
  * choose the I16 mode / chroma mode minimising SATD + lambda*bits, then
  * compare the total against the inter cost. */
@@ -747,10 +817,16 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                  * while mvr retains the inter MV for ME candidates. */
                 mv[idx][0] = mv[idx][1] = 0;
                 mv_ref[idx] = -1;  /* intra: ref=-1 for neighbour predictors */
-                /* x264: mb_type = 6 + x264_mb_pred_mode16x16_fix[imode];
-                 * DC_LEFT/DC_TOP/DC_128 (4/5/6) all map to DC (2). */
+                /* chroma DC residual (must be computed before mb_type since
+                 * cbp_chroma is encoded in the I16 mb_type value) */
+                uint8_t *rconu_i = ru + (my*8+CPAD)*crs + CPAD + mx*8;
+                uint8_t *rconv_i = rv + (my*8+CPAD)*crs + CPAD + mx*8;
+                int cbp_chroma_i = code_i16_chroma_dc(bs, cur, w, h, mx*16, my*16,
+                        topu, leftu, tlu, topv, leftv, tlv, icmode, qp,
+                        rconu_i, rconv_i, crs, crs, 0, 0);
+                /* x264: mb_type = 6 + fix + 4*cbp_chroma + 12*(cbp_luma!=0) */
                 int imode_fix = imode <= 3 ? imode : 2;
-                vk_bs_write_ue(bs, (uint32_t)(6 + imode_fix));  /* I16 in P */
+                vk_bs_write_ue(bs, (uint32_t)(6 + imode_fix + 4*cbp_chroma_i));  /* I16 in P */
                 vk_bs_write_ue(bs, (uint32_t)(icmode <= 3 ? icmode : 0));  /* chroma mode fix */
                 vk_bs_write_se(bs, 0);                           /* mb_qp_delta */
                 uint8_t pred16[256], pred8[64];
@@ -762,6 +838,11 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                 }
                 code_i16_dc(bs, cur, w, mx*16, my*16, pred16, qp, il, it,
                             ry + (my*16+LPAD)*rs + LPAD + mx*16, rs);
+                /* chroma DC residual written after luma DC */
+                if (cbp_chroma_i)
+                    code_i16_chroma_dc(bs, cur, w, h, mx*16, my*16,
+                        topu, leftu, tlu, topv, leftv, tlv, icmode, qp,
+                        rconu_i, rconv_i, crs, crs, 1, 1);
                 for (int yy = 0; yy < 16; ++yy)
                     memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16, pred16 + yy*16, 16);
                 vk_predict_chroma8(pred8, topu, leftu, tlu, icmode);
