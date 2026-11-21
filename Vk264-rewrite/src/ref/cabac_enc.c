@@ -131,6 +131,85 @@ static void compute_i16_dc(const uint8_t *cur, int w, int x, int y,
     }
 }
 
+/* Full I16 luma residual: DC (Hadamard), AC (15 zigzag coeffs per 4x4),
+ * cbp_luma with x264's decimation, and reconstruction. */
+static void compute_i16_full(const uint8_t *cur, int w, int x, int y,
+                             const uint8_t pred[256], int qp,
+                             int q[16], int acq[16][15], int nnz[16],
+                             int *cbp_luma, uint8_t recon[256])
+{
+    int mf[16], bias[16], deq[16];
+    vk_ref_quant_tables(qp, 0, mf, bias, deq);
+    static const uint8_t zz[16] = {0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
+    int dct[16][16], dc[16];
+    for (int b = 0; b < 16; ++b) {
+        int by = (b/4)*4, bx = (b%4)*4;
+        uint8_t s[16], p[16];
+        for (int yy = 0; yy < 4; ++yy)
+            for (int xx = 0; xx < 4; ++xx) {
+                s[yy*4+xx] = cur[(y+by+yy)*w + x+bx+xx];
+                p[yy*4+xx] = pred[(by+yy)*16 + bx+xx];
+            }
+        vk_ref_dct4x4(dct[b], s, p);
+        dc[b] = dct[b][0];
+        dct[b][0] = 0;
+        for (int i = 0; i < 16; ++i) dct[b][i] = vk_ref_quant_one(dct[b][i], mf[i], bias[i]);
+        for (int i = 0; i < 15; ++i) acq[b][i] = dct[b][zz[i+1]];
+        nnz[b] = 0;
+        for (int i = 0; i < 16; ++i) nnz[b] += dct[b][i] != 0;
+    }
+    vk_ref_dct4x4dc(dc);
+    int dcmf = mf[0]>>1, dcbias = bias[0]<<1;
+    int nat[16];
+    for (int i = 0; i < 16; ++i) nat[i] = vk_ref_quant_one(dc[i], dcmf, dcbias);
+    for (int i = 0; i < 16; ++i) q[i] = nat[zz[i]];
+    /* cbp_luma with decimation (per 8x8 group, threshold 6) */
+    *cbp_luma = 0;
+    static const int grp[4][4] = {{0,1,4,5},{2,3,6,7},{8,9,12,13},{10,11,14,15}};
+    for (int g = 0; g < 4; ++g) {
+        int dec = 0, any = 0;
+        for (int k = 0; k < 4; ++k) {
+            int b = grp[g][k];
+            if (!nnz[b]) continue;
+            any = 1;
+            int zs[16];
+            for (int i = 0; i < 16; ++i) zs[i] = dct[b][zz[i]];
+            /* simple decimate score via the shared helper logic */
+            static const uint8_t ds[16] = {3,2,2,1,1,1,0,0,0,0,0,0,0,0,0,0};
+            int idx = 15;
+            while (idx >= 0 && zs[idx] == 0) idx--;
+            while (idx >= 0) {
+                if ((unsigned)(zs[idx--]+1) > 2) { dec = 9; break; }
+                int run = 0;
+                while (idx >= 0 && zs[idx] == 0) { idx--; run++; }
+                dec += ds[run < 16 ? run : 15];
+            }
+        }
+        if (any && dec >= 6) *cbp_luma |= 1 << g;
+        else if (any) for (int k = 0; k < 4; ++k) nnz[grp[g][k]] = 0;
+    }
+    /* reconstruct: DC + AC */
+    memcpy(recon, pred, 256);
+    int dcq[16];
+    for (int i = 0; i < 16; ++i) dcq[i] = nat[i];
+    vk_ref_idct4x4dc(dcq);
+    vk_ref_dequant4dc(dcq, deq, qp);
+    for (int b = 0; b < 16; ++b) {
+        int by = (b/4)*4, bx = (b%4)*4;
+        uint8_t *dst = recon + by*16+bx;
+        if (nnz[b]) {
+            int blk[16];
+            for (int i = 0; i < 16; ++i) blk[zz[i]] = dct[b][zz[i]];
+            vk_ref_dequant4(blk, deq, qp);
+            blk[0] = dcq[b];
+            vk_ref_idct4(blk);
+            vk_ref_add_block(dst, 16, blk);
+        } else {
+            vk_ref_add_block_dc(dst, 16, dcq[b]);
+        }
+    }
+}
+
 /* Compute the 2x2 chroma DC Hadamard coefficients (zigzag_2x2_dc order)
  * for one 8x8 chroma plane; returns its intra prediction in pred[64]. */
 static void compute_chroma_dc(const uint8_t *src, int cs, int x, int y,
@@ -193,6 +272,7 @@ int vk_cabac_encode_idr(vk_bs_t *bs, vk_cabac_t *cb,
     memset(recon, 128, ysz + 2*csz);
     uint8_t *rcu = recon + ysz, *rcv = rcu + csz;
     int *mbcbp = calloc((size_t)mw*mh, sizeof(int));
+    uint8_t (*nnzc)[16] = calloc((size_t)mw*mh, 16);
     int mbnum = 0;
     for (int my = 0; my < mh; ++my)
         for (int mx = 0; mx < mw; ++mx) {
@@ -221,8 +301,9 @@ int vk_cabac_encode_idr(vk_bs_t *bs, vk_cabac_t *cb,
             }
             int imode = (my == 0) ? 2 : bestmode;
             vk_predict16(pred, t, l, tl, imode);
-            int q[16] = {0};
-            compute_i16_dc(frame, w, mx*16, my*16, pred, qp, q, rmb);
+            int q[16] = {0}, acq[16][15], nnz[16], cbp_luma = 0;
+            compute_i16_full(frame, w, mx*16, my*16, pred, qp,
+                             q, acq, nnz, &cbp_luma, rmb);
             int nz = 0;
             for (int i = 0; i < 16; ++i) if (q[i]) nz = 1;
             /* chroma neighbours */
@@ -265,11 +346,34 @@ int vk_cabac_encode_idr(vk_bs_t *bs, vk_cabac_t *cb,
             int lc = left ? mbcbp[my*mw+mx-1] : 0x7ff;
             int tc = top ? mbcbp[(my-1)*mw+mx] : 0x7ff;
             int nza = (lc >> 8) & 1, nzb = (tc >> 8) & 1;
-            cabac_mb_type_i16(cb, left, top, imode, 0, cbp_chroma);
+            cabac_mb_type_i16(cb, left, top, imode, cbp_luma, cbp_chroma);
             cabac_chroma_mode(cb, 0);
             cabac_qp_delta0(cb);
             vk_cabac_decision(cb, 85 + 2*nzb + nza, nz);
             if (nz) cabac_coeffs(cb, q, 0);
+            /* luma AC: 16 4x4 blocks, x264 DCT-index order */
+            if (cbp_luma) {
+                static const uint8_t bidx[16] = {0,1,4,5,2,3,6,7,8,9,12,13,10,11,14,15};
+                static const uint8_t s8[16] = {12,13,20,21,14,15,22,23,28,29,36,37,30,31,38,39};
+                uint8_t cache[64] = {0};
+                for (int i = 0; i < 4; ++i) {
+                    cache[11+i*8] = left ? nnzc[my*mw+mx-1][i*4+3] : 0x80;
+                    cache[4+i] = top ? nnzc[(my-1)*mw+mx][12+i] : 0x80;
+                }
+                for (int idx = 0; idx < 16; ++idx) {
+                    int b = bidx[idx], p = s8[idx];
+                    int za = cache[p-1], zb = cache[p-8];
+                    /* x264 with b_intra=1: mask 0xff, then !! */
+                    int ctx = 89 + 2*!!(zb & 0xff) + !!(za & 0xff);
+                    if (nnz[b]) {
+                        vk_cabac_decision(cb, ctx, 1);
+                        cabac_coeffs(cb, acq[b], 1);
+                    } else
+                        vk_cabac_decision(cb, ctx, 0);
+                    cache[p] = (uint8_t)nnz[b];
+                }
+            }
+            for (int i = 0; i < 16; ++i) nnzc[my*mw+mx][i] = (uint8_t)nnz[i];
             if (cbp_chroma) {
                 int ca = (lc>>9)&1, cb2 = (tc>>9)&1;  /* U DC cbf ctx */
                 vk_cabac_decision(cb, 97 + 2*cb2 + ca, 1);
@@ -278,7 +382,7 @@ int vk_cabac_encode_idr(vk_bs_t *bs, vk_cabac_t *cb,
                 vk_cabac_decision(cb, 97 + 2*cv_b + cv_a, 1);
                 cabac_coeffs(cb, qv, 3);
             }
-            mbcbp[my*mw+mx] = (nz ? 0x100 : 0) | (cbp_chroma ? 0x600 : 0);
+            mbcbp[my*mw+mx] = cbp_luma | (nz ? 0x100 : 0) | (cbp_chroma ? 0x600 : 0);
             for (int yy = 0; yy < 16; ++yy)
                 memcpy(rbase + (my*16+yy)*rs + mx*16, rmb + yy*16, 16);
             /* reconstruct chroma: DC only */
@@ -287,11 +391,13 @@ int vk_cabac_encode_idr(vk_bs_t *bs, vk_cabac_t *cb,
                 memcpy(rcv+co+(my*8+yy)*cs+mx*8, pv+yy*8, 8);
             }
         }
+    free(nnzc);
     free(mbcbp);
     free(recon);
     int bytes = vk_cabac_flush(cb, 0);
     bs->p = data + bytes;
     return bytes;
 }
+
 
 
