@@ -57,7 +57,8 @@ int main(int argc, char **argv)
     /* x264: bs_align_1 before CABAC (fill to byte with 1s, no extra byte) */
     vk_bs_align_1(&bs);
     vk_cabac_init_ctx(&cb, 2, slice_qp, 0);
-    vk_cabac_encode_idr(&bs, &cb, frame, w, h, slice_qp, 0);
+    uint8_t *recon0 = two_frames ? malloc(fs) : NULL;
+    vk_cabac_encode_idr_recon(&bs, &cb, frame, w, h, slice_qp, recon0);
     vk_nal_write(fo, 0x65, buf, (size_t)(bs.p - buf), 0);
 
     if (two_frames) {
@@ -74,8 +75,9 @@ int main(int argc, char **argv)
         vk_slice_header_write(&bs, &sh, &sps, &pps, 2);
         vk_bs_align_1(&bs);
         vk_cabac_init_ctx(&cb, 0, qp, 0);  /* P contexts */
-        vk_cabac_encode_pskip(&bs, &cb, w, h);
+        vk_cabac_encode_p(&bs, &cb, frame + fs, recon0, w, h, qp);
         vk_nal_write(fo, 0x41, buf, (size_t)(bs.p - buf), 1);
+        free(recon0);
     }
 
     fclose(fo); free(frame);
