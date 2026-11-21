@@ -85,6 +85,22 @@ python harness/benchmark.py --input <clip.yuv> --out <dir> --frames 240 --encode
 
 See [`docs/PROGRESS.dm`](docs/PROGRESS.dm) for the full, evidence-backed state.
 
+## Oracle parity dashboard
+
+![Vk264 oracle byte-exact parity dashboard](docs/parity-dashboard.svg)
+
+The dashboard tracks which x264 functions have a byte-exact counterpart (green), which are
+partial (amber), C++ ports (blue), or still missing (gray), plus the CAVLC P-slice sweep as it
+climbs with each merged PR. It is generated from the verified parity data — after each parity
+PR, update the numbers in `docs/generate_parity_dashboard.py` and regenerate:
+
+```powershell
+python docs/generate_parity_dashboard.py
+```
+
+The source data lives in [`docs/function-parity-matrix.md`](docs/function-parity-matrix.md),
+[`docs/PROGRESS.dm`](docs/PROGRESS.dm), and `build/cavlc_parity_sweep.py`.
+
 ## Speed context
 
 The original Vk264 CAVLC/Vulkan encoder runs at roughly 10–37 fps on 1080p60 (GTX 1660 SUPER), versus ~80–170 fps for x264 `fast`; the CABAC whole-frame bin coder is the main bottleneck. The port work is correctness-first; slice-level CABAC parallelism is the planned speed pass once parity is established.
