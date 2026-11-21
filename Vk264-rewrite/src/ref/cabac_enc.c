@@ -724,6 +724,119 @@ static int cabac_mvd_sum(int lx, int ly, int tx, int ty)
     return a + (b << 8);
 }
 
+/* ---- P-slice inter residual (mirrors pframe.c code_residual computation) ---- */
+typedef struct {
+    int cbp_luma, cbp_chroma;
+    int q[16][16], nnz[16];
+    int dcq[2][4], dcnz[2];
+    int cacq[2][4][16], cnnz[2][4];
+} p_resid_t;
+
+static void compute_p_residual(const uint8_t *cur, const uint8_t *refp,
+                               int w, int h, int rs, int x, int y,
+                               int mvx_qp, int mvy_qp, int qp, p_resid_t *out)
+{
+    int mf[16], bias[16], deq[16], cmf[16], cbias[16], cdeq[16];
+    vk_ref_quant_tables(qp, 1, mf, bias, deq);    /* CQM_4PY */
+    vk_ref_quant_tables(qp, 3, cmf, cbias, cdeq); /* CQM_4PC */
+    int mx = mvx_qp/4, my = mvy_qp/4;
+    int cs = w/2, crs = rs/2, cp = CPAD;
+    const uint8_t *cy = cur, *cu = cur + (size_t)w*h, *cv = cu + (size_t)cs*cs;
+    const uint8_t *ry = refp + LPAD*rs + LPAD;
+    const uint8_t *ru = refp + (size_t)rs*(h+2*LPAD);
+    const uint8_t *rv = ru + (size_t)crs*(h/2+2*CPAD);
+    static const uint8_t zz4[16] = {0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
+
+    /* luma inter residual */
+    int d[16][16];
+    for (int b = 0; b < 16; ++b) {
+        int by = (b/4)*4, bx = (b%4)*4;
+        uint8_t s[16], p[16];
+        for (int yy = 0; yy < 4; ++yy)
+            for (int xx = 0; xx < 4; ++xx) {
+                s[yy*4+xx] = cy[(y+by+yy)*w + (x+bx+xx)];
+                p[yy*4+xx] = ry[(y+by+yy+my)*rs + (x+bx+xx+mx)];
+            }
+        vk_ref_dct4x4(d[b], s, p);
+        for (int i = 0; i < 16; ++i) d[b][i] = vk_ref_quant_one(d[b][i], mf[i], bias[i]);
+        for (int i = 0; i < 16; ++i) out->q[b][i] = d[b][zz4[i]];
+        out->nnz[b] = 0;
+        for (int i = 0; i < 16; ++i) out->nnz[b] += d[b][i] != 0;
+    }
+    static const int grp[4][4] = {{0,1,4,5},{2,3,6,7},{8,9,12,13},{10,11,14,15}};
+    out->cbp_luma = 0;
+    int dec_total = 0;
+    for (int g = 0; g < 4; ++g) {
+        int dec8 = 0, any = 0;
+        for (int k = 0; k < 4; ++k) {
+            int b = grp[g][k];
+            if (!out->nnz[b]) continue;
+            any = 1;
+            if (dec8 < 6) dec8 += p_decimate_score(out->q[b], 16);
+        }
+        if (any) {
+            dec_total += dec8;
+            if (dec8 >= 4) out->cbp_luma |= 1 << g;
+            else for (int k = 0; k < 4; ++k) {
+                int b = grp[g][k];
+                memset(out->q[b], 0, sizeof(out->q[b]));
+                out->nnz[b] = 0;
+            }
+        }
+    }
+    if (dec_total < 6) {
+        out->cbp_luma = 0;
+        for (int b = 0; b < 16; ++b) {
+            memset(out->q[b], 0, sizeof(out->q[b]));
+            out->nnz[b] = 0;
+        }
+    }
+
+    /* chroma inter residual */
+    int cvx8 = mvx_qp, cvy8 = mvy_qp;
+    int d8x = cvx8&7, d8y = cvy8&7;
+    int cA=(8-d8x)*(8-d8y), cB=d8x*(8-d8y), cC=(8-d8x)*d8y, cD=d8x*d8y;
+    int cox = (cvx8>>3)+cp, coy = (cvy8>>3)+cp;
+    int cdc[2][4];
+    out->cbp_chroma = 0;
+    for (int pl = 0; pl < 2; ++pl) {
+        const uint8_t *cptr = pl ? cv : cu, *r = pl ? rv : ru;
+        out->dcnz[pl] = 0;
+        for (int b = 0; b < 4; ++b) {
+            int by = (b/2)*4, bx = (b%2)*4;
+            uint8_t s[16], p[16];
+            for (int yy = 0; yy < 4; ++yy)
+                for (int xx = 0; xx < 4; ++xx) {
+                    int sx = x/2+bx+xx+cox, sy = y/2+by+yy+coy;
+                    s[yy*4+xx] = cptr[(y/2+by+yy)*cs + (x/2+bx+xx)];
+                    int a=r[sy*crs+sx], b2=r[sy*crs+sx+1];
+                    int cc=r[(sy+1)*crs+sx], dd=r[(sy+1)*crs+sx+1];
+                    p[yy*4+xx] = (uint8_t)((cA*a+cB*b2+cC*cc+cD*dd+32)>>6);
+                }
+            int dd[16];
+            vk_ref_dct4x4(dd, s, p);
+            cdc[pl][b] = dd[0];
+            dd[0] = 0;
+            for (int i = 0; i < 16; ++i) dd[i] = vk_ref_quant_one(dd[i], cmf[i], cbias[i]);
+            for (int i = 0; i < 16; ++i) out->cacq[pl][b][i] = dd[zz4[i]];
+            out->cnnz[pl][b] = 0;
+            for (int i = 0; i < 16; ++i) out->cnnz[pl][b] += dd[i] != 0;
+        }
+        int a=cdc[pl][0]+cdc[pl][1], b=cdc[pl][2]+cdc[pl][3];
+        int c=cdc[pl][0]-cdc[pl][1], dd2=cdc[pl][2]-cdc[pl][3];
+        int had[4]={a+b,a-b,c+dd2,c-dd2}, t[4];
+        for (int i = 0; i < 4; ++i)
+            t[i] = vk_ref_quant_one(had[i], cmf[0]>>1, cbias[0]<<1);
+        out->dcq[pl][0]=t[0]; out->dcq[pl][1]=t[2];
+        out->dcq[pl][2]=t[1]; out->dcq[pl][3]=t[3];
+        for (int i = 0; i < 4; ++i) {
+            out->dcnz[pl] |= t[i] != 0;
+            out->cbp_chroma |= t[i] != 0;
+        }
+        for (int b = 0; b < 4; ++b) if (out->cnnz[pl][b]) out->cbp_chroma = 2;
+    }
+}
+
 int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                       const uint8_t *cur, const uint8_t *ref,
                       int w, int h, int qp)
@@ -851,6 +964,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                 if (ibest < inter_cost) { do_intra = 1; imode = bm; }
             }
 
+            if (getenv("CABP") && idx == 10) fprintf(stderr, "  MB10 neigh=%d psk=%d,%d probe=%d\n", skip_neigh, psk_x, psk_y, p_probe(cur, refp, w, h, rs, mx*16, my*16, psk_x, psk_y, qp));
             /* ---- CABAC: mb_skip_flag ---- */
             int skip_ctx = 11 + (have_l && !is_skip[idx-1])
                               + (have_t && !is_skip[idx-mw]);
@@ -865,7 +979,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                 const uint8_t *ryref = refp + LPAD*rs + LPAD;
                 for (int yy = 0; yy < 16; ++yy)
                     memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
-                           ryref + (my*16+yy+sy)*rs + LPAD + mx*16+sx, 16);
+                           ryref + (my*16+yy+sy)*rs + mx*16+sx, 16);
                 for (int yy = 0; yy < 8; ++yy) {
                     int cx8 = psk_x/8, cy8 = psk_y/8;
                     memcpy(ru + (my*8+yy+CPAD)*crs + CPAD + mx*8,
@@ -1066,17 +1180,99 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                 mvd_c[idx][b][1] = (uint8_t)ay;
             }
 
-            /* ---- cbp luma + chroma (all zero: no residual) ---- */
+            /* ---- compute P_L0 residual at the MV ---- */
+            p_resid_t rr;
+            compute_p_residual(cur, refp, w, h, rs, mx*16, my*16,
+                               mvx*4, mvy*4, qp, &rr);
             int cl = have_l ? cbp_c[idx-1] : -1;
             int ct = have_t ? cbp_c[idx-mw] : -1;
-            vk_cabac_decision(cb, 76 - ((cl>>1)&1) - ((ct>>1)&2), 0);
-            vk_cabac_decision(cb, 76 - ((0>>0)&1) - ((ct>>2)&2), 0);
-            vk_cabac_decision(cb, 76 - ((cl>>3)&1) - ((0<<1)&2), 0);
-            vk_cabac_decision_noup(cb, 76 - ((0>>2)&1) - ((0>>0)&2), 0);
-            int cctx = 0;
-            if ((cl & 0x30) && cl != -1) cctx++;
-            if ((ct & 0x30) && ct != -1) cctx += 2;
-            vk_cabac_decision_noup(cb, 77 + cctx, 0);
+            int cb_l = rr.cbp_luma, cb_c = rr.cbp_chroma;
+            /* cbp luma (4 decisions, P-slice neighbour contexts) */
+            vk_cabac_decision(cb, 76 - ((cl>>1)&1) - ((ct>>1)&2), (cb_l>>0)&1);
+            vk_cabac_decision(cb, 76 - ((cb_l>>0)&1) - ((ct>>2)&2), (cb_l>>1)&1);
+            vk_cabac_decision(cb, 76 - ((cl>>3)&1) - ((cb_l<<1)&2), (cb_l>>2)&1);
+            vk_cabac_decision_noup(cb, 76 - ((cb_l>>2)&1) - ((cb_l>>0)&2), (cb_l>>3)&1);
+            /* cbp chroma */
+            int cpa = (cl & 0x30), cpb = (ct & 0x30), cctx = 0;
+            if (cpa && cl != -1) cctx++;
+            if (cpb && ct != -1) cctx += 2;
+            if (!cb_c)
+                vk_cabac_decision_noup(cb, 77 + cctx, 0);
+            else {
+                vk_cabac_decision(cb, 77 + cctx, 1);
+                int x2 = 4;
+                if (cpa == 0x20) x2++;
+                if (cpb == 0x20) x2 += 2;
+                vk_cabac_decision_noup(cb, 77 + x2, cb_c >> 1);
+            }
+            if (cb_l || cb_c) cabac_qp_delta0(cb);
+
+            /* luma 4x4 AC blocks (category 2, 16 coeffs) */
+            if (cb_l) {
+                static const uint8_t bidx[16] = {0,1,4,5,2,3,6,7,8,9,12,13,10,11,14,15};
+                static const int s8[16] = {12,13,20,21,14,15,22,23,28,29,36,37,30,31,38,39};
+                static const int grp[16] = {0,0,1,1,0,0,1,1,2,2,3,3,2,2,3,3};
+                uint8_t cache[64] = {0};
+                for (int i = 0; i < 4; ++i) {
+                    cache[11+i*8] = have_l ? nnzc[idx-1][i*4+3] : 0x80;
+                    cache[4+i] = have_t ? nnzc[idx-mw][12+i] : 0x80;
+                }
+                for (int i = 0; i < 16; ++i) {
+                    int b = bidx[i], p = s8[i];
+                    if (!(cb_l & (1 << grp[b]))) continue;
+                    int za = cache[p-1], zb = cache[p-8];
+                    int ctx = 93 + ((2*(zb&0x7f) + (za&0x7f)) & 0x7f);
+                    if (rr.nnz[b]) {
+                        vk_cabac_decision(cb, ctx, 1);
+                        cabac_coeffs(cb, rr.q[b], 2);
+                    } else
+                        vk_cabac_decision(cb, ctx, 0);
+                    cache[p] = rr.nnz[b] ? 1 : 0;
+                }
+            }
+            for (int i = 0; i < 16; ++i) nnzc[idx][i] = rr.nnz[i] ? 1 : 0;
+
+            /* chroma DC (category 3) */
+            if (cb_c) {
+                int ca = (cl!=-1)?(cl>>9)&1:0, cb2=(ct!=-1)?(ct>>9)&1:0;
+                vk_cabac_decision(cb, 97+2*cb2+ca, rr.dcnz[0]!=0);
+                if (rr.dcnz[0]) cabac_coeffs(cb, rr.dcq[0], 3);
+                int cva=(cl!=-1)?(cl>>10)&1:0, cvb=(ct!=-1)?(ct>>10)&1:0;
+                vk_cabac_decision(cb, 97+2*cvb+cva, rr.dcnz[1]!=0);
+                if (rr.dcnz[1]) cabac_coeffs(cb, rr.dcq[1], 3);
+            }
+            /* chroma AC (category 4) */
+            if (cb_c == 2) {
+                uint8_t ccache[128] = {0};
+                ccache[51] = have_l ? cnnzc[idx-1][0][1] : 0x80;
+                ccache[59] = have_l ? cnnzc[idx-1][0][3] : 0x80;
+                ccache[44] = have_t ? cnnzc[idx-mw][0][2] : 0x80;
+                ccache[45] = have_t ? cnnzc[idx-mw][0][3] : 0x80;
+                ccache[91] = have_l ? cnnzc[idx-1][1][1] : 0x80;
+                ccache[99] = have_l ? cnnzc[idx-1][1][3] : 0x80;
+                ccache[84] = have_t ? cnnzc[idx-mw][1][2] : 0x80;
+                ccache[85] = have_t ? cnnzc[idx-mw][1][3] : 0x80;
+                static const int cp8[8] = {52,53,60,61, 92,93,100,101};
+                for (int k = 0; k < 8; ++k) {
+                    int pl = k>>2, b = k&3, p = cp8[k];
+                    int za = ccache[p-1], zb = ccache[p-8];
+                    int ctx = 101 + ((2*(zb&0x7f) + (za&0x7f)) & 0x7f);
+                    int n = rr.cnnz[pl][b];
+                    if (n) {
+                        vk_cabac_decision(cb, ctx, 1);
+                        cabac_coeffs(cb, rr.cacq[pl][b], 4);
+                    } else
+                        vk_cabac_decision(cb, ctx, 0);
+                    ccache[p] = n ? 1 : 0;
+                }
+            }
+            for (int i = 0; i < 4; ++i) {
+                cnnzc[idx][0][i] = rr.cnnz[0][i] ? 1 : 0;
+                cnnzc[idx][1][i] = rr.cnnz[1][i] ? 1 : 0;
+            }
+            int nz_dc = (rr.dcnz[0] || rr.dcnz[1]) ? 1 : 0;
+            cbp_c[idx] = cb_l | (cb_c<<4) | (nz_dc?0x100:0)
+                       | ((rr.dcnz[0]?1:0)<<9) | ((rr.dcnz[1]?1:0)<<10);
 
             mv[idx][0] = mvx*4; mv[idx][1] = mvy*4;
             /* reconstruct: copy reference at MV into the current-frame buffer */
@@ -1084,13 +1280,31 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
             const uint8_t *ryref = refp + LPAD*rs + LPAD;
             for (int yy = 0; yy < 16; ++yy)
                 memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
-                       ryref + (my*16+yy+sy)*rs + LPAD + mx*16+sx, 16);
+                       ryref + (my*16+yy+sy)*rs + mx*16+sx, 16);
             for (int yy = 0; yy < 8; ++yy) {
                 int cx8 = mvx/2, cy8 = mvy/2;
                 memcpy(ru + (my*8+yy+CPAD)*crs + CPAD + mx*8,
                        refp + ysz + (my*8+yy+cy8+CPAD)*crs + CPAD + mx*8+cx8, 8);
                 memcpy(rv + (my*8+yy+CPAD)*crs + CPAD + mx*8,
                        refp + ysz + csz + (my*8+yy+cy8+CPAD)*crs + CPAD + mx*8+cx8, 8);
+            }
+            /* add luma residual */
+            if (cb_l) {
+                int mfx[16], biasx[16], deqx[16];
+                vk_ref_quant_tables(qp, 1, mfx, biasx, deqx);
+                for (int b = 0; b < 16; ++b) {
+                    static const int rgrp[16] = {0,0,1,1,0,0,1,1,2,2,3,3,2,2,3,3};
+                    if (!(cb_l & (1 << rgrp[b]))) continue;
+                    if (!rr.nnz[b]) continue;
+                    int blk4[16];
+                    for (int i = 0; i < 16; ++i) blk4[i] = rr.q[b][i];
+                    vk_ref_dequant4(blk4, deqx, qp);
+                    vk_ref_idct4(blk4);
+                    uint8_t *dst = ry + (my*16+(b/4)*4+LPAD)*rs + LPAD + mx*16+(b%4)*4;
+                    for (int yy = 0; yy < 4; ++yy)
+                        for (int xx = 0; xx < 4; ++xx)
+                            dst[yy*rs+xx] = clip8(dst[yy*rs+xx] + blk4[yy*4+xx]);
+                }
             }
         }
 
