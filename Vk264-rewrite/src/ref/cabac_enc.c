@@ -24,7 +24,10 @@ static void cabac_coeffs(vk_cabac_t *cb, const int *l, int cat)
     int coeffs[64], nc = 0, last = -1;
     for (int i = count_m1; i >= 0; --i)
         if (l[i]) { last = i; break; }
-    for (int i = 0; i <= count_m1; ++i) {
+    /* x264 WRITE_SIGMAP: index count_m1 is stored implicitly without
+     * significance/last flags (reached via ++i == count_m1). */
+    int i = 0;
+    while (1) {
         if (l[i]) {
             coeffs[nc++] = l[i];
             vk_cabac_decision(cb, ctx_sig+i, 1);
@@ -32,6 +35,7 @@ static void cabac_coeffs(vk_cabac_t *cb, const int *l, int cat)
             vk_cabac_decision(cb, ctx_last+i, 0);
         } else
             vk_cabac_decision(cb, ctx_sig+i, 0);
+        if (++i == count_m1) { coeffs[nc++] = l[i]; break; }
     }
     int node = 0;
     for (int k = nc-1; k >= 0; --k) {
@@ -163,31 +167,25 @@ static void compute_i16_full(const uint8_t *cur, int w, int x, int y,
     int nat[16];
     for (int i = 0; i < 16; ++i) nat[i] = vk_ref_quant_one(dc[i], dcmf, dcbias);
     for (int i = 0; i < 16; ++i) q[i] = nat[zz[i]];
-    /* cbp_luma with decimation (per 8x8 group, threshold 6) */
-    *cbp_luma = 0;
-    static const int grp[4][4] = {{0,1,4,5},{2,3,6,7},{8,9,12,13},{10,11,14,15}};
-    for (int g = 0; g < 4; ++g) {
-        int dec = 0, any = 0;
-        for (int k = 0; k < 4; ++k) {
-            int b = grp[g][k];
-            if (!nnz[b]) continue;
-            any = 1;
-            /* x264 decimate_score15 on the 15 AC coefficients (DC skipped) */
-            int zs[15];
-            for (int i = 0; i < 15; ++i) zs[i] = dct[b][zz[i+1]];
-            static const uint8_t ds[16] = {3,2,2,1,1,1,0,0,0,0,0,0,0,0,0,0};
-            int idx = 14;
-            while (idx >= 0 && zs[idx] == 0) idx--;
-            while (idx >= 0) {
-                if ((unsigned)(zs[idx--]+1) > 2) { dec = 9; break; }
-                int run = 0;
-                while (idx >= 0 && zs[idx] == 0) { idx--; run++; }
-                dec += ds[run < 16 ? run : 15];
-            }
+    /* x264 I16 decimation: accumulate the score over the whole MB, then
+     * zero all blocks if total < 6 (cbp_luma is 0 or 15). */
+    static const uint8_t ds[16] = {3,2,2,1,1,1,0,0,0,0,0,0,0,0,0,0};
+    int dec = 0;
+    for (int b = 0; b < 16; ++b) {
+        if (!nnz[b]) continue;
+        int zs[15];
+        for (int i = 0; i < 15; ++i) zs[i] = dct[b][zz[i+1]];
+        int idx = 14;
+        while (idx >= 0 && zs[idx] == 0) idx--;
+        while (idx >= 0) {
+            if ((unsigned)(zs[idx--]+1) > 2) { dec = 9; break; }
+            int run = 0;
+            while (idx >= 0 && zs[idx] == 0) { idx--; run++; }
+            dec += ds[run < 16 ? run : 15];
         }
-        if (any && dec >= 6) *cbp_luma |= 1 << g;
-        else if (any) for (int k = 0; k < 4; ++k) nnz[grp[g][k]] = 0;
     }
+    *cbp_luma = (dec >= 6) ? 15 : 0;
+    if (!*cbp_luma) for (int b = 0; b < 16; ++b) nnz[b] = 0;
     /* reconstruct: DC + AC */
     memcpy(recon, pred, 256);
     int dcq[16];
