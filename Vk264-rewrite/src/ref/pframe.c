@@ -969,6 +969,11 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                 continue;
             }
 
+            /* x264 can promote a P_L0 with cbp==0 and MV==pskip_mv to
+             * P_SKIP at encode time (encoder/macroblock.c:953-964). Save the
+             * bitstream state so we can roll back the header if that happens. */
+            vk_bs_t mb_start = *bs;
+            int start_skip_run = skip_run;
             /* CAVLC requires mb_skip_run before every coded MB, including 0. */
             vk_bs_write_ue(bs, (uint32_t)skip_run);
             skip_run = 0;
@@ -1054,9 +1059,19 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
             uint8_t *rconu = ru + (my*8+CPAD)*crs + CPAD + mx*8;
             uint8_t *rconv = rv + (my*8+CPAD)*crs + CPAD + mx*8;
             uint8_t on[16], oc[2][4], od;
-            code_residual(bs, cur, refp, w, h, rs, mx*16, my*16,
+            int cbp_res = code_residual(bs, cur, refp, w, h, rs, mx*16, my*16,
                           mvx*4, mvy*4, qp, on, oc, &od, ll, tl, lc, tc,
                           rcony, rconu, rconv, rs, crs, crs);
+            if (cbp_res == 0 && mvx*4 == psk_x && mvy*4 == psk_y) {
+                /* Roll back the P16 header and residual; this MB is a skip.
+                 * The MC prediction already written to the recon planes is
+                 * exactly the skip reconstruction (zero residual added). */
+                *bs = mb_start;
+                skip_run = start_skip_run + 1;
+                mv[idx][0] = psk_x; mv[idx][1] = psk_y;
+                is_skip[idx] = 1;
+                continue;
+            }
             memcpy(nnz_c[idx], on, 16);
             memcpy(cnnz_c[idx], oc, 8);
             dcnz_c[idx] = od;
