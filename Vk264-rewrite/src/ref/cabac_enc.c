@@ -96,6 +96,22 @@ static void cabac_qp_delta0(vk_cabac_t *cb)
     vk_cabac_decision_noup(cb, 60, 0);
 }
 
+int vk_cabac_encode_pskip(vk_bs_t *bs, vk_cabac_t *cb, int w, int h)
+{
+    int mw = w/16, mh = h/16;
+    uint8_t *data = bs->p;
+    vk_cabac_start(cb, data, bs->end);
+    /* x264_cabac_mb_skip: ctx = 11 + count(non-skip left/top neighbours).
+     * With every MB skipped, that count is 0 -> ctx 11, b=1. */
+    for (int i = 0; i < mw*mh; ++i) {
+        if (i > 0) vk_cabac_terminal(cb);
+        vk_cabac_decision(cb, 11, 1);
+    }
+    int bytes = vk_cabac_flush(cb, 1);  /* frame 1 */
+    bs->p = data + bytes;
+    return bytes;
+}
+
 /* Compute the I16 luma DC coefficients (zigzag-scanned) for one MB, and
  * reconstruct the MB (prediction + dequantised DC) into recon[256]. */
 static void compute_i16_dc(const uint8_t *cur, int w, int x, int y,
