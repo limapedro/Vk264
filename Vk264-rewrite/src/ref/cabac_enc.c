@@ -822,7 +822,8 @@ static void compute_p_residual(const uint8_t *cur, const uint8_t *refp,
             cdc[pl][b] = dd[0];
             dd[0] = 0;
             for (int i = 0; i < 16; ++i) dd[i] = vk_ref_quant_one(dd[i], cmf[i], cbias[i]);
-            for (int i = 0; i < 16; ++i) out->cacq[pl][b][i] = dd[zz4[i]];
+            /* x264 passes h->dct.luma4x4[idx]+1: zigzag AC coefficients, DC skipped */
+            for (int i = 0; i < 15; ++i) out->cacq[pl][b][i] = dd[zz4[i+1]];
             out->cnnz[pl][b] = 0;
             for (int i = 0; i < 16; ++i) out->cnnz[pl][b] += dd[i] != 0;
         }
@@ -972,7 +973,6 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                 if (ibest < inter_cost) { do_intra = 1; imode = bm; }
             }
 
-            if (getenv("CABP") && idx == 10) fprintf(stderr, "  MB10 neigh=%d psk=%d,%d probe=%d\n", skip_neigh, psk_x, psk_y, p_probe(cur, refp, w, h, rs, mx*16, my*16, psk_x, psk_y, qp));
             /* ---- CABAC: mb_skip_flag ---- */
             int skip_ctx = 11 + (have_l && !is_skip[idx-1])
                               + (have_t && !is_skip[idx-mw]);
