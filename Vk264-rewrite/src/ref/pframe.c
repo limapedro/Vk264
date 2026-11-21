@@ -894,6 +894,15 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                 /* compute cbp_luma first (encoded in mb_type) */
                 int cbp_luma_i = code_i16_dc(bs, cur, w, mx*16, my*16, pred16, qp,
                         il, it, ry + (my*16+LPAD)*rs + LPAD + mx*16, rs, 0);
+                /* x264: prediction written to fdec FIRST, then DC residual added */
+                for (int yy = 0; yy < 16; ++yy)
+                    memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16, pred16 + yy*16, 16);
+                vk_predict_chroma8(pred8, topu, leftu, tlu, icmode);
+                for (int yy = 0; yy < 8; ++yy)
+                    memcpy(ru + (my*8+yy+CPAD)*crs + CPAD + mx*8, pred8 + yy*8, 8);
+                vk_predict_chroma8(pred8, topv, leftv, tlv, icmode);
+                for (int yy = 0; yy < 8; ++yy)
+                    memcpy(rv + (my*8+yy+CPAD)*crs + CPAD + mx*8, pred8 + yy*8, 8);
                 /* x264: mb_type = 6 + fix + 4*cbp_chroma + 12*(cbp_luma!=0) */
                 int imode_fix = imode <= 3 ? imode : 2;
                 vk_bs_write_ue(bs, (uint32_t)(6 + imode_fix + 4*cbp_chroma_i
@@ -907,14 +916,6 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                     code_i16_chroma_dc(bs, cur, w, h, mx*16, my*16,
                         topu, leftu, tlu, topv, leftv, tlv, icmode, qp,
                         rconu_i, rconv_i, crs, crs, 1, 1);
-                for (int yy = 0; yy < 16; ++yy)
-                    memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16, pred16 + yy*16, 16);
-                vk_predict_chroma8(pred8, topu, leftu, tlu, icmode);
-                for (int yy = 0; yy < 8; ++yy)
-                    memcpy(ru + (my*8+yy+CPAD)*crs + CPAD + mx*8, pred8 + yy*8, 8);
-                vk_predict_chroma8(pred8, topv, leftv, tlv, icmode);
-                for (int yy = 0; yy < 8; ++yy)
-                    memcpy(rv + (my*8+yy+CPAD)*crs + CPAD + mx*8, pred8 + yy*8, 8);
                 continue;
             }
             mv[idx][0] = mvx*4; mv[idx][1] = mvy*4;
