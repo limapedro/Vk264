@@ -15,7 +15,8 @@ CLIP = pathlib.Path(r'E:\__PROJECTS__\Wx264-Vulkan-Opencode\clips\youtube'
                     r'\warzone2020_verdansk_4k_src_1080p_nvenc_p7_24mbps_240f.yuv')
 SW, SH = 1920, 1080
 W, H = 64, 64
-CASES = [(320, 800, 8), (1080, 600, 12), (1200, 540, 12), (1440, 120, 16)]
+CASES = [(320, 800, 8), (1080, 600, 12), (1200, 540, 12), (1440, 120, 16),
+         (1200, 240, 8)]
 
 if not X264.exists() or not CLIP.exists():
     print('x264.exe or clip missing; skipping'); sys.exit(77)
