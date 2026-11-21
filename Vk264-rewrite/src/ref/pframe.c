@@ -456,10 +456,12 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
     }
     if (cbp_chroma) {
         for (int pl = 0; pl < 2; ++pl) {
-            int d0 = chroma_dc[pl][0]+chroma_dc[pl][1];
-            int d1 = chroma_dc[pl][2]+chroma_dc[pl][3];
-            int d2 = chroma_dc[pl][0]-chroma_dc[pl][1];
-            int d3 = chroma_dc[pl][2]-chroma_dc[pl][3];
+            /* chroma_dc[] is zigzag-ordered {t0,t2,t1,t3} for the VLC;
+             * x264's idct_dequant_2x2_dconly transforms Hadamard order
+             * {t0,t1,t2,t3}. Undo the zigzag before reconstructing. */
+            int h0 = chroma_dc[pl][0], h1 = chroma_dc[pl][2];
+            int h2 = chroma_dc[pl][1], h3 = chroma_dc[pl][3];
+            int d0 = h0+h1, d1 = h2+h3, d2 = h0-h1, d3 = h2-h3;
             int dmf = cdeq[0] << (qp/6);
             int cdq[4] = { ((d0+d1)*dmf)>>5, ((d0-d1)*dmf)>>5,
                            ((d2+d3)*dmf)>>5, ((d2-d3)*dmf)>>5 };
@@ -650,7 +652,8 @@ static int code_i16_chroma_dc(vk_bs_t *bs, const uint8_t *cur, int w, int h,
             int had2[4]={a+b,a-b,c+d,c-d};
             int rr[4];
             for (int i = 0; i < 4; ++i) rr[i]=((had2[i]*dmf)>>5);
-            int mby = y/16, mbx = x/16;
+            /* rconu/rconv are already positioned at this MB by the caller;
+             * adding mby/mbx again writes past the plane for lower-right MBs. */
             uint8_t *dst = pl ? rconv : rconu;
             int stride = pl ? rdv : rdu;
             const uint8_t *p = pl ? pv : pu;
@@ -659,7 +662,7 @@ static int code_i16_chroma_dc(vk_bs_t *bs, const uint8_t *cur, int w, int h,
                 for (int yy=0; yy<4; ++yy)
                     for (int xx=0; xx<4; ++xx) {
                         int v = p[(by+yy)*8+bx+xx] + ((rr[i]+32)>>6);
-                        dst[(mby*8+by+yy)*stride+mbx*8+bx+xx] = (uint8_t)(v<0?0:v>255?255:v);
+                        dst[(by+yy)*stride+bx+xx] = (uint8_t)(v<0?0:v>255?255:v);
                     }
             }
         }
