@@ -14,6 +14,8 @@
 #include "param.h"
 #include "slice.h"
 #include "pframe.h"
+#include "i4x4.h"
+#include "i4x4enc.h"
 #include "cabac.h"
 #include "cabac_enc.h"
 #include <stdio.h>
@@ -27,7 +29,7 @@ static void encode_idr_cavlc(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
                              uint8_t *dcnz_c,
                              uint8_t *ry, int rs, int ro,
                              uint8_t *ru, uint8_t *rv, int cs, int co,
-                             uint8_t *recon)
+                             uint8_t *recon, int use_i4x4)
 {
     int mw = w/16, mh = h/16;
     vk_slice_header_t sh;
@@ -77,6 +79,15 @@ static void encode_idr_cavlc(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
             const uint8_t *su = frame + (size_t)w*h + (py/2)*(w/2) + px/2;
             const uint8_t *sv = su + (w/2)*(h/2);
             uint8_t oy[256], ou[64], ov[64], on[16], oc[2][4], od;
+            if (use_i4x4 && getenv("ORACLE_I4X4")) {
+                uint8_t modes[16];
+                uint8_t *tmp = malloc((size_t)rs*(h+64));
+                memset(tmp, 128, (size_t)rs*(h+64));
+                vk_i4x4_decide(sy, tmp+32*rs+32, rs, px, py, qp, 0,0,0,0, modes);
+                free(tmp);
+                vk_encode_i4x4_mb(bs, sy, su, sv, oy, ou, ov, qp, &nb, w, w/2,
+                                  modes, on, oc, &od);
+            } else
             vk_encode_i16_mb(bs, sy, su, sv, oy, ou, ov, qp, mx, my, &nb,
                              w, w/2, on, oc, &od);
             memcpy(nnz_c[my*mw+mx], on, 16);
@@ -191,7 +202,7 @@ int main(int argc, char **argv)
                 memset(rv, 128, (size_t)cs*(h/2+32));
                 encode_idr_cavlc(&bs, &sps, &pps, frames, w, h, qp_i,
                                  idr_pic_id, nnz_c, cnnz_c, dcnz_c,
-                                 ry, rs, ro, ru, rv, cs, co, recon);
+                                 ry, rs, ro, ru, rv, cs, co, recon, p.i_subme > 0);
                 memset(curintra, 1, (size_t)mw*mh);  /* IDR: all MBs intra */
             }
             vk_nal_write(fo, 0x65, buf,

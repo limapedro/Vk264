@@ -691,5 +691,15 @@ byte-exact** vs x264 — both parse identically through qp_delta and deblock_idc
 24 bits (slice header) and diverge at MB 0's I4x4 prediction-mode/CAVLC data.
 So a byte-exact superfast IDR requires only: CAVLC I4x4 emission for MB 0
 (mb_type=0, 16 pred modes, cbp2golomb table, 16 luma residuals, chroma) plus
-verifying whether the 15 I16 MBs need 8x8dct. A partial emitter was drafted
-(luma path only, chroma missing) and removed rather than leave dead code.
+verifying whether the 15 I16 MBs need 8x8dct.
+
+A full CAVLC I4x4 emitter was implemented (`src/ref/i4x4enc.c/.h`, CTest
+`rewrite_i4x4_emit` smoke test) and wired into the IDR path behind
+`getenv("ORACLE_I4X4")` (opt-in, default off). Enabling it for ALL MBs produces
+oversized slices (776 B vs x264 32 B) because x264 uses I16 for 15/16 MBs and
+because the mode decision needs real per-MB reconstruction feedback. It is
+therefore NOT enabled by default; the exact remaining work is:
+- per-MB I16-vs-I4-vs-I8x8 mode selection with x264's cost comparison
+- correct neighbour reconstruction feedback across MBs for I4x4 decisions
+- confirm 8x8dct state for the 15 I16 MBs
+Verified with the opt-in OFF: rewrite 22/22, main 65/65, 56/56 MP4 unchanged.
