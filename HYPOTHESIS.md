@@ -758,3 +758,9 @@ dequantised residual inline (x264_mb_encode_i4x4). Also earlier fixed a cbp
 bug (0xFFFF -> 4-bit luma cbp). Effect with ORACLE_I4X4=1: IDR 82 B -> 59 B
 -> 50 B (x264 30 B). Still not byte-exact; residual tokens differ. Default
 gates/sweeps/56-stream MP4 unchanged.
+
+After the inline-reconstruction fix, the emitter's MB0 has 1 nonzero luma
+block (-41) vs x264's 3 (-41, 1, 1). So x264's reconstructed neighbours are
+slightly different (lossy dequant/IDCT rounding), leaving small residuals in
+two later blocks. The next concrete step is a reconstructed-sample comparison
+for MB0's 4x4 blocks to pin down the DCT/dequant/IDCT rounding difference.
