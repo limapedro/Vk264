@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="1940" viewBox="0 0 1680 1940" font-family="Consolas, SFMono-Regular, Menlo, monospace">
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="2797" viewBox="0 0 1680 2797" font-family="Consolas, SFMono-Regular, Menlo, monospace">
 <defs>
   <pattern id="grid-exact" width="9" height="9" patternUnits="userSpaceOnUse">
     <rect width="9" height="9" fill="#2ea043"/>
@@ -21,412 +21,886 @@
     <rect x="1" y="1" width="7" height="7" fill="#262b33"/>
   </pattern>
 </defs>
-<rect width="1680" height="1940" fill="#0d1117"/>
+<rect width="1680" height="2797" fill="#0d1117"/>
 <text x="32" y="48" fill="#e6edf3" font-size="30" font-weight="bold">Vk264 / Oracle Byte-Exact Parity Dashboard</text>
-<text x="32" y="74" fill="#8b949e" font-size="14">function-by-function x264 &#8594; Vulkan port · snapshot 2351adb · generated 2026-11-22</text>
-<rect x="32" y="92" width="1616" height="10" fill="#21262d" rx="5"/>
-<rect x="32" y="92" width="1026.1" height="10" fill="#2ea043" rx="5"/>
+<text x="32" y="74" fill="#8b949e" font-size="14">function-by-function x264 &#8594; Vulkan port · snapshot 602383c · generated 2026-11-22</text>
+<rect x="32.0" y="92.0" width="1616.0" height="11" fill="#21262d" rx="5"/><rect x="32.0" y="92.0" width="1026.1" height="11" fill="#2ea043" rx="5"/>
 <text x="1644" y="102" fill="#c9d1d9" font-size="15" text-anchor="end">byte-exact function coverage 63.5% (327/515 weighted families)</text>
 <rect x="32" y="120" width="256" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
 <rect x="32" y="120" width="4" height="74" fill="#2ea043"/>
 <text x="46" y="142" fill="#8b949e" font-size="11">CAVLC I-FRAMES</text>
 <text x="46" y="168" fill="#e6edf3" font-size="22" font-weight="bold">72 / 72</text>
-<text x="276" y="168" fill="#2ea043" font-size="18" text-anchor="end">100.0%</text>
+<text x="276" y="168" fill="#2ea043" font-size="16" text-anchor="end">100.0%</text>
 <rect x="304" y="120" width="256" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
 <rect x="304" y="120" width="4" height="74" fill="#2ea043"/>
 <text x="318" y="142" fill="#8b949e" font-size="11">CAVLC P-SLICES</text>
 <text x="318" y="168" fill="#e6edf3" font-size="22" font-weight="bold">1360 / 1360</text>
-<text x="548" y="168" fill="#2ea043" font-size="18" text-anchor="end">100.0%</text>
+<text x="548" y="168" fill="#2ea043" font-size="16" text-anchor="end">100.0%</text>
 <rect x="576" y="120" width="256" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
 <rect x="576" y="120" width="4" height="74" fill="#2ea043"/>
 <text x="590" y="142" fill="#8b949e" font-size="11">CABAC P-SLICES</text>
 <text x="590" y="168" fill="#e6edf3" font-size="22" font-weight="bold">1360 / 1360</text>
-<text x="820" y="168" fill="#2ea043" font-size="18" text-anchor="end">100.0%</text>
+<text x="820" y="168" fill="#2ea043" font-size="16" text-anchor="end">100.0%</text>
 <rect x="848" y="120" width="256" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
 <rect x="848" y="120" width="4" height="74" fill="#2ea043"/>
 <text x="862" y="142" fill="#8b949e" font-size="11">CTEST GATES</text>
 <text x="862" y="168" fill="#e6edf3" font-size="22" font-weight="bold">65 + 18 / 83</text>
-<text x="1092" y="168" fill="#2ea043" font-size="18" text-anchor="end">100.0%</text>
+<text x="1092" y="168" fill="#2ea043" font-size="16" text-anchor="end">100.0%</text>
 <rect x="1120" y="120" width="256" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
 <rect x="1120" y="120" width="4" height="74" fill="#d29922"/>
 <text x="1134" y="142" fill="#8b949e" font-size="11">VIDEO MP4 EXPERIMENTS</text>
-<text x="1134" y="168" fill="#e6edf3" font-size="22" font-weight="bold">32 / 56 exact</text>
-<text x="1364" y="168" fill="#d29922" font-size="18" text-anchor="end">57.1%</text>
+<text x="1134" y="168" fill="#e6edf3" font-size="19" font-weight="bold">32 / 56 exact</text>
+<text x="1364" y="168" fill="#d29922" font-size="16" text-anchor="end">57.1%</text>
 <rect x="1392" y="120" width="256" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
 <rect x="1392" y="120" width="4" height="74" fill="#d29922"/>
 <text x="1406" y="142" fill="#8b949e" font-size="11">x264 INVENTORY</text>
-<text x="1406" y="168" fill="#e6edf3" font-size="22" font-weight="bold">831 funcs / 23 ported</text>
-<text x="1636" y="168" fill="#d29922" font-size="18" text-anchor="end">808 missing</text>
-<text x="32" y="204" fill="#e6edf3" font-size="17" font-weight="bold">Pipeline stage coverage (tile size ~ function count)</text>
-<rect x="32" y="228" width="393" height="180" fill="#161b22" stroke="#30363d" rx="6"/>
-<text x="44" y="252" fill="#e6edf3" font-size="13" font-weight="bold">01  Parameters, SPS/PPS, headers</text>
-<text x="44" y="270" fill="#6e7681" font-size="10">base.c · common/set.c · encoder/set.c</text>
-<text x="413" y="252" fill="#30363d" font-size="16" font-weight="bold" text-anchor="end">29%</text>
-<rect x="44.0" y="282" width="36.0" height="30" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
-<rect x="84.0" y="282" width="36.0" height="30" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
-<rect x="124.0" y="282" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="164.0" y="282" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="204.0" y="282" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="44.0" y="316" width="171.7" height="30" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
-<text x="49.0" y="335" fill="#ffffff" font-size="9" font-weight="bold">sei_* (10 functions)</text>
-<rect x="219.7" y="316" width="36.0" height="30" fill="url(#grid-cpp)" stroke="#388bfd" rx="2"/>
-<rect x="439" y="228" width="393" height="180" fill="#161b22" stroke="#30363d" rx="6"/>
-<text x="451" y="252" fill="#e6edf3" font-size="13" font-weight="bold">02  Frame management</text>
-<text x="451" y="270" fill="#6e7681" font-size="10">common/frame.c</text>
-<text x="820" y="252" fill="#30363d" font-size="16" font-weight="bold" text-anchor="end">0%</text>
-<rect x="451.0" y="282" width="97.8" height="30" fill="url(#grid-cpp)" stroke="#388bfd" rx="2"/>
-<text x="456.0" y="301" fill="#ffffff" font-size="9" font-weight="bold">frame_new / copy_picture</text>
-<rect x="552.8" y="282" width="72.3" height="30" fill="url(#grid-cpp)" stroke="#388bfd" rx="2"/>
-<text x="557.8" y="301" fill="#ffffff" font-size="9" font-weight="bold">expand_bor…</text>
-<rect x="629.1" y="282" width="110.5" height="30" fill="url(#grid-cpp)" stroke="#388bfd" rx="2"/>
-<text x="634.1" y="301" fill="#ffffff" font-size="9" font-weight="bold">sync-frame lists</text>
-<rect x="743.7" y="282" width="72.3" height="30" fill="url(#grid-cpp)" stroke="#388bfd" rx="2"/>
-<text x="748.7" y="301" fill="#ffffff" font-size="9" font-weight="bold">weight sca…</text>
-<rect x="846" y="228" width="393" height="180" fill="#161b22" stroke="#30363d" rx="6"/>
-<text x="858" y="252" fill="#e6edf3" font-size="13" font-weight="bold">03  Lookahead &amp; slice type</text>
-<text x="858" y="270" fill="#6e7681" font-size="10">lookahead.c · slicetype.c · slicetype-cl.c</text>
-<text x="1227" y="252" fill="#30363d" font-size="16" font-weight="bold" text-anchor="end">0%</text>
-<rect x="858.0" y="282" width="61.1" height="30" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
-<text x="863.0" y="301" fill="#ffffff" font-size="9" font-weight="bold">x264_looka…</text>
-<rect x="923.1" y="282" width="184.1" height="30" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
-<text x="928.1" y="301" fill="#ffffff" font-size="9" font-weight="bold">slicetype_*</text>
-<rect x="1111.2" y="282" width="36.0" height="30" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
-<rect x="1151.2" y="282" width="36.0" height="30" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
-<rect x="858.0" y="316" width="53.9" height="30" fill="url(#grid-n/a)" stroke="#484f58" rx="2"/>
-<text x="863.0" y="335" fill="#ffffff" font-size="9" font-weight="bold">OpenCL sli…</text>
-<rect x="1253" y="228" width="393" height="180" fill="#161b22" stroke="#30363d" rx="6"/>
-<text x="1265" y="252" fill="#e6edf3" font-size="13" font-weight="bold">04  Analysis / mode decision</text>
-<text x="1265" y="270" fill="#6e7681" font-size="10">encoder/analyse.c · rdo.c</text>
-<text x="1634" y="252" fill="#30363d" font-size="16" font-weight="bold" text-anchor="end">5%</text>
-<rect x="1265.0" y="282" width="36.0" height="30" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
-<rect x="1305.0" y="282" width="36.0" height="30" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
-<rect x="1345.0" y="282" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="1385.0" y="282" width="36.0" height="30" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
-<rect x="1425.0" y="282" width="71.5" height="30" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
-<text x="1430.0" y="301" fill="#ffffff" font-size="9" font-weight="bold">mb_analyse…</text>
-<rect x="1500.5" y="282" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="1265.0" y="316" width="214.0" height="30" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
-<text x="1270.0" y="335" fill="#ffffff" font-size="9" font-weight="bold">rd_cost* / trellis</text>
-<rect x="1483.0" y="316" width="36.0" height="30" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
-<rect x="32" y="422" width="393" height="180" fill="#161b22" stroke="#30363d" rx="6"/>
-<text x="44" y="446" fill="#e6edf3" font-size="13" font-weight="bold">05  Intra prediction</text>
-<text x="44" y="464" fill="#6e7681" font-size="10">common/predict.c</text>
-<text x="413" y="446" fill="#2ea043" font-size="16" font-weight="bold" text-anchor="end">88%</text>
-<rect x="44.0" y="476" width="61.1" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="49.0" y="495" fill="#ffffff" font-size="9" font-weight="bold">predict_4x…</text>
-<rect x="109.1" y="476" width="140.7" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="114.1" y="495" fill="#ffffff" font-size="9" font-weight="bold">predict_8x8* / 8x8c / 8x16c</text>
-<rect x="253.8" y="476" width="111.8" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="258.8" y="495" fill="#ffffff" font-size="9" font-weight="bold">predict_16x16_*</text>
-<rect x="369.6" y="476" width="39.4" height="30" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
-<rect x="439" y="422" width="393" height="180" fill="#161b22" stroke="#30363d" rx="6"/>
-<text x="451" y="446" fill="#e6edf3" font-size="13" font-weight="bold">06  Transform, quant, zigzag</text>
-<text x="451" y="464" fill="#6e7681" font-size="10">common/dct.c · common/quant.c</text>
-<text x="820" y="446" fill="#2ea043" font-size="16" font-weight="bold" text-anchor="end">100%</text>
-<rect x="451.0" y="476" width="97.1" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="456.0" y="495" fill="#ffffff" font-size="9" font-weight="bold">sub/add_dct / idct 4x4,8x8,16x16</text>
-<rect x="552.1" y="476" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="592.1" y="476" width="147.6" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="597.1" y="495" fill="#ffffff" font-size="9" font-weight="bold">quant_4x4 / 8x8 / dequant_*</text>
-<rect x="743.7" y="476" width="46.5" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="748.7" y="495" fill="#ffffff" font-size="9" font-weight="bold">zigzag_sca…</text>
-<rect x="451.0" y="510" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="491.0" y="510" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="846" y="422" width="393" height="180" fill="#161b22" stroke="#30363d" rx="6"/>
-<text x="858" y="446" fill="#e6edf3" font-size="13" font-weight="bold">07  Motion</text>
-<text x="858" y="464" fill="#6e7681" font-size="10">mc.c · me.c · mvpred.c · pixel.c</text>
-<text x="1227" y="446" fill="#2ea043" font-size="16" font-weight="bold" text-anchor="end">94%</text>
-<rect x="858.0" y="476" width="226.6" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="863.0" y="495" fill="#ffffff" font-size="9" font-weight="bold">pixel_satd / sa8d / ssd*</text>
-<rect x="1088.6" y="476" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="1128.6" y="476" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="1168.6" y="476" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="858.0" y="510" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="898.0" y="510" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="938.0" y="510" width="36.0" height="30" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
-<rect x="1253" y="422" width="393" height="180" fill="#161b22" stroke="#30363d" rx="6"/>
-<text x="1265" y="446" fill="#e6edf3" font-size="13" font-weight="bold">08  Macroblock encode / reconstruct</text>
-<text x="1265" y="464" fill="#6e7681" font-size="10">encoder/macroblock.c</text>
-<text x="1634" y="446" fill="#2ea043" font-size="16" font-weight="bold" text-anchor="end">88%</text>
-<rect x="1265.0" y="476" width="88.2" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="1270.0" y="495" fill="#ffffff" font-size="9" font-weight="bold">mb_encode_…</text>
-<rect x="1357.2" y="476" width="88.2" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="1362.2" y="495" fill="#ffffff" font-size="9" font-weight="bold">mb_encode_…</text>
-<rect x="1449.5" y="476" width="42.1" height="30" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
-<rect x="1495.6" y="476" width="88.2" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="1500.6" y="495" fill="#ffffff" font-size="9" font-weight="bold">macroblock…</text>
-<rect x="1587.9" y="476" width="42.1" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="32" y="616" width="393" height="180" fill="#161b22" stroke="#30363d" rx="6"/>
-<text x="44" y="640" fill="#e6edf3" font-size="13" font-weight="bold">09  Deblocking</text>
-<text x="44" y="658" fill="#6e7681" font-size="10">common/deblock.c</text>
-<text x="413" y="640" fill="#2ea043" font-size="16" font-weight="bold" text-anchor="end">100%</text>
-<rect x="44.0" y="670" width="266.6" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="49.0" y="689" fill="#ffffff" font-size="9" font-weight="bold">deblock_*_c / deblock_edge*</text>
-<rect x="314.6" y="670" width="94.4" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="319.6" y="689" fill="#ffffff" font-size="9" font-weight="bold">x264_frame_deblock_row</text>
-<rect x="439" y="616" width="393" height="180" fill="#161b22" stroke="#30363d" rx="6"/>
-<text x="451" y="640" fill="#e6edf3" font-size="13" font-weight="bold">10  Rate control</text>
-<text x="451" y="658" fill="#6e7681" font-size="10">encoder/ratecontrol.c</text>
-<text x="820" y="640" fill="#30363d" font-size="16" font-weight="bold" text-anchor="end">12%</text>
-<rect x="451.0" y="670" width="39.4" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="494.4" y="670" width="321.6" height="30" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
-<text x="499.4" y="689" fill="#ffffff" font-size="9" font-weight="bold">x264_ratecontrol_* (45)</text>
-<rect x="846" y="616" width="393" height="180" fill="#161b22" stroke="#30363d" rx="6"/>
-<text x="858" y="640" fill="#e6edf3" font-size="13" font-weight="bold">11  Entropy coding</text>
-<text x="858" y="658" fill="#6e7681" font-size="10">cabac.c · cavlc.c · vlc.c · bitstream.c</text>
-<text x="1227" y="640" fill="#2ea043" font-size="16" font-weight="bold" text-anchor="end">100%</text>
-<rect x="858.0" y="670" width="166.3" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="863.0" y="689" fill="#ffffff" font-size="9" font-weight="bold">cabac_encode_* / init</text>
-<rect x="1028.3" y="670" width="109.5" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="1033.3" y="689" fill="#ffffff" font-size="9" font-weight="bold">cabac_ref / mvd / residual</text>
-<rect x="1141.8" y="670" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="1181.8" y="670" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="858.0" y="704" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="898.0" y="704" width="52.8" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="903.0" y="723" fill="#ffffff" font-size="9" font-weight="bold">cavlc_bloc…</text>
-<rect x="954.8" y="704" width="36.0" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<rect x="1253" y="616" width="393" height="180" fill="#161b22" stroke="#30363d" rx="6"/>
-<text x="1265" y="640" fill="#e6edf3" font-size="13" font-weight="bold">12  Encoder orchestration</text>
-<text x="1265" y="658" fill="#6e7681" font-size="10">encoder/encoder.c · api.c</text>
-<text x="1634" y="640" fill="#2ea043" font-size="16" font-weight="bold" text-anchor="end">75%</text>
-<rect x="1265.0" y="670" width="88.2" height="30" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
-<text x="1270.0" y="689" fill="#ffffff" font-size="9" font-weight="bold">x264_encod…</text>
-<rect x="1357.2" y="670" width="88.2" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="1362.2" y="689" fill="#ffffff" font-size="9" font-weight="bold">x264_encod…</text>
-<rect x="1449.5" y="670" width="180.5" height="30" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="1454.5" y="689" fill="#ffffff" font-size="9" font-weight="bold">slice_write / nal_end</text>
-<text x="32" y="850" fill="#e6edf3" font-size="17" font-weight="bold">CAVLC P-slice byte-exact sweep — progress by merged PR</text>
-<text x="40" y="885" fill="#8b949e" font-size="12">baseline</text>
-<rect x="272" y="874" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="874" width="722.2" height="13" fill="#484f58" rx="3"/>
-<text x="1538" y="885" fill="#e6edf3" font-size="12">782/1360</text>
-<text x="40" y="902" fill="#8b949e" font-size="12">#109</text>
-<rect x="272" y="891" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="891" width="722.2" height="13" fill="#484f58" rx="3"/>
-<text x="1538" y="902" fill="#e6edf3" font-size="12">782/1360</text>
-<text x="40" y="919" fill="#8b949e" font-size="12">#110</text>
-<rect x="272" y="908" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="908" width="738.8" height="13" fill="#6e7681" rx="3"/>
-<text x="1538" y="919" fill="#e6edf3" font-size="12">800/1360</text>
-<text x="40" y="936" fill="#8b949e" font-size="12">#111</text>
-<rect x="272" y="925" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="925" width="756.4" height="13" fill="#8b949e" rx="3"/>
-<text x="1538" y="936" fill="#e6edf3" font-size="12">819/1360</text>
-<text x="40" y="953" fill="#8b949e" font-size="12">#112</text>
-<rect x="272" y="942" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="942" width="773.0" height="13" fill="#a5a5a5" rx="3"/>
-<text x="1538" y="953" fill="#e6edf3" font-size="12">837/1360</text>
-<text x="40" y="970" fill="#8b949e" font-size="12">#113</text>
-<rect x="272" y="959" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="959" width="773.0" height="13" fill="#a5a5a5" rx="3"/>
-<text x="1538" y="970" fill="#e6edf3" font-size="12">837/1360</text>
-<text x="40" y="987" fill="#8b949e" font-size="12">#114</text>
-<rect x="272" y="976" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="976" width="794.2" height="13" fill="#c9a227" rx="3"/>
-<text x="1538" y="987" fill="#e6edf3" font-size="12">860/1360</text>
-<text x="40" y="1004" fill="#8b949e" font-size="12">#115</text>
-<rect x="272" y="993" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="993" width="794.2" height="13" fill="#c9a227" rx="3"/>
-<text x="1538" y="1004" fill="#e6edf3" font-size="12">860/1360</text>
-<text x="40" y="1021" fill="#8b949e" font-size="12">#116</text>
-<rect x="272" y="1010" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1010" width="807.2" height="13" fill="#d29922" rx="3"/>
-<text x="1538" y="1021" fill="#e6edf3" font-size="12">874/1360</text>
-<text x="40" y="1038" fill="#8b949e" font-size="12">#117</text>
-<rect x="272" y="1027" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1027" width="827.5" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1038" fill="#e6edf3" font-size="12">896/1360</text>
-<text x="40" y="1055" fill="#8b949e" font-size="12">#118</text>
-<rect x="272" y="1044" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1044" width="827.5" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1055" fill="#e6edf3" font-size="12">896/1360</text>
-<text x="40" y="1072" fill="#8b949e" font-size="12">#119</text>
-<rect x="272" y="1061" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1061" width="842.3" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1072" fill="#e6edf3" font-size="12">912/1360</text>
-<text x="40" y="1089" fill="#8b949e" font-size="12">#120</text>
-<rect x="272" y="1078" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1078" width="861.7" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1089" fill="#e6edf3" font-size="12">933/1360</text>
-<text x="40" y="1106" fill="#8b949e" font-size="12">#121</text>
-<rect x="272" y="1095" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1095" width="900.4" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1106" fill="#e6edf3" font-size="12">975/1360</text>
-<text x="40" y="1123" fill="#8b949e" font-size="12">#123</text>
-<rect x="272" y="1112" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1112" width="928.1" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1123" fill="#e6edf3" font-size="12">1005/1360</text>
-<text x="40" y="1140" fill="#8b949e" font-size="12">#125</text>
-<rect x="272" y="1129" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1129" width="928.1" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1140" fill="#e6edf3" font-size="12">1005/1360</text>
-<text x="40" y="1157" fill="#8b949e" font-size="12">#126</text>
-<rect x="272" y="1146" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1146" width="943.8" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1157" fill="#e6edf3" font-size="12">1022/1360</text>
-<text x="40" y="1174" fill="#8b949e" font-size="12">#128</text>
-<rect x="272" y="1163" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1163" width="1005.7" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1174" fill="#e6edf3" font-size="12">1089/1360</text>
-<text x="40" y="1191" fill="#8b949e" font-size="12">#130</text>
-<rect x="272" y="1180" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1180" width="1071.3" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1191" fill="#e6edf3" font-size="12">1160/1360</text>
-<text x="40" y="1208" fill="#8b949e" font-size="12">#132</text>
-<rect x="272" y="1197" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1197" width="1098.1" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1208" fill="#e6edf3" font-size="12">1189/1360</text>
-<text x="40" y="1225" fill="#8b949e" font-size="12">#134</text>
-<rect x="272" y="1214" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1214" width="1098.1" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1225" fill="#e6edf3" font-size="12">1189/1360</text>
-<text x="40" y="1242" fill="#8b949e" font-size="12">#136</text>
-<rect x="272" y="1231" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1231" width="1103.6" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1242" fill="#e6edf3" font-size="12">1195/1360</text>
-<text x="40" y="1259" fill="#8b949e" font-size="12">#138</text>
-<rect x="272" y="1248" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1248" width="1121.2" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1259" fill="#e6edf3" font-size="12">1214/1360</text>
-<text x="40" y="1276" fill="#8b949e" font-size="12">#140</text>
-<rect x="272" y="1265" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1265" width="1122.1" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1276" fill="#e6edf3" font-size="12">1215/1360</text>
-<text x="40" y="1293" fill="#8b949e" font-size="12">#142</text>
-<rect x="272" y="1282" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1282" width="1154.4" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1293" fill="#e6edf3" font-size="12">1250/1360</text>
-<text x="40" y="1310" fill="#8b949e" font-size="12">#144</text>
-<rect x="272" y="1299" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1299" width="1185.8" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1310" fill="#e6edf3" font-size="12">1284/1360</text>
-<text x="40" y="1327" fill="#8b949e" font-size="12">#146</text>
-<rect x="272" y="1316" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1316" width="1223.7" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1327" fill="#e6edf3" font-size="12">1325/1360</text>
-<text x="40" y="1344" fill="#8b949e" font-size="12">#148</text>
-<rect x="272" y="1333" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1333" width="1223.7" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1344" fill="#e6edf3" font-size="12">1325/1360</text>
-<text x="40" y="1361" fill="#8b949e" font-size="12">#151</text>
-<rect x="272" y="1350" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1350" width="1226.4" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1361" fill="#e6edf3" font-size="12">1328/1360</text>
-<text x="40" y="1378" fill="#8b949e" font-size="12">#153</text>
-<rect x="272" y="1367" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1367" width="1236.6" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1378" fill="#e6edf3" font-size="12">1339/1360</text>
-<text x="40" y="1395" fill="#8b949e" font-size="12">#155</text>
-<rect x="272" y="1384" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1384" width="1236.6" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1395" fill="#e6edf3" font-size="12">1339/1360</text>
-<text x="40" y="1412" fill="#8b949e" font-size="12">#157</text>
-<rect x="272" y="1401" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1401" width="1236.6" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1412" fill="#e6edf3" font-size="12">1339/1360</text>
-<text x="40" y="1429" fill="#8b949e" font-size="12">#175</text>
-<rect x="272" y="1418" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1418" width="1240.3" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1429" fill="#e6edf3" font-size="12">1343/1360</text>
-<text x="40" y="1446" fill="#8b949e" font-size="12">#177</text>
-<rect x="272" y="1435" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1435" width="1241.2" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1446" fill="#e6edf3" font-size="12">1344/1360</text>
-<text x="40" y="1463" fill="#8b949e" font-size="12">#179</text>
-<rect x="272" y="1452" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1452" width="1246.8" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1463" fill="#e6edf3" font-size="12">1350/1360</text>
-<text x="40" y="1480" fill="#8b949e" font-size="12">#181</text>
-<rect x="272" y="1469" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1469" width="1251.4" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1480" fill="#e6edf3" font-size="12">1355/1360</text>
-<text x="40" y="1497" fill="#8b949e" font-size="12">#183</text>
-<rect x="272" y="1486" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1486" width="1256.0" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1497" fill="#e6edf3" font-size="12">1360/1360</text>
-<text x="32" y="1524" fill="#e6edf3" font-size="17" font-weight="bold">CABAC P-slice byte-exact sweep — progress by merged PR</text>
-<text x="40" y="1559" fill="#8b949e" font-size="12">#127</text>
-<rect x="272" y="1548" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1548" width="849.6" height="13" fill="#484f58" rx="3"/>
-<text x="1538" y="1559" fill="#e6edf3" font-size="12">920/1360</text>
-<text x="40" y="1576" fill="#8b949e" font-size="12">#134</text>
-<rect x="272" y="1565" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1565" width="879.2" height="13" fill="#6e7681" rx="3"/>
-<text x="1538" y="1576" fill="#e6edf3" font-size="12">952/1360</text>
-<text x="40" y="1593" fill="#8b949e" font-size="12">#138</text>
-<rect x="272" y="1582" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1582" width="886.6" height="13" fill="#8b949e" rx="3"/>
-<text x="1538" y="1593" fill="#e6edf3" font-size="12">960/1360</text>
-<text x="40" y="1610" fill="#8b949e" font-size="12">#148</text>
-<rect x="272" y="1599" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1599" width="911.5" height="13" fill="#a5a5a5" rx="3"/>
-<text x="1538" y="1610" fill="#e6edf3" font-size="12">987/1360</text>
-<text x="40" y="1627" fill="#8b949e" font-size="12">#151</text>
-<rect x="272" y="1616" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1616" width="911.5" height="13" fill="#a5a5a5" rx="3"/>
-<text x="1538" y="1627" fill="#e6edf3" font-size="12">987/1360</text>
-<text x="40" y="1644" fill="#8b949e" font-size="12">#153</text>
-<rect x="272" y="1633" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1633" width="914.3" height="13" fill="#c9a227" rx="3"/>
-<text x="1538" y="1644" fill="#e6edf3" font-size="12">990/1360</text>
-<text x="40" y="1661" fill="#8b949e" font-size="12">#155</text>
-<rect x="272" y="1650" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1650" width="996.5" height="13" fill="#388bfd" rx="3"/>
-<text x="1538" y="1661" fill="#e6edf3" font-size="12">1079/1360</text>
-<text x="40" y="1678" fill="#8b949e" font-size="12">#157</text>
-<rect x="272" y="1667" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1667" width="1017.7" height="13" fill="#388bfd" rx="3"/>
-<text x="1538" y="1678" fill="#e6edf3" font-size="12">1102/1360</text>
-<text x="40" y="1695" fill="#8b949e" font-size="12">#159</text>
-<rect x="272" y="1684" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1684" width="1061.1" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1695" fill="#e6edf3" font-size="12">1149/1360</text>
-<text x="40" y="1712" fill="#8b949e" font-size="12">#161</text>
-<rect x="272" y="1701" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1701" width="1123.9" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1712" fill="#e6edf3" font-size="12">1217/1360</text>
-<text x="40" y="1729" fill="#8b949e" font-size="12">#163</text>
-<rect x="272" y="1718" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1718" width="1125.8" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1729" fill="#e6edf3" font-size="12">1219/1360</text>
-<text x="40" y="1746" fill="#8b949e" font-size="12">#165</text>
-<rect x="272" y="1735" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1735" width="1158.1" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1746" fill="#e6edf3" font-size="12">1254/1360</text>
-<text x="40" y="1763" fill="#8b949e" font-size="12">#167</text>
-<rect x="272" y="1752" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1752" width="1171.0" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1763" fill="#e6edf3" font-size="12">1268/1360</text>
-<text x="40" y="1780" fill="#8b949e" font-size="12">#169</text>
-<rect x="272" y="1769" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1769" width="1245.8" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1780" fill="#e6edf3" font-size="12">1349/1360</text>
-<text x="40" y="1797" fill="#8b949e" font-size="12">#171</text>
-<rect x="272" y="1786" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1786" width="1247.7" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1797" fill="#e6edf3" font-size="12">1351/1360</text>
-<text x="40" y="1814" fill="#8b949e" font-size="12">#173</text>
-<rect x="272" y="1803" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1803" width="1251.4" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1814" fill="#e6edf3" font-size="12">1355/1360</text>
-<text x="40" y="1831" fill="#8b949e" font-size="12">#175</text>
-<rect x="272" y="1820" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1820" width="1255.1" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1831" fill="#e6edf3" font-size="12">1359/1360</text>
-<text x="40" y="1848" fill="#8b949e" font-size="12">#177</text>
-<rect x="272" y="1837" width="1256" height="13" fill="#21262d" rx="3"/>
-<rect x="272" y="1837" width="1256.0" height="13" fill="#2ea043" rx="3"/>
-<text x="1538" y="1848" fill="#e6edf3" font-size="12">1360/1360</text>
-<text x="32" y="1900" fill="#8b949e" font-size="12">LEGEND:</text>
-<rect x="112" y="1889" width="14" height="14" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
-<text x="132" y="1900" fill="#c9d1d9" font-size="12">EXACT</text>
-<rect x="242" y="1889" width="14" height="14" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
-<text x="262" y="1900" fill="#c9d1d9" font-size="12">PARTIAL</text>
-<rect x="372" y="1889" width="14" height="14" fill="url(#grid-cpp)" stroke="#388bfd" rx="2"/>
-<text x="392" y="1900" fill="#c9d1d9" font-size="12">C++</text>
-<rect x="502" y="1889" width="14" height="14" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
-<text x="522" y="1900" fill="#c9d1d9" font-size="12">MISSING</text>
-<rect x="632" y="1889" width="14" height="14" fill="url(#grid-n/a)" stroke="#484f58" rx="2"/>
-<text x="652" y="1900" fill="#c9d1d9" font-size="12">N/A</text>
-<text x="1648" y="1900" fill="#6e7681" font-size="11" text-anchor="end">regenerate: python docs/generate_parity_dashboard.py</text>
+<text x="1406" y="168" fill="#e6edf3" font-size="16" font-weight="bold">831 funcs / 23 ported</text>
+<text x="1636" y="168" fill="#d29922" font-size="16" text-anchor="end">2.8%</text>
+<text x="32" y="212" fill="#e6edf3" font-size="17" font-weight="bold">Pipeline stage coverage — stacked status bar + a progress bar on every function family</text>
+<rect x="32" y="222" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
+<text x="44" y="244" fill="#e6edf3" font-size="13" font-weight="bold">01  Parameters, SPS/PPS, headers</text>
+<text x="44" y="261" fill="#6e7681" font-size="10">base.c · common/set.c · encoder/set.c</text>
+<text x="413" y="244" fill="#30363d" font-size="16" font-weight="bold" text-anchor="end">29%</text>
+<rect x="44.0" y="268.0" width="369.0" height="8" fill="#21262d" rx="2"/><rect x="44.0" y="268.0" width="105.4" height="8" fill="#2ea043"/><rect x="149.4" y="268.0" width="17.6" height="8" fill="#388bfd"/><rect x="167.0" y="268.0" width="210.9" height="8" fill="#d29922"/><rect x="377.9" y="268.0" width="35.1" height="8" fill="#30363d"/>
+<rect x="44.0" y="284" width="40.0" height="32" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
+<rect x="49.0" y="308.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="49.0" y="308.0" width="15.0" height="4" fill="#d29922" rx="1"/>
+<rect x="88.0" y="284" width="40.0" height="32" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
+<rect x="93.0" y="308.0" width="30.0" height="4" fill="#0d1117" rx="1"/>
+<rect x="132.0" y="284" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="137.0" y="308.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="137.0" y="308.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="176.0" y="284" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="181.0" y="308.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="181.0" y="308.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="220.0" y="284" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="225.0" y="308.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="225.0" y="308.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="44.0" y="320" width="171.7" height="32" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
+<text x="49.0" y="336" fill="#ffffff" font-size="9" font-weight="bold">sei_* (10 functions)</text>
+<rect x="49.0" y="344.0" width="161.7" height="4" fill="#0d1117" rx="1"/><rect x="49.0" y="344.0" width="80.9" height="4" fill="#d29922" rx="1"/>
+<rect x="219.7" y="320" width="40.0" height="32" fill="url(#grid-cpp)" stroke="#388bfd" rx="2"/>
+<rect x="224.7" y="344.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="224.7" y="344.0" width="30.0" height="4" fill="#388bfd" rx="1"/>
+<rect x="439" y="222" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
+<text x="451" y="244" fill="#e6edf3" font-size="13" font-weight="bold">02  Frame management</text>
+<text x="451" y="261" fill="#6e7681" font-size="10">common/frame.c</text>
+<text x="820" y="244" fill="#30363d" font-size="16" font-weight="bold" text-anchor="end">0%</text>
+<rect x="451.0" y="268.0" width="369.0" height="8" fill="#21262d" rx="2"/><rect x="451.0" y="268.0" width="369.0" height="8" fill="#388bfd"/>
+<rect x="451.0" y="284" width="97.8" height="32" fill="url(#grid-cpp)" stroke="#388bfd" rx="2"/>
+<text x="456.0" y="300" fill="#ffffff" font-size="9" font-weight="bold">frame_new / copy_picture</text>
+<rect x="456.0" y="308.0" width="87.8" height="4" fill="#0d1117" rx="1"/><rect x="456.0" y="308.0" width="87.8" height="4" fill="#388bfd" rx="1"/>
+<rect x="552.8" y="284" width="72.3" height="32" fill="url(#grid-cpp)" stroke="#388bfd" rx="2"/>
+<text x="557.8" y="300" fill="#ffffff" font-size="9" font-weight="bold">expand_bord…</text>
+<rect x="557.8" y="308.0" width="62.3" height="4" fill="#0d1117" rx="1"/><rect x="557.8" y="308.0" width="62.3" height="4" fill="#388bfd" rx="1"/>
+<rect x="629.1" y="284" width="110.5" height="32" fill="url(#grid-cpp)" stroke="#388bfd" rx="2"/>
+<text x="634.1" y="300" fill="#ffffff" font-size="9" font-weight="bold">sync-frame lists</text>
+<rect x="634.1" y="308.0" width="100.5" height="4" fill="#0d1117" rx="1"/><rect x="634.1" y="308.0" width="100.5" height="4" fill="#388bfd" rx="1"/>
+<rect x="743.7" y="284" width="72.3" height="32" fill="url(#grid-cpp)" stroke="#388bfd" rx="2"/>
+<text x="748.7" y="300" fill="#ffffff" font-size="9" font-weight="bold">weight scal…</text>
+<rect x="748.7" y="308.0" width="62.3" height="4" fill="#0d1117" rx="1"/><rect x="748.7" y="308.0" width="62.3" height="4" fill="#388bfd" rx="1"/>
+<rect x="846" y="222" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
+<text x="858" y="244" fill="#e6edf3" font-size="13" font-weight="bold">03  Lookahead &amp; slice type</text>
+<text x="858" y="261" fill="#6e7681" font-size="10">lookahead.c · slicetype.c · slicetype-cl.c</text>
+<text x="1227" y="244" fill="#30363d" font-size="16" font-weight="bold" text-anchor="end">0%</text>
+<rect x="858.0" y="268.0" width="369.0" height="8" fill="#21262d" rx="2"/><rect x="858.0" y="268.0" width="369.0" height="8" fill="#30363d"/>
+<rect x="858.0" y="284" width="61.1" height="32" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
+<text x="863.0" y="300" fill="#ffffff" font-size="9" font-weight="bold">x264_lookah…</text>
+<rect x="863.0" y="308.0" width="51.1" height="4" fill="#0d1117" rx="1"/>
+<rect x="923.1" y="284" width="184.1" height="32" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
+<text x="928.1" y="300" fill="#ffffff" font-size="9" font-weight="bold">slicetype_*</text>
+<rect x="928.1" y="308.0" width="174.1" height="4" fill="#0d1117" rx="1"/>
+<rect x="1111.2" y="284" width="40.0" height="32" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
+<rect x="1116.2" y="308.0" width="30.0" height="4" fill="#0d1117" rx="1"/>
+<rect x="1155.2" y="284" width="40.0" height="32" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
+<rect x="1160.2" y="308.0" width="30.0" height="4" fill="#0d1117" rx="1"/>
+<rect x="858.0" y="320" width="53.9" height="32" fill="url(#grid-n/a)" stroke="#484f58" rx="2"/>
+<text x="863.0" y="336" fill="#ffffff" font-size="9" font-weight="bold">OpenCL slic…</text>
+<rect x="863.0" y="344.0" width="43.9" height="4" fill="#0d1117" rx="1"/>
+<rect x="1253" y="222" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
+<text x="1265" y="244" fill="#e6edf3" font-size="13" font-weight="bold">04  Analysis / mode decision</text>
+<text x="1265" y="261" fill="#6e7681" font-size="10">encoder/analyse.c · rdo.c</text>
+<text x="1634" y="244" fill="#30363d" font-size="16" font-weight="bold" text-anchor="end">5%</text>
+<rect x="1265.0" y="268.0" width="369.0" height="8" fill="#21262d" rx="2"/><rect x="1265.0" y="268.0" width="16.8" height="8" fill="#2ea043"/><rect x="1281.8" y="268.0" width="58.7" height="8" fill="#d29922"/><rect x="1340.5" y="268.0" width="293.5" height="8" fill="#30363d"/>
+<rect x="1265.0" y="284" width="40.0" height="32" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
+<rect x="1270.0" y="308.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="1270.0" y="308.0" width="15.0" height="4" fill="#d29922" rx="1"/>
+<rect x="1309.0" y="284" width="40.0" height="32" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
+<rect x="1314.0" y="308.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="1314.0" y="308.0" width="15.0" height="4" fill="#d29922" rx="1"/>
+<rect x="1353.0" y="284" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="1358.0" y="308.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="1358.0" y="308.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="1397.0" y="284" width="40.0" height="32" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
+<rect x="1402.0" y="308.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="1402.0" y="308.0" width="15.0" height="4" fill="#d29922" rx="1"/>
+<rect x="1441.0" y="284" width="71.5" height="32" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
+<text x="1446.0" y="300" fill="#ffffff" font-size="9" font-weight="bold">mb_analyse_…</text>
+<rect x="1446.0" y="308.0" width="61.5" height="4" fill="#0d1117" rx="1"/>
+<rect x="1516.5" y="284" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="1521.5" y="308.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="1521.5" y="308.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="1265.0" y="320" width="214.0" height="32" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
+<text x="1270.0" y="336" fill="#ffffff" font-size="9" font-weight="bold">rd_cost* / trellis</text>
+<rect x="1270.0" y="344.0" width="204.0" height="4" fill="#0d1117" rx="1"/>
+<rect x="1483.0" y="320" width="40.0" height="32" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
+<rect x="1488.0" y="344.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="1488.0" y="344.0" width="15.0" height="4" fill="#d29922" rx="1"/>
+<rect x="32" y="418" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
+<text x="44" y="440" fill="#e6edf3" font-size="13" font-weight="bold">05  Intra prediction</text>
+<text x="44" y="457" fill="#6e7681" font-size="10">common/predict.c</text>
+<text x="413" y="440" fill="#2ea043" font-size="16" font-weight="bold" text-anchor="end">88%</text>
+<rect x="44.0" y="464.0" width="369.0" height="8" fill="#21262d" rx="2"/><rect x="44.0" y="464.0" width="325.6" height="8" fill="#2ea043"/><rect x="369.6" y="464.0" width="43.4" height="8" fill="#d29922"/>
+<rect x="44.0" y="480" width="61.1" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="49.0" y="496" fill="#ffffff" font-size="9" font-weight="bold">predict_4x4…</text>
+<rect x="49.0" y="504.0" width="51.1" height="4" fill="#0d1117" rx="1"/><rect x="49.0" y="504.0" width="51.1" height="4" fill="#2ea043" rx="1"/>
+<rect x="109.1" y="480" width="140.7" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="114.1" y="496" fill="#ffffff" font-size="9" font-weight="bold">predict_8x8* / 8x8c / 8x16c</text>
+<rect x="114.1" y="504.0" width="130.7" height="4" fill="#0d1117" rx="1"/><rect x="114.1" y="504.0" width="130.7" height="4" fill="#2ea043" rx="1"/>
+<rect x="253.8" y="480" width="111.8" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="258.8" y="496" fill="#ffffff" font-size="9" font-weight="bold">predict_16x16_*</text>
+<rect x="258.8" y="504.0" width="101.8" height="4" fill="#0d1117" rx="1"/><rect x="258.8" y="504.0" width="101.8" height="4" fill="#2ea043" rx="1"/>
+<rect x="369.6" y="480" width="40.0" height="32" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
+<rect x="374.6" y="504.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="374.6" y="504.0" width="15.0" height="4" fill="#d29922" rx="1"/>
+<rect x="439" y="418" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
+<text x="451" y="440" fill="#e6edf3" font-size="13" font-weight="bold">06  Transform, quant, zigzag</text>
+<text x="451" y="457" fill="#6e7681" font-size="10">common/dct.c · common/quant.c</text>
+<text x="820" y="440" fill="#2ea043" font-size="16" font-weight="bold" text-anchor="end">100%</text>
+<rect x="451.0" y="464.0" width="369.0" height="8" fill="#21262d" rx="2"/><rect x="451.0" y="464.0" width="369.0" height="8" fill="#2ea043"/>
+<rect x="451.0" y="480" width="97.1" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="456.0" y="496" fill="#ffffff" font-size="9" font-weight="bold">sub/add_dct / idct 4x4,8x8,16x16</text>
+<rect x="456.0" y="504.0" width="87.1" height="4" fill="#0d1117" rx="1"/><rect x="456.0" y="504.0" width="87.1" height="4" fill="#2ea043" rx="1"/>
+<rect x="552.1" y="480" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="557.1" y="504.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="557.1" y="504.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="596.1" y="480" width="147.6" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="601.1" y="496" fill="#ffffff" font-size="9" font-weight="bold">quant_4x4 / 8x8 / dequant_*</text>
+<rect x="601.1" y="504.0" width="137.6" height="4" fill="#0d1117" rx="1"/><rect x="601.1" y="504.0" width="137.6" height="4" fill="#2ea043" rx="1"/>
+<rect x="747.7" y="480" width="46.5" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="752.7" y="504.0" width="36.5" height="4" fill="#0d1117" rx="1"/><rect x="752.7" y="504.0" width="36.5" height="4" fill="#2ea043" rx="1"/>
+<rect x="451.0" y="516" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="456.0" y="540.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="456.0" y="540.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="495.0" y="516" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="500.0" y="540.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="500.0" y="540.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="846" y="418" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
+<text x="858" y="440" fill="#e6edf3" font-size="13" font-weight="bold">07  Motion</text>
+<text x="858" y="457" fill="#6e7681" font-size="10">mc.c · me.c · mvpred.c · pixel.c</text>
+<text x="1227" y="440" fill="#2ea043" font-size="16" font-weight="bold" text-anchor="end">94%</text>
+<rect x="858.0" y="464.0" width="369.0" height="8" fill="#21262d" rx="2"/><rect x="858.0" y="464.0" width="345.9" height="8" fill="#2ea043"/><rect x="1203.9" y="464.0" width="23.1" height="8" fill="#30363d"/>
+<rect x="858.0" y="480" width="226.6" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="863.0" y="496" fill="#ffffff" font-size="9" font-weight="bold">pixel_satd / sa8d / ssd*</text>
+<rect x="863.0" y="504.0" width="216.6" height="4" fill="#0d1117" rx="1"/><rect x="863.0" y="504.0" width="216.6" height="4" fill="#2ea043" rx="1"/>
+<rect x="1088.6" y="480" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="1093.6" y="504.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="1093.6" y="504.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="1132.6" y="480" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="1137.6" y="504.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="1137.6" y="504.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="1176.6" y="480" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="1181.6" y="504.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="1181.6" y="504.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="858.0" y="516" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="863.0" y="540.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="863.0" y="540.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="902.0" y="516" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="907.0" y="540.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="907.0" y="540.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="946.0" y="516" width="40.0" height="32" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
+<rect x="951.0" y="540.0" width="30.0" height="4" fill="#0d1117" rx="1"/>
+<rect x="1253" y="418" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
+<text x="1265" y="440" fill="#e6edf3" font-size="13" font-weight="bold">08  Macroblock encode / reconstruct</text>
+<text x="1265" y="457" fill="#6e7681" font-size="10">encoder/macroblock.c</text>
+<text x="1634" y="440" fill="#2ea043" font-size="16" font-weight="bold" text-anchor="end">88%</text>
+<rect x="1265.0" y="464.0" width="369.0" height="8" fill="#21262d" rx="2"/><rect x="1265.0" y="464.0" width="322.9" height="8" fill="#2ea043"/><rect x="1587.9" y="464.0" width="46.1" height="8" fill="#d29922"/>
+<rect x="1265.0" y="480" width="88.2" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="1270.0" y="496" fill="#ffffff" font-size="9" font-weight="bold">mb_encode_i…</text>
+<rect x="1270.0" y="504.0" width="78.2" height="4" fill="#0d1117" rx="1"/><rect x="1270.0" y="504.0" width="78.2" height="4" fill="#2ea043" rx="1"/>
+<rect x="1357.2" y="480" width="88.2" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="1362.2" y="496" fill="#ffffff" font-size="9" font-weight="bold">mb_encode_c…</text>
+<rect x="1362.2" y="504.0" width="78.2" height="4" fill="#0d1117" rx="1"/><rect x="1362.2" y="504.0" width="78.2" height="4" fill="#2ea043" rx="1"/>
+<rect x="1449.5" y="480" width="42.1" height="32" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
+<rect x="1454.5" y="504.0" width="32.1" height="4" fill="#0d1117" rx="1"/><rect x="1454.5" y="504.0" width="16.1" height="4" fill="#d29922" rx="1"/>
+<rect x="1495.6" y="480" width="88.2" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="1500.6" y="496" fill="#ffffff" font-size="9" font-weight="bold">macroblock_…</text>
+<rect x="1500.6" y="504.0" width="78.2" height="4" fill="#0d1117" rx="1"/><rect x="1500.6" y="504.0" width="78.2" height="4" fill="#2ea043" rx="1"/>
+<rect x="1587.9" y="480" width="42.1" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="1592.9" y="504.0" width="32.1" height="4" fill="#0d1117" rx="1"/><rect x="1592.9" y="504.0" width="32.1" height="4" fill="#2ea043" rx="1"/>
+<rect x="32" y="614" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
+<text x="44" y="636" fill="#e6edf3" font-size="13" font-weight="bold">09  Deblocking</text>
+<text x="44" y="653" fill="#6e7681" font-size="10">common/deblock.c</text>
+<text x="413" y="636" fill="#2ea043" font-size="16" font-weight="bold" text-anchor="end">100%</text>
+<rect x="44.0" y="660.0" width="369.0" height="8" fill="#21262d" rx="2"/><rect x="44.0" y="660.0" width="369.0" height="8" fill="#2ea043"/>
+<rect x="44.0" y="676" width="266.6" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="49.0" y="692" fill="#ffffff" font-size="9" font-weight="bold">deblock_*_c / deblock_edge*</text>
+<rect x="49.0" y="700.0" width="256.6" height="4" fill="#0d1117" rx="1"/><rect x="49.0" y="700.0" width="256.6" height="4" fill="#2ea043" rx="1"/>
+<rect x="314.6" y="676" width="94.4" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="319.6" y="692" fill="#ffffff" font-size="9" font-weight="bold">x264_frame_deblock_row</text>
+<rect x="319.6" y="700.0" width="84.4" height="4" fill="#0d1117" rx="1"/><rect x="319.6" y="700.0" width="84.4" height="4" fill="#2ea043" rx="1"/>
+<rect x="439" y="614" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
+<text x="451" y="636" fill="#e6edf3" font-size="13" font-weight="bold">10  Rate control</text>
+<text x="451" y="653" fill="#6e7681" font-size="10">encoder/ratecontrol.c</text>
+<text x="820" y="636" fill="#30363d" font-size="16" font-weight="bold" text-anchor="end">12%</text>
+<rect x="451.0" y="660.0" width="369.0" height="8" fill="#21262d" rx="2"/><rect x="451.0" y="660.0" width="43.4" height="8" fill="#2ea043"/><rect x="494.4" y="660.0" width="325.6" height="8" fill="#d29922"/>
+<rect x="451.0" y="676" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="456.0" y="700.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="456.0" y="700.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="495.0" y="676" width="321.6" height="32" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
+<text x="500.0" y="692" fill="#ffffff" font-size="9" font-weight="bold">x264_ratecontrol_* (45)</text>
+<rect x="500.0" y="700.0" width="311.6" height="4" fill="#0d1117" rx="1"/><rect x="500.0" y="700.0" width="155.8" height="4" fill="#d29922" rx="1"/>
+<rect x="846" y="614" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
+<text x="858" y="636" fill="#e6edf3" font-size="13" font-weight="bold">11  Entropy coding</text>
+<text x="858" y="653" fill="#6e7681" font-size="10">cabac.c · cavlc.c · vlc.c · bitstream.c</text>
+<text x="1227" y="636" fill="#2ea043" font-size="16" font-weight="bold" text-anchor="end">100%</text>
+<rect x="858.0" y="660.0" width="369.0" height="8" fill="#21262d" rx="2"/><rect x="858.0" y="660.0" width="369.0" height="8" fill="#2ea043"/>
+<rect x="858.0" y="676" width="166.3" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="863.0" y="692" fill="#ffffff" font-size="9" font-weight="bold">cabac_encode_* / init</text>
+<rect x="863.0" y="700.0" width="156.3" height="4" fill="#0d1117" rx="1"/><rect x="863.0" y="700.0" width="156.3" height="4" fill="#2ea043" rx="1"/>
+<rect x="1028.3" y="676" width="109.5" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="1033.3" y="692" fill="#ffffff" font-size="9" font-weight="bold">cabac_ref / mvd / residual</text>
+<rect x="1033.3" y="700.0" width="99.5" height="4" fill="#0d1117" rx="1"/><rect x="1033.3" y="700.0" width="99.5" height="4" fill="#2ea043" rx="1"/>
+<rect x="1141.8" y="676" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="1146.8" y="700.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="1146.8" y="700.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="1185.8" y="676" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="1190.8" y="700.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="1190.8" y="700.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="858.0" y="712" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="863.0" y="736.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="863.0" y="736.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="902.0" y="712" width="52.8" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="907.0" y="728" fill="#ffffff" font-size="9" font-weight="bold">cavlc_block…</text>
+<rect x="907.0" y="736.0" width="42.8" height="4" fill="#0d1117" rx="1"/><rect x="907.0" y="736.0" width="42.8" height="4" fill="#2ea043" rx="1"/>
+<rect x="958.8" y="712" width="40.0" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<rect x="963.8" y="736.0" width="30.0" height="4" fill="#0d1117" rx="1"/><rect x="963.8" y="736.0" width="30.0" height="4" fill="#2ea043" rx="1"/>
+<rect x="1253" y="614" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
+<text x="1265" y="636" fill="#e6edf3" font-size="13" font-weight="bold">12  Encoder orchestration</text>
+<text x="1265" y="653" fill="#6e7681" font-size="10">encoder/encoder.c · api.c</text>
+<text x="1634" y="636" fill="#2ea043" font-size="16" font-weight="bold" text-anchor="end">75%</text>
+<rect x="1265.0" y="660.0" width="369.0" height="8" fill="#21262d" rx="2"/><rect x="1265.0" y="660.0" width="276.8" height="8" fill="#2ea043"/><rect x="1541.8" y="660.0" width="92.2" height="8" fill="#d29922"/>
+<rect x="1265.0" y="676" width="88.2" height="32" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
+<text x="1270.0" y="692" fill="#ffffff" font-size="9" font-weight="bold">x264_encode…</text>
+<rect x="1270.0" y="700.0" width="78.2" height="4" fill="#0d1117" rx="1"/><rect x="1270.0" y="700.0" width="39.1" height="4" fill="#d29922" rx="1"/>
+<rect x="1357.2" y="676" width="88.2" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="1362.2" y="692" fill="#ffffff" font-size="9" font-weight="bold">x264_encode…</text>
+<rect x="1362.2" y="700.0" width="78.2" height="4" fill="#0d1117" rx="1"/><rect x="1362.2" y="700.0" width="78.2" height="4" fill="#2ea043" rx="1"/>
+<rect x="1449.5" y="676" width="180.5" height="32" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="1454.5" y="692" fill="#ffffff" font-size="9" font-weight="bold">slice_write / nal_end</text>
+<rect x="1454.5" y="700.0" width="170.5" height="4" fill="#0d1117" rx="1"/><rect x="1454.5" y="700.0" width="170.5" height="4" fill="#2ea043" rx="1"/>
+<text x="32" y="854" fill="#e6edf3" font-size="17" font-weight="bold">Function-family parity detail — every family has a byte-exact progress bar</text>
+<text x="32" y="876" fill="#58a6ff" font-size="12" font-weight="bold">01  Parameters, SPS/PPS, headers</text>
+<text x="32" y="895" fill="#c9d1d9" font-size="10">param_default / presets</text>
+<text x="307" y="895" fill="#d29922" font-size="9">PARTIAL</text>
+<rect x="349.0" y="887.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="887.0" width="105.5" height="9" fill="#d29922" rx="2"/>
+<text x="32" y="910" fill="#c9d1d9" font-size="10">cqm_init / parse_file</text>
+<text x="307" y="910" fill="#30363d" font-size="9">MISSING</text>
+<rect x="349.0" y="902.0" width="211.0" height="9" fill="#21262d" rx="2"/>
+<text x="32" y="925" fill="#c9d1d9" font-size="10">sps_init / sps_write</text>
+<text x="307" y="925" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="349.0" y="917.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="917.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="32" y="940" fill="#c9d1d9" font-size="10">pps_init / pps_write</text>
+<text x="307" y="940" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="349.0" y="932.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="932.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="32" y="955" fill="#c9d1d9" font-size="10">slice_header_init / write</text>
+<text x="307" y="955" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="349.0" y="947.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="947.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="32" y="970" fill="#c9d1d9" font-size="10">sei_* (10 functions)</text>
+<text x="307" y="970" fill="#d29922" font-size="9">PARTIAL</text>
+<rect x="349.0" y="962.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="962.0" width="105.5" height="9" fill="#d29922" rx="2"/>
+<text x="32" y="985" fill="#c9d1d9" font-size="10">validate_levels</text>
+<text x="307" y="985" fill="#388bfd" font-size="9">C++</text>
+<rect x="349.0" y="977.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="977.0" width="211.0" height="9" fill="#388bfd" rx="2"/>
+<text x="32" y="1007" fill="#58a6ff" font-size="12" font-weight="bold">04  Analysis / mode decision</text>
+<text x="32" y="1026" fill="#c9d1d9" font-size="10">macroblock_analyse</text>
+<text x="307" y="1026" fill="#d29922" font-size="9">PARTIAL</text>
+<rect x="349.0" y="1018.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="1018.0" width="105.5" height="9" fill="#d29922" rx="2"/>
+<text x="32" y="1041" fill="#c9d1d9" font-size="10">mb_analyse_intra</text>
+<text x="307" y="1041" fill="#d29922" font-size="9">PARTIAL</text>
+<rect x="349.0" y="1033.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="1033.0" width="105.5" height="9" fill="#d29922" rx="2"/>
+<text x="32" y="1056" fill="#c9d1d9" font-size="10">mb_analyse_intra_chroma</text>
+<text x="307" y="1056" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="349.0" y="1048.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="1048.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="32" y="1071" fill="#c9d1d9" font-size="10">mb_analyse_inter_p*</text>
+<text x="307" y="1071" fill="#d29922" font-size="9">PARTIAL</text>
+<rect x="349.0" y="1063.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="1063.0" width="105.5" height="9" fill="#d29922" rx="2"/>
+<text x="32" y="1086" fill="#c9d1d9" font-size="10">mb_analyse_inter_b*</text>
+<text x="307" y="1086" fill="#30363d" font-size="9">MISSING</text>
+<rect x="349.0" y="1078.0" width="211.0" height="9" fill="#21262d" rx="2"/>
+<text x="32" y="1101" fill="#c9d1d9" font-size="10">macroblock_probe_skip</text>
+<text x="307" y="1101" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="349.0" y="1093.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="1093.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="32" y="1116" fill="#c9d1d9" font-size="10">rd_cost* / trellis</text>
+<text x="307" y="1116" fill="#30363d" font-size="9">MISSING</text>
+<rect x="349.0" y="1108.0" width="211.0" height="9" fill="#21262d" rx="2"/>
+<text x="32" y="1131" fill="#c9d1d9" font-size="10">analyse_weight_frame</text>
+<text x="307" y="1131" fill="#d29922" font-size="9">PARTIAL</text>
+<rect x="349.0" y="1123.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="1123.0" width="105.5" height="9" fill="#d29922" rx="2"/>
+<text x="32" y="1153" fill="#58a6ff" font-size="12" font-weight="bold">07  Motion</text>
+<text x="32" y="1172" fill="#c9d1d9" font-size="10">pixel_satd / sa8d / ssd*</text>
+<text x="307" y="1172" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="349.0" y="1164.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="1164.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="32" y="1187" fill="#c9d1d9" font-size="10">mc_luma / mc_chroma / hpel</text>
+<text x="307" y="1187" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="349.0" y="1179.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="1179.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="32" y="1202" fill="#c9d1d9" font-size="10">frame_init_lowres*</text>
+<text x="307" y="1202" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="349.0" y="1194.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="1194.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="32" y="1217" fill="#c9d1d9" font-size="10">integral_init*</text>
+<text x="307" y="1217" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="349.0" y="1209.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="1209.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="32" y="1232" fill="#c9d1d9" font-size="10">me_search_ref / refine_*</text>
+<text x="307" y="1232" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="349.0" y="1224.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="1224.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="32" y="1247" fill="#c9d1d9" font-size="10">mb_predict_mv*</text>
+<text x="307" y="1247" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="349.0" y="1239.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="1239.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="32" y="1262" fill="#c9d1d9" font-size="10">mbtree_* / frame_filter</text>
+<text x="307" y="1262" fill="#30363d" font-size="9">MISSING</text>
+<rect x="349.0" y="1254.0" width="211.0" height="9" fill="#21262d" rx="2"/>
+<text x="32" y="1284" fill="#58a6ff" font-size="12" font-weight="bold">10  Rate control</text>
+<text x="32" y="1303" fill="#c9d1d9" font-size="10">adaptive_quant_frame / ac_energy</text>
+<text x="307" y="1303" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="349.0" y="1295.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="1295.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="32" y="1318" fill="#c9d1d9" font-size="10">x264_ratecontrol_* (45)</text>
+<text x="307" y="1318" fill="#d29922" font-size="9">PARTIAL</text>
+<rect x="349.0" y="1310.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="349.0" y="1310.0" width="105.5" height="9" fill="#d29922" rx="2"/>
+<text x="575" y="876" fill="#58a6ff" font-size="12" font-weight="bold">02  Frame management</text>
+<text x="575" y="895" fill="#c9d1d9" font-size="10">frame_new / copy_picture</text>
+<text x="850" y="895" fill="#388bfd" font-size="9">C++</text>
+<rect x="892.0" y="887.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="887.0" width="211.0" height="9" fill="#388bfd" rx="2"/>
+<text x="575" y="910" fill="#c9d1d9" font-size="10">expand_border*</text>
+<text x="850" y="910" fill="#388bfd" font-size="9">C++</text>
+<rect x="892.0" y="902.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="902.0" width="211.0" height="9" fill="#388bfd" rx="2"/>
+<text x="575" y="925" fill="#c9d1d9" font-size="10">sync-frame lists</text>
+<text x="850" y="925" fill="#388bfd" font-size="9">C++</text>
+<rect x="892.0" y="917.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="917.0" width="211.0" height="9" fill="#388bfd" rx="2"/>
+<text x="575" y="940" fill="#c9d1d9" font-size="10">weight scale / lowres</text>
+<text x="850" y="940" fill="#388bfd" font-size="9">C++</text>
+<rect x="892.0" y="932.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="932.0" width="211.0" height="9" fill="#388bfd" rx="2"/>
+<text x="575" y="962" fill="#58a6ff" font-size="12" font-weight="bold">05  Intra prediction</text>
+<text x="575" y="981" fill="#c9d1d9" font-size="10">predict_4x4_* (9 modes)</text>
+<text x="850" y="981" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="892.0" y="973.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="973.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="575" y="996" fill="#c9d1d9" font-size="10">predict_8x8* / 8x8c / 8x16c</text>
+<text x="850" y="996" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="892.0" y="988.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="988.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="575" y="1011" fill="#c9d1d9" font-size="10">predict_16x16_*</text>
+<text x="850" y="1011" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="892.0" y="1003.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="1003.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="575" y="1026" fill="#c9d1d9" font-size="10">predict_lossless_*</text>
+<text x="850" y="1026" fill="#d29922" font-size="9">PARTIAL</text>
+<rect x="892.0" y="1018.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="1018.0" width="105.5" height="9" fill="#d29922" rx="2"/>
+<text x="575" y="1048" fill="#58a6ff" font-size="12" font-weight="bold">08  Macroblock encode / reconstruct</text>
+<text x="575" y="1067" fill="#c9d1d9" font-size="10">mb_encode_i16x16</text>
+<text x="850" y="1067" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="892.0" y="1059.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="1059.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="575" y="1082" fill="#c9d1d9" font-size="10">mb_encode_chroma</text>
+<text x="850" y="1082" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="892.0" y="1074.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="1074.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="575" y="1097" fill="#c9d1d9" font-size="10">I4x4 encode path</text>
+<text x="850" y="1097" fill="#d29922" font-size="9">PARTIAL</text>
+<rect x="892.0" y="1089.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="1089.0" width="105.5" height="9" fill="#d29922" rx="2"/>
+<text x="575" y="1112" fill="#c9d1d9" font-size="10">macroblock_encode_skip</text>
+<text x="850" y="1112" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="892.0" y="1104.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="1104.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="575" y="1127" fill="#c9d1d9" font-size="10">macroblock_deblock</text>
+<text x="850" y="1127" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="892.0" y="1119.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="1119.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="575" y="1149" fill="#58a6ff" font-size="12" font-weight="bold">11  Entropy coding</text>
+<text x="575" y="1168" fill="#c9d1d9" font-size="10">cabac_encode_* / init</text>
+<text x="850" y="1168" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="892.0" y="1160.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="1160.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="575" y="1183" fill="#c9d1d9" font-size="10">cabac_ref / mvd / residual</text>
+<text x="850" y="1183" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="892.0" y="1175.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="1175.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="575" y="1198" fill="#c9d1d9" font-size="10">cabac mb_header_i I4x4</text>
+<text x="850" y="1198" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="892.0" y="1190.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="1190.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="575" y="1213" fill="#c9d1d9" font-size="10">cabac header decoder (oracle)</text>
+<text x="850" y="1213" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="892.0" y="1205.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="1205.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="575" y="1228" fill="#c9d1d9" font-size="10">B mb_type header</text>
+<text x="850" y="1228" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="892.0" y="1220.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="1220.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="575" y="1243" fill="#c9d1d9" font-size="10">cavlc_block_residual* / mvd</text>
+<text x="850" y="1243" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="892.0" y="1235.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="1235.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="575" y="1258" fill="#c9d1d9" font-size="10">nal_encode / bitstream_init</text>
+<text x="850" y="1258" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="892.0" y="1250.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="892.0" y="1250.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1118" y="876" fill="#58a6ff" font-size="12" font-weight="bold">03  Lookahead &amp; slice type</text>
+<text x="1118" y="895" fill="#c9d1d9" font-size="10">x264_lookahead_*</text>
+<text x="1393" y="895" fill="#30363d" font-size="9">MISSING</text>
+<rect x="1435.0" y="887.0" width="211.0" height="9" fill="#21262d" rx="2"/>
+<text x="1118" y="910" fill="#c9d1d9" font-size="10">slicetype_*</text>
+<text x="1393" y="910" fill="#30363d" font-size="9">MISSING</text>
+<rect x="1435.0" y="902.0" width="211.0" height="9" fill="#21262d" rx="2"/>
+<text x="1118" y="925" fill="#c9d1d9" font-size="10">macroblock_tree*</text>
+<text x="1393" y="925" fill="#30363d" font-size="9">MISSING</text>
+<rect x="1435.0" y="917.0" width="211.0" height="9" fill="#21262d" rx="2"/>
+<text x="1118" y="940" fill="#c9d1d9" font-size="10">scenecut*</text>
+<text x="1393" y="940" fill="#30363d" font-size="9">MISSING</text>
+<rect x="1435.0" y="932.0" width="211.0" height="9" fill="#21262d" rx="2"/>
+<text x="1118" y="955" fill="#c9d1d9" font-size="10">OpenCL slicetype-cl</text>
+<text x="1393" y="955" fill="#484f58" font-size="9">N/A</text>
+<rect x="1435.0" y="947.0" width="211.0" height="9" fill="#21262d" rx="2"/>
+<text x="1118" y="977" fill="#58a6ff" font-size="12" font-weight="bold">06  Transform, quant, zigzag</text>
+<text x="1118" y="996" fill="#c9d1d9" font-size="10">sub/add_dct / idct 4x4,8x8,16x16</text>
+<text x="1393" y="996" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="1435.0" y="988.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="1435.0" y="988.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1118" y="1011" fill="#c9d1d9" font-size="10">dct4x4dc / idct4x4dc</text>
+<text x="1393" y="1011" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="1435.0" y="1003.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="1435.0" y="1003.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1118" y="1026" fill="#c9d1d9" font-size="10">quant_4x4 / 8x8 / dequant_*</text>
+<text x="1393" y="1026" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="1435.0" y="1018.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="1435.0" y="1018.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1118" y="1041" fill="#c9d1d9" font-size="10">zigzag_scan_* / zigzag_sub_*</text>
+<text x="1393" y="1041" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="1435.0" y="1033.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="1435.0" y="1033.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1118" y="1056" fill="#c9d1d9" font-size="10">optimize_chroma_* (6)</text>
+<text x="1393" y="1056" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="1435.0" y="1048.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="1435.0" y="1048.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1118" y="1071" fill="#c9d1d9" font-size="10">decimate_score* / denoise_dct</text>
+<text x="1393" y="1071" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="1435.0" y="1063.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="1435.0" y="1063.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1118" y="1093" fill="#58a6ff" font-size="12" font-weight="bold">09  Deblocking</text>
+<text x="1118" y="1112" fill="#c9d1d9" font-size="10">deblock_*_c / deblock_edge*</text>
+<text x="1393" y="1112" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="1435.0" y="1104.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="1435.0" y="1104.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1118" y="1127" fill="#c9d1d9" font-size="10">x264_frame_deblock_row</text>
+<text x="1393" y="1127" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="1435.0" y="1119.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="1435.0" y="1119.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1118" y="1149" fill="#58a6ff" font-size="12" font-weight="bold">12  Encoder orchestration</text>
+<text x="1118" y="1168" fill="#c9d1d9" font-size="10">x264_encoder_encode</text>
+<text x="1393" y="1168" fill="#d29922" font-size="9">PARTIAL</text>
+<rect x="1435.0" y="1160.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="1435.0" y="1160.0" width="105.5" height="9" fill="#d29922" rx="2"/>
+<text x="1118" y="1183" fill="#c9d1d9" font-size="10">x264_encoder_headers</text>
+<text x="1393" y="1183" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="1435.0" y="1175.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="1435.0" y="1175.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1118" y="1198" fill="#c9d1d9" font-size="10">slice_write / nal_end</text>
+<text x="1393" y="1198" fill="#2ea043" font-size="9">EXACT</text>
+<rect x="1435.0" y="1190.0" width="211.0" height="9" fill="#21262d" rx="2"/><rect x="1435.0" y="1190.0" width="211.0" height="9" fill="#2ea043" rx="2"/>
+<text x="32" y="1358" fill="#e6edf3" font-size="17" font-weight="bold">Byte-exact verification suites — pass bars with real case counts</text>
+<text x="32" y="1380" fill="#58a6ff" font-size="12" font-weight="bold">01  Headers / SPS-PPS / NAL</text>
+<text x="32" y="1399" fill="#c9d1d9" font-size="10">x264_parameters_parity</text>
+<rect x="381.0" y="1391.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1391.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1399" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1414" fill="#c9d1d9" font-size="10">x264_slice_header_parity</text>
+<rect x="381.0" y="1406.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1406.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1414" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1429" fill="#c9d1d9" font-size="10">x264_nal_parity</text>
+<rect x="381.0" y="1421.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1421.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1429" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1444" fill="#c9d1d9" font-size="10">x264_bitstream_parity</text>
+<rect x="381.0" y="1436.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1436.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1444" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1459" fill="#c9d1d9" font-size="10">gop3_nal_structure</text>
+<rect x="381.0" y="1451.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1451.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1459" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1474" fill="#c9d1d9" font-size="10">rewrite_nal / rewrite_slice</text>
+<rect x="381.0" y="1466.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1466.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1474" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1489" fill="#c9d1d9" font-size="10">rewrite_bitstream</text>
+<rect x="381.0" y="1481.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1481.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1489" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1513" fill="#58a6ff" font-size="12" font-weight="bold">06  Transform / quant / zigzag</text>
+<text x="32" y="1532" fill="#c9d1d9" font-size="10">x264_dc_parity</text>
+<rect x="381.0" y="1524.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1524.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1532" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1547" fill="#c9d1d9" font-size="10">x264_reconstruct_dc_parity</text>
+<rect x="381.0" y="1539.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1539.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1547" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1562" fill="#c9d1d9" font-size="10">x264_chroma_dc_parity</text>
+<rect x="381.0" y="1554.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1554.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1562" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1577" fill="#c9d1d9" font-size="10">x264_zigzag_parity</text>
+<rect x="381.0" y="1569.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1569.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1577" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1592" fill="#c9d1d9" font-size="10">x264_quant_group_parity</text>
+<rect x="381.0" y="1584.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1584.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1592" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1607" fill="#c9d1d9" font-size="10">x264_quant4x4_parity</text>
+<rect x="381.0" y="1599.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1599.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1607" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1622" fill="#c9d1d9" font-size="10">x264_quant8x8_parity</text>
+<rect x="381.0" y="1614.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1614.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1622" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1637" fill="#c9d1d9" font-size="10">x264_dct4x4_group4/8/16</text>
+<rect x="381.0" y="1629.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1629.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1637" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1652" fill="#c9d1d9" font-size="10">x264_dct8x8_group8/16</text>
+<rect x="381.0" y="1644.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1644.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1652" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1667" fill="#c9d1d9" font-size="10">x264_chroma_optimize_parity</text>
+<rect x="381.0" y="1659.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1659.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1667" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1682" fill="#c9d1d9" font-size="10">x264_coeff_analysis_parity</text>
+<rect x="381.0" y="1674.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1674.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1682" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1697" fill="#c9d1d9" font-size="10">rewrite_shader_dct / dc / quant</text>
+<rect x="381.0" y="1689.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1689.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1697" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1712" fill="#c9d1d9" font-size="10">shader_reconstruction</text>
+<rect x="381.0" y="1704.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1704.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1712" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1736" fill="#58a6ff" font-size="12" font-weight="bold">09  Deblocking</text>
+<text x="32" y="1755" fill="#c9d1d9" font-size="10">x264_deblock_filter_parity</text>
+<rect x="381.0" y="1747.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1747.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1755" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1770" fill="#c9d1d9" font-size="10">x264_deblock_frame_parity</text>
+<rect x="381.0" y="1762.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1762.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1770" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1785" fill="#c9d1d9" font-size="10">x264_deblock_frame_tiled_parity</text>
+<rect x="381.0" y="1777.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1777.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1785" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1800" fill="#c9d1d9" font-size="10">x264_deblock_frame_subgroup_parity</text>
+<rect x="381.0" y="1792.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1792.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1800" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1815" fill="#c9d1d9" font-size="10">x264_deblock_strength_parity</text>
+<rect x="381.0" y="1807.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1807.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1815" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1839" fill="#58a6ff" font-size="12" font-weight="bold">12  Orchestration / presets</text>
+<text x="32" y="1858" fill="#c9d1d9" font-size="10">x264_parity_ultrafast_flat_16x16</text>
+<rect x="381.0" y="1850.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1850.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1858" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1873" fill="#c9d1d9" font-size="10">x264_parity_ultrafast_flat_64x64</text>
+<rect x="381.0" y="1865.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1865.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1873" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1888" fill="#c9d1d9" font-size="10">x264_parity_ultrafast_noise_32x32</text>
+<rect x="381.0" y="1880.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1880.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1888" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1903" fill="#c9d1d9" font-size="10">x264_parity_fast_flat_16x16 / 64x64</text>
+<rect x="381.0" y="1895.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1895.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1903" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1918" fill="#c9d1d9" font-size="10">x264_parity_superfast_flat_16x16</text>
+<rect x="381.0" y="1910.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="381.0" y="1910.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="559" y="1918" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1380" fill="#58a6ff" font-size="12" font-weight="bold">04  Analysis / mode decision</text>
+<text x="575" y="1399" fill="#c9d1d9" font-size="10">x264_intra16_mode_parity</text>
+<rect x="924.0" y="1391.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1391.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1399" fill="#2ea043" font-size="9" text-anchor="end">16640/16640</text>
+<text x="575" y="1414" fill="#c9d1d9" font-size="10">x264_chroma_mode_parity</text>
+<rect x="924.0" y="1406.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1406.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1414" fill="#2ea043" font-size="9" text-anchor="end">16640/16640</text>
+<text x="575" y="1429" fill="#c9d1d9" font-size="10">x264_inter8x8_parity</text>
+<rect x="924.0" y="1421.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1421.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1429" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1444" fill="#c9d1d9" font-size="10">x264_inter4x4_parity</text>
+<rect x="924.0" y="1436.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1436.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1444" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1459" fill="#c9d1d9" font-size="10">x264_motion_elimination_parity</text>
+<rect x="924.0" y="1451.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1451.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1459" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1474" fill="#c9d1d9" font-size="10">rewrite_oracle_pskip / pme</text>
+<rect x="924.0" y="1466.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1466.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1474" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1489" fill="#c9d1d9" font-size="10">rewrite_cabac_pskip / pme</text>
+<rect x="924.0" y="1481.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1481.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1489" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1504" fill="#c9d1d9" font-size="10">rewrite_cabac_textured / intra_p</text>
+<rect x="924.0" y="1496.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1496.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1504" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1519" fill="#c9d1d9" font-size="10">rewrite_oracle_flat / real / multimb</text>
+<rect x="924.0" y="1511.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1511.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1519" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1534" fill="#c9d1d9" font-size="10">x264_i4x4_analysis</text>
+<rect x="924.0" y="1526.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1526.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1534" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1558" fill="#58a6ff" font-size="12" font-weight="bold">07  Motion</text>
+<text x="575" y="1577" fill="#c9d1d9" font-size="10">x264_motion_metrics_parity</text>
+<rect x="924.0" y="1569.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1569.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1577" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1592" fill="#c9d1d9" font-size="10">x264_motion_compensation_parity</text>
+<rect x="924.0" y="1584.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1584.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1592" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1607" fill="#c9d1d9" font-size="10">x264_reference_frame_parity</text>
+<rect x="924.0" y="1599.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1599.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1607" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1622" fill="#c9d1d9" font-size="10">x264_motion_lowres_parity</text>
+<rect x="924.0" y="1614.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1614.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1622" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1637" fill="#c9d1d9" font-size="10">x264_motion_integral_parity</text>
+<rect x="924.0" y="1629.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1629.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1637" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1652" fill="#c9d1d9" font-size="10">x264_motion_search_parity</text>
+<rect x="924.0" y="1644.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1644.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1652" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1667" fill="#c9d1d9" font-size="10">x264_motion_exhaustive_parity</text>
+<rect x="924.0" y="1659.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1659.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1667" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1682" fill="#c9d1d9" font-size="10">x264_motion_bidir_parity</text>
+<rect x="924.0" y="1674.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1674.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1682" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1697" fill="#c9d1d9" font-size="10">x264_mv_predict_parity</text>
+<rect x="924.0" y="1689.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1689.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1697" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1712" fill="#c9d1d9" font-size="10">rewrite_motion</text>
+<rect x="924.0" y="1704.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1704.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1712" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1736" fill="#58a6ff" font-size="12" font-weight="bold">10  Rate control</text>
+<text x="575" y="1755" fill="#c9d1d9" font-size="10">x264_aq_parity</text>
+<rect x="924.0" y="1747.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1747.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1755" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="575" y="1779" fill="#58a6ff" font-size="12" font-weight="bold">INTEGRATION SWEEPS / CLIPS</text>
+<text x="575" y="1798" fill="#c9d1d9" font-size="10">CAVLC P-slice sweep</text>
+<rect x="924.0" y="1790.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1790.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1798" fill="#2ea043" font-size="9" text-anchor="end">1360/1360</text>
+<text x="575" y="1813" fill="#c9d1d9" font-size="10">CABAC P-slice sweep</text>
+<rect x="924.0" y="1805.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1805.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1813" fill="#2ea043" font-size="9" text-anchor="end">1360/1360</text>
+<text x="575" y="1828" fill="#c9d1d9" font-size="10">CAVLC I-frame sweep</text>
+<rect x="924.0" y="1820.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1820.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1102" y="1828" fill="#2ea043" font-size="9" text-anchor="end">72/72</text>
+<text x="575" y="1843" fill="#c9d1d9" font-size="10">Video MP4 experiments</text>
+<rect x="924.0" y="1835.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1835.0" width="72.0" height="9" fill="#d29922" rx="2"/>
+<text x="1102" y="1843" fill="#d29922" font-size="9" text-anchor="end">32/56</text>
+<text x="575" y="1858" fill="#c9d1d9" font-size="10">x264 function port inventory</text>
+<rect x="924.0" y="1850.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="924.0" y="1850.0" width="3.5" height="9" fill="#d29922" rx="2"/>
+<text x="1102" y="1858" fill="#d29922" font-size="9" text-anchor="end">23/831</text>
+<text x="1118" y="1380" fill="#58a6ff" font-size="12" font-weight="bold">05  Intra prediction</text>
+<text x="1118" y="1399" fill="#c9d1d9" font-size="10">x264_predict_directional_parity</text>
+<rect x="1467.0" y="1391.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1391.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1399" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="1118" y="1414" fill="#c9d1d9" font-size="10">x264_predict_intra_parity</text>
+<rect x="1467.0" y="1406.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1406.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1414" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="1118" y="1429" fill="#c9d1d9" font-size="10">x264_intra16_parity</text>
+<rect x="1467.0" y="1421.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1421.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1429" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="1118" y="1444" fill="#c9d1d9" font-size="10">x264_intra_chroma_parity</text>
+<rect x="1467.0" y="1436.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1436.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1444" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="1118" y="1459" fill="#c9d1d9" font-size="10">rewrite_shader_predict</text>
+<rect x="1467.0" y="1451.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1451.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1459" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="1118" y="1483" fill="#58a6ff" font-size="12" font-weight="bold">08  Macroblock encode</text>
+<text x="1118" y="1502" fill="#c9d1d9" font-size="10">x264_i4x4_frame_parity</text>
+<rect x="1467.0" y="1494.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1494.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1502" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="1118" y="1517" fill="#c9d1d9" font-size="10">x264_i4x4_cabac_parity</text>
+<rect x="1467.0" y="1509.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1509.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1517" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="1118" y="1532" fill="#c9d1d9" font-size="10">vulkan_encoder_reconstruction</text>
+<rect x="1467.0" y="1524.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1524.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1532" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="1118" y="1547" fill="#c9d1d9" font-size="10">vulkan_cavlc_reconstruction</text>
+<rect x="1467.0" y="1539.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1539.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1547" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="1118" y="1571" fill="#58a6ff" font-size="12" font-weight="bold">11  Entropy coding</text>
+<text x="1118" y="1590" fill="#c9d1d9" font-size="10">x264_cabac_parity</text>
+<rect x="1467.0" y="1582.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1582.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1590" fill="#2ea043" font-size="9" text-anchor="end">9946/9946</text>
+<text x="1118" y="1605" fill="#c9d1d9" font-size="10">x264_cabac_refidx_parity</text>
+<rect x="1467.0" y="1597.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1597.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1605" fill="#2ea043" font-size="9" text-anchor="end">1536/1536</text>
+<text x="1118" y="1620" fill="#c9d1d9" font-size="10">x264_cabac_stream / raw decode</text>
+<rect x="1467.0" y="1612.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1612.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1620" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="1118" y="1635" fill="#c9d1d9" font-size="10">x264_cabac_decoder_oracle</text>
+<rect x="1467.0" y="1627.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1627.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1635" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="1118" y="1650" fill="#c9d1d9" font-size="10">x264_cavlc_residual_parity</text>
+<rect x="1467.0" y="1642.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1642.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1650" fill="#2ea043" font-size="9" text-anchor="end">2327/2327</text>
+<text x="1118" y="1665" fill="#c9d1d9" font-size="10">x264_cavlc_context_parity</text>
+<rect x="1467.0" y="1657.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1657.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1665" fill="#2ea043" font-size="9" text-anchor="end">400/400</text>
+<text x="1118" y="1680" fill="#c9d1d9" font-size="10">rewrite_cabac</text>
+<rect x="1467.0" y="1672.0" width="126.0" height="9" fill="#21262d" rx="2"/><rect x="1467.0" y="1672.0" width="126.0" height="9" fill="#2ea043" rx="2"/>
+<text x="1645" y="1680" fill="#2ea043" font-size="9" text-anchor="end">pass</text>
+<text x="32" y="1960" fill="#e6edf3" font-size="17" font-weight="bold">Open byte-exact targets — progress on what is still incomplete</text>
+<text x="32" y="1997" fill="#c9d1d9" font-size="10">Video MP4 experiments (real 8f clips)</text>
+<rect x="528.0" y="1989.0" width="192.0" height="10" fill="#21262d" rx="2"/><rect x="528.0" y="1989.0" width="109.7" height="10" fill="#d29922" rx="2"/>
+<text x="831" y="1997" fill="#d29922" font-size="9" text-anchor="end">32/56</text>
+<text x="32" y="2016" fill="#c9d1d9" font-size="10">x264 functions ported (inventory)</text>
+<rect x="528.0" y="2008.0" width="192.0" height="10" fill="#21262d" rx="2"/><rect x="528.0" y="2008.0" width="5.3" height="10" fill="#d29922" rx="2"/>
+<text x="831" y="2016" fill="#d29922" font-size="9" text-anchor="end">23/831</text>
+<text x="32" y="2035" fill="#c9d1d9" font-size="10">Presets &gt; ultrafast (SPS High profile)</text>
+<rect x="528.0" y="2027.0" width="192.0" height="10" fill="#21262d" rx="2"/>
+<text x="831" y="2035" fill="#f85149" font-size="9" text-anchor="end">0/1</text>
+<text x="32" y="2054" fill="#c9d1d9" font-size="10">1080p60 multi-frame stability (3f+)</text>
+<rect x="528.0" y="2046.0" width="192.0" height="10" fill="#21262d" rx="2"/>
+<text x="831" y="2054" fill="#f85149" font-size="9" text-anchor="end">0/1</text>
+<text x="32" y="2073" fill="#c9d1d9" font-size="10">Lookahead / slicetype (03 family)</text>
+<rect x="528.0" y="2065.0" width="192.0" height="10" fill="#21262d" rx="2"/>
+<text x="831" y="2073" fill="#f85149" font-size="9" text-anchor="end">0/43</text>
+<text x="32" y="2092" fill="#c9d1d9" font-size="10">B-frame inter analysis / CABAC / CAVLC</text>
+<rect x="528.0" y="2084.0" width="192.0" height="10" fill="#21262d" rx="2"/>
+<text x="831" y="2092" fill="#f85149" font-size="9" text-anchor="end">0/9</text>
+<text x="847" y="1997" fill="#c9d1d9" font-size="10">RD cost / trellis (rdo.c)</text>
+<rect x="1343.0" y="1989.0" width="192.0" height="10" fill="#21262d" rx="2"/>
+<text x="1646" y="1997" fill="#f85149" font-size="9" text-anchor="end">0/26</text>
+<text x="847" y="2016" fill="#c9d1d9" font-size="10">mbtree / frame_filter</text>
+<rect x="1343.0" y="2008.0" width="192.0" height="10" fill="#21262d" rx="2"/>
+<text x="1646" y="2016" fill="#f85149" font-size="9" text-anchor="end">0/6</text>
+<text x="847" y="2035" fill="#c9d1d9" font-size="10">CQM scaling lists</text>
+<rect x="1343.0" y="2027.0" width="192.0" height="10" fill="#21262d" rx="2"/>
+<text x="1646" y="2035" fill="#f85149" font-size="9" text-anchor="end">0/2</text>
+<text x="847" y="2054" fill="#c9d1d9" font-size="10">Rate control VBV / CRF</text>
+<rect x="1343.0" y="2046.0" width="192.0" height="10" fill="#21262d" rx="2"/>
+<text x="1646" y="2054" fill="#d29922" font-size="9" text-anchor="end">0/45</text>
+<text x="847" y="2073" fill="#c9d1d9" font-size="10">I4x4 emission (superfast)</text>
+<rect x="1343.0" y="2065.0" width="192.0" height="10" fill="#21262d" rx="2"/>
+<text x="1646" y="2073" fill="#d29922" font-size="9" text-anchor="end">0/1</text>
+<text x="847" y="2092" fill="#c9d1d9" font-size="10">04 Analysis weighted family coverage</text>
+<rect x="1343.0" y="2084.0" width="192.0" height="10" fill="#21262d" rx="2"/><rect x="1343.0" y="2084.0" width="38.4" height="10" fill="#d29922" rx="2"/>
+<text x="1646" y="2092" fill="#d29922" font-size="9" text-anchor="end">2/10</text>
+<text x="32" y="2142" fill="#e6edf3" font-size="17" font-weight="bold">CAVLC P-slice byte-exact sweep — by merged PR</text>
+<text x="847" y="2142" fill="#e6edf3" font-size="17" font-weight="bold">CABAC P-slice byte-exact sweep — by merged PR</text>
+<text x="40" y="2169" fill="#8b949e" font-size="11">baseline</text>
+<rect x="128.0" y="2158.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2158.0" width="361.7" height="11" fill="#484f58" rx="2"/>
+<text x="765" y="2169" fill="#e6edf3" font-size="11">782/1360</text>
+<text x="40" y="2184" fill="#8b949e" font-size="11">#109</text>
+<rect x="128.0" y="2173.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2173.0" width="361.7" height="11" fill="#484f58" rx="2"/>
+<text x="765" y="2184" fill="#e6edf3" font-size="11">782/1360</text>
+<text x="40" y="2199" fill="#8b949e" font-size="11">#110</text>
+<rect x="128.0" y="2188.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2188.0" width="370.0" height="11" fill="#6e7681" rx="2"/>
+<text x="765" y="2199" fill="#e6edf3" font-size="11">800/1360</text>
+<text x="40" y="2214" fill="#8b949e" font-size="11">#111</text>
+<rect x="128.0" y="2203.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2203.0" width="378.8" height="11" fill="#8b949e" rx="2"/>
+<text x="765" y="2214" fill="#e6edf3" font-size="11">819/1360</text>
+<text x="40" y="2229" fill="#8b949e" font-size="11">#112</text>
+<rect x="128.0" y="2218.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2218.0" width="387.1" height="11" fill="#a5a5a5" rx="2"/>
+<text x="765" y="2229" fill="#e6edf3" font-size="11">837/1360</text>
+<text x="40" y="2244" fill="#8b949e" font-size="11">#113</text>
+<rect x="128.0" y="2233.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2233.0" width="387.1" height="11" fill="#a5a5a5" rx="2"/>
+<text x="765" y="2244" fill="#e6edf3" font-size="11">837/1360</text>
+<text x="40" y="2259" fill="#8b949e" font-size="11">#114</text>
+<rect x="128.0" y="2248.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2248.0" width="397.8" height="11" fill="#c9a227" rx="2"/>
+<text x="765" y="2259" fill="#e6edf3" font-size="11">860/1360</text>
+<text x="40" y="2274" fill="#8b949e" font-size="11">#115</text>
+<rect x="128.0" y="2263.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2263.0" width="397.8" height="11" fill="#c9a227" rx="2"/>
+<text x="765" y="2274" fill="#e6edf3" font-size="11">860/1360</text>
+<text x="40" y="2289" fill="#8b949e" font-size="11">#116</text>
+<rect x="128.0" y="2278.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2278.0" width="404.2" height="11" fill="#d29922" rx="2"/>
+<text x="765" y="2289" fill="#e6edf3" font-size="11">874/1360</text>
+<text x="40" y="2304" fill="#8b949e" font-size="11">#117</text>
+<rect x="128.0" y="2293.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2293.0" width="414.4" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2304" fill="#e6edf3" font-size="11">896/1360</text>
+<text x="40" y="2319" fill="#8b949e" font-size="11">#118</text>
+<rect x="128.0" y="2308.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2308.0" width="414.4" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2319" fill="#e6edf3" font-size="11">896/1360</text>
+<text x="40" y="2334" fill="#8b949e" font-size="11">#119</text>
+<rect x="128.0" y="2323.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2323.0" width="421.8" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2334" fill="#e6edf3" font-size="11">912/1360</text>
+<text x="40" y="2349" fill="#8b949e" font-size="11">#120</text>
+<rect x="128.0" y="2338.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2338.0" width="431.5" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2349" fill="#e6edf3" font-size="11">933/1360</text>
+<text x="40" y="2364" fill="#8b949e" font-size="11">#121</text>
+<rect x="128.0" y="2353.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2353.0" width="450.9" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2364" fill="#e6edf3" font-size="11">975/1360</text>
+<text x="40" y="2379" fill="#8b949e" font-size="11">#123</text>
+<rect x="128.0" y="2368.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2368.0" width="464.8" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2379" fill="#e6edf3" font-size="11">1005/1360</text>
+<text x="40" y="2394" fill="#8b949e" font-size="11">#125</text>
+<rect x="128.0" y="2383.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2383.0" width="464.8" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2394" fill="#e6edf3" font-size="11">1005/1360</text>
+<text x="40" y="2409" fill="#8b949e" font-size="11">#126</text>
+<rect x="128.0" y="2398.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2398.0" width="472.7" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2409" fill="#e6edf3" font-size="11">1022/1360</text>
+<text x="40" y="2424" fill="#8b949e" font-size="11">#128</text>
+<rect x="128.0" y="2413.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2413.0" width="503.7" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2424" fill="#e6edf3" font-size="11">1089/1360</text>
+<text x="40" y="2439" fill="#8b949e" font-size="11">#130</text>
+<rect x="128.0" y="2428.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2428.0" width="536.5" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2439" fill="#e6edf3" font-size="11">1160/1360</text>
+<text x="40" y="2454" fill="#8b949e" font-size="11">#132</text>
+<rect x="128.0" y="2443.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2443.0" width="549.9" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2454" fill="#e6edf3" font-size="11">1189/1360</text>
+<text x="40" y="2469" fill="#8b949e" font-size="11">#134</text>
+<rect x="128.0" y="2458.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2458.0" width="549.9" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2469" fill="#e6edf3" font-size="11">1189/1360</text>
+<text x="40" y="2484" fill="#8b949e" font-size="11">#136</text>
+<rect x="128.0" y="2473.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2473.0" width="552.7" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2484" fill="#e6edf3" font-size="11">1195/1360</text>
+<text x="40" y="2499" fill="#8b949e" font-size="11">#138</text>
+<rect x="128.0" y="2488.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2488.0" width="561.5" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2499" fill="#e6edf3" font-size="11">1214/1360</text>
+<text x="40" y="2514" fill="#8b949e" font-size="11">#140</text>
+<rect x="128.0" y="2503.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2503.0" width="561.9" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2514" fill="#e6edf3" font-size="11">1215/1360</text>
+<text x="40" y="2529" fill="#8b949e" font-size="11">#142</text>
+<rect x="128.0" y="2518.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2518.0" width="578.1" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2529" fill="#e6edf3" font-size="11">1250/1360</text>
+<text x="40" y="2544" fill="#8b949e" font-size="11">#144</text>
+<rect x="128.0" y="2533.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2533.0" width="593.9" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2544" fill="#e6edf3" font-size="11">1284/1360</text>
+<text x="40" y="2559" fill="#8b949e" font-size="11">#146</text>
+<rect x="128.0" y="2548.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2548.0" width="612.8" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2559" fill="#e6edf3" font-size="11">1325/1360</text>
+<text x="40" y="2574" fill="#8b949e" font-size="11">#148</text>
+<rect x="128.0" y="2563.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2563.0" width="612.8" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2574" fill="#e6edf3" font-size="11">1325/1360</text>
+<text x="40" y="2589" fill="#8b949e" font-size="11">#151</text>
+<rect x="128.0" y="2578.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2578.0" width="614.2" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2589" fill="#e6edf3" font-size="11">1328/1360</text>
+<text x="40" y="2604" fill="#8b949e" font-size="11">#153</text>
+<rect x="128.0" y="2593.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2593.0" width="619.3" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2604" fill="#e6edf3" font-size="11">1339/1360</text>
+<text x="40" y="2619" fill="#8b949e" font-size="11">#155</text>
+<rect x="128.0" y="2608.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2608.0" width="619.3" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2619" fill="#e6edf3" font-size="11">1339/1360</text>
+<text x="40" y="2634" fill="#8b949e" font-size="11">#157</text>
+<rect x="128.0" y="2623.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2623.0" width="619.3" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2634" fill="#e6edf3" font-size="11">1339/1360</text>
+<text x="40" y="2649" fill="#8b949e" font-size="11">#175</text>
+<rect x="128.0" y="2638.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2638.0" width="621.1" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2649" fill="#e6edf3" font-size="11">1343/1360</text>
+<text x="40" y="2664" fill="#8b949e" font-size="11">#177</text>
+<rect x="128.0" y="2653.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2653.0" width="621.6" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2664" fill="#e6edf3" font-size="11">1344/1360</text>
+<text x="40" y="2679" fill="#8b949e" font-size="11">#179</text>
+<rect x="128.0" y="2668.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2668.0" width="624.4" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2679" fill="#e6edf3" font-size="11">1350/1360</text>
+<text x="40" y="2694" fill="#8b949e" font-size="11">#181</text>
+<rect x="128.0" y="2683.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2683.0" width="626.7" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2694" fill="#e6edf3" font-size="11">1355/1360</text>
+<text x="40" y="2709" fill="#8b949e" font-size="11">#183</text>
+<rect x="128.0" y="2698.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="128.0" y="2698.0" width="629.0" height="11" fill="#2ea043" rx="2"/>
+<text x="765" y="2709" fill="#e6edf3" font-size="11">1360/1360</text>
+<text x="855" y="2169" fill="#8b949e" font-size="11">#127</text>
+<rect x="943.0" y="2158.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2158.0" width="425.5" height="11" fill="#484f58" rx="2"/>
+<text x="1580" y="2169" fill="#e6edf3" font-size="11">920/1360</text>
+<text x="855" y="2184" fill="#8b949e" font-size="11">#134</text>
+<rect x="943.0" y="2173.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2173.0" width="440.3" height="11" fill="#6e7681" rx="2"/>
+<text x="1580" y="2184" fill="#e6edf3" font-size="11">952/1360</text>
+<text x="855" y="2199" fill="#8b949e" font-size="11">#138</text>
+<rect x="943.0" y="2188.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2188.0" width="444.0" height="11" fill="#8b949e" rx="2"/>
+<text x="1580" y="2199" fill="#e6edf3" font-size="11">960/1360</text>
+<text x="855" y="2214" fill="#8b949e" font-size="11">#148</text>
+<rect x="943.0" y="2203.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2203.0" width="456.5" height="11" fill="#a5a5a5" rx="2"/>
+<text x="1580" y="2214" fill="#e6edf3" font-size="11">987/1360</text>
+<text x="855" y="2229" fill="#8b949e" font-size="11">#151</text>
+<rect x="943.0" y="2218.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2218.0" width="456.5" height="11" fill="#a5a5a5" rx="2"/>
+<text x="1580" y="2229" fill="#e6edf3" font-size="11">987/1360</text>
+<text x="855" y="2244" fill="#8b949e" font-size="11">#153</text>
+<rect x="943.0" y="2233.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2233.0" width="457.9" height="11" fill="#c9a227" rx="2"/>
+<text x="1580" y="2244" fill="#e6edf3" font-size="11">990/1360</text>
+<text x="855" y="2259" fill="#8b949e" font-size="11">#155</text>
+<rect x="943.0" y="2248.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2248.0" width="499.0" height="11" fill="#388bfd" rx="2"/>
+<text x="1580" y="2259" fill="#e6edf3" font-size="11">1079/1360</text>
+<text x="855" y="2274" fill="#8b949e" font-size="11">#157</text>
+<rect x="943.0" y="2263.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2263.0" width="509.7" height="11" fill="#388bfd" rx="2"/>
+<text x="1580" y="2274" fill="#e6edf3" font-size="11">1102/1360</text>
+<text x="855" y="2289" fill="#8b949e" font-size="11">#159</text>
+<rect x="943.0" y="2278.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2278.0" width="531.4" height="11" fill="#2ea043" rx="2"/>
+<text x="1580" y="2289" fill="#e6edf3" font-size="11">1149/1360</text>
+<text x="855" y="2304" fill="#8b949e" font-size="11">#161</text>
+<rect x="943.0" y="2293.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2293.0" width="562.9" height="11" fill="#2ea043" rx="2"/>
+<text x="1580" y="2304" fill="#e6edf3" font-size="11">1217/1360</text>
+<text x="855" y="2319" fill="#8b949e" font-size="11">#163</text>
+<rect x="943.0" y="2308.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2308.0" width="563.8" height="11" fill="#2ea043" rx="2"/>
+<text x="1580" y="2319" fill="#e6edf3" font-size="11">1219/1360</text>
+<text x="855" y="2334" fill="#8b949e" font-size="11">#165</text>
+<rect x="943.0" y="2323.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2323.0" width="580.0" height="11" fill="#2ea043" rx="2"/>
+<text x="1580" y="2334" fill="#e6edf3" font-size="11">1254/1360</text>
+<text x="855" y="2349" fill="#8b949e" font-size="11">#167</text>
+<rect x="943.0" y="2338.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2338.0" width="586.5" height="11" fill="#2ea043" rx="2"/>
+<text x="1580" y="2349" fill="#e6edf3" font-size="11">1268/1360</text>
+<text x="855" y="2364" fill="#8b949e" font-size="11">#169</text>
+<rect x="943.0" y="2353.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2353.0" width="623.9" height="11" fill="#2ea043" rx="2"/>
+<text x="1580" y="2364" fill="#e6edf3" font-size="11">1349/1360</text>
+<text x="855" y="2379" fill="#8b949e" font-size="11">#171</text>
+<rect x="943.0" y="2368.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2368.0" width="624.8" height="11" fill="#2ea043" rx="2"/>
+<text x="1580" y="2379" fill="#e6edf3" font-size="11">1351/1360</text>
+<text x="855" y="2394" fill="#8b949e" font-size="11">#173</text>
+<rect x="943.0" y="2383.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2383.0" width="626.7" height="11" fill="#2ea043" rx="2"/>
+<text x="1580" y="2394" fill="#e6edf3" font-size="11">1355/1360</text>
+<text x="855" y="2409" fill="#8b949e" font-size="11">#175</text>
+<rect x="943.0" y="2398.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2398.0" width="628.5" height="11" fill="#2ea043" rx="2"/>
+<text x="1580" y="2409" fill="#e6edf3" font-size="11">1359/1360</text>
+<text x="855" y="2424" fill="#8b949e" font-size="11">#177</text>
+<rect x="943.0" y="2413.0" width="629.0" height="11" fill="#21262d" rx="2"/><rect x="943.0" y="2413.0" width="629.0" height="11" fill="#2ea043" rx="2"/>
+<text x="1580" y="2424" fill="#e6edf3" font-size="11">1360/1360</text>
+<text x="32" y="2769" fill="#8b949e" font-size="12">LEGEND:</text>
+<rect x="112" y="2758" width="14" height="14" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
+<text x="132" y="2769" fill="#c9d1d9" font-size="12">EXACT</text>
+<rect x="242" y="2758" width="14" height="14" fill="url(#grid-partial)" stroke="#d29922" rx="2"/>
+<text x="262" y="2769" fill="#c9d1d9" font-size="12">PARTIAL</text>
+<rect x="372" y="2758" width="14" height="14" fill="url(#grid-cpp)" stroke="#388bfd" rx="2"/>
+<text x="392" y="2769" fill="#c9d1d9" font-size="12">C++</text>
+<rect x="502" y="2758" width="14" height="14" fill="url(#grid-missing)" stroke="#30363d" rx="2"/>
+<text x="522" y="2769" fill="#c9d1d9" font-size="12">MISSING</text>
+<rect x="632" y="2758" width="14" height="14" fill="url(#grid-n/a)" stroke="#484f58" rx="2"/>
+<text x="652" y="2769" fill="#c9d1d9" font-size="12">N/A</text>
+<text x="762" y="2769" fill="#8b949e" font-size="11">mini-bar fill = byte-exact fraction (EXACT/C++ 100%, PARTIAL 50%, MISSING 0%)</text>
+<text x="1648" y="2769" fill="#6e7681" font-size="11" text-anchor="end">regenerate: python docs/generate_parity_dashboard.py</text>
 </svg>
