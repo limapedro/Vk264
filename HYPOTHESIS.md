@@ -787,5 +787,17 @@ blocks. With a correct stride, both sides reconstruct block 0 uniformly. The
 quant parameters also match exactly (mf=1490, bias=14) and block 1's raw DC
 is 16 on both sides, which `QUANT_ONE` maps to 0. So the source of x264's two
 extra coefficients (1,1) is still unresolved — likely those symbols belong
-to a different block/QP context than the one instrumented. Needs a per-block
-dump keyed by mb_xy AND idx to resolve definitively.
+to a different block/QP context than the one instrumented.
+
+### Definitive per-block dump (this turn)
+Keyed by mb_xy=0 and every quant call, x264 MB0's 16 luma blocks:
+```
+block 0: raw DC -1792 -> quant -41; blocks 1..15: raw DC 16 -> quant 0
+```
+So x264 has exactly ONE nonzero luma coefficient (-41) — matching the oracle
+after the inline-reconstruction fix. The earlier "-41,1,1" were CHROMA DC
+blocks, not luma. With ORACLE_I4X4=1 the superfast CAVLC IDR is now 48 B vs
+x264 28 B (was 50/82); slice headers match (88 84 00), divergence at byte 3,
+inside MB0's CAVLC symbols. The remaining gap is in prediction-mode / cbp /
+token emission, not the transform or quant. Next: decode MB0's symbol stream
+from both bitstreams and fix the first mismatching symbol.
