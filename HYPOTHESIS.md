@@ -888,3 +888,24 @@ not set i_bframe=0), so those slices are B-slices with slice_type=6; the
 oracle only emits P-slices. Full B-frame encoding is the next major blocker.
 
 Gates still pass: rewrite CTest 23/23, main CTest 65/65, video MP4 56/56.
+
+### B-slice encoder + POC reordering discovery (this turn)
+x264's B-frames on this clip are all B_SKIP/P_SKIP with cbp=0 and zero MVs,
+so the CAVLC is just the slice header + `mb_skip_run`. Implemented
+`bslice.c` (`vk_encode_b_slice_allskip`) with the B-slice header fields
+(slice_type=6, POC, direct_spatial, two ref-list flags, qp_delta, deblock).
+Result: superfast frame 2 B-slice is **byte-exact**
+(`9e 42 41 70 8c` for both) behind `ORACLE_BSLICE_TEST`.
+
+Decoded x264's POC values per coded frame (build/bdec.py):
+```
+coded frame: 1(P) 2(B) 3(B) 4(B) 5(P) 6(B) 7(P?)
+POC:          8    4    2    6   12   10   14
+```
+This matches x264's bframes=3 binary-subdivision reorder: B-frames are
+coded in POC order [4,2,6] then [12,10,14] rather than display order. To
+match frames 3+ the oracle must replicate this exact POC/frame_num assignment
+(frame_num repeats for B-frames within a GOP). That is the next concrete
+step; the B-slice encoder itself is validated.
+
+All gates still pass (CTest 23/23 + 65/65, MP4 56/56).

@@ -17,6 +17,7 @@
 #include "i4x4.h"
 #include "i4x4enc.h"
 #include "i8x8enc.h"
+#include "bslice.h"
 #include "cabac.h"
 #include "cabac_enc.h"
 #include <stdio.h>
@@ -235,6 +236,13 @@ int main(int argc, char **argv)
                 vk_cabac_encode_p_recon_frame(&bs, &cb, frames, ref, w, h, qp_p, recon, f,
                                               refmv, curmv, refintra, curintra);
                 vk_nal_write(fo, 0x41, buf, (size_t)(bs.p - buf), 2);
+            } else if (getenv("ORACLE_BSLICE_TEST") && (f & 3) != 1) {
+                /* Test path: B-slices for frames where f%4 != 1. */
+                vk_encode_b_slice_allskip(&bs, &sps, &pps, frame_num,
+                                          qp_p + 1, mw*mh);
+                vk_bs_rbsp_trailing(&bs);
+                vk_nal_write(fo, 0x01, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 2);
+                memcpy(recon, ref, (size_t)w*h*3/2);
             } else {
                 vk_encode_p_frame_recon_mv(&bs, &sps, &pps, frames, ref,
                                            w, h, qp_p, frame_num, recon,
