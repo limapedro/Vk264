@@ -1332,3 +1332,24 @@ The path/cost structure is faithful; exact cost parity needs x264's precise
 lowres MV cost, row-SATD and AQ weighting.
 
 CTest 27/27 + 65/65, CAVLC P sweep 1360/1360, MP4 56/56 — unchanged.
+
+### Stage 03 lowres cost model deepened (this turn)
+Rewrote `src/ref/lowres.c` faithfully after studying x264's
+`slicetype_slice_cost`/`x264_slicetype_mb_cost`:
+- fixed the 8x8 Hadamard SATD butterfly (was only transforming half of each
+  row/column, producing ~3.6-billion costs; now correct, costs ~500);
+- x264's exact MV cost `logs[i] = log2(i+1)*2+1.718`, `cost_mv = lambda*logs`
+  with lambda=16 at lookahead QP=32 (encoder/analyse.c:186);
+- diamond ME with per-MB best MV, `cost -= cost_mv[0]` and `+5*lambda` for
+  nonzero MV (x264 me search post-processing);
+- lowres_penalty=4 per MB, intra_penalty=5*lambda;
+- bidirectional B cost with independent list0/list1 ME and averaged
+  prediction, penalty 0 for zero MVs and 5*lambda otherwise (x264 TRY_BIDIR);
+- fixed `vk_slicetype_path_cost` path indexing to match x264's `path--`
+  convention (path[0] unused, dummy char prepended).
+
+`build/compare_slicetype.py` still shows oracle choosing P for frames 1-5
+where x264 chooses B: cp~700 vs cb~4000+. The remaining gap is in x264's
+exact row-SATD accumulation / AQ weighting and hpel interpolation for the
+bidirectional average. All gates unchanged: CTest 27/27 + 65/65, CAVLC P
+sweep 1360/1360, MP4 56/56.

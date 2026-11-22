@@ -117,12 +117,13 @@ void vk_slicetype_decide(const uint8_t *frames, int n, int w, int h,
             int nb = j-last_nonb-1;
             if (nb<0) nb=0;
             char path[X264_LOOKAHEAD_MAX+4];
-            for(int q=0;q<nb;++q) path[q]='B';
-            path[nb]='P'; path[nb+1]='P'; path[nb+2]='\0';
-            int npath = nb+3;
+            path[0]='X'; /* x264's path-- makes path[0] unused */
+            for(int q=0;q<nb;++q) path[1+q]='B';
+            path[1+nb]='P'; path[2+nb]='P'; path[3+nb]='\0';
+            int npath = nb+4;
             if (npath > gop_end-last_nonb) npath = gop_end-last_nonb;
             uint64_t cp=vk_slicetype_path_cost(lo+last_nonb,dw,dh,path,npath,UINT64_MAX);
-            path[nb]='B'; /* path[nb+1] stays 'P' */
+            path[1+nb]='B'; /* path[2+nb] stays 'P' */
             uint64_t cb=vk_slicetype_path_cost(lo+last_nonb,dw,dh,path,npath,cp);
             out[j].type = (cb < cp) ? VK_FRAME_B : VK_FRAME_P;
         }

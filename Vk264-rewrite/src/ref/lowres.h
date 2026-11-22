@@ -6,6 +6,7 @@
 void vk_lowres_luma(const uint8_t *src,int sw,int sh,uint8_t *dst,int dw,int dh);
 int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh);
 int vk_lowres_i_cost(const uint8_t *cur,int dw,int dh);
+int vk_lowres_b_cost(const uint8_t *cur,const uint8_t *r0,const uint8_t *r1,int dw,int dh);
 
 /* b-adapt=fast path cost: given lowres frames in display order starting at
  * last_nonb, a path string of 'B'/'P' and the number of frames, compute the
