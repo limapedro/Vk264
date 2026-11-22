@@ -231,6 +231,30 @@ x264 has 10 extra bits before the shared 47-bit run and 2 fewer after it.
 total_zeros, run_before, sign or coeff0 write differs. This is the exact
 signature that needs a byte-level (emitted-NAL) write trace to resolve.
 
+## CRITICAL CORRECTION — earlier diagnostics used the WRONG YUV
+
+All "everything matches" conclusions above were measured on
+`build/preset_verify/fz3_8.yuv` (SHA `3236baa92bea367e`), which is NOT the
+input used by the failing experiment (`build/video_experiments/
+forza_ultrafast_cavlc.yuv`, SHA `32ce19e15225cd5f`). The two 64x64x8-frame
+clips differ, so those results do not apply to the reported mismatch.
+
+Re-running the per-block dump on the CORRECT input (`build/_blk_correct.py`,
+`build/cmp_bc.py`) gives:
+```
+frame 4: x264 65 blocks, oracle 65 blocks
+blocks 0..57 (up to MB 11) match exactly, including bs_pos
+block 58 (MB 12): x264 pos=825, oracle pos=815  -> 10-BIT GAP
+all block data (nC/total/trailing/mask/levels) still identical
+```
+The NAL-level decoder on the correct streams confirms MB 12 has
+`mt=0, mvd=(-3,-3), cbp_golomb=32, dqp=0` in both. Level/total_zeros/
+run_before/trailing-sign logs on the correct input also match after removing
+x264's analysis-pass duplicates. The 10-bit gap is therefore in a write
+between MB 11's residual and MB 12's first logged block — most likely the
+coeff0 tokens for unlogged all-zero blocks (x264 logs 36 = 18 unique; the
+oracle's correct-input log still needs re-capturing). This is the live lead.
+
 ## What is proven
 
 - IDR CAVLC and CABAC paths: byte-exact, including 8-frame clips on warzone.
