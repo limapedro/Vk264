@@ -139,6 +139,20 @@ so the tracer demonstrably misses writes; the exact MB attribution of the
 8-bit-longer region is therefore still uncertain and needs a complete
 write-trace (including all `bs_write*` macro paths) before a fix is safe.
 
+NAL-byte-level decoder (`build/cmp_symbols6.py`, using `decode_full_pslice.py`)
+gives a more reliable result: for NAL 6 both streams decode IDENTICAL slice
+headers and IDENTICAL MB syntax through all 16 macroblocks:
+```
+hdr end bit 26; MB0 P mt0 mvd(-44,36); MB1 SKIP 16; MB2 P mt1 mvd(0,-5);
+MB3 P mt2 mvd(3,0); MB4 SKIP 4; MB5 P mt1 mvd(0,1); MB6 P mt0 mvd(-1,1);
+MB7 SKIP 1; MB8 P mt1 mvd(0,0); MB9 P mt0 mvd(4,6); MB10 I16 cbp3;
+MB11 P mt0 mvd(0,0); MB12 SKIP 6; MB13 SKIP 6; MB14 SKIP 32;
+MB15 P mt0 mvd(-2,0)  -- bit 174 in both
+```
+So the 8-bit divergence begins AFTER the last MB header, in residual data.
+The decoder cannot parse the residual blocks (`no coeff token`), which is
+itself evidence that the residual VLC state diverges there.
+
 ## What is proven
 
 - IDR CAVLC and CABAC paths: byte-exact, including 8-frame clips on warzone.
