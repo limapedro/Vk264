@@ -1212,8 +1212,8 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                     }
                 }
                 for (int i = 0; i < 4; ++i) {
-                    cnnzc[idx][0][i] = (uint8_t)nnzu[i];
-                    cnnzc[idx][1][i] = (uint8_t)nnzv[i];
+                    cnnzc[idx][0][i] = nnzu[i] ? 1 : 0;
+                    cnnzc[idx][1][i] = nnzv[i] ? 1 : 0;
                 }
                 int nu_dc = 0, nv_dc = 0;
                 for (int i = 0; i < 4; ++i) { nu_dc |= qu[i]!=0; nv_dc |= qv[i]!=0; }
