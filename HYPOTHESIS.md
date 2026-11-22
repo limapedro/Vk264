@@ -184,6 +184,26 @@ dumps. The bit-position instrumentation needed to isolate it could not be
 completed (the oracle build rejected the `vk_bs_pos` call), so no fix was
 committed.
 
+**Level VLCs also match.** `build/_lvl4.py` logged the level-suffix state and
+emitted `(size,bits)` for every coefficient in frame 4 (x264 logs each twice
+due to analysis+write; oracle once):
+```
+x264 60 writes -> dedup 30; oracle 30 writes
+ALL MATCH  (suffix, level value, VLC size and bits identical)
+```
+`build/cmp_tables.py` also verified all static VLC tables are identical:
+```
+total_zeros      entries 135 / 135, diff 0
+total_zeros_2x2  entries 9 / 9,   diff 0
+coeff0           entries 6 / 6,   diff 0
+run_before_init  entries 42 / 42, diff 0
+```
+Thus every logged element (headers, 40 blocks, coeff0, level VLCs, skip
+runs) and every static table match, yet NAL 6 differs by 8 bits. The only
+remaining unlogged writes are the trailing-sign bits (`bs_write(trailing,
+sign)`), level escape codes (`block_residual_escape`), and the per-mask
+generated `run_before` table. The next diagnostic must hook those three.
+
 ## What is proven
 
 - IDR CAVLC and CABAC paths: byte-exact, including 8-frame clips on warzone.
