@@ -14,17 +14,19 @@ against libx264 for **multi-frame video**, not just isolated 2-frame fixtures.
 | CABAC P 2-frame sweeps | EXACT 1360/1360 | `cabac_parity_sweep.py` |
 | 8-frame video, warzone, ultrafast CAVLC | EXACT | exp001/002 |
 | 8-frame video, warzone, ultrafast CABAC | EXACT | (CABAC flush frame-index fix) |
-| 8-frame video, forza, ultrafast | **FAIL** frame 2 | exp003..006 |
+| 8-frame video, forza, ultrafast | **FAIL** frame 4 (frames 0-3 exact) | exp003..006 |
 | any preset above ultrafast | **FAIL** SPS | exp007/008 |
 
 ## Phases
 
 ### Phase O1 — chained P-slice ME parity (BLOCKING)
-- Symptom: first divergence at frame 2, MB 9 (forza): x264 MV -64,40 vs
-  oracle -48,52; CBP/MVD diverge afterwards.
-- Work: instrument `vk_me16_dia()` candidate list + SAD costs; compare with
-  x264 `mb_analyse_inter_p16x16()`. Test H1 (border clamp), H2 (intra
-  neighbour predictor cache), H3 (`mv_limit_fpel`) from `HYPOTHESIS.md`.
+- DONE: x264's temporal MV predictors (`x264_mb_predict_mv_ref16x16`) were
+  missing. Added `ref_mv`/`cur_mv` (`mv16x16`) cache plumbing to both CAVLC
+  and CABAC P encoders; frames 2 and 3 are now byte-exact and the first
+  divergence moved from NAL 4 to NAL 6 (frame 4).
+- REMAINING: `mv16x16` cache contents for fast-skip/intra MBs differ. At
+  frame 4 MB 0 the "below" temporal predictor is x264 `[-12,80]` vs oracle
+  `[0,0]`. See H1 in `HYPOTHESIS.md`.
 - Acceptance: exp003/004 and exp005/006 become BYTE-EXACT, 2-frame sweeps
   stay 1360/1360.
 

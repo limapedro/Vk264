@@ -150,6 +150,10 @@ int main(int argc, char **argv)
     memset(ru, 128, (size_t)cs*(h/2+32));
     memset(rv, 128, (size_t)cs*(h/2+32));
     uint8_t *ref = calloc(1, fs), *recon = calloc(1, fs);
+    /* x264's fdec->mv16x16: per-MB analysis MVs of the reference frame,
+     * used for temporal MV predictors in chained P-slices. */
+    int (*refmv)[2] = calloc((size_t)mw*mh, 2*sizeof(int));
+    int (*curmv)[2] = calloc((size_t)mw*mh, 2*sizeof(int));
     int idr_count = 0;
 
     for (int f = 0; f < nframes; ++f) {
@@ -190,11 +194,13 @@ int main(int argc, char **argv)
                 vk_slice_header_write(&bs, &sh, &sps, &pps, 2);
                 vk_bs_align_1(&bs);
                 vk_cabac_init_ctx(&cb, 0, qp_p, 0);
-                vk_cabac_encode_p_recon_frame(&bs, &cb, frames, ref, w, h, qp_p, recon, f);
+                vk_cabac_encode_p_recon_frame(&bs, &cb, frames, ref, w, h, qp_p, recon, f,
+                                              refmv, curmv);
                 vk_nal_write(fo, 0x41, buf, (size_t)(bs.p - buf), 2);
             } else {
-                vk_encode_p_frame_recon(&bs, &sps, &pps, frames, ref,
-                                        w, h, qp_p, frame_num, recon);
+                vk_encode_p_frame_recon_mv(&bs, &sps, &pps, frames, ref,
+                                           w, h, qp_p, frame_num, recon,
+                                           refmv, curmv);
                 vk_nal_write(fo, 0x41, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 2);
             }
         }
@@ -205,9 +211,11 @@ int main(int argc, char **argv)
             if (rf) { fwrite(recon, 1, fs, rf); fclose(rf); }
         }
         memcpy(ref, recon, fs);
+        int (*tmp)[2] = refmv; refmv = curmv; curmv = tmp;
+        memset(curmv, 0, (size_t)mw*mh*2*sizeof(int));
     }
     fclose(fi); fclose(fo);
-    free(frames); free(ref); free(recon); free(ry); free(ru); free(rv);
+    free(frames); free(ref); free(recon); free(refmv); free(curmv); free(ry); free(ru); free(rv);
     free(nnz_c); free(cnnz_c); free(dcnz_c);
     return 0;
 }

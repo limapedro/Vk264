@@ -20,6 +20,15 @@ void vk_encode_p_frame_recon(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
                              const uint8_t *cur, const uint8_t *ref,
                              int w, int h, int qp, int frame_num,
                              uint8_t *recon_out);
+/* As above, with the reference frame's per-MB analysis MVs (x264's
+ * fdec->mv16x16) used for temporal MV predictors, and the current frame's
+ * analysis MV cache exported for the next P-slice. Both are w/16 x h/16
+ * arrays of quarter-pel {x,y}. NULL disables temporal candidates. */
+void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
+                                const uint8_t *cur, const uint8_t *ref,
+                                int w, int h, int qp, int frame_num,
+                                uint8_t *recon_out,
+                                const int (*ref_mv)[2], int (*cur_mv)[2]);
 
 /* Decide P_SKIP for one MB: 1 iff the residual at the P_SKIP MV predictor
  * quantises to zero (x264 macroblock_probe_pskip). mvp is in quarter-pel. */

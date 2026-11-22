@@ -919,23 +919,19 @@ static void compute_p_residual(const uint8_t *cur, const uint8_t *refp,
     if (out->cbp_chroma == 3) out->cbp_chroma = 2;
 }
 
-int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
-                                  const uint8_t *cur, const uint8_t *ref,
-                                  int w, int h, int qp, uint8_t *recon_out,
-                                  int frame_idx);
-
 int vk_cabac_encode_p_recon(vk_bs_t *bs, vk_cabac_t *cb,
                             const uint8_t *cur, const uint8_t *ref,
                             int w, int h, int qp, uint8_t *recon_out)
 {
     return vk_cabac_encode_p_recon_frame(bs, cb, cur, ref, w, h, qp,
-                                         recon_out, 1);
+                                         recon_out, 1, NULL, NULL);
 }
 
 int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                                   const uint8_t *cur, const uint8_t *ref,
                                   int w, int h, int qp, uint8_t *recon_out,
-                                  int frame_idx)
+                                  int frame_idx,
+                                  const int (*ref_mv)[2], int (*cur_mv)[2])
 {
     int mw = w/16, mh = h/16;
     uint8_t *data = bs->p;
@@ -1032,6 +1028,27 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                     cand[2*nc] = ax; cand[2*nc+1] = ay;
                     ++nc;
                 }
+                /* x264 temporal MV predictors from the reference frame's
+                 * mv16x16 (collocated, right, bottom); scale 256 and
+                 * roundclip (mv+2)>>2 for consecutive P frames. */
+                if (ref_mv) {
+                    int tm[3][2], nt = 0;
+                    tm[nt][0] = ref_mv[idx][0]; tm[nt][1] = ref_mv[idx][1]; ++nt;
+                    if (mx+1 < mw) {
+                        tm[nt][0] = ref_mv[idx+1][0]; tm[nt][1] = ref_mv[idx+1][1]; ++nt;
+                    }
+                    if (my+1 < mh) {
+                        tm[nt][0] = ref_mv[idx+mw][0]; tm[nt][1] = ref_mv[idx+mw][1]; ++nt;
+                    }
+                    for (int k = 0; k < nt && nc < 8; ++k) {
+                        int ax = (tm[k][0] + 2) >> 2;
+                        int ay = (tm[k][1] + 2) >> 2;
+                        if (!ax && !ay) continue;              /* x264: !mv */
+                        if (ax == mvpx/4 && ay == mvpy/4) continue; /* == pmv */
+                        cand[2*nc] = ax; cand[2*nc+1] = ay;
+                        ++nc;
+                    }
+                }
                 inter_cost = vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
                             mvpx/4, mvpy/4, 16,
                             lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
@@ -1039,6 +1056,7 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 /* x264 stores the inter MV in mvr immediately after inter
                  * analysis, before skip/intra decisions may override the type. */
                 mvr[idx][0] = mvx*4; mvr[idx][1] = mvy*4;
+                if (cur_mv) { cur_mv[idx][0] = mvr[idx][0]; cur_mv[idx][1] = mvr[idx][1]; }
                 int qx = mvx*4, qy = mvy*4;
                 if (qx == psk_x && qy == psk_y &&
                     p_probe(cur, refp, w, h, rs, mx*16, my*16, qx, qy, qp))
