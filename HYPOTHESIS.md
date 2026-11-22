@@ -682,3 +682,14 @@ This is a building block only. Still needed for byte-exact superfast IDR:
 - 8x8dct transform (transform_8x8_mode=1)
 
 Verified: CTest rewrite 21/21 (was 20/20), main 65/65, 56/56 MP4 unchanged.
+
+### Superfast IDR precise scope (this turn)
+With correct qp args (qp_i=25, qp_p=28), the superfast IDR **slice header is
+byte-exact** vs x264 — both parse identically through qp_delta and deblock_idc
+(build/shparse.py). The only MB using I4x4 is MB 0 (x264 `IT 0 0`; all other
+15 MBs are I16 type 2 — build/idrmbtypes.py). Payload bits match for the first
+24 bits (slice header) and diverge at MB 0's I4x4 prediction-mode/CAVLC data.
+So a byte-exact superfast IDR requires only: CAVLC I4x4 emission for MB 0
+(mb_type=0, 16 pred modes, cbp2golomb table, 16 luma residuals, chroma) plus
+verifying whether the 15 I16 MBs need 8x8dct. A partial emitter was drafted
+(luma path only, chroma missing) and removed rather than leave dead code.
