@@ -1118,3 +1118,24 @@ general x264-faithful fix; all default gates unchanged. Next step: match the
 inter-MB residual level by aligning MC + quant for this MB.
 
 Gates: CTest 23/23 + 65/65, CAVLC P sweep 1360/1360, MP4 56/56.
+
+### Frame 7 residual root cause: prediction mismatch (this turn)
+Dumped x264's post-encode residual coefficients for POC=14 MB0
+(build/dct7.py): only luma block 0 has DC=1; all other blocks are 0.
+The oracle's code_residual (DBG P7Q) produces DC=10-11 in ALL 16 blocks,
+with source 57-61 and prediction 16.
+
+So the residual mismatch is not token/level coding — it is the MC prediction:
+x264's MB0 prediction is close to the source (residual DC=1), while the
+oracle predicts the old-frame value 16. Cause: x264's frame 7 uses weighted
+prediction (luma weight scale=11, offset=-128 from build/wp7.py) and/or a
+B-pyramid reference whose reconstruction is near 57; the oracle uses plain
+MC against a 16-valued reference.
+
+Next step: implement x264's weighted-prediction formula (and/or correct the
+reference frame selection) in code_residual so the prediction matches before
+tackling the level code at bit 100. This is a prerequisite for frame-7 byte
+parity; the header/MB0-type/MVD/CBP are already byte-exact.
+
+No code changes committed (debug removed). Gates unchanged: CTest 23/23 +
+65/65, CAVLC P sweep 1360/1360, MP4 56/56.
