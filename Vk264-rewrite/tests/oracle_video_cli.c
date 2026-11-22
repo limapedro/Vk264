@@ -141,8 +141,8 @@ int main(int argc, char **argv)
         return 2;
     }
     p.i_width = w; p.i_height = h; p.i_qp_constant = qp_p;
-    /* --cabac is an explicit override; without it the preset default stands. */
-    if (entropy) p.b_cabac = 1;
+    /* The entropy argument is an explicit CAVLC/CABAC override. */
+    p.b_cabac = entropy ? 1 : 0;
     p.i_keyint_max = keyint;
     vk_sps_init(&sps, 0, &p);
     vk_pps_init(&pps, 0, &p, &sps);

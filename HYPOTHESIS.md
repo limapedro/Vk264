@@ -729,3 +729,21 @@ quantised DC of -41 cost ~35 bits/block. x264's whole IDR is 30 B (240 bits),
 so either x264's MB0 is coded with different (cheaper) predictors, or the
 oracle's CAVLC level/total_zeros emission for large coefficients diverges.
 Corrected a cbp bug (was 0xFFFF, now 4-bit luma cbp=15) this turn.
+
+## Key finding: verify_video_presets.py was comparing wrong entropy (this turn)
+
+x264's default entropy is **CABAC** for all presets except ultrafast. The
+harness passed `--cabac` only for the CABAC case and no flag for "cavlc", so
+x264 superfast was actually CABAC while the oracle used CAVLC — headers and
+slices could never match. Fixed the harness to pass `--no-cabac` for CAVLC,
+and changed the oracle CLI so the entropy argument is an explicit CAVLC/CABAC
+override (`p.b_cabac = entropy`), not an enable-only flag.
+
+With the corrected harness, superfast CAVLC headers match and the IDR is
+30 B (x264) vs 23 B (oracle), diverging in the slice. Instrumented x264's
+CAVLC residual writer (cavlc.c macro) with `--no-asm --no-cabac`: MB0 is I4x4
+with 4 nonzero luma blocks (nnz pattern matching my emitter). So the I4x4
+mode decision and nnz pattern agree; only the CAVLC token/level emission
+differs — symbol-by-symbol comparison is the next concrete step.
+
+Default 56/56 MP4, gates and sweeps unchanged by the entropy fix.
