@@ -1077,7 +1077,8 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
 
             if (do_skip) {
                 mv[idx][0] = psk_x; mv[idx][1] = psk_y;
-                mvr[idx][0] = mvr[idx][1] = 0;  /* x264 P_SKIP zeroes mvr */
+                /* x264 retains the ME MV in mvr for P_SKIP found via the
+                 * p16x16 early-termination path (as in pframe.c). */
                 is_skip[idx] = 1;
                 memset(mvd_c[idx], 0, 32);
                 /* reconstruct from reference at predictor MV */
@@ -1301,7 +1302,6 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                 *cb = mb_start;
                 vk_cabac_decision(cb, skip_ctx, 1);
                 mv[idx][0] = psk_x; mv[idx][1] = psk_y;
-                mvr[idx][0] = mvr[idx][1] = 0;
                 is_skip[idx] = 1;
                 memset(mvd_c[idx], 0, 32);
                 const uint8_t *ryref = refp + LPAD*rs + LPAD;
