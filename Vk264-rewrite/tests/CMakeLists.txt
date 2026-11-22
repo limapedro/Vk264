@@ -43,6 +43,10 @@ add_executable(vk264_i4x4enc_test test_i4x4enc.c)
 target_link_libraries(vk264_i4x4enc_test PRIVATE vk264_rewrite_ref)
 add_test(NAME rewrite_i4x4_emit COMMAND vk264_i4x4enc_test)
 
+add_executable(vk264_i8x8decide_test test_i8x8decide.c)
+target_link_libraries(vk264_i8x8decide_test PRIVATE vk264_rewrite_ref)
+add_test(NAME rewrite_i8x8_decide COMMAND vk264_i8x8decide_test)
+
 add_executable(vk264_encoder_test test_encoder.c)
 target_link_libraries(vk264_encoder_test PRIVATE vk264_rewrite_ref)
 add_test(NAME rewrite_encoder_orchestration COMMAND vk264_encoder_test)

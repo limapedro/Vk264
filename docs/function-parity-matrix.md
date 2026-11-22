@@ -36,8 +36,25 @@ by the shader padding. No byte-exact GPU fixture yet → candidate for MISSING a
 ## Pipeline stage 3 — lookahead & slice type (`encoder/lookahead.c`, `encoder/slicetype.c`, `slicetype-cl.c`)
 
 All 43 functions (`x264_lookahead_*`, `slicetype_*`, `macroblock_tree*`, `scenecut*`,
-`x264_weights_analyse`) are **MISSING** — Vk264 has no lookahead/B-frame decision
-architecture yet. This blocks `medium+` presets (issue #4).
+`x264_weights_analyse`) were **MISSING**.
+
+### C oracle progress (2026-11-22)
+Added `Vk264-rewrite/src/ref/slicetype.c/h` to the C oracle: Hadamard SATD,
+x264's `scenecut_bias` formula and scenecut comparison, frame-type assignment,
+B-frame minigop grouping with B-pyramid BREF, coding-order reorder (P before
+its Bs) and frame_num/POC (`2*(display-last_idr)`). CTest
+`rewrite_slicetype_decide` (SATD/scenecut/reorder fixture) passes.
+
+Gap: x264's `x264_slicetype_analyse` uses lowres SATD costs for B-adaptive
+decisions; the oracle's fixed minigop grouping does not yet reproduce x264's
+irregular B-frame runs. `build/compare_slicetype.py` documents the gap frame
+by frame. The full lookahead/mb-tree remains MISSING in the Vulkan backend.
+
+### C oracle progress (2026-11-22)
+Added `src/ref/i8x8decide.c/h`: all 9 intra8x8 directional predictions plus
+DC_LEFT/DC_TOP/DC_128 edge variants, Hadamard SATD and lambda-weighted mode
+selection with edge availability gating. CTest `rewrite_i8x8_decide`
+verifies DC/V/DC_LEFT/DC_128 fixtures.
 
 ## Pipeline stage 4 — analysis / mode decision (`encoder/analyse.c`)
 
@@ -107,6 +124,12 @@ architecture yet. This blocks `medium+` presets (issue #4).
 | `x264_adaptive_quant_frame`, `ac_energy_*` | `aq.comp`, `verifyAqVariance` | EXACT | `x264_aq_parity` |
 | `x264_ratecontrol_*` (45 functions) | `rate_control.comp` | PARTIAL | fixed-QP path only; no VBV/CRF/mbtree |
 
+### C oracle progress (2026-11-22)
+Added `src/ref/ratecontrol.c/h`: x264's `qp2qscale`/`qscale2qp` with exact
+float arithmetic, `vk_rc_lambda` (x264 lambda table, clamped to >=1) and
+`qscale2bits` (power 1.1). CTest `rewrite_ratecontrol_primitives` verifies
+QP 0..51 byte-exact against host copies of x264's formulas.
+
 ## Pipeline stage 11 — entropy coding (`common/cabac.c`, `encoder/cabac.c`, `encoder/cavlc.c`, `common/vlc.c`, `common/bitstream.c`)
 
 | x264 family | Vk264 shader | Status | Evidence |
@@ -127,6 +150,13 @@ architecture yet. This blocks `medium+` presets (issue #4).
 | `x264_encoder_encode` | `x264_vulkan::encode`, `encodeCabacClip` | PARTIAL | real footage diverges (#2/#3/#8) |
 | `x264_encoder_headers` | `parameters.comp`, `slice_header.comp` | EXACT | header fixtures |
 | `slice_write`, `nal_end`, `encoder_frame_end` | `packAnnexB` | EXACT | bitstream/NAL fixtures |
+
+### C oracle progress (2026-11-22)
+Added `src/ref/encoder.c/h`: `vk_encoder_t` orchestration state (frame_num,
+IDR counter, last IDR/keyframe) with `vk_encoder_frame_begin/end` filling
+`vk_enc_frame_state_t` (frame_num, POC, nal_ref_idc, idr_pic_id, keyframe) from
+the slicetype decision. CTest `rewrite_encoder_orchestration` verifies a
+5-frame GOP's coding-order state.
 
 
 ## Verification additions this session (Subaru, 2026-11-20)
