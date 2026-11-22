@@ -1368,3 +1368,24 @@ search (x264_me_search with cost_mv predicates, hex method, subpel refine)
 and row-SATD/AQ accumulation — our integer diamond search over-penalizes
 B-frame MVs. Gates unchanged: CTest 27/27 + 65/65, CAVLC P 1360/1360,
 MP4 56/56.
+
+### Stage 03 exact x264 targets obtained + B-cost scaling (this turn)
+Instrumented x264's b-adapt=fast path costs (build/pathcost_dump.py):
+```
+j=1 nb=0 cp=527 cb=471 (B wins)
+j=2 nb=1 cp=639 cb=521 (B wins)
+j=3 nb=2 cp=1530 cb=1568 (P wins)
+```
+Found and fixed three real model bugs:
+1. `frame_cost` at `b==p1` was computed as a B cost instead of a P cost
+   from p0 — this inflated P-path costs and distorted the comparison.
+2. x264 scales B-frame costs by `100/(120+bframe_bias)` (slicetype.c:985,
+   default bias=0 → *100/120) — added, which made B comparatively cheaper.
+3. Added the zero-MV bidirectional candidate (TRY_BIDIR penalty 0).
+
+After fixes, build/compare_slicetype.py shows partial agreement: frames 2,6,12,14
+are B as in x264, but frames 1,3,5 remain P (x264 B) and some BREFs appear
+where x264 has P. Absolute costs remain ~20x x264's (cp~9900 vs 527); the
+remaining scale gap is in x264's per-MB cost accumulation (SATD normalization
+and cost_mv table indexing). Gates unchanged: CTest 27/27 + 65/65, CAVLC P
+1360/1360, MP4 56/56.
