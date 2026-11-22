@@ -306,6 +306,28 @@ confined to forza crop (1200,600) from frame 4 onward and all presets above
 ultrafast at SPS. This strongly points to a VLC-choice/state difference in a
 high-motion residual pattern rather than a general architectural gap.
 
+## Clip-library MP4 comparison (PR #190, PR #191)
+
+`build/encode_clip_videos.py` encoded 28 video pairs (56 MP4s) from all three
+1080p YUV clips at 64x64, 320x240 and 640x480, 2 and 8 frames, CAVLC and
+CABAC. Result: **24/56 byte-exact** (dashboard updated). Full matrix in
+`tests/video_compare_report.md`; per-stream hashes/metadata in
+`tests/video_experiments.json`.
+
+New findings, in order of discovery:
+1. **640x480 SPS mismatch (FIXED, PR #191):** x264 level_idc 0x1f (3.1) vs
+   oracle 0x34 (5.2). The oracle's auto-level table stopped at level 2.2,
+   so larger resolutions fell through to 52. Ported the full 1b..6.2 table;
+   640x480 SPS is now byte-exact and the divergence moves to NAL 3.
+2. **320x240 first P-slice (OPEN):** both clips diverge at NAL 3 (frame 1),
+   byte 5-18. NAL lengths differ substantially (e.g. x264 4177 vs oracle
+   6179 bytes on warzone), indicating a *decision* difference — the oracle
+   codes far more residual than x264. This is a different, earlier-onset
+   failure than the 64x64 frame-4 issue and likely involves motion-estimate
+   or skip-decision behavior at larger frame sizes.
+3. **64x64 remains as characterized** (frame 4/9 divergences on high-motion
+   crops; all warzone/fortnite cases exact).
+
 **run_before table ruled out:** `build/dumprb.py` dumped all 65536 generated
 entries from x264's `x264_run_before[]` and the oracle's `run_before[]`:
 ```
