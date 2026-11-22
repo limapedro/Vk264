@@ -1,6 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "slicetype.h"
+#include "lowres.h"
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#define X264_LOOKAHEAD_MAX 60
 
 /* ---- SATD (Hadamard) ---- */
 static int satd4(const uint8_t *a, int sa, const uint8_t *b, int sb)
@@ -82,25 +87,55 @@ void vk_slicetype_decide(const uint8_t *frames, int n, int w, int h,
         }
         out[i].is_scenecut = sc;
     }
-    /* Step 2: assign P/B within each GOP. x264 groups frames into minigops:
-     * one P (or I) followed by up to bframes B frames. */
+    /* Step 2: assign P/B with x264's b-adapt=fast decision.
+     * Build half-res luma planes for all frames, then for each candidate
+     * frame compare the cost of path "...BP" (B) vs "...PP" (P). */
+    int dw=w/2, dh=h/2;
+    uint8_t **lo = malloc((size_t)n*sizeof(*lo));
+    for (int f=0; f<n; ++f) {
+        lo[f]=malloc((size_t)dw*dh);
+        vk_lowres_luma(frames+(size_t)f*(size_t)w*h*3/2,w,h,lo[f],dw,dh);
+    }
     int i = 0;
     while (i < n) {
         int gop_end = i + 1;
         while (gop_end < n && out[gop_end].type != VK_FRAME_IDR) gop_end++;
-        int j = i + 1;
-        while (j < gop_end) {
-            /* this P covers up to bframes following B frames */
-            out[j].type = VK_FRAME_P;
-            int bs = j + 1;
-            int nb = 0;
-            while (bs < gop_end && nb < bframes) { out[bs].type = VK_FRAME_B; bs++; nb++; }
-            if (b_pyramid && nb >= 2)
-                out[bs - 1].type = VK_FRAME_BREF;  /* middle B as reference */
-            j = bs;
+        /* x264 b-adapt=fast: last_nonb starts at the GOP keyframe. */
+        int last_nonb = i;
+        int remaining_b = bframes;
+        for (int j = i+1; j < gop_end; ++j) {
+            if (out[j].type != VK_FRAME_AUTO && out[j].type != VK_FRAME_B) {
+                last_nonb = j; remaining_b = bframes; continue;
+            }
+            if (j-1 > i && out[j-1].type == VK_FRAME_B) remaining_b--;
+            else { last_nonb = j-1; remaining_b = bframes; }
+            if (!remaining_b) { out[j].type = VK_FRAME_P; continue; }
+            if (j+1<gop_end && out[j+1].type == VK_FRAME_B) {
+                out[j].type = VK_FRAME_P; continue;
+            }
+            /* x264 b-adapt=fast: path of nb Bs then "PP" vs "BP". */
+            int nb = j-last_nonb-1;
+            if (nb<0) nb=0;
+            char path[X264_LOOKAHEAD_MAX+4];
+            for(int q=0;q<nb;++q) path[q]='B';
+            path[nb]='P'; path[nb+1]='P'; path[nb+2]='\0';
+            int npath = nb+3;
+            if (npath > gop_end-last_nonb) npath = gop_end-last_nonb;
+            uint64_t cp=vk_slicetype_path_cost(lo+last_nonb,dw,dh,path,npath,UINT64_MAX);
+            path[nb]='B'; /* path[nb+1] stays 'P' */
+            uint64_t cb=vk_slicetype_path_cost(lo+last_nonb,dw,dh,path,npath,cp);
+            out[j].type = (cb < cp) ? VK_FRAME_B : VK_FRAME_P;
+        }
+        if (b_pyramid) {
+            /* find B runs of length>=2 and mark the middle as BREF */
+            for (int j=i+1;j<gop_end;++j)
+                if (out[j].type==VK_FRAME_B && j+1<gop_end && out[j+1].type==VK_FRAME_B)
+                    out[j].type=VK_FRAME_BREF;
         }
         i = gop_end;
     }
+    for(int f=0;f<n;++f) free(lo[f]);
+    free(lo);
     /* Step 3: coding order = for each minigop, P first then its B frames. */
     int k = 0;
     for (int g = 0; g < n; ) {

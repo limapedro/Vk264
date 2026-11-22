@@ -18,6 +18,8 @@
 #include "i4x4enc.h"
 #include "i8x8enc.h"
 #include "bslice.h"
+#include "slicetype.h"
+#include "encoder.h"
 #include "cabac.h"
 #include "cabac_enc.h"
 #include <stdio.h>
@@ -193,9 +195,25 @@ int main(int argc, char **argv)
     memset(curintra, 0, (size_t)mw*mh);
     int idr_count = 0;
 
+    /* Optional general slice-type + encoder-state path (VK_SLICETYPE_CLI). */
+    vk_frame_t *stypes = NULL; int *corder = NULL, ncoded = 0;
+    uint8_t *allframes = NULL;
+    if (getenv("VK_SLICETYPE_CLI")) {
+        allframes = malloc(fs*nframes);
+        rewind(fi);
+        if (fread(allframes, fs, nframes, fi) != (size_t)nframes) {
+            fprintf(stderr,"short input for slicetype\n"); return 2;
+        }
+        stypes = calloc(nframes, sizeof(*stypes));
+        corder = calloc(nframes, sizeof(*corder));
+        vk_slicetype_decide(allframes, nframes, w, h, keyint, keyint,
+                            p.i_bframe, 2, 40, stypes, corder, &ncoded);
+        rewind(fi);
+    }
     for (int f = 0; f < nframes; ++f) {
-        if (fread(frames, 1, fs, fi) != fs) { fprintf(stderr, "short input at frame %d\n", f); break; }
-        int is_idr = (f % keyint == 0);
+        if (allframes) memcpy(frames, allframes+(size_t)f*fs, fs);
+        else if (fread(frames, 1, fs, fi) != fs) { fprintf(stderr, "short input at frame %d\n", f); break; }
+        int is_idr = stypes ? (stypes[f].type == VK_FRAME_IDR) : (f % keyint == 0);
         memset(buf, 0, sizeof(buf)); vk_bs_init(&bs, buf, sizeof(buf));
         if (is_idr) {
             int idr_pic_id = idr_count & 1;

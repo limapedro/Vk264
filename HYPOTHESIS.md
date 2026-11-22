@@ -1307,3 +1307,28 @@ CTest: 23/23 -> 26/26 (three new gates). All prior gates green.
 
 ## Pipeline stage 04 - analysis / mode decision
 Next: general RD-based I16/I8/I4 decision (emitters exist but are opt-in).
+
+### Stage 03 deepened: lowres cost + b-adapt=fast (this turn)
+Added `src/ref/lowres.c/h`: half-res luma downsample (box filter), 8x8
+Hadamard SATD with displacement, diamond ME (radius 2..16, lambda=16 at
+lookahead QP=32), P-cost (min over refs with bidirectional fallback) and
+intra cost (DC predictor + 5*lambda penalty). Added
+`vk_slicetype_path_cost` implementing x264's `slicetype_path_cost` with
+B-frame runs between non-B anchors.
+
+Wired into `vk_slicetype_decide`: the fixed-minigop grouping is replaced by
+x264's b-adapt=fast decision (path "PP" vs "BP", `frames[j+1]==B -> P`,
+remaining_b countdown, B-pyramid BREF marking).
+
+Also wired slicetype + encoder-state modules into the oracle CLI behind
+`VK_SLICETYPE_CLI`: all frames are pre-read, `vk_slicetype_decide` fills
+frame types/frame_num/POC, and `is_idr` now comes from the decision.
+`build/compare_slicetype.py` dumps x264 vs oracle frame types.
+
+Honest gap: the lowres cost model is not yet numerically faithful enough —
+oracle still decides P for frames 1-5 where x264 decides B (cost model
+overestimates B-path cost). Frame types match only partially (e.g. frame 6).
+The path/cost structure is faithful; exact cost parity needs x264's precise
+lowres MV cost, row-SATD and AQ weighting.
+
+CTest 27/27 + 65/65, CAVLC P sweep 1360/1360, MP4 56/56 — unchanged.
