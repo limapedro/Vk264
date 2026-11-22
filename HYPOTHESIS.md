@@ -1389,3 +1389,24 @@ where x264 has P. Absolute costs remain ~20x x264's (cp~9900 vs 527); the
 remaining scale gap is in x264's per-MB cost accumulation (SATD normalization
 and cost_mv table indexing). Gates unchanged: CTest 27/27 + 65/65, CAVLC P
 1360/1360, MP4 56/56.
+
+### Stage 03 ROOT CAUSE found: SAD vs SATD (this turn)
+x264's `mbcmp_init` (encoder/encoder.c:1411) selects SAD when
+`analyse.i_subpel_refine <= 1`. Superfast uses i_subpel_refine=1, so ALL
+lowres lookahead costs are SAD, not SATD. Our model used Hadamard SATD,
+which is ~4-8x larger — the source of the cost-scale gap.
+
+Switched `satd8()` in lowres.c to a plain 8x8 SAD. Measured effect:
+```
+before: frame1 P(prev)=5218 P(next)=4734 B=3928
+after:  frame1 P(prev)=2126 P(next)=1886 B=1136
+```
+x264's per-frame costs are 246-1009, so the gap is much smaller now.
+
+Frame-type decisions changed (frame 1 now B) but still do NOT match x264
+frame-by-frame: build/compare_slicetype.py shows oracle coding order
+[0,1,2,4,3,5,6,7] vs x264 [0,3,1,2,4,...]. Remaining differences are in
+b-adapt=fast's MV prediction (dmv from previous frame's lowres MVs), the
+dist_scale_factor, and hpel interpolation — not the cost primitive anymore.
+
+Gates unchanged: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.

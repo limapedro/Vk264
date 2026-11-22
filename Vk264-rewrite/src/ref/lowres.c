@@ -28,39 +28,17 @@ void vk_lowres_luma(const uint8_t *src,int sw,int sh,uint8_t *dst,int dw,int dh)
     }
 }
 
-/* 8x8 Hadamard SATD, two-pass 1D butterfly (matches x264 pixel_satd_8x8). */
+/* x264 mbcmp_init (encoder/encoder.c:1411): for subpel_refine<=1, mbcmp is
+ * SAD (not SATD). superfast uses i_subpel_refine=1, so lowres costs are SAD. */
 static int satd8(const uint8_t *a,int aw,int ax,int ay,
                  const uint8_t *b,int bw,int bx,int by)
 {
-    int d[64],t[64],s=0;
-    for(int y=0;y<8;++y) for(int x=0;x<8;++x)
-        d[y*8+x]=(int)a[(ay+y)*aw+ax+x]-(int)b[(by+y)*bw+bx+x];
-    /* horizontal */
-    for(int y=0;y<8;++y){
-        int r[8];
-        for(int i=0;i<4;++i){int p=d[y*8+i]+d[y*8+i+4],m=d[y*8+i]-d[y*8+i+4];r[i]=p;r[i+4]=m;}
-        for(int h=0;h<2;++h){
-            int b=h*4;
-            int p0=r[b]+r[b+2], m0=r[b]-r[b+2];
-            int p1=r[b+1]+r[b+3], m1=r[b+1]-r[b+3];
-            t[y*8+b]=p0+p1; t[y*8+b+1]=m0+m1;
-            t[y*8+b+2]=p0-p1; t[y*8+b+3]=m0-m1;
-        }
+    int s=0;
+    for(int y=0;y<8;++y) for(int x=0;x<8;++x){
+        int d=(int)a[(ay+y)*aw+ax+x]-(int)b[(by+y)*bw+bx+x];
+        s+=d<0?-d:d;
     }
-    /* vertical on t */
-    for(int x=0;x<8;++x){
-        int r[8];
-        for(int i=0;i<4;++i){int p=t[i*8+x]+t[(i+4)*8+x],m=t[i*8+x]-t[(i+4)*8+x];r[i]=p;r[i+4]=m;}
-        for(int h=0;h<2;++h){
-            int b=h*4;
-            int p0=r[b]+r[b+2], m0=r[b]-r[b+2];
-            int p1=r[b+1]+r[b+3], m1=r[b+1]-r[b+3];
-            d[b*8+x]=p0+p1; d[(b+1)*8+x]=m0+m1;
-            d[(b+2)*8+x]=p0-p1; d[(b+3)*8+x]=m0-m1;
-        }
-    }
-    for(int i=0;i<64;++i) s+=d[i]<0?-d[i]:d[i];
-    return s>>1;
+    return s;
 }
 
 /* Motion search cost of one 8x8 lowres MB from `ref` at its base position.
