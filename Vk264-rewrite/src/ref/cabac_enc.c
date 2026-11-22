@@ -672,6 +672,16 @@ static int p_block_decimate(const uint8_t *src, int ss, const uint8_t *pred, int
     return include_dc ? p_decimate_score(z, 16) : p_decimate_score(z+1, 15);
 }
 
+/* x264 common/macroblock.c mb_mc_01xywh clips the MV to border limits for
+ * every motion-compensated read (cf. pframe.c clip_mv_mc). */
+static void clip_mv_mc(int mbx, int mby, int mbw, int mbh, int *mvx, int *mvy)
+{
+    int mn_x = 4*(-16*mbx-24), mx_x = 4*(16*(mbw-mbx-1)+24);
+    int mn_y = 4*(-16*mby-24), mx_y = 4*(16*(mbh-mby-1)+24);
+    if (*mvx < mn_x) *mvx = mn_x; else if (*mvx > mx_x) *mvx = mx_x;
+    if (*mvy < mn_y) *mvy = mn_y; else if (*mvy > mx_y) *mvy = mx_y;
+}
+
 static int p_probe(const uint8_t *cur, const uint8_t *refp,
                    int w, int h, int rs, int x, int y, int mvx_qp, int mvy_qp, int qp)
 {
@@ -1144,8 +1154,10 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                  * p16x16 early-termination path (as in pframe.c). */
                 is_skip[idx] = 1;
                 memset(mvd_c[idx], 0, 32);
-                /* reconstruct from reference at predictor MV */
-                int sx = psk_x/4, sy = psk_y/4;
+                /* reconstruct from reference at predictor MV (clipped for MC) */
+                int cmvx = psk_x, cmvy = psk_y;
+                clip_mv_mc(mx, my, mw, mh, &cmvx, &cmvy);
+                int sx = cmvx/4, sy = cmvy/4;
                 const uint8_t *ryref = refp + LPAD*rs + LPAD;
                 for (int yy = 0; yy < 16; ++yy)
                     memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
@@ -1153,7 +1165,7 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 cabac_mc_chroma8(ru + (my*8+CPAD)*crs + CPAD + mx*8,
                                  rv + (my*8+CPAD)*crs + CPAD + mx*8, crs,
                                  refp + ysz, refp + ysz + csz, crs,
-                                 mx*16, my*16, psk_x, psk_y);
+                                 mx*16, my*16, cmvx, cmvy);
                 continue;
             }
 
@@ -1469,7 +1481,9 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
 
             mv[idx][0] = mvx*4; mv[idx][1] = mvy*4;
             /* reconstruct: copy reference at MV into the current-frame buffer */
-            int sx = mvx, sy = mvy;
+            int cmvx = mvx*4, cmvy = mvy*4;
+            clip_mv_mc(mx, my, mw, mh, &cmvx, &cmvy);
+            int sx = cmvx/4, sy = cmvy/4;
             const uint8_t *ryref = refp + LPAD*rs + LPAD;
             for (int yy = 0; yy < 16; ++yy)
                 memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
@@ -1477,7 +1491,7 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
             cabac_mc_chroma8(ru + (my*8+CPAD)*crs + CPAD + mx*8,
                              rv + (my*8+CPAD)*crs + CPAD + mx*8, crs,
                              refp + ysz, refp + ysz + csz, crs,
-                             mx*16, my*16, mvx*4, mvy*4);
+                             mx*16, my*16, cmvx, cmvy);
             /* add luma residual */
             if (cb_l) {
                 int mfx[16], biasx[16], deqx[16];
