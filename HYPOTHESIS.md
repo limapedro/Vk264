@@ -1252,3 +1252,24 @@ Next step: match the level VLC (x264_level_token[0][5]) / total_zeros.
 
 No default gates affected (VK_P7_TEST guarded): CTest 23/23 + 65/65,
 CAVLC P sweep 1360/1360, MP4 56/56.
+
+### Frame 7 first residual coefficient fully matches (this turn)
+Dumped x264's exact level VLCs (build/lvl7.py): for the first two luma blocks
+with coefficient 5, x264 writes level 4 (it subtracts 1 from the first
+non-trailing coefficient) with VLC bits=1,size=7, then total_zeros TZ[0][0]
+(code 1, 1 bit). The oracle's vk_cavlc_block_residual applies the same -1
+adjustment and the same total_zeros table.
+
+With MC MV (0,0) + mc_weight scale 11/offset -128 (pred 37 from ref 15),
+the oracle's first residual coefficient now matches x264 bit-for-bit:
+```
+common prefix through bit 101 (coeff_token + level + total_zeros)
+```
+Divergence is now at bit 102, in the next residual symbol (likely the second
+block's coeff_token or run_before). x264's second block also has total=1
+with l[0]=5; the oracle's CAVLC dump showed total=1 c0=5 for its second
+block, so the difference is in nC/neighbour handling or symbol ordering.
+
+No default gates affected (VK_P7_TEST guarded): CTest 23/23 + 65/65,
+CAVLC P sweep 1360/1360, MP4 56/56. The 7/8 byte-exact superfast slices
+remain unchanged.
