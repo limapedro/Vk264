@@ -601,7 +601,10 @@ static int code_i16_dc(vk_bs_t *bs, const uint8_t *cur, int w, int x, int y,
                 int pred = s < 0x80 ? (s+1)>>1 : s & 0x7f;
                 int ac[16];
                 for (int j = 0; j < 15; ++j) ac[j] = dct[b][zz[j+1]];  /* skips DC */
-                vk_cavlc_block_residual(bs, VK_DCT_LUMA_4x4, ac, ctt[pred & 0x7f], 1, 15);
+                /* x264 uses DCT_LUMA_AC (count_cat=15) for I16 luma AC blocks,
+                 * not DCT_LUMA_4x4 (count_cat=16): a 15-coefficient AC block
+                 * must NOT write total_zeros. */
+                vk_cavlc_block_residual(bs, VK_DCT_LUMA_AC, ac, ctt[pred & 0x7f], 1, 15);
                 /* x264 stores the coefficient COUNT in non_zero_count, not a
                  * boolean — the next block's nC depends on the exact count. */
                 cache[p] = (uint8_t)nnz[b];
