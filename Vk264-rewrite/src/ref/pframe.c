@@ -1326,12 +1326,12 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                        refp + rys, refp + rys + rcs, crs,
                        mx*16, my*16, cmvx, cmvy);
             /* x264 mc_weight for denom=0: pred = clip(src*scale + offset). */
+            /* x264 mc_weight denom=0: pred = clip(src*i_scale + offset)
+             * with i_scale=11, i_offset=-128 (frame 7 luma weight). */
             if (p7 >= 0)
                 for (int yy = 0; yy < 16; ++yy)
                     for (int xx = 0; xx < 16; ++xx) {
-                        /* x264 mc_weight: effective scale = (1<<denom)+i_scale
-                         * = 1+11 = 12, offset -128 (denom 0). */
-                        int v = rcon_l[yy*rs + xx]*12 - 128;
+                        int v = rcon_l[yy*rs + xx]*11 - 128;
                         rcon_l[yy*rs + xx] = (uint8_t)(v<0?0:(v>255?255:v));
                     }
             uint8_t *rcony = ry + (my*16+LPAD)*rs + LPAD + mx*16;

@@ -1228,3 +1228,27 @@ point (not just after x264_macroblock_encode) — the next concrete step.
 
 No code changes this turn; gates unchanged (CTest 23/23 + 65/65, CAVLC P
 sweep 1360/1360, MP4 56/56). The 7/8 byte-exact superfast slices remain.
+
+### Frame 7 coefficients at CAVLC write point (this turn)
+build/cavcof7.py dumps x264's coefficients inside cavlc_block_residual_internal
+for POC=14 MB0 at QP 28:
+```
+luma (cat=2) nC=0: total=1 l[0]=5 ; total=1 l[0]=5 ;
+                    total=2 l[0]=6,l[1]=1 ; total=1 l[0]=6
+chroma DC (cat=3) nC=4: total=1 l[-3] ; total=1 l[2]
+```
+The earlier post-encode dump (DC=1) was misleading — x264's CAVLC-write
+coefficients are 5/6. Matching them required:
+- MC MV (0,0) (x264's actual MB0 MV; bitstream mvd_x=62 comes from a
+  temporal predictor of -62);
+- mc_weight with i_scale=11, i_offset=-128 (not effective scale 12):
+  ref 15 -> pred 37, source 57 -> residual 20 -> quantized DC=5.
+With these the oracle produces luma DC 5,5,6,6 matching x264.
+
+Frame 7 bitstream now matches through byte 11 (x264 `... c8 53 14`,
+oracle `... c8 53 14`); divergence is a single bit at bit 101 in the
+first coefficient's level/suffix coding. Slice is 273 B vs x264 200 B.
+Next step: match the level VLC (x264_level_token[0][5]) / total_zeros.
+
+No default gates affected (VK_P7_TEST guarded): CTest 23/23 + 65/65,
+CAVLC P sweep 1360/1360, MP4 56/56.
