@@ -1191,3 +1191,20 @@ This measurement supersedes the earlier assumption that MB0's MV was 62.
 
 No code changes this turn; gates unchanged (CTest 23/23 + 65/65, CAVLC P
 sweep 1360/1360, MP4 56/56). The 7/8 byte-exact superfast slices remain.
+
+### Weighted pred now produces x264's residual DC (this turn)
+With the MC plane-offset fix in place, set the frame-7 test path to use MC
+MV (0,0) (x264's actual MB0 MV) while keeping the bitstream mvd_x=62, and
+applied x264's mc_weight with effective scale 12, offset -128 (pred 52 from
+ref 15). Debug confirmed the oracle's MB0 residual DC is now q0=1 with
+source 57 and prediction 52 — matching x264's DC=1 (build/dct7.py).
+
+Frame 7's slice is 255 B (was 260 B, x264 200 B); header and CBP still match
+through byte 10. The residual CAVLC token now differs: x264's first token is
+nC=0 total=1 T=0 (magnitude >1) while coefficient 1 would give T=1. So the
+exact coefficient sequence (not just DC) still needs matching — likely
+x264's quantized AC coefficients or the nC/neighbour handling.
+
+No default gates affected (all changes VK_P7_TEST guarded): CTest 23/23 +
+65/65, CAVLC P sweep 1360/1360, MP4 56/56. The 7/8 byte-exact superfast
+slices remain unchanged.

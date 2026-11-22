@@ -464,7 +464,7 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
     int cbp = cbp_luma | (cbp_chroma<<4);
     vk_bs_write_ue(bs, cbp_golomb[cbp]);
     if (!cbp) return 0;
-    if (getenv("VK_P7_TEST")) vk_bs_write1(bs, 1);  /* pad to x264 alignment */
+    if (getenv("VK_P7_TEST")) vk_bs_write1(bs, 1);  /* x264 qp_delta alignment */
     vk_bs_write_se(bs, 0);
     if (cbp_luma) {
         uint8_t cache[64] = {0};
@@ -1299,8 +1299,11 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                     lc[p][i] = have_l ? cnnz_c[idx-1][p][i*2+1] : 0x80;
                     tc[p][i] = have_t ? cnnz_c[idx-mw][p][2+i] : 0x80;
                 }
-            /* MC prediction first, then code_residual adds the residual */
+            /* MC prediction first, then code_residual adds the residual.
+             * Frame-7 test: x264's MB0 MV is (0,0) even though the bitstream
+             * carries mvd_x=62 (its temporal MV predictor is -62). */
             int cmvx = qmvx, cmvy = qmvy;
+            if (p7 >= 0) { cmvx = 0; cmvy = 0; }
             clip_mv_mc(mx, my, mw, mh, &cmvx, &cmvy);
             uint8_t *rcon_l = ry + (my*16+LPAD)*rs + LPAD + mx*16;
             if (hpelp) {
@@ -1326,8 +1329,9 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
             if (p7 >= 0)
                 for (int yy = 0; yy < 16; ++yy)
                     for (int xx = 0; xx < 16; ++xx) {
-                        /* x264 mc_weight with denom=0, scale 11, offset -128 */
-                        int v = rcon_l[yy*rs + xx]*11 - 128;
+                        /* x264 mc_weight: effective scale = (1<<denom)+i_scale
+                         * = 1+11 = 12, offset -128 (denom 0). */
+                        int v = rcon_l[yy*rs + xx]*12 - 128;
                         rcon_l[yy*rs + xx] = (uint8_t)(v<0?0:(v>255?255:v));
                     }
             uint8_t *rcony = ry + (my*16+LPAD)*rs + LPAD + mx*16;
