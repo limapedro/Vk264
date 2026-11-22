@@ -11,6 +11,11 @@ Status colors:
     C++     faithfully ported in C++ (control / tables / state)
     MISSING no counterpart yet
     N/A     platform / CLI / threading infrastructure, out of scope
+
+The dashboard is intentionally very detailed: every function family in every
+pipeline stage gets its own progress bar, every byte-exact verification suite
+gets a bar with its real case count, and the open (incomplete) targets are
+tracked separately from the passing gates.
 """
 from pathlib import Path
 from datetime import date
@@ -18,16 +23,20 @@ from datetime import date
 # ---------------------------------------------------------------------------
 # Data — update these after each parity PR, then regenerate the SVG.
 # ---------------------------------------------------------------------------
-SNAPSHOT = "2351adb"
+SNAPSHOT = "602383c"
 GENERATED = date.today().isoformat()
 
-# Overall numbers (from build/cavlc_parity_sweep.py, cavlc_iframe_sweep.py, ctest)
+# Overall numbers (from build/*_parity_sweep.py, ctest, tests/video_experiments.json)
 # FUNCTION PARITY is derived from the weighted STAGES table below so the
 # dashboard stays self-consistent when a family changes status.
 CAVLC_P_EXACT, CAVLC_P_TOTAL = 1360, 1360
 CABAC_P_EXACT, CABAC_P_TOTAL = 1360, 1360
+CAVLC_I_EXACT, CAVLC_I_TOTAL = 72, 72
+VIDEO_EXACT, VIDEO_TOTAL = 32, 56
+FUNC_PORTED, FUNC_TOTAL_INV = 23, 831
 STATS = [
-    ("CAVLC I-FRAMES", "72 / 72", "100.0%", "#2ea043"),
+    ("CAVLC I-FRAMES", f"{CAVLC_I_EXACT} / {CAVLC_I_TOTAL}",
+     f"{CAVLC_I_EXACT/CAVLC_I_TOTAL*100:.1f}%", "#2ea043"),
     ("CAVLC P-SLICES", f"{CAVLC_P_EXACT} / {CAVLC_P_TOTAL}",
      f"{CAVLC_P_EXACT/CAVLC_P_TOTAL*100:.1f}%", "#2ea043"),
     ("CABAC P-SLICES", f"{CABAC_P_EXACT} / {CABAC_P_TOTAL}",
@@ -35,8 +44,10 @@ STATS = [
     ("CTEST GATES", "65 + 18 / 83", "100.0%", "#2ea043"),
     # Video-level MP4 experiments (tests/video_experiments.json). These are
     # 8-frame real-clip encodes; 2-frame fixtures alone are not sufficient.
-    ("VIDEO MP4 EXPERIMENTS", "32 / 56 exact", "57.1%", "#d29922"),
-    ("x264 INVENTORY", "831 funcs / 23 ported", "808 missing", "#d29922"),
+    ("VIDEO MP4 EXPERIMENTS", f"{VIDEO_EXACT} / {VIDEO_TOTAL} exact",
+     f"{VIDEO_EXACT/VIDEO_TOTAL*100:.1f}%", "#d29922"),
+    ("x264 INVENTORY", f"{FUNC_TOTAL_INV} funcs / {FUNC_PORTED} ported",
+     f"{FUNC_PORTED/FUNC_TOTAL_INV*100:.1f}%", "#d29922"),
 ]
 
 # Byte-exact sweep progression (each row is one merged PR)
@@ -80,9 +91,8 @@ SWEEPS = [
     ("#183", 1360, "#2ea043"),
 ]
 
-# CABAC P-slice byte-exact sweep progression (parallel to SWEEPS).  Values
-# are from build/cabac_parity_sweep.py at each merged PR (saved exact-case
-# files in build/).  CABAC was introduced in #127.
+# CABAC P-slice byte-exact sweep progression (parallel to SWEEPS). CABAC was
+# introduced in #127.
 CABAC_SWEEPS = [
     ("#127",  920, "#484f58"),
     ("#134",  952, "#6e7681"),
@@ -193,6 +203,124 @@ STAGES = [
     ]),
 ]
 
+# Byte-exact verification suites: (group, [(suite_name, exact, total), ...]).
+# total == 0 means the CTest passes but no case count is published — shown as
+# a full bar labelled "pass". Real case counts are taken from
+# docs/function-parity-matrix.md and the parity sweep scripts.
+SUITES = [
+    ("01  Headers / SPS-PPS / NAL", [
+        ("x264_parameters_parity", 0, 0),
+        ("x264_slice_header_parity", 0, 0),
+        ("x264_nal_parity", 0, 0),
+        ("x264_bitstream_parity", 0, 0),
+        ("gop3_nal_structure", 0, 0),
+        ("rewrite_nal / rewrite_slice", 0, 0),
+        ("rewrite_bitstream", 0, 0),
+    ]),
+    ("04  Analysis / mode decision", [
+        ("x264_intra16_mode_parity", 16640, 16640),
+        ("x264_chroma_mode_parity", 16640, 16640),
+        ("x264_inter8x8_parity", 0, 0),
+        ("x264_inter4x4_parity", 0, 0),
+        ("x264_motion_elimination_parity", 0, 0),
+        ("rewrite_oracle_pskip / pme", 0, 0),
+        ("rewrite_cabac_pskip / pme", 0, 0),
+        ("rewrite_cabac_textured / intra_p", 0, 0),
+        ("rewrite_oracle_flat / real / multimb", 0, 0),
+        ("x264_i4x4_analysis", 0, 0),
+    ]),
+    ("05  Intra prediction", [
+        ("x264_predict_directional_parity", 0, 0),
+        ("x264_predict_intra_parity", 0, 0),
+        ("x264_intra16_parity", 0, 0),
+        ("x264_intra_chroma_parity", 0, 0),
+        ("rewrite_shader_predict", 0, 0),
+    ]),
+    ("06  Transform / quant / zigzag", [
+        ("x264_dc_parity", 0, 0),
+        ("x264_reconstruct_dc_parity", 0, 0),
+        ("x264_chroma_dc_parity", 0, 0),
+        ("x264_zigzag_parity", 0, 0),
+        ("x264_quant_group_parity", 0, 0),
+        ("x264_quant4x4_parity", 0, 0),
+        ("x264_quant8x8_parity", 0, 0),
+        ("x264_dct4x4_group4/8/16", 0, 0),
+        ("x264_dct8x8_group8/16", 0, 0),
+        ("x264_chroma_optimize_parity", 0, 0),
+        ("x264_coeff_analysis_parity", 0, 0),
+        ("rewrite_shader_dct / dc / quant", 0, 0),
+        ("shader_reconstruction", 0, 0),
+    ]),
+    ("07  Motion", [
+        ("x264_motion_metrics_parity", 0, 0),
+        ("x264_motion_compensation_parity", 0, 0),
+        ("x264_reference_frame_parity", 0, 0),
+        ("x264_motion_lowres_parity", 0, 0),
+        ("x264_motion_integral_parity", 0, 0),
+        ("x264_motion_search_parity", 0, 0),
+        ("x264_motion_exhaustive_parity", 0, 0),
+        ("x264_motion_bidir_parity", 0, 0),
+        ("x264_mv_predict_parity", 0, 0),
+        ("rewrite_motion", 0, 0),
+    ]),
+    ("08  Macroblock encode", [
+        ("x264_i4x4_frame_parity", 0, 0),
+        ("x264_i4x4_cabac_parity", 0, 0),
+        ("vulkan_encoder_reconstruction", 0, 0),
+        ("vulkan_cavlc_reconstruction", 0, 0),
+    ]),
+    ("09  Deblocking", [
+        ("x264_deblock_filter_parity", 0, 0),
+        ("x264_deblock_frame_parity", 0, 0),
+        ("x264_deblock_frame_tiled_parity", 0, 0),
+        ("x264_deblock_frame_subgroup_parity", 0, 0),
+        ("x264_deblock_strength_parity", 0, 0),
+    ]),
+    ("10  Rate control", [
+        ("x264_aq_parity", 0, 0),
+    ]),
+    ("11  Entropy coding", [
+        ("x264_cabac_parity", 9946, 9946),
+        ("x264_cabac_refidx_parity", 1536, 1536),
+        ("x264_cabac_stream / raw decode", 0, 0),
+        ("x264_cabac_decoder_oracle", 0, 0),
+        ("x264_cavlc_residual_parity", 2327, 2327),
+        ("x264_cavlc_context_parity", 400, 400),
+        ("rewrite_cabac", 0, 0),
+    ]),
+    ("12  Orchestration / presets", [
+        ("x264_parity_ultrafast_flat_16x16", 0, 0),
+        ("x264_parity_ultrafast_flat_64x64", 0, 0),
+        ("x264_parity_ultrafast_noise_32x32", 0, 0),
+        ("x264_parity_fast_flat_16x16 / 64x64", 0, 0),
+        ("x264_parity_superfast_flat_16x16", 0, 0),
+    ]),
+    ("INTEGRATION SWEEPS / CLIPS", [
+        ("CAVLC P-slice sweep", CAVLC_P_EXACT, CAVLC_P_TOTAL),
+        ("CABAC P-slice sweep", CABAC_P_EXACT, CABAC_P_TOTAL),
+        ("CAVLC I-frame sweep", CAVLC_I_EXACT, CAVLC_I_TOTAL),
+        ("Video MP4 experiments", VIDEO_EXACT, VIDEO_TOTAL),
+        ("x264 function port inventory", FUNC_PORTED, FUNC_TOTAL_INV),
+    ]),
+]
+
+# Open (incomplete) byte-exact targets — the things still being chased.
+# exact/total are real numbers where available, else 0/total with a note.
+OPEN_TARGETS = [
+    ("Video MP4 experiments (real 8f clips)", VIDEO_EXACT, VIDEO_TOTAL, "#d29922"),
+    ("x264 functions ported (inventory)", FUNC_PORTED, FUNC_TOTAL_INV, "#d29922"),
+    ("Presets > ultrafast (SPS High profile)", 0, 1, "#f85149"),
+    ("1080p60 multi-frame stability (3f+)", 0, 1, "#f85149"),
+    ("Lookahead / slicetype (03 family)", 0, 43, "#f85149"),
+    ("B-frame inter analysis / CABAC / CAVLC", 0, 9, "#f85149"),
+    ("RD cost / trellis (rdo.c)", 0, 26, "#f85149"),
+    ("mbtree / frame_filter", 0, 6, "#f85149"),
+    ("CQM scaling lists", 0, 2, "#f85149"),
+    ("Rate control VBV / CRF", 0, 45, "#d29922"),
+    ("I4x4 emission (superfast)", 0, 1, "#d29922"),
+    ("04 Analysis weighted family coverage", 2, 10, "#d29922"),
+]
+
 COLOR = {
     "EXACT":  "#2ea043",
     "PARTIAL": "#d29922",
@@ -207,6 +335,8 @@ TINT = {
     "MISSING": "#21262d",
     "N/A":    "#262b33",
 }
+# Fraction of a family's bar that counts as "byte-exact / done".
+EXACTNESS = {"EXACT": 1.0, "C++": 1.0, "PARTIAL": 0.5, "MISSING": 0.0, "N/A": 0.0}
 
 # ---------------------------------------------------------------------------
 # SVG helpers
@@ -219,6 +349,35 @@ def pct(fams):
     exact = sum(w for _, w, st in fams if st == "EXACT")
     total = sum(w for _, w, st in fams if st not in ("N/A",)) or 1
     return exact / total
+
+
+def stat_color(p):
+    return COLOR["EXACT"] if p >= 0.75 else (COLOR["PARTIAL"] if p >= 0.4 else COLOR["MISSING"])
+
+
+def bar(x, y, w, h, frac, fill, bg="#21262d", rx=None):
+    """A single-progress bar: background + filled portion."""
+    rx = rx if rx is not None else min(3, h / 2)
+    s = f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h}" fill="{bg}" rx="{rx}"/>'
+    if frac > 0:
+        s += (f'<rect x="{x:.1f}" y="{y:.1f}" width="{max(1.0, w*min(1.0, frac)):.1f}" '
+              f'height="{h}" fill="{fill}" rx="{rx}"/>')
+    return s
+
+
+def stackbar(x, y, w, h, fams):
+    """A stacked bar showing the weighted status mix of a stage."""
+    s = f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h}" fill="#21262d" rx="2"/>'
+    total = sum(wt for _, wt, st in fams if st != "N/A") or 1
+    cx = x
+    for st in ("EXACT", "C++", "PARTIAL", "MISSING"):
+        sw = sum(wt for _, wt, s2 in fams if s2 == st)
+        if not sw:
+            continue
+        fw = w * sw / total
+        s += f'<rect x="{cx:.1f}" y="{y:.1f}" width="{fw:.1f}" height="{h}" fill="{COLOR[st]}"/>'
+        cx += fw
+    return s
 
 
 out = []
@@ -234,18 +393,52 @@ FUNC_EXACT = _weight.get("EXACT", 0)
 FUNC_TOTAL = sum(v for k, v in _weight.items() if k != "N/A")
 FUNC_PCT = FUNC_EXACT / FUNC_TOTAL * 100
 
-# Layout — compute the height from the content so the legend and the last
-# sweep row are never clipped as more PRs are added.
+# --- Layout -----------------------------------------------------------------
 W = 1680
-gx, gy = 32, 214
+M = 32                       # left/right margin
+gx, gy = M, 222
 cols, rows = 4, 3
 gap = 14
-ch_base = 180          # tight cards; tiles need ~110px plus a 54px header
-sweep_row_h = 17
-sweep_top = gy + 14 + rows*(ch_base+gap) + 40
-# two stacked sweep sections (CAVLC + CABAC), then legend + margin
-cabac_top = sweep_top + len(SWEEPS)*sweep_row_h + 45
-H = cabac_top + len(CABAC_SWEEPS)*sweep_row_h + 110
+ch_base = 182                # stage card height (header + % + bar + tiles)
+sweep_row_h = 15
+
+# stage treemap band
+treemap_h = 14 + rows * (ch_base + gap)
+treemap_bottom = gy + treemap_h + 6
+
+# families detail band: 3 columns, grouped by stage
+fam_col_w = (W - 2 * M - 2 * gap) // 3
+def fam_block_h(fams):
+    return 20 + len(fams) * 15
+# distribute the 12 stages round-robin into 3 columns, compute max column height
+fam_cols = [[STAGES[i] for i in range(len(STAGES)) if i % 3 == c] for c in range(3)]
+fam_band_h = max(sum(fam_block_h(f) + 6 for _, _, f in col) for col in fam_cols)
+fam_top = treemap_bottom + 34
+
+# suites detail band: 3 columns, grouped by suite group
+suite_col_w = (W - 2 * M - 2 * gap) // 3
+def suite_block_h(rows_):
+    return 20 + len(rows_) * 15
+suite_cols = [[SUITES[i] for i in range(len(SUITES)) if i % 3 == c] for c in range(3)]
+suite_band_h = max(sum(suite_block_h(r) + 8 for _, r in col) for col in suite_cols)
+suite_top = fam_top + fam_band_h + 40
+
+# open targets band: 2 columns
+ot_col_w = (W - 2 * M - gap) // 2
+ot_rows_per_col = (len(OPEN_TARGETS) + 1) // 2
+ot_band_h = 24 + ot_rows_per_col * 19
+ot_top = suite_top + suite_band_h + 40
+
+# sweeps band: two side-by-side sections (CAVLC | CABAC)
+sweep_top = ot_top + ot_band_h + 34
+sweep_max_rows = max(len(SWEEPS), len(CABAC_SWEEPS))
+sweep_col_w = (W - 2 * M - gap) // 2
+sweep_band_h = 30 + sweep_max_rows * sweep_row_h
+sweep_bottom = sweep_top + sweep_band_h
+
+# legend
+H = sweep_bottom + 70
+
 add(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
     f'viewBox="0 0 {W} {H}" font-family="Consolas, SFMono-Regular, Menlo, monospace">')
 add(f'''<defs>
@@ -282,89 +475,135 @@ add('<text x="32" y="74" fill="#8b949e" font-size="14">'
     '</text>')
 
 # Overall progress bar
-ox, oy, ow = 32, 92, W - 64
-add(f'<rect x="{ox}" y="{oy}" width="{ow}" height="10" fill="#21262d" rx="5"/>')
-add(f'<rect x="{ox}" y="{oy}" width="{ow*FUNC_EXACT/FUNC_TOTAL:.1f}" height="10" '
-    f'fill="{COLOR["EXACT"]}" rx="5"/>')
+ox, oy, ow = M, 92, W - 2 * M
+add(bar(ox, oy, ow, 11, FUNC_EXACT / FUNC_TOTAL, COLOR["EXACT"], rx=5))
 add(f'<text x="{ox+ow-4}" y="{oy+10}" fill="#c9d1d9" font-size="15" text-anchor="end">'
     f'byte-exact function coverage {FUNC_PCT:.1f}% ({FUNC_EXACT}/{FUNC_TOTAL} weighted families)</text>')
 
 # Stat cards
-sx, sy, sh = 32, 120, 74
-sw = (W - 64 - (len(STATS)-1)*16)//len(STATS)
+sx, sy, sh = M, 120, 74
+sw = (W - 2 * M - (len(STATS)-1)*16)//len(STATS)
 for i, (label, value, percent, color) in enumerate(STATS):
     x = sx + i*(sw+16)
     add(f'<rect x="{x}" y="{sy}" width="{sw}" height="{sh}" fill="#161b22" '
         f'stroke="#30363d" rx="6"/>')
     add(f'<rect x="{x}" y="{sy}" width="4" height="{sh}" fill="{color}"/>')
     add(f'<text x="{x+14}" y="{sy+22}" fill="#8b949e" font-size="11">{esc(label)}</text>')
-    add(f'<text x="{x+14}" y="{sy+48}" fill="#e6edf3" font-size="22" font-weight="bold">{esc(value)}</text>')
-    add(f'<text x="{x+sw-12}" y="{sy+48}" fill="{color}" font-size="18" text-anchor="end">{esc(percent)}</text>')
+    # Shrink long values so they never collide with the right-hand percentage.
+    vf = 16 if len(value) > 16 else (19 if len(value) > 12 else 22)
+    add(f'<text x="{x+14}" y="{sy+48}" fill="#e6edf3" font-size="{vf}" font-weight="bold">{esc(value)}</text>')
+    add(f'<text x="{x+sw-12}" y="{sy+48}" fill="{color}" font-size="16" text-anchor="end">{esc(percent)}</text>')
 
-# Stage treemap — 4 columns x 3 rows
-cw = (W - 64 - gap*(cols-1)) // cols
+# --- Stage treemap (with stacked progress bar + per-family mini bars) --------
+cw = (W - 2 * M - gap*(cols-1)) // cols
 add(f'<text x="{gx}" y="{gy-10}" fill="#e6edf3" font-size="17" font-weight="bold">'
-    'Pipeline stage coverage (tile size ~ function count)</text>')
+    'Pipeline stage coverage — stacked status bar + a progress bar on every function family</text>')
 
 for idx, (title, subtitle, fams) in enumerate(STAGES):
     col, row = idx % cols, idx // cols
     x = gx + col*(cw+gap)
-    y = gy + 14 + row*(ch_base+gap)
+    y = gy + row*(ch_base+gap)
     add(f'<rect x="{x}" y="{y}" width="{cw}" height="{ch_base}" fill="#161b22" '
         f'stroke="#30363d" rx="6"/>')
     p = pct(fams)
-    pcol = COLOR["EXACT"] if p >= 0.75 else (COLOR["PARTIAL"] if p >= 0.4 else COLOR["MISSING"])
-    add(f'<text x="{x+12}" y="{y+24}" fill="#e6edf3" font-size="13" font-weight="bold">{esc(title)}</text>')
-    add(f'<text x="{x+12}" y="{y+42}" fill="#6e7681" font-size="10">{esc(subtitle)}</text>')
-    add(f'<text x="{x+cw-12}" y="{y+24}" fill="{pcol}" font-size="16" font-weight="bold" '
+    add(f'<text x="{x+12}" y="{y+22}" fill="#e6edf3" font-size="13" font-weight="bold">{esc(title)}</text>')
+    add(f'<text x="{x+12}" y="{y+39}" fill="#6e7681" font-size="10">{esc(subtitle)}</text>')
+    add(f'<text x="{x+cw-12}" y="{y+22}" fill="{stat_color(p)}" font-size="16" font-weight="bold" '
         f'text-anchor="end">{p*100:.0f}%</text>')
+    # stacked status bar for the whole stage
+    add(stackbar(x+12, y+46, cw-24, 8, fams))
 
-    # Family tiles packed into rows
-    tx, ty = x+12, y+54
+    # family tiles packed into rows, each with a 3px exactness bar
+    tx, ty = x+12, y+62
     tw_max = cw-24
     total_w = sum(w for _, w, _ in fams)
     scale = tw_max / max(total_w, 1)
-    th = 30
-    tgap = 4
+    th, tgap = 32, 4
     curx, cury = tx, ty
     for name, w, st in fams:
-        fw = max(36, w*scale - tgap)
+        fw = max(40, w*scale - tgap)
         if curx + fw > tx + tw_max:
             curx = tx
             cury += th + tgap
         add(f'<rect x="{curx:.1f}" y="{cury}" width="{fw:.1f}" height="{th}" '
             f'fill="url(#grid-{st.lower().replace("+", "p")})" stroke="{COLOR[st]}" rx="2"/>')
-        label = name if fw > 90 else (name[:10] + "…" if fw > 46 else "")
+        label = name if fw > 92 else (name[:11] + "…" if fw > 50 else "")
         if label:
-            add(f'<text x="{curx+5:.1f}" y="{cury+19}" fill="#ffffff" font-size="9" '
+            add(f'<text x="{curx+5:.1f}" y="{cury+16}" fill="#ffffff" font-size="9" '
                 f'font-weight="bold">{esc(label)}</text>')
+        # per-family progress bar at the bottom of every tile
+        add(bar(curx+5, cury+th-8, fw-10, 4, EXACTNESS[st],
+                COLOR[st], bg="#0d1117", rx=1))
         curx += fw + tgap
 
-# Sweep progression section
-by = sweep_top
-add(f'<text x="{gx}" y="{by}" fill="#e6edf3" font-size="17" font-weight="bold">'
-    'CAVLC P-slice byte-exact sweep — progress by merged PR</text>')
-bar_x, bar_w = gx+240, W-64-240-120
-for i, (label, val, color) in enumerate(SWEEPS):
-    y = by + 24 + i*sweep_row_h
-    add(f'<text x="{gx+8}" y="{y+11}" fill="#8b949e" font-size="12">{esc(label)}</text>')
-    add(f'<rect x="{bar_x}" y="{y}" width="{bar_w}" height="13" fill="#21262d" rx="3"/>')
-    add(f'<rect x="{bar_x}" y="{y}" width="{bar_w*val/1360:.1f}" height="13" fill="{color}" rx="3"/>')
-    add(f'<text x="{bar_x+bar_w+10}" y="{y+11}" fill="#e6edf3" font-size="12">{val}/1360</text>')
+# --- Per-family parity detail (every family, grouped by stage) --------------
+add(f'<text x="{gx}" y="{fam_top-10}" fill="#e6edf3" font-size="17" font-weight="bold">'
+    'Function-family parity detail — every family has a byte-exact progress bar</text>')
+for c, stage_list in enumerate(fam_cols):
+    cx = gx + c * (fam_col_w + gap)
+    cy = fam_top
+    for title, subtitle, fams in stage_list:
+        add(f'<text x="{cx}" y="{cy+12}" fill="#58a6ff" font-size="12" font-weight="bold">{esc(title)}</text>')
+        cy += 20
+        for name, w, st in fams:
+            add(f'<text x="{cx}" y="{cy+11}" fill="#c9d1d9" font-size="10">{esc(name)}</text>')
+            add(f'<text x="{cx+int(fam_col_w*0.52):d}" y="{cy+11}" fill="{COLOR[st]}" font-size="9">{st}</text>')
+            add(bar(cx + int(fam_col_w*0.60), cy+3, int(fam_col_w*0.40), 9,
+                    EXACTNESS[st], COLOR[st], rx=2))
+            cy += 15
+        cy += 6
 
-# CABAC sweep progression (parallel section)
-cy = cabac_top
-add(f'<text x="{gx}" y="{cy}" fill="#e6edf3" font-size="17" font-weight="bold">'
-    'CABAC P-slice byte-exact sweep — progress by merged PR</text>')
-for i, (label, val, color) in enumerate(CABAC_SWEEPS):
-    y = cy + 24 + i*sweep_row_h
-    add(f'<text x="{gx+8}" y="{y+11}" fill="#8b949e" font-size="12">{esc(label)}</text>')
-    add(f'<rect x="{bar_x}" y="{y}" width="{bar_w}" height="13" fill="#21262d" rx="3"/>')
-    add(f'<rect x="{bar_x}" y="{y}" width="{bar_w*val/1360:.1f}" height="13" fill="{color}" rx="3"/>')
-    add(f'<text x="{bar_x+bar_w+10}" y="{y+11}" fill="#e6edf3" font-size="12">{val}/1360</text>')
+# --- Byte-exact verification suites (real case counts) ----------------------
+add(f'<text x="{gx}" y="{suite_top-10}" fill="#e6edf3" font-size="17" font-weight="bold">'
+    'Byte-exact verification suites — pass bars with real case counts</text>')
+for c, suite_list in enumerate(suite_cols):
+    cx = gx + c * (suite_col_w + gap)
+    cy = suite_top
+    for group, rows_ in suite_list:
+        add(f'<text x="{cx}" y="{cy+12}" fill="#58a6ff" font-size="12" font-weight="bold">{esc(group)}</text>')
+        cy += 20
+        for name, exact, total in rows_:
+            add(f'<text x="{cx}" y="{cy+11}" fill="#c9d1d9" font-size="10">{esc(name)}</text>')
+            frac = 1.0 if total == 0 else exact / total
+            col = COLOR["EXACT"] if frac >= 0.999 else (COLOR["PARTIAL"] if frac > 0 else COLOR["MISSING"])
+            lbl = "pass" if total == 0 else f"{exact}/{total}"
+            add(bar(cx + int(suite_col_w*0.66), cy+3, int(suite_col_w*0.24), 9, frac, col, rx=2))
+            add(f'<text x="{cx+suite_col_w-2}" y="{cy+11}" fill="{col}" font-size="9" '
+                f'text-anchor="end">{lbl}</text>')
+            cy += 15
+        cy += 8
 
-# Legend
-ly, lx = H-40, 32
+# --- Open byte-exact targets -------------------------------------------------
+add(f'<text x="{gx}" y="{ot_top-10}" fill="#e6edf3" font-size="17" font-weight="bold">'
+    'Open byte-exact targets — progress on what is still incomplete</text>')
+for i, (name, exact, total, col) in enumerate(OPEN_TARGETS):
+    c = 0 if i < ot_rows_per_col else 1
+    r = i if i < ot_rows_per_col else i - ot_rows_per_col
+    cx = gx + c * (ot_col_w + gap)
+    cy = ot_top + 16 + r * 19
+    add(f'<text x="{cx}" y="{cy+11}" fill="#c9d1d9" font-size="10">{esc(name)}</text>')
+    frac = 0.0 if total == 0 else exact / total
+    add(bar(cx + int(ot_col_w*0.62), cy+3, int(ot_col_w*0.24), 10, frac, col, rx=2))
+    add(f'<text x="{cx+ot_col_w-2}" y="{cy+11}" fill="{col}" font-size="9" text-anchor="end">'
+        f'{exact}/{total}</text>')
+
+# --- Sweep progression sections (side by side) ------------------------------
+add(f'<text x="{gx}" y="{sweep_top}" fill="#e6edf3" font-size="17" font-weight="bold">'
+    'CAVLC P-slice byte-exact sweep — by merged PR</text>')
+add(f'<text x="{gx+ot_col_w+gap}" y="{sweep_top}" fill="#e6edf3" font-size="17" font-weight="bold">'
+    'CABAC P-slice byte-exact sweep — by merged PR</text>')
+for c, (sweeps, bx0) in enumerate(((SWEEPS, gx), (CABAC_SWEEPS, gx+ot_col_w+gap))):
+    bar_x = bx0 + 96
+    bar_w = sweep_col_w - 96 - 76
+    for i, (label, val, color) in enumerate(sweeps):
+        y = sweep_top + 16 + i*sweep_row_h
+        add(f'<text x="{bx0+8}" y="{y+11}" fill="#8b949e" font-size="11">{esc(label)}</text>')
+        add(bar(bar_x, y, bar_w, 11, val/1360, color, rx=2))
+        add(f'<text x="{bar_x+bar_w+8}" y="{y+11}" fill="#e6edf3" font-size="11">{val}/1360</text>')
+
+# --- Legend ------------------------------------------------------------------
+ly = H - 28
+lx = M
 add(f'<text x="{lx}" y="{ly}" fill="#8b949e" font-size="12">LEGEND:</text>')
 lx += 80
 for st in ["EXACT", "PARTIAL", "C++", "MISSING", "N/A"]:
@@ -372,7 +611,9 @@ for st in ["EXACT", "PARTIAL", "C++", "MISSING", "N/A"]:
         f'stroke="{COLOR[st]}" rx="2"/>')
     add(f'<text x="{lx+20}" y="{ly}" fill="#c9d1d9" font-size="12">{st}</text>')
     lx += 130
-add(f'<text x="{W-32}" y="{ly}" fill="#6e7681" font-size="11" text-anchor="end">'
+add(f'<text x="{lx}" y="{ly}" fill="#8b949e" font-size="11">'
+    'mini-bar fill = byte-exact fraction (EXACT/C++ 100%, PARTIAL 50%, MISSING 0%)</text>')
+add(f'<text x="{W-M}" y="{ly}" fill="#6e7681" font-size="11" text-anchor="end">'
     'regenerate: python docs/generate_parity_dashboard.py</text>')
 
 add('</svg>')
@@ -380,3 +621,5 @@ add('</svg>')
 dest = Path(__file__).with_name("parity-dashboard.svg")
 dest.write_text("\n".join(out), encoding="utf-8")
 print(f"wrote {dest}  ({len(out)} svg elements, {dest.stat().st_size} bytes)")
+print(f"layout: H={H}  stages={len(STAGES)}  families={sum(len(f) for _,_,f in STAGES)}  "
+      f"suite groups={len(SUITES)}  open targets={len(OPEN_TARGETS)}")
