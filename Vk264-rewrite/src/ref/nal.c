@@ -63,10 +63,17 @@ void vk_sps_init(vk_sps_t *s, int id, const vk_param_t *p)
         /* fps is the reciprocal of the timebase (default 1/60 -> 60 fps). */
         int fps = (p->i_fps_num ? p->i_fps_den/p->i_fps_num : 30);
         int mbps = ((p->i_width+15)/16) * ((p->i_height+15)/16) * fps;
-        /* level_idc, max_mbps, max_frame_size_in_MBs, max_mv_range */
+        /* Full x264 level table: {level_idc, max_mbps, max_frame_size_in_MBs,
+         * max_mv_range} — mirrors references/x264-master/common/tables.c.
+         * The previous truncated table fell through to level 52 for anything
+         * above 640x480, causing SPS mismatches at larger resolutions. */
         static const int levels[][4] = {
             {10,1485,99,64}, {9,1485,99,128}, {11,3000,396,128}, {12,6000,396,128},
-            {13,11880,396,128}, {20,11880,396,128}, {21,19800,792,256}, {22,20250,1620,256}
+            {13,11880,396,128}, {20,11880,396,128}, {21,19800,792,256}, {22,20250,1620,256},
+            {30,40500,1620,256}, {31,108000,3600,512}, {32,216000,5120,512},
+            {40,245760,8192,512}, {41,245760,8192,512}, {42,522240,8704,512},
+            {50,589824,22080,512}, {51,983040,36864,512}, {52,2073600,36864,512},
+            {60,4177920,139264,8192}, {61,8355840,139264,8192}, {62,16711680,139264,8192}
         };
         int fs = ((p->i_width+15)/16)*((p->i_height+15)/16);
         s->i_level_idc = 52;
