@@ -980,3 +980,16 @@ proper reconstructed P-frame; its ME therefore finds MV (62,0), while the
 oracle's ME sees no motion and chooses intra. Frame 7 parity requires real
 B-frame MC (direct-mode MV prediction) and correct reference management --
 not just header fields. This is the concrete blocker.
+
+### Frame 7 diagnosis corrected (this turn)
+Checked the source clip: frames 0-5 are byte-identical (MD5 af667489...),
+frame 6 differs slightly, and frame 7 is a scene change (luma 57-59 vs 16).
+No horizontal shift of frame 5 matches frame 7 (best mean abs error 33.6 at
+shift 20). So the earlier "stale reference" theory was wrong: the all-skip
+chain is fine for frames 0-5.
+
+Frame 7 is a P-slice whose 16 MBs are mostly intra (x264: I_8x8/I_16x16/I_4x4
+with nonzero cbp, plus one P_L0 with MV(62,0)). Matching it requires x264's
+subme=1 RD mode decision across I16/I8/I4 inside a P-slice, using the I4x4 and
+I8x8 emitters already implemented, plus the full CAVLC residual path. That is
+the concrete next work item; the all-skip B/P writers are not the blocker.
