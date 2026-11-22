@@ -99,6 +99,17 @@ NAL 0 (SPS) differs at byte 1 for every preset above ultrafast: x264 emits
 The oracle needs the missing SPS/PPS/param fields plus the corresponding
 analysis features before these presets can match.
 
+### H6 — non-determinism in chained P-slices (OBSERVED, unfixed)
+Running the oracle twice on the same forza crop produces different streams:
+three runs gave SHA-256 prefixes `B08230014A75`, `6E65C090EB8F`,
+`246F97E70F4D`; x264 on the same input is stable (`F0FE352291C5`). The first
+differing NAL is 6 (frame 4), the same frame where x264 parity diverges.
+Flat content is deterministic. This predates the temporal-predictor change
+(verified with worktree at 96ff318), so it is a separate pre-existing
+uninitialized read or out-of-bounds access in the chained-P path.
+Test: MSVC `/fsanitize=address` build (ASAN runtime DLL unavailable here), or
+instrument the frame-4 MB loop for reads of uninitialised `mvr`/nnz cache.
+
 ## What is proven
 
 - IDR CAVLC and CABAC paths: byte-exact, including 8-frame clips on warzone.
