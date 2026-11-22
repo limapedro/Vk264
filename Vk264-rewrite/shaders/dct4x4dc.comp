@@ -1,0 +1,33 @@
+#version 450
+// 16-point Hadamard transform of I16 DC coefficients.
+// Translation of x264 common/dct.c:47 dct4x4dc.
+layout(local_size_x = 1) in;
+
+struct Block { int d[16]; };
+layout(std430, binding = 0) buffer Buf { Block blocks[]; };
+
+void main()
+{
+    uint b = gl_GlobalInvocationID.x;
+    int tmp[16];
+    for (int i = 0; i < 4; ++i) {
+        int s01 = blocks[b].d[i*4+0] + blocks[b].d[i*4+1];
+        int dd01 = blocks[b].d[i*4+0] - blocks[b].d[i*4+1];
+        int s23 = blocks[b].d[i*4+2] + blocks[b].d[i*4+3];
+        int dd23 = blocks[b].d[i*4+2] - blocks[b].d[i*4+3];
+        tmp[0*4+i] = s01 + s23;
+        tmp[1*4+i] = s01 - s23;
+        tmp[2*4+i] = dd01 - dd23;
+        tmp[3*4+i] = dd01 + dd23;
+    }
+    for (int i = 0; i < 4; ++i) {
+        int s01 = tmp[i*4+0] + tmp[i*4+1];
+        int dd01 = tmp[i*4+0] - tmp[i*4+1];
+        int s23 = tmp[i*4+2] + tmp[i*4+3];
+        int dd23 = tmp[i*4+2] - tmp[i*4+3];
+        blocks[b].d[i*4+0] = (s01 + s23 + 1) >> 1;
+        blocks[b].d[i*4+1] = (s01 - s23 + 1) >> 1;
+        blocks[b].d[i*4+2] = (dd01 - dd23 + 1) >> 1;
+        blocks[b].d[i*4+3] = (dd01 + dd23 + 1) >> 1;
+    }
+}
