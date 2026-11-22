@@ -59,24 +59,33 @@ int vk_param_apply_preset(vk_param_t *p, const char *preset)
     p->i_bframe = 3;
     p->b_transform_8x8 = 1;
     p->b_cabac = 1;
+    p->i_subme = 7;  /* x264 medium default */
+    /* x264 default analyse.i_weighted_pred = SMART(2) => PPS 1/2; ultrafast
+     * overrides to NONE(0). */
+    p->b_weighted_pred = 1; p->i_weighted_bipred = 2;
     if (preset_eq(preset, "ultrafast")) {
         p->i_frame_reference = 1; p->i_bframe = 0;
         p->b_transform_8x8 = 0; p->b_cabac = 0;
-    } else if (preset_eq(preset, "superfast") ||
-               preset_eq(preset, "veryfast")) {
-        p->i_frame_reference = 1; p->i_bframe = 0;
-    } else if (preset_eq(preset, "faster") || preset_eq(preset, "fast")) {
-        p->i_frame_reference = 2; p->i_bframe = 0;
+        p->i_subme = 0;
+        p->b_weighted_pred = 0; p->i_weighted_bipred = 0;
+    } else if (preset_eq(preset, "superfast")) {
+        p->i_frame_reference = 1; p->i_subme = 1;
+    } else if (preset_eq(preset, "veryfast")) {
+        p->i_frame_reference = 1; p->i_subme = 2;
+    } else if (preset_eq(preset, "faster")) {
+        p->i_frame_reference = 2; p->i_subme = 4;
+    } else if (preset_eq(preset, "fast")) {
+        p->i_frame_reference = 2; p->i_subme = 6;
     } else if (preset_eq(preset, "medium")) {
         /* x264 defaults already set above */
     } else if (preset_eq(preset, "slow")) {
-        p->i_frame_reference = 5;
+        p->i_frame_reference = 5; p->i_subme = 8;
     } else if (preset_eq(preset, "slower")) {
-        p->i_frame_reference = 8;
+        p->i_frame_reference = 8; p->i_subme = 9;
     } else if (preset_eq(preset, "veryslow")) {
-        p->i_frame_reference = 16; p->i_bframe = 8;
+        p->i_frame_reference = 16; p->i_bframe = 8; p->i_subme = 10;
     } else if (preset_eq(preset, "placebo")) {
-        p->i_frame_reference = 16; p->i_bframe = 16;
+        p->i_frame_reference = 16; p->i_bframe = 16; p->i_subme = 11;
     } else {
         return -1;
     }
@@ -139,9 +148,15 @@ void vk_sps_init(vk_sps_t *s, int id, const vk_param_t *p)
         s->i_level_idc = p->i_level_idc;
     }
 
-    s->vui.i_num_reorder_frames = p->i_bframe ? 1 : 0;
-    s->vui.i_max_dec_frame_buffering =
-        s->i_num_ref_frames = p->i_frame_reference > 1 ? p->i_frame_reference : 1;
+    /* x264 set.c: i_bframe_pyramid defaults to NORMAL(1), so num_reorder=2
+     * whenever B-frames are enabled, and num_ref_frames is at least 4. */
+    s->vui.i_num_reorder_frames = p->i_bframe ? 2 : 0;
+    int refs = p->i_frame_reference > 1 ? p->i_frame_reference : 1;
+    int minrefs = 1 + s->vui.i_num_reorder_frames;
+    /* x264 forces i_bframe_pyramid=0 when there are no B-frames. */
+    if (p->i_bframe > 0 && minrefs < 4) minrefs = 4;
+    if (refs < minrefs) refs = minrefs;
+    s->vui.i_max_dec_frame_buffering = s->i_num_ref_frames = refs;
     if (p->i_keyint_max == 1) {
         s->i_num_ref_frames = 0;
         s->vui.i_max_dec_frame_buffering = 0;
@@ -153,7 +168,8 @@ void vk_sps_init(vk_sps_t *s, int id, const vk_param_t *p)
 
     s->i_poc_type = p->i_bframe || p->b_interlaced ? 0 : 2;
     if (s->i_poc_type == 0) {
-        int max_delta_poc = (p->i_bframe + 2) * 2;
+        /* x264 set.c: (bframe+2) * (!!bframe_pyramid+1) * 2; pyramid=1 */
+        int max_delta_poc = (p->i_bframe + 2) * 2 * 2;
         s->i_log2_max_poc_lsb = 4;
         while ((1 << s->i_log2_max_poc_lsb) <= max_delta_poc * 2) ++s->i_log2_max_poc_lsb;
     }
@@ -320,8 +336,8 @@ void vk_pps_init(vk_pps_t *p, int id, const vk_param_t *param, const vk_sps_t *s
     p->i_num_slice_groups = 1;
     p->i_num_ref_idx_l0_default_active = param->i_frame_reference;
     p->i_num_ref_idx_l1_default_active = 1;
-    p->b_weighted_pred = 0;
-    p->b_weighted_bipred = 0;
+    p->b_weighted_pred = param->b_weighted_pred;
+    p->b_weighted_bipred = param->i_weighted_bipred;
     p->i_pic_init_qp = param->i_qp_constant;
     p->i_pic_init_qs = 26 + QP_BD_OFFSET;
     p->i_chroma_qp_index_offset = param->i_chroma_qp_offset;
@@ -350,7 +366,14 @@ void vk_pps_write(vk_bs_t *s, const vk_sps_t *sps, const vk_pps_t *p)
     vk_bs_write1(s, (uint32_t)p->b_deblocking_filter_control);
     vk_bs_write1(s, (uint32_t)p->b_constrained_intra_pred);
     vk_bs_write1(s, (uint32_t)p->b_redundant_pic_cnt);
-    /* No CQM and (for the baseline milestone) no 8x8dct: x264 omits the whole
-     * transform_8x8_mode / scaling_list block. */
+    /* x264 set.c: writes transform_8x8_mode followed by b_scaling_list when
+     * either is set. CQM is always FLAT here, so b_scaling_list = 0. */
+    if (p->b_transform_8x8_mode) {
+        vk_bs_write1(s, 1);
+        vk_bs_write1(s, 0);   /* b_scaling_list = 0 (CQM FLAT) */
+        /* x264 writes second_chroma_qp_index_offset in this block too. */
+        vk_bs_write_se(s, p->i_chroma_qp_index_offset);
+    }
+    (void)sps;
     vk_bs_rbsp_trailing(s);
 }

@@ -341,7 +341,10 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
         for (int yy = 0; yy < 4; ++yy)
             for (int xx = 0; xx < 4; ++xx) {
                 sb[yy*4+xx] = cy[(y+by+yy)*w + (x+bx+xx)];
-                pb[yy*4+xx] = ry[(y+by+yy+my)*rs + (x+bx+xx+mx)];
+                /* The MC prediction (fullpel or subpel) was already written
+                 * into the recon plane; read it from there so the residual
+                 * matches the actual reconstruction for qpel MVs. */
+                pb[yy*4+xx] = rcony[(by+yy)*rdy + bx+xx];
             }
         int d[16];
         vk_ref_dct4x4(d, sb, pb);
@@ -899,8 +902,11 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
     uint8_t (*cnnz_c)[2][4] = calloc((size_t)mw*mh, 8);
     uint8_t *dcnz_c = calloc((size_t)mw*mh, 1);
     int intra_count = 0;  /* x264 h->stat.frame.i_mb_count[I_*] so far */
-    (void)subme;  /* subpel refinement is available via vk_me_refine_qpel but
-                   * wiring it in requires a qpel-MV refactor of the MC path. */
+    vk_hpel_planes_t hpel; vk_hpel_planes_t *hpelp = NULL;
+    if (subme > 0) {
+        vk_hpel_planes_init(&hpel, refp, rs, w, h, LPAD);
+        hpelp = &hpel;
+    }
     /* reconstructed current-frame planes (with border) for intra prediction */
     int pcrs = rs/2;
     size_t rys = (size_t)rs*(h+2*LPAD), rcs = (size_t)pcrs*(h/2+2*CPAD);
@@ -960,6 +966,7 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
             }
 
             int mvpx = 0, mvpy = 0, mvx = 0, mvy = 0, inter_cost = 0;
+            int qmvx = 0, qmvy = 0;  /* refined MV in quarter-pel units */
             if (!do_skip) {
                 mvp16_avail(lx, ly, tx, ty, cx, cy,
                             have_l ? mv_ref[idx-1] : -2,
@@ -1032,12 +1039,18 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                             mvpx/4, mvpy/4, 16,
                             lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
                             cand, nc, &mvx, &mvy, h);
-                mvr[idx][0] = mvx*4; mvr[idx][1] = mvy*4;
-                if (cur_mv) { cur_mv[idx][0] = mvr[idx][0]; cur_mv[idx][1] = mvr[idx][1]; }
+                qmvx = mvx*4; qmvy = mvy*4;
+                if (hpelp) {
+                    vk_me_refine_qpel(cur, w, refp, rs, LPAD, hpelp,
+                                      mx*16, my*16, &qmvx, &qmvy, &inter_cost,
+                                      mvpx, mvpy,
+                                      lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)]);
+                }
+                mvr[idx][0] = qmvx; mvr[idx][1] = qmvy;
+                if (cur_mv) { cur_mv[idx][0] = qmvx; cur_mv[idx][1] = qmvy; }
                 /* x264 promotes P16 to P_SKIP when cbp==0 and MV==pskip_mv. */
-                int qx = mvx*4, qy = mvy*4;
-                if (qx == psk_x && qy == psk_y &&
-                    probe(cur, refp, w, h, rs, mx*16, my*16, qx, qy, qp))
+                if (qmvx == psk_x && qmvy == psk_y &&
+                    probe(cur, refp, w, h, rs, mx*16, my*16, qmvx, qmvy, qp))
                     do_skip = 1;
             }
 
@@ -1094,7 +1107,7 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
             /* CAVLC requires mb_skip_run before every coded MB, including 0. */
             vk_bs_write_ue(bs, (uint32_t)skip_run);
             skip_run = 0;
-            mv[idx][0] = mvx*4; mv[idx][1] = mvy*4;
+            mv[idx][0] = qmvx; mv[idx][1] = qmvy;
 
             if (use_intra) {
                 /* x264 zeroes the decoded-MV cache for intra MBs (ref=-1),
@@ -1148,10 +1161,10 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                         lc_i, tc_i, rconu_i, rconv_i, crs, crs, 1, 1, cnnz_c[idx]);
                 continue;
             }
-            mv[idx][0] = mvx*4; mv[idx][1] = mvy*4;
+            mv[idx][0] = qmvx; mv[idx][1] = qmvy;
             vk_bs_write_ue(bs, 0);                          /* P_L0_16x16 */
-            vk_bs_write_se(bs, mvx*4 - mvpx);               /* mvd_x */
-            vk_bs_write_se(bs, mvy*4 - mvpy);               /* mvd_y */
+            vk_bs_write_se(bs, qmvx - mvpx);                /* mvd_x */
+            vk_bs_write_se(bs, qmvy - mvpy);                /* mvd_y */
 
             uint8_t ll[4], tl[4], lc[2][2], tc[2][2];
             for (int i = 0; i < 4; ++i) {
@@ -1164,12 +1177,18 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                     tc[p][i] = have_t ? cnnz_c[idx-mw][p][2+i] : 0x80;
                 }
             /* MC prediction first, then code_residual adds the residual */
-            int cmvx = mvx*4, cmvy = mvy*4;
+            int cmvx = qmvx, cmvy = qmvy;
             clip_mv_mc(mx, my, mw, mh, &cmvx, &cmvy);
-            int sx = cmvx/4, sy = cmvy/4;
-            for (int yy = 0; yy < 16; ++yy)
-                memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
-                       refp + (my*16+yy+sy+LPAD)*rs + LPAD + mx*16+sx, 16);
+            uint8_t *rcon_l = ry + (my*16+LPAD)*rs + LPAD + mx*16;
+            if (hpelp)
+                vk_mc_luma_qpel(rcon_l, rs, refp, rs, hpelp,
+                                mx*16, my*16, cmvx, cmvy);
+            else {
+                int sx = cmvx/4, sy = cmvy/4;
+                for (int yy = 0; yy < 16; ++yy)
+                    memcpy(rcon_l + yy*rs,
+                           refp + (my*16+yy+sy+LPAD)*rs + LPAD + mx*16+sx, 16);
+            }
             mc_chroma8(ru + (my*8+CPAD)*crs + CPAD + mx*8,
                        rv + (my*8+CPAD)*crs + CPAD + mx*8, crs,
                        refp + rys, refp + rys + rcs, crs,
@@ -1181,7 +1200,7 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
             int cbp_res = code_residual(bs, cur, refp, w, h, rs, mx*16, my*16,
                           cmvx, cmvy, qp, on, oc, &od, ll, tl, lc, tc,
                           rcony, rconu, rconv, rs, crs, crs);
-            if (cbp_res == 0 && mvx*4 == psk_x && mvy*4 == psk_y) {
+            if (cbp_res == 0 && qmvx == psk_x && qmvy == psk_y) {
                 /* Roll back the P16 header and residual; this MB is a skip.
                  * The MC prediction already written to the recon planes is
                  * exactly the skip reconstruction (zero residual added). */
@@ -1210,6 +1229,7 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                    rv + (y+CPAD)*crs + CPAD, w/2);
         }
     }
+    if (hpelp) vk_hpel_planes_free(hpelp);
     free(dcnz_c); free(cnnz_c); free(nnz_c);
     free(ry); free(ru); free(rv);
     free(is_skip); free(mv); free(mvr); free(mv_ref); free(refp);

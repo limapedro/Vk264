@@ -633,6 +633,36 @@ remaining fields (num_ref_frames-derived bits, VUI) need separate work.
 Also added `subpel.c/.h`: `vk_hpel_planes_init()` + `vk_me_refine_qpel()`,
 a port of x264 me.c refine_subpel() subme=1 path (halfpel + qpel diamond).
 CTest `rewrite_subpel_me` verifies convergence (20/20 rewrite CTests now).
-It is NOT wired into the encoder: doing so needs a qpel-MV refactor of the
-MC/residual path (the oracle currently keeps MVs as fullpel locally). Full
-byte-exact superfast output still requires that refactor + I4x4 + deblock.
+It is now WIRED into the encoder (see next section). Full byte-exact superfast
+output still requires I4x4 + 8x8dct + deblock.
+
+## qpel-MV refactor + SPS/PPS parity for superfast (this turn)
+
+Wired subpel ME into the encoder:
+- `vk_hpel_planes_init()` once per P-frame; `vk_me_refine_qpel()` after the
+  fullpel `vk_me16_dia`, producing a qpel MV `qmvx/qmvy`.
+- All MV consumers switched from fullpel `mvx*4` to `qmvx`: mvr/cur_mv caches,
+  P_SKIP promotion probe, bitstream MVD, P_SKIP promotion check.
+- Added `vk_mc_luma_qpel()` for subpel luma reconstruction; `code_residual()`
+  now reads its luma prediction from the recon plane (which holds the MC
+  result) instead of re-reading the reference at fullpel.
+- `subme` comes from the preset (`i_subme` in vk_param_t); subme=0 (ultrafast)
+  is byte-identical to before.
+
+SPS/PPS field fixes (x264 set.c parity):
+- default b_pyramid=1: num_reorder=2, num_ref_frames>=4; log2_max_poc_lsb
+  multiplied by the pyramid factor; bframe defaults to 3 for all presets
+  except ultrafast (0) / veryslow (8) / placebo (16).
+- PPS: weighted_pred=1, weighted_bipred_idc=2 for non-ultrafast; write
+  transform_8x8_mode + b_scaling_list(0) + second chroma_qp offset for High.
+
+Verified:
+```
+SPS + PPS byte-exact vs x264 for: ultrafast, superfast, veryfast, faster
+  (fast/medium/slow PPS still differs; slower/veryslow/placebo SPS still differs)
+ctest rewrite 20/20, main 65/65; 56/56 MP4 unchanged
+superfast oracle encodes 8f clip without crash; NAL0/NAL1 exact, NAL2 (IDR)
+differs — needs I4x4/8x8dct in the I-slice path.
+```
+Next: port I4x4 (x264_mb_encode_i4x4 + mode decision) and 8x8dct to make the
+IDR slice byte-exact, then verify superfast P-slices end-to-end.

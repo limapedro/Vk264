@@ -76,6 +76,31 @@ static int sad_subpel(const uint8_t *fenc, const uint8_t *planes[4],
     return sad;
 }
 
+void vk_mc_luma_qpel(uint8_t *dst, int ds,
+                     const uint8_t *ref, int rs,
+                     const vk_hpel_planes_t *hpel,
+                     int x, int y, int mx, int my)
+{
+    const uint8_t *planes[4] = { ref, hpel->h, hpel->v, hpel->c };
+    const uint8_t *base[4] = {
+        planes[0] + y*rs + x, planes[1] + y*rs + x,
+        planes[2] + y*rs + x, planes[3] + y*rs + x
+    };
+    int qi = ((my & 3) << 2) + (mx & 3);
+    int ox = (mx >> 2), oy = (my >> 2);
+    const uint8_t *s1 = base[hpel_ref0[qi]] + oy*rs + ox + ((my & 3) == 3) * rs;
+    int need_avg = (qi & 5) != 0;
+    const uint8_t *s2 = need_avg
+        ? base[hpel_ref1[qi]] + oy*rs + ox + ((mx & 3) == 3)
+        : NULL;
+    for (int yy = 0; yy < 16; ++yy)
+        for (int xx = 0; xx < 16; ++xx) {
+            int v = s1[yy*rs+xx];
+            if (need_avg) v = (v + s2[yy*rs+xx] + 1) >> 1;
+            dst[yy*ds+xx] = (uint8_t)v;
+        }
+}
+
 static int mvcost(int mvd, int lambda)
 {
     int i = mvd < 0 ? -mvd : mvd;

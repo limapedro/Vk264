@@ -212,7 +212,7 @@ int main(int argc, char **argv)
             } else {
                 vk_encode_p_frame_recon_mv(&bs, &sps, &pps, frames, ref,
                                            w, h, qp_p, frame_num, recon,
-                                           refmv, curmv, refintra, curintra, 0);
+                                           refmv, curmv, refintra, curintra, p.i_subme);
                 vk_nal_write(fo, 0x41, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 2);
             }
         }

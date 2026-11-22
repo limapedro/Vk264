@@ -22,6 +22,13 @@ void vk_hpel_planes_free(vk_hpel_planes_t *planes);
  * fenc is the current frame luma (stride cs); ref/hpel describe the padded
  * reference. x,y is the MB position. mvx/mvy are in/out quarter-pel MVs;
  * cost is in/out SAD + mv_cost. mvpx/mvpy are the predictor (qpel). */
+/* Write a 16x16 motion-compensated luma block at quarter-pel MV (mx,my)
+ * from the padded reference + halfpel planes. dst has stride `ds`. */
+void vk_mc_luma_qpel(uint8_t *dst, int ds,
+                     const uint8_t *ref, int rs,
+                     const vk_hpel_planes_t *hpel,
+                     int x, int y, int mx, int my);
+
 void vk_me_refine_qpel(const uint8_t *fenc, int cs,
                        const uint8_t *ref, int rs, int pad,
                        const vk_hpel_planes_t *hpel,

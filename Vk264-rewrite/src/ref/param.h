@@ -19,6 +19,9 @@ typedef struct {
     int i_chroma_qp_offset;
     int i_qp_constant;
     int i_mv_range;         /* derived from level when 0 */
+    int i_subme;            /* x264 analyse.i_subpel_refine (0=fullpel only) */
+    int b_weighted_pred;    /* PPS weighted_pred / weighted_bipred_idc */
+    int i_weighted_bipred;
     int b_vui;
     int i_sar_width, i_sar_height;
     int i_vidformat, b_fullrange, i_colorprim, i_transfer, i_colmatrix;
