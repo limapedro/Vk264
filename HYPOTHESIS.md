@@ -964,3 +964,19 @@ fields and 16 mixed intra/inter MBs with MV (62,0) and nonzero cbp — full
 ME/MC + mode-decision parity is required, not just header fields.
 
 Gates: CTest 23/23 + 65/65, CAVLC P sweep 1360/1360, MP4 56/56.
+
+### Frame 7 root cause diagnosed (this turn)
+Instrumented the oracle P encoder (DBG_P7) and compared with x264 (bframeinfo):
+`
+x264 frame 7: MB0 B_SKIP, MB1 P_L0 MV(62,0), MB2-15 mixed I8/I16/I4 cbp>0
+oracle frame 7: MB0 P_L0 MV(0,0), MB1-15 all intra
+`
+Root cause: the all-skip B/P writers copy 
+ef to 
+econ without doing
+motion compensation, so by frame 7 the reference frame is several frames
+stale (no actual content from frames 5/6). x264's frame 7 references the
+proper reconstructed P-frame; its ME therefore finds MV (62,0), while the
+oracle's ME sees no motion and chooses intra. Frame 7 parity requires real
+B-frame MC (direct-mode MV prediction) and correct reference management --
+not just header fields. This is the concrete blocker.
