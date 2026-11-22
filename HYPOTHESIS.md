@@ -953,4 +953,14 @@ encode path (ME, MC, DCT/quant, CAVLC residual, mode decision) — out of
 scope for the all-skip writers. This is the concrete next blocker for
 superfast end-to-end parity.
 
-All gates still pass: CTest 23/23 + 65/65, MP4 56/56.
+### Frame 7 routed to full P encoder (this turn)
+Fixed the B-slice test-path condition that mistakenly routed frame 7 (a P
+frame) to the all-skip B writer. Frame 7 now uses the full
+`vk_encode_p_frame_recon_mv`; added an explicit `poc` parameter so the test
+path can pass x264's POC=14 with frame_num=4 (instead of the default 8*fn).
+Header now matches through byte 1; the slice still diverges (264 B vs x264
+200 B) because x264's frame 7 has a 61-bit header with extra ref-list/MMCO
+fields and 16 mixed intra/inter MBs with MV (62,0) and nonzero cbp — full
+ME/MC + mode-decision parity is required, not just header fields.
+
+Gates: CTest 23/23 + 65/65, CAVLC P sweep 1360/1360, MP4 56/56.

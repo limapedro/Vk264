@@ -30,7 +30,7 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                                 uint8_t *recon_out,
                                 const int (*ref_mv)[2], int (*cur_mv)[2],
                                 const uint8_t *ref_intra, uint8_t *cur_intra,
-                                int subme);
+                                int subme, int poc);
 
 /* Decide P_SKIP for one MB: 1 iff the residual at the P_SKIP MV predictor
  * quantises to zero (x264 macroblock_probe_pskip). mvp is in quarter-pel. */

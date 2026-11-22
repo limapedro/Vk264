@@ -244,7 +244,8 @@ int main(int argc, char **argv)
                 vk_nal_write(fo, 0x41, buf,
                              (size_t)((vk_bs_pos(&bs)+7)/8), 2);
                 memcpy(recon, ref, (size_t)w*h*3/2);
-            } else if (getenv("ORACLE_BSLICE_TEST") && (f & 3) != 1) {
+            } else if (getenv("ORACLE_BSLICE_TEST") &&
+                       (f==2 || f==3 || f==4 || f==6)) {
                 /* x264 superfast bframes=3 frame map (frame_num, POC) for
                  * the 8-frame test clip, in coding order. */
                 static const int bfn[8]  = {0,1,2,3,3,3,4,4};
@@ -261,9 +262,12 @@ int main(int argc, char **argv)
                              (size_t)((vk_bs_pos(&bs)+7)/8), 2);
                 memcpy(recon, ref, (size_t)w*h*3/2);
             } else {
+                int pfn = (getenv("ORACLE_BSLICE_TEST") && f==7) ? 4 : frame_num;
+                int ppoc = (getenv("ORACLE_BSLICE_TEST") && f==7) ? 14 : 8*frame_num;
                 vk_encode_p_frame_recon_mv(&bs, &sps, &pps, frames, ref,
-                                           w, h, qp_p, frame_num, recon,
-                                           refmv, curmv, refintra, curintra, p.i_subme);
+                                           w, h, qp_p, pfn, recon,
+                                           refmv, curmv, refintra, curintra,
+                                           p.i_subme, ppoc);
                 vk_nal_write(fo, 0x41, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 2);
             }
         }

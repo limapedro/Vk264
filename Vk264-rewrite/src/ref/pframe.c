@@ -860,7 +860,8 @@ void vk_encode_p_frame_recon(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
                              uint8_t *recon_out)
 {
     vk_encode_p_frame_recon_mv(bs, sps, pps, cur, ref, w, h, qp, frame_num,
-                               recon_out, NULL, NULL, NULL, NULL, 0);
+                               recon_out, NULL, NULL, NULL, NULL, 0,
+                               8 * frame_num);
 }
 
 void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
@@ -869,7 +870,7 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                                 uint8_t *recon_out,
                                 const int (*ref_mv)[2], int (*cur_mv)[2],
                                 const uint8_t *ref_intra, uint8_t *cur_intra,
-                                int subme)
+                                int subme, int poc)
 {
     int mw = w/16, mh = h/16;
     int rs = w + 2*LPAD;
@@ -887,7 +888,7 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
     vk_bs_write_ue(bs, 0);
     vk_bs_write(bs, (unsigned)sps->i_log2_max_frame_num, (uint32_t)frame_num);
     if (sps->i_poc_type == 0)
-        vk_bs_write(bs, 6, (uint32_t)(8 * frame_num));  /* poc_lsb */
+        vk_bs_write(bs, 6, (uint32_t)poc);  /* poc_lsb */
     vk_bs_write1(bs, 0);  /* num_ref_idx_active_override_flag */
     vk_bs_write1(bs, 0);  /* ref_pic_list_modification_flag_l0 */
     /* pred_weight_table: x264 writes denominators + per-ref flags whenever
