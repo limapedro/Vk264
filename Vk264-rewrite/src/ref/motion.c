@@ -93,7 +93,14 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
         int best_dir = 0;
         for (int d = 0; d < 4; ++d) {
             int cx = bmx+dx[d], cy = bmy+dy[d];
-            if (!MV_IN_RANGE(cx, cy)) continue;
+            /* x264's COST_MV_X4_DIR evaluates all four neighbours without a
+             * range test (mc.get_ref clips out-of-frame samples via padding).
+             * The MV-range check happens only AFTER the move, in the
+             * do/while( CHECK_MVRANGE(bmx,bmy) ) condition.  Skipping
+             * out-of-range candidates here (the old behaviour) traps the
+             * search at the starting MV whenever it sits on the range edge,
+             * e.g. frame 7 MB 15 of the 64x64 warzone clip where x=19 is one
+             * past lim_xmax=18 but (19,-8) is a far better match. */
             int c = (sad16(cur, cur_stride, rpad, ref_stride, pad, ph, x, y, cx, cy)
                      + mv_cost((cx-mvpx)*4, lambda) + mv_cost((cy-mvpy)*4, lambda)) << 4;
             c |= dirbits[d];
@@ -103,6 +110,7 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
         bmx -= (int32_t)((uint32_t)bcost << 28) >> 30;
         bmy -= (int32_t)((uint32_t)bcost << 30) >> 30;
         bcost &= ~15;
+        if (!MV_IN_RANGE(bmx, bmy)) break;  /* x264 CHECK_MVRANGE after move */
     }
     *best_x = bmx; *best_y = bmy;
     /* x264's me16x16.cost = SAD + lambda-weighted MVD bits. */
