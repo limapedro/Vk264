@@ -924,14 +924,15 @@ int vk_cabac_encode_p_recon(vk_bs_t *bs, vk_cabac_t *cb,
                             int w, int h, int qp, uint8_t *recon_out)
 {
     return vk_cabac_encode_p_recon_frame(bs, cb, cur, ref, w, h, qp,
-                                         recon_out, 1, NULL, NULL);
+                                         recon_out, 1, NULL, NULL, NULL, NULL);
 }
 
 int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                                   const uint8_t *cur, const uint8_t *ref,
                                   int w, int h, int qp, uint8_t *recon_out,
                                   int frame_idx,
-                                  const int (*ref_mv)[2], int (*cur_mv)[2])
+                                  const int (*ref_mv)[2], int (*cur_mv)[2],
+                                  const uint8_t *ref_intra, uint8_t *cur_intra)
 {
     int mw = w/16, mh = h/16;
     uint8_t *data = bs->p;
@@ -959,6 +960,7 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
     uint8_t (*mvd_c)[16][2] = calloc((size_t)mw*mh, 32);
     int *cbp_c = calloc((size_t)mw*mh, sizeof(int));
     for (int i = 0; i < mw*mh; ++i) cbp_c[i] = 0;
+    int intra_count = 0;  /* x264 h->stat.frame.i_mb_count[I_*] so far */
     /* intra-in-P neighbour caches (mirrors the I-slice path) */
     int *mbcbp = calloc((size_t)mw*mh, sizeof(int));
     uint8_t (*nnzc)[16] = calloc((size_t)mw*mh, 16);
@@ -1065,6 +1067,13 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
 
             /* ---- intra-vs-inter decision (subme=0: SAD + lambda*bits) ---- */
             int do_intra = 0, imode = 2, icmode = 0;
+            /* x264 b_fast_intra (analyse.c:444-457), see pframe.c for detail. */
+            int fast_intra = idx > 4 && idx >= 3*intra_count &&
+                !(have_l && mv_ref[idx-1] == -1) &&
+                !(have_t && mv_ref[idx-mw] == -1) &&
+                !(have_tl && mv_ref[idx-mw-1] == -1) &&
+                !(have_c && mv_ref[idx-mw+1] == -1) &&
+                (ref_intra ? !ref_intra[idx] : 0);
             int i_lambda = vk_lambda(qp);
             uint8_t it[16], il[16], itl;
             if (!fast_skip && inter_cost > 0) {
@@ -1085,6 +1094,8 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 int ibest = 0x7fffffff, bm = 2;
                 for (int k = 0; pi16av[pmidx][k] >= 0; ++k) {
                     int m = pi16av[pmidx][k];
+                    /* x264 fast-intra skips Plane when best(V,H,DC)>inter. */
+                    if (m == 3 && fast_intra && ibest > inter_cost) break;
                     vk_predict16(trial, it, il, itl, m);
                     int sad = 0;
                     for (int yy = 0; yy < 16; ++yy)
@@ -1100,6 +1111,8 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                     do_skip = 0;  /* x264: intra overrides tentative P_SKIP */
                 }
             }
+            if (cur_intra) cur_intra[idx] = (uint8_t)do_intra;
+            if (do_intra) ++intra_count;
 
             /* ---- CABAC: mb_skip_flag ---- */
             /* x264 promotes P_L0/cbp==0/MV==pskip_mv to P_SKIP at encode time

@@ -527,3 +527,38 @@ c12.yuv 64x64 8f: frames 0-6 NALs byte-exact (NAL 6 now 120 bytes both)
 ctest rewrite 18/18, main 65/65 (prior state)
 video MP4: 40/56 unchanged (0 gained, 0 lost) - correctness fix only
 ```
+
+## 04 Analysis — faithful b_fast_intra port: 40/56 -> 54/56 byte-exact
+
+After the ME predictor-clip fix (PR #197), c12.yuv (forza 64x64 8f) diverged
+only at frame 7 (NAL 9 byte 126). `build/cost11.py` showed the mode decision:
+x264 chose inter (inter=2101, i16=2416) while the oracle chose intra via the
+Plane mode (i16=1336). `build/fastintra.py` proved x264's `b_fast_intra` is
+dynamic: 0 at frames 1/4, 1 at frame 7. When set, `mb_analyse_intra` skips the
+expensive Plane mode if best(V,H,DC) > inter_cost
+(`i16x16_thresh=(lut[0]*inter)>>1 = inter` at subme=0).
+
+### Faithful port (this turn)
+Threaded a per-MB collocated intra map (`ref_intra`/`cur_intra`, mw*mh bytes)
+through the encoder APIs and `oracle_video_cli.c`:
+- `pframe.h/.c`: `vk_encode_p_frame_recon_mv` takes ref_intra + cur_intra;
+  implements x264 analyse.c:444-457 exactly (b_early_terminate=true at subme=0,
+  idx>4, no intra neighbour, collocated ref MB not intra, idx>=3*intra_count).
+- `cabac_enc.h/.c`: same for the CABAC P path.
+- `intra_decide()` / CABAC intra loop: skip Plane mode when fast_intra and
+  best(V,H,DC) > inter_cost.
+- CLI: allocates/swaps the maps; IDR frames set all-1; NULL ref_intra means
+  "all intra" (2-frame tests reference an IDR) so fast_intra stays off there.
+
+### Verified
+```
+c12.yuv 64x64 8f: ALL 10 NALs byte-exact (NAL 9 now 189 bytes both)
+ctest rewrite 18/18, main 65/65
+CAVLC P 1360/1360, CABAC P 1360/1360, CAVLC I 72/72
+video MP4 byte-exact 40/56 -> 54/56 (14 streams gained, 0 lost)
+  gained: exp006, 012, 014, 016, 022, 024, 028 (both encoders each)
+remaining: exp008 warzone 640x480 8f CAVLC (NAL 9 byte 12030)
+```
+NOTE: initial heuristic using a ref-MV-zero proxy for collocated-intra was
+rejected (regressed pme test on 2-frame IDR-reference clips); the explicit
+map is what achieves the gain.

@@ -763,7 +763,7 @@ static int intra_decide(const uint8_t *cy, const uint8_t *cu, const uint8_t *cv,
                         const uint8_t *topu, const uint8_t *leftu, uint8_t tlu,
                         const uint8_t *topv, const uint8_t *leftv, uint8_t tlv,
                         int have_l, int have_t, int have_tl,
-                        int qp, int inter_cost,
+                        int qp, int inter_cost, int fast_intra,
                         int *mode, int *cmode, int *cost)
 {
     int lambda = vk_lambda(qp);
@@ -778,6 +778,9 @@ static int intra_decide(const uint8_t *cy, const uint8_t *cu, const uint8_t *cv,
     int midx = (iavail == 7) ? 4 : (iavail & 3);
     for (int k = 0; pi16av[midx][k] >= 0; ++k) {
         int m = pi16av[midx][k];
+        /* x264 fast-intra: i16x16_thresh=(lut[0]*inter)>>1=inter at subme=0;
+         * the Plane mode is skipped when best(V,H,DC) already exceeds it. */
+        if (m == 3 && fast_intra && best > inter_cost) break;
         vk_predict16(pred, top, left, tl, m);
         /* subme=0: x264 uses SAD (mbcmp = sad_aligned), not SATD. */
         const uint8_t *s = cy + y*w + x;
@@ -832,14 +835,15 @@ void vk_encode_p_frame_recon(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
                              uint8_t *recon_out)
 {
     vk_encode_p_frame_recon_mv(bs, sps, pps, cur, ref, w, h, qp, frame_num,
-                               recon_out, NULL, NULL);
+                               recon_out, NULL, NULL, NULL, NULL);
 }
 
 void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                                 const uint8_t *cur, const uint8_t *ref,
                                 int w, int h, int qp, int frame_num,
                                 uint8_t *recon_out,
-                                const int (*ref_mv)[2], int (*cur_mv)[2])
+                                const int (*ref_mv)[2], int (*cur_mv)[2],
+                                const uint8_t *ref_intra, uint8_t *cur_intra)
 {
     int mw = w/16, mh = h/16;
     int rs = w + 2*LPAD;
@@ -871,6 +875,7 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
     uint8_t (*nnz_c)[16] = calloc((size_t)mw*mh, 16);
     uint8_t (*cnnz_c)[2][4] = calloc((size_t)mw*mh, 8);
     uint8_t *dcnz_c = calloc((size_t)mw*mh, 1);
+    int intra_count = 0;  /* x264 h->stat.frame.i_mb_count[I_*] so far */
     /* reconstructed current-frame planes (with border) for intra prediction */
     int pcrs = rs/2;
     size_t rys = (size_t)rs*(h+2*LPAD), rcs = (size_t)pcrs*(h/2+2*CPAD);
@@ -1011,6 +1016,17 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                     do_skip = 1;
             }
 
+            /* x264 analyse.c:444-457 b_fast_intra (b_early_terminate is true
+             * at subme=0).  Set past MB 4 when no spatial neighbour is intra,
+             * the collocated reference MB is not intra, and fewer than idx/3
+             * intra MBs have been coded.  It makes mb_analyse_intra skip the
+             * expensive Plane mode when best(V,H,DC) > inter_cost. */
+            int fast_intra = idx > 4 && idx >= 3*intra_count &&
+                !(have_l && mv_ref[idx-1] == -1) &&
+                !(have_t && mv_ref[idx-mw] == -1) &&
+                !(have_tl && mv_ref[idx-mw-1] == -1) &&
+                !(have_c && mv_ref[idx-mw+1] == -1) &&
+                (ref_intra ? !ref_intra[idx] : 0);
             /* x264 subme=0 intra-vs-inter decision (before skip override) */
             int imode = 2, icmode = 0, icost = 0;
             int use_intra = !fast_skip && inter_cost > 0 &&
@@ -1019,8 +1035,9 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                              w, mx*16, my*16, top, left, tly,
                              topu, leftu, tlu, topv, leftv, tlv,
                              have_l, have_t, have_tl,
-                             qp, inter_cost, &imode, &icmode, &icost);
-            if (use_intra) do_skip = 0;  /* intra overrides tentative P_SKIP */
+                             qp, inter_cost, fast_intra, &imode, &icmode, &icost);
+            if (cur_intra) cur_intra[idx] = (uint8_t)use_intra;
+            if (use_intra) { do_skip = 0; ++intra_count; }  /* intra overrides tentative P_SKIP */
 
             if (do_skip) {
                 mv[idx][0] = psk_x; mv[idx][1] = psk_y;

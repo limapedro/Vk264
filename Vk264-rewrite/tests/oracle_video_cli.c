@@ -155,6 +155,11 @@ int main(int argc, char **argv)
      * used for temporal MV predictors in chained P-slices. */
     int (*refmv)[2] = calloc((size_t)mw*mh, 2*sizeof(int));
     int (*curmv)[2] = calloc((size_t)mw*mh, 2*sizeof(int));
+    /* x264 fdec->mb_type intra flags for collocated b_fast_intra decisions.
+     * Frame 0 is an IDR (all intra), so seed the reference map with ones. */
+    uint8_t *refintra = malloc((size_t)mw*mh), *curintra = malloc((size_t)mw*mh);
+    memset(refintra, 1, (size_t)mw*mh);
+    memset(curintra, 0, (size_t)mw*mh);
     int idr_count = 0;
 
     for (int f = 0; f < nframes; ++f) {
@@ -172,6 +177,7 @@ int main(int argc, char **argv)
                 vk_bs_align_1(&bs);
                 vk_cabac_init_ctx(&cb, 2, qp_i, 0);
                 vk_cabac_encode_idr_recon_frame(&bs, &cb, frames, w, h, qp_i, recon, f);
+                memset(curintra, 1, (size_t)mw*mh);  /* IDR: all MBs intra */
             } else {
                 memset(nnz_c, 0, (size_t)mw*mh*16);
                 memset(cnnz_c, 0, (size_t)mw*mh*8);
@@ -182,6 +188,7 @@ int main(int argc, char **argv)
                 encode_idr_cavlc(&bs, &sps, &pps, frames, w, h, qp_i,
                                  idr_pic_id, nnz_c, cnnz_c, dcnz_c,
                                  ry, rs, ro, ru, rv, cs, co, recon);
+                memset(curintra, 1, (size_t)mw*mh);  /* IDR: all MBs intra */
             }
             vk_nal_write(fo, 0x65, buf,
                          (size_t)(entropy ? bs.p - buf : (vk_bs_pos(&bs)+7)/8), 3);
@@ -196,12 +203,12 @@ int main(int argc, char **argv)
                 vk_bs_align_1(&bs);
                 vk_cabac_init_ctx(&cb, 0, qp_p, 0);
                 vk_cabac_encode_p_recon_frame(&bs, &cb, frames, ref, w, h, qp_p, recon, f,
-                                              refmv, curmv);
+                                              refmv, curmv, refintra, curintra);
                 vk_nal_write(fo, 0x41, buf, (size_t)(bs.p - buf), 2);
             } else {
                 vk_encode_p_frame_recon_mv(&bs, &sps, &pps, frames, ref,
                                            w, h, qp_p, frame_num, recon,
-                                           refmv, curmv);
+                                           refmv, curmv, refintra, curintra);
                 vk_nal_write(fo, 0x41, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 2);
             }
         }
@@ -214,9 +221,12 @@ int main(int argc, char **argv)
         memcpy(ref, recon, fs);
         int (*tmp)[2] = refmv; refmv = curmv; curmv = tmp;
         memset(curmv, 0, (size_t)mw*mh*2*sizeof(int));
+        uint8_t *tmpi = refintra; refintra = curintra; curintra = tmpi;
+        memset(curintra, 0, (size_t)mw*mh);
     }
     fclose(fi); fclose(fo);
-    free(frames); free(ref); free(recon); free(refmv); free(curmv); free(ry); free(ru); free(rv);
+    free(frames); free(ref); free(recon); free(refmv); free(curmv);
+    free(refintra); free(curintra); free(ry); free(ru); free(rv);
     free(nnz_c); free(cnnz_c); free(dcnz_c);
     return 0;
 }
