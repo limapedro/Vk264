@@ -1,6 +1,6 @@
 # Video encode comparison (x264 vs oracle)
 
-54/56 encoder streams byte-exact; 28 video pairs.
+56/56 encoder streams byte-exact; 28 video pairs.
 
 - exp001 x264   warzone2020_ 64x64 2f cavlc: BYTE-EXACT
 - exp001 oracle warzone2020_ 64x64 2f cavlc: BYTE-EXACT
@@ -16,8 +16,8 @@
 - exp006 oracle warzone2020_ 320x240 8f cavlc: BYTE-EXACT
 - exp007 x264   warzone2020_ 640x480 2f cavlc: BYTE-EXACT
 - exp007 oracle warzone2020_ 640x480 2f cavlc: BYTE-EXACT
-- exp008 x264   warzone2020_ 640x480 8f cavlc: MISMATCH NAL 9 byte 12030
-- exp008 oracle warzone2020_ 640x480 8f cavlc: MISMATCH NAL 9 byte 12030
+- exp008 x264   warzone2020_ 640x480 8f cavlc: BYTE-EXACT
+- exp008 oracle warzone2020_ 640x480 8f cavlc: BYTE-EXACT
 - exp009 x264   forza_1080p6 64x64 2f cavlc: BYTE-EXACT
 - exp009 oracle forza_1080p6 64x64 2f cavlc: BYTE-EXACT
 - exp010 x264   forza_1080p6 64x64 8f cavlc: BYTE-EXACT

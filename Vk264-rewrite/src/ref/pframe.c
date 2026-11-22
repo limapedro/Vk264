@@ -135,6 +135,17 @@ static void mc_chroma8(uint8_t *du, uint8_t *dv, int dstride,
 
 /* Decide P_SKIP: 1 iff the residual at the P_SKIP MV predictor quantises
  * to zero in both planes (x264 macroblock_probe_pskip). */
+/* x264 common/macroblock.c mb_mc_01xywh clips the cache MV to the
+ * border-derived mv_min/mv_max before every motion-compensated read
+ * (including P_SKIP). The bitstream still carries the unclipped MV. */
+static void clip_mv_mc(int mbx, int mby, int mbw, int mbh, int *mvx, int *mvy)
+{
+    int mn_x = 4*(-16*mbx-24), mx_x = 4*(16*(mbw-mbx-1)+24);
+    int mn_y = 4*(-16*mby-24), mx_y = 4*(16*(mbh-mby-1)+24);
+    if (*mvx < mn_x) *mvx = mn_x; else if (*mvx > mx_x) *mvx = mx_x;
+    if (*mvy < mn_y) *mvy = mn_y; else if (*mvy > mx_y) *mvy = mx_y;
+}
+
 static int probe(const uint8_t *cur, const uint8_t *refp,
                  int w, int h, int rs,
                  int x, int y, int mvx_qp, int mvy_qp, int qp)
@@ -1057,15 +1068,17 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                  * MBs. Do not zero it here. */
                 is_skip[idx] = 1;
                 ++skip_run;
-                /* reconstruct skip MB from reference */
-                int sx = mv[idx][0]/4, sy = mv[idx][1]/4;
+                /* reconstruct skip MB from reference (x264 clips MV for MC) */
+                int cmvx = mv[idx][0], cmvy = mv[idx][1];
+                clip_mv_mc(mx, my, mw, mh, &cmvx, &cmvy);
+                int sx = cmvx/4, sy = cmvy/4;
                 for (int yy = 0; yy < 16; ++yy)
                     memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
                            refp + (my*16+yy+sy+LPAD)*rs + LPAD + mx*16+sx, 16);
                 mc_chroma8(ru + (my*8+CPAD)*crs + CPAD + mx*8,
                            rv + (my*8+CPAD)*crs + CPAD + mx*8, crs,
                            refp + rys, refp + rys + rcs, crs,
-                           mx*16, my*16, mv[idx][0], mv[idx][1]);
+                           mx*16, my*16, cmvx, cmvy);
                 continue;
             }
 
@@ -1147,20 +1160,22 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                     tc[p][i] = have_t ? cnnz_c[idx-mw][p][2+i] : 0x80;
                 }
             /* MC prediction first, then code_residual adds the residual */
-            int sx = mvx, sy = mvy;
+            int cmvx = mvx*4, cmvy = mvy*4;
+            clip_mv_mc(mx, my, mw, mh, &cmvx, &cmvy);
+            int sx = cmvx/4, sy = cmvy/4;
             for (int yy = 0; yy < 16; ++yy)
                 memcpy(ry + (my*16+yy+LPAD)*rs + LPAD + mx*16,
                        refp + (my*16+yy+sy+LPAD)*rs + LPAD + mx*16+sx, 16);
             mc_chroma8(ru + (my*8+CPAD)*crs + CPAD + mx*8,
                        rv + (my*8+CPAD)*crs + CPAD + mx*8, crs,
                        refp + rys, refp + rys + rcs, crs,
-                       mx*16, my*16, mvx*4, mvy*4);
+                       mx*16, my*16, cmvx, cmvy);
             uint8_t *rcony = ry + (my*16+LPAD)*rs + LPAD + mx*16;
             uint8_t *rconu = ru + (my*8+CPAD)*crs + CPAD + mx*8;
             uint8_t *rconv = rv + (my*8+CPAD)*crs + CPAD + mx*8;
             uint8_t on[16], oc[2][4], od;
             int cbp_res = code_residual(bs, cur, refp, w, h, rs, mx*16, my*16,
-                          mvx*4, mvy*4, qp, on, oc, &od, ll, tl, lc, tc,
+                          cmvx, cmvy, qp, on, oc, &od, ll, tl, lc, tc,
                           rcony, rconu, rconv, rs, crs, crs);
             if (cbp_res == 0 && mvx*4 == psk_x && mvy*4 == psk_y) {
                 /* Roll back the P16 header and residual; this MB is a skip.
