@@ -666,3 +666,19 @@ differs — needs I4x4/8x8dct in the I-slice path.
 ```
 Next: port I4x4 (x264_mb_encode_i4x4 + mode decision) and 8x8dct to make the
 IDR slice byte-exact, then verify superfast P-slices end-to-end.
+
+## I4x4 mode decision ported (this turn)
+
+`Vk264-rewrite/src/ref/i4x4.c/.h` — byte-exact C port of x264's I4x4 mode
+decision (analyse.c, subme<=1), including 12 predictors, the x9 bit-cost rule,
+cache-based neighbour mode prediction, and DCT/quant/dequant/IDCT reconstruction
+feedback. CTest `rewrite_i4x4_decide` matches x264's raw mode dump 16/16 for
+the flat fenc=0/fdec=128 fixture (11,9,3,2,9,9,2,2,10,2,10,2,2,2,2,2).
+Algorithm source: build/I4X4-ALGORITHM.md + i4_feedback2.py.
+
+This is a building block only. Still needed for byte-exact superfast IDR:
+- CAVLC I4x4 emission (mb_type=0, 16 pred modes, cbp table, residuals)
+- I16-vs-I4-vs-I8x8 mode selection with exact cost comparison
+- 8x8dct transform (transform_8x8_mode=1)
+
+Verified: CTest rewrite 21/21 (was 20/20), main 65/65, 56/56 MP4 unchanged.
