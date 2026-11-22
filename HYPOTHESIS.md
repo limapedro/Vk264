@@ -455,3 +455,41 @@ video MP4 byte-exact 32/56 -> 36/56 (4 streams gained, 0 lost)
 ```
 Remaining 8f/64x64 divergences are a separate issue (multi-frame reference
 MV cache), not the single-frame mode decision.
+
+## 04 Analysis — ME search must not skip candidates outside MV range
+
+After the MV-range clamp fix, `build/nalcmp8.py c4.yuv` (warzone 64x64 8f)
+localised the remaining divergence to NAL 9 = **frame 7**, not frame 6 (NAL 2
+is frame 0). `build/f6dump.py` (now FR=7) showed frame 7 MB 15:
+```
+x264:  P_L0 inter, cbp=15,0, MV (76,-32)
+oracle: I16x16 intra, imode=DC
+```
+`build/cost7.py` confirmed the intra cost matched (2929) but the inter cost did
+not (x264 2223 / MV (76,-32) vs oracle 3231 / MV (76,-36)).
+
+`build/me7.py` showed the oracle's diamond search started at (19,-9) fullpel
+with limits `[-66,18]`, and `build/me7trace.py` showed it broke on the FIRST
+iteration with `best_dir=0`. `build/scan7.py` proved a much better point exists:
+```
+SAD(19,-9)=3223, SAD(19,-8)=2181, best SAD(14,-8)=2171
+```
+Cause: `vk_me16_dia` skipped every candidate with `!MV_IN_RANGE(cx,cy)` BEFORE
+evaluating it. Since the start MV x=19 is one past lim_xmax=18, the search
+could never step down to (19,-8). x264's `COST_MV_X4_DIR` evaluates all four
+neighbours unconditionally (mc.get_ref clips out-of-frame samples through the
+reference padding) and only checks `CHECK_MVRANGE(bmx,bmy)` in the do/while
+condition AFTER the move.
+
+Fix in `Vk264-rewrite/src/ref/motion.c`: evaluate all 4 neighbours (removed the
+pre-check), and check `MV_IN_RANGE` only after updating bmx/bmy.
+
+### Verified
+```
+c4.yuv 64x64 8f: all 10 NALs BYTE-EXACT (incl. NAL 9, 306 bytes both)
+ctest rewrite 18/18, main 65/65
+CAVLC P 1360/1360, CABAC P 1360/1360, CAVLC I 72/72
+video MP4 byte-exact 36/56 -> 40/56 (4 streams gained, 0 lost)
+  gained: exp004 + exp026 pairs (warzone 64x64 8f CAVLC + CABAC)
+```
+Remaining 8f mismatches are on other crops (320x240/640x480).
