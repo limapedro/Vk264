@@ -5,8 +5,6 @@
 #include "i4x4.h"
 #include "intra16.h"
 #include "cavlc.h"
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 static const int XY[16][2] = {
@@ -104,7 +102,14 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
     vk_bs_write_ue(bs,(uint32_t)(cmode<=3?cmode:0));
     vk_bs_write_se(bs,0);
 
-    int cbp=0; for(int i=0;i<16;++i) if(nnz[i]) cbp|=1<<i;
+    /* H.264 cbp for I4x4: 4 luma bits (one per 8x8 group), 2 chroma bits.
+     * x264's cbp_to_golomb index is luma | chroma<<4. */
+    int cbp_luma=0;
+    for(int i=0;i<16;++i) if(nnz[i]) {
+        int gx=XY[i][0]/2, gy=XY[i][1]/2;
+        cbp_luma |= 1 << (gy*2+gx);
+    }
+    int cbp=cbp_luma;
     vk_bs_write_ue(bs,(unsigned)CBP2GOL[cbp]);
     if(out_nnz) memcpy(out_nnz,nnz,16);
 

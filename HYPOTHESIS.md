@@ -722,3 +722,10 @@ single DC coefficient of -41, so the excess bits are in the CAVLC token/level
 or pred-mode emission, not the transform. x264's whole IDR is 30 B, so MB0's
 I4x4 must be far more compact — precise symbol-by-symbol comparison against
 x264's MB0 remains the next concrete step. Default (opt-in off): gates green.
+
+Bit-section diagnostic: modes+cbp = 26 bits, luma residual = 560 bits,
+chroma = 70 bits. The luma residual dominates: 16 blocks each with a single
+quantised DC of -41 cost ~35 bits/block. x264's whole IDR is 30 B (240 bits),
+so either x264's MB0 is coded with different (cheaper) predictors, or the
+oracle's CAVLC level/total_zeros emission for large coefficients diverges.
+Corrected a cbp bug (was 0xFFFF, now 4-bit luma cbp=15) this turn.
