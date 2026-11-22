@@ -886,11 +886,29 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
     vk_bs_write_ue(bs, 5);
     vk_bs_write_ue(bs, 0);
     vk_bs_write(bs, (unsigned)sps->i_log2_max_frame_num, (uint32_t)frame_num);
-    vk_bs_write1(bs, 0);
-    vk_bs_write1(bs, 0);
-    vk_bs_write1(bs, 0);
+    if (sps->i_poc_type == 0)
+        vk_bs_write(bs, 6, (uint32_t)(8 * frame_num));  /* poc_lsb */
+    vk_bs_write1(bs, 0);  /* num_ref_idx_active_override_flag */
+    vk_bs_write1(bs, 0);  /* ref_pic_list_modification_flag_l0 */
+    /* pred_weight_table: x264 writes denominators + per-ref flags whenever
+     * PPS b_weighted_pred is set. */
+    if (pps->b_weighted_pred) {
+        vk_bs_write_ue(bs, 0);  /* luma_log2_weight_denom */
+        vk_bs_write_ue(bs, 0);  /* chroma_log2_weight_denom */
+        for (int i = 0; i < pps->i_num_ref_idx_l0_default_active; ++i) {
+            vk_bs_write1(bs, 0);  /* luma_weight_l0_flag */
+            vk_bs_write1(bs, 0);  /* chroma_weight_l0_flag */
+        }
+    }
+    vk_bs_write1(bs, 0);  /* adaptive_ref_pic_marking_mode_flag */
     vk_bs_write_se(bs, qp - pps->i_pic_init_qp);
-    vk_bs_write_ue(bs, 1);
+    /* x264: deblocking enabled for every preset except ultrafast/default. */
+    if (pps->b_deblocking_filter) {
+        vk_bs_write_ue(bs, 0);
+        vk_bs_write_se(bs, 0);  /* alpha_c0_offset >> 1 */
+        vk_bs_write_se(bs, 0);  /* beta_offset >> 1 */
+    } else
+        vk_bs_write_ue(bs, 1);
 
     /* MV cache (quarter-pel) and skip flags. x264 stores MV=0 in the cache
      * for skipped MBs even though the bitstream carries the predictor MV. */

@@ -870,3 +870,21 @@ superfast video parity remains unmet.
 
 Gates: rewrite CTest 23/23 (added i8x8 primitives test), main CTest 65/65,
 sweeps 1360/1360 + 1360/1360 + 72/72, video MP4 56/56 — all pass.
+
+### P-slice header fixes (this turn)
+Instrumented x264's inline bs_write* functions (build/hdrlog.py) to log every
+slice-header field with bit positions. The CAVLC P-slice writer omitted three
+fields that x264 writes:
+1. `poc_lsb` — 6 bits, value 8*frame_num (x264 superfast keeps default
+   bframes=3, so SPS poc_type=0 and POC is in the slice header).
+2. `pred_weight_table()` — written whenever PPS b_weighted_pred=1: two
+   ue(0) denominators + luma/chroma flags per ref.
+3. deblocking `ue(0), se(0), se(0)` (was hardcoded ue(1)).
+
+Result: superfast IDR **and the first P-slice** are now byte-exact
+(`9a 24 18 f0 8c` for both). However frames 2+ diverge because x264's
+superfast preset **keeps the default bframes=3** (base.c:517 superfast does
+not set i_bframe=0), so those slices are B-slices with slice_type=6; the
+oracle only emits P-slices. Full B-frame encoding is the next major blocker.
+
+Gates still pass: rewrite CTest 23/23, main CTest 65/65, video MP4 56/56.
