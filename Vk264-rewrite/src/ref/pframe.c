@@ -422,6 +422,14 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
             cbp_chroma = 2;   /* AC survives decimation */
         }
     }
+    /* x264's nnz cache is updated with the post-decimation chroma AC totals
+     * (encoder/cavlc.c sets *nnz = i_total after writing each block).  oc[]
+     * is consumed as the left/top neighbour nnz by subsequent macroblocks,
+     * so it must reflect the zeroed blocks too. */
+    for (int pl = 0; pl < 2; ++pl)
+        for (int b = 0; b < 4; ++b)
+            oc[pl][b] = (uint8_t)cnnz[pl][b];
+
     *od = (uint8_t)(cdnz[0] | (cdnz[1]<<4));
 
     int cbp = cbp_luma | (cbp_chroma<<4);
