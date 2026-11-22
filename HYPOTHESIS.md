@@ -328,6 +328,37 @@ New findings, in order of discovery:
 3. **64x64 remains as characterized** (frame 4/9 divergences on high-motion
    crops; all warzone/fortnite cases exact).
 
+## 04 Analysis / mode decision — P_SKIP probe investigation
+
+`build/analysis_dump.py` dumped per-MB decisions for the 320x240 case where
+the oracle emits far more residual (x264 NAL 3 = 4177 bytes, oracle 6179):
+```
+x264 frame 1: 26 P_SKIP MBs (first: 31,32,38,39,51,...)
+oracle frame 1: 3 P_SKIP MBs (31,39,199)
+first skip divergence: MB 32 (x264 skip, oracle coded)
+```
+MB 0 and MB 2-19 MV decisions match exactly; only the skip decisions diverge.
+So the root cause of the 320x240 mismatch is `x264_macroblock_probe_skip`
+(04 Analysis), not motion search.
+
+`build/probe_dump.py` traced x264's probe for MB 32:
+```
+mvp=(20,0), mv_min=(-864,-160), mv_max=(544,928)
+luma 8x8 decimate scores: 2 (nz=4), 4 (nz=2)  -> below threshold 6
+RESULT=1 (skip)
+```
+Verified x264's `x264_decimate_table4[]` = `{3,2,2,1,1,1,0,...}` and its
+`decimate_score_internal` logic match the oracle's `decimate_score()` exactly.
+Remaining candidate differences in the oracle's `probe()`:
+- no MV clipping to `mv_min`/`mv_max` (x264 clips at lines 1001-1002)
+- MC prediction: x264 uses `mc_luma` with weighted prediction; oracle uses
+  a simple 4-tap interpolation
+- chroma DC Hadamard uses different quant offsets than x264's `quant_2x2_dc`
+- early-out thresholds (dec >= 6 luma, >= 7 chroma) match
+
+Next: compare the oracle's probe MC prediction and quantized coefficients
+against x264 for MB 32. This is the live 04 Analysis lead.
+
 **run_before table ruled out:** `build/dumprb.py` dumped all 65536 generated
 entries from x264's `x264_run_before[]` and the oracle's `run_before[]`:
 ```
