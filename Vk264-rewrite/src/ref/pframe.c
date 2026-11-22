@@ -7,7 +7,6 @@
  * must select material where every coded MB quantises to cbp=0.
  */
 #include "pframe.h"
-extern int vt,vl,vmb,vfr;void vdump(void);
 #include <stdio.h>
 #include <stdio.h>
 #include "motion.h"
@@ -848,7 +847,6 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
     size_t ysz = (size_t)rs*(h+2*LPAD);
     size_t csz = (size_t)crs*(h/2+2*CPAD);
     uint8_t *refp = calloc(1, ysz + 2*csz);
-    vt=getenv("PTRACE")!=NULL; vl=0; vfr=frame_num;
     vk_pad_plane(refp, rs, ref, w, w, h, LPAD);
     vk_pad_plane(refp + ysz, crs, ref + (size_t)w*h, w/2, w/2, h/2, CPAD);
     vk_pad_plane(refp + ysz + csz, crs,
@@ -882,7 +880,6 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
     for (int my = 0; my < mh; ++my)
         for (int mx = 0; mx < mw; ++mx) {
             int idx = my*mw+mx;
-            vmb=idx;
             int have_l = mx > 0, have_t = my > 0;
             int have_c = have_t && mx+1 < mw;
             int have_tl = have_t && mx > 0;
@@ -1143,7 +1140,6 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                  * The MC prediction already written to the recon planes is
                  * exactly the skip reconstruction (zero residual added). */
                 *bs = mb_start;
-                vl = saved_vlen;
                 skip_run = start_skip_run + 1;
                 mv[idx][0] = psk_x; mv[idx][1] = psk_y;
                 is_skip[idx] = 1;
