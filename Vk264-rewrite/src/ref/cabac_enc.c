@@ -902,6 +902,10 @@ static void compute_p_residual(const uint8_t *cur, const uint8_t *refp,
         } else
             out->cbp_chroma = 2;
     }
+    /* H.264 cbp_chroma is 0/1/2: value 2 means "AC present" and DC may
+     * also be present.  x264 never emits 3; keep the flag in range so the
+     * AC-coding branch (cb_c == 2) is taken when both DC and AC survive. */
+    if (out->cbp_chroma == 3) out->cbp_chroma = 2;
 }
 
 int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
