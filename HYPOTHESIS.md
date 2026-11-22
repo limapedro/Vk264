@@ -1139,3 +1139,19 @@ parity; the header/MB0-type/MVD/CBP are already byte-exact.
 
 No code changes committed (debug removed). Gates unchanged: CTest 23/23 +
 65/65, CAVLC P sweep 1360/1360, MP4 56/56.
+
+### Weighted-pred formula added (test-only, this turn)
+Found x264's exact weight formula in common/mc.c (mc_weight, denom=0):
+`pred = clip(src*scale + offset)`. For frame 7's luma weight (scale=11,
+offset=-128) this maps ref 16 -> pred 48, close to the source 57-61 (which
+explains x264's residual DC=1). Added this transform to the guarded P-slice
+inter path in code_residual's MC step (VK_P7_TEST).
+
+Result: no byte-level change to frame 7. Debug showed the MC prediction at
+the patched location reads 0 (not 16), so clip(0*11-128)=0 and the weight is
+a no-op. The remaining problem is that `vk_mc_luma_qpel` at MV 62 (15.5 px)
+does not produce the expected prediction in this path — a separate MC bug
+that must be fixed before the weighted prediction can take effect.
+
+No net byte-exactness gain; all gates unchanged (CTest 23/23 + 65/65, CAVLC
+P sweep 1360/1360, MP4 56/56). The 7/8 superfast slices remain byte-exact.
