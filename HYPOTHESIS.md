@@ -1029,3 +1029,16 @@ implementation (code_i16_chroma_dc / code_i16_dc). It must dispatch to the
 I4x4/I8x8 emitters (with offset=5) based on x264's RD mode decision, using
 tight source/recon buffers and neighbour nnz caches. That integration is the
 concrete next step.
+
+### Frame 7 I8x8 prediction modes dumped (this turn)
+Extended build/p7modes.py to read h->mb.cache.intra4x4_pred_mode[x264_scan8[i8*4]]
+and captured the four intra8x8 modes per MB of frame 7:
+```
+mb1 {9,9,2,2}  mb2 {9,9,2,1}  mb3 {9,9,1,1}  mb4 {10,0,0,6}
+mb5 {0,3,8,2}  mb6 {2,1,3,2}  mb7(I16) {1,1,1,2}
+```
+(9=DC_LEFT, 10=DC_TOP per x264's internal mode enum; these map to DC(2) in
+the bitstream.) This completes the decision table needed to drive the
+I4x4/I8x8 emitters (now accepting mb_type_offset=5) inside a P-slice.
+Frame 7 byte-exactness still requires wiring those emitters into the P
+encoder's custom I16-only intra path with correct neighbour nnz caches.
