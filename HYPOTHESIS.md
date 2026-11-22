@@ -109,15 +109,21 @@ Fix: `LPAD=32`/`CPAD=16` in `pframe.c` and `cabac_enc.c`, with matching CLI
 stride/offset changes. Verified: 3 consecutive encodes now produce the same
 SHA (`6DC3A6760B39...`), and 2-frame sweeps stay 1360/1360.
 
-### H7 — last-MB VLC sequence at frame 4 (NEXT, now reproducible)
-With determinism fixed and per-MB write tracing, frame 4 MBs 0-14 produce
-identical bit strings in x264 and the oracle. Only **MB 15** (the last MB)
-differs (46 bits each, first differing bit 1). MB 15's decisions match
-(x264 type=4, cbp=1, mv=-132,-232; oracle cbp=1, mv=-132,-232). The write
-sequences are reordered: x264 ends with `2:2`, the oracle with `6:0`.
-Likely the final `mb_skip_run`/`total_zeros` write placement or a last-MB
-neighbour-cache (`nnz_c`) difference. Compare x264's end-of-slice skip_run
-write with `pframe.c`'s `if (skip_run) vk_bs_write_ue(...)`.
+### H7 — one extra bit in MB 13 of frame 4 (NEXT, precisely isolated)
+A corrected per-MB write tracer (resetting the MB tag before the oracle's
+in-function slice header, and skipping the 18 header bits when aligning with
+x264's post-header trace) shows frame 4 MBs 0-12 and 14-15 are bit-identical.
+Only **MB 13** differs:
+```
+x264:   100011011100000100001001110011101110010111101   (45 bits)
+oracle: 10001101110000010000100111001110111001011101    (44 bits)
+```
+Common prefix 42 bits; x264 has one extra `1` near the end. MB 13 is the
+I16-in-P MB with `cbp_chroma=1` (chroma DC only, no luma AC). Its VLC-level
+dump showed matching coeff_token/level/total_zeros/run_before codes for the
+luma DC block, so the extra bit is likely in the chroma DC block's
+`total_zeros`/`run_before` tail or a duplicated `mb_qp_delta` se(0).
+Earlier "MB 15" conclusion was an artefact of a stale MB tag in the tracer.
 
 ## What is proven
 
