@@ -993,3 +993,26 @@ with nonzero cbp, plus one P_L0 with MV(62,0)). Matching it requires x264's
 subme=1 RD mode decision across I16/I8/I4 inside a P-slice, using the I4x4 and
 I8x8 emitters already implemented, plus the full CAVLC residual path. That is
 the concrete next work item; the all-skip B/P writers are not the blocker.
+
+### Frame 7 exact mode decision dumped (this turn)
+Instrumented x264 after x264_macroblock_encode for POC=14 (build/p7modes.py):
+```
+mb:    0(P_L0) 1   2   3   4   5   6   7(I16) 8(I4) 9(I4) 10(I4) 11  12(I4) 13  14  15
+type:  4        1   1   1   1   1   1   2      0     0     0     1   0     1   1   1
+i16:   0        0   0   0   0   0   0   1      1     1     1     1   1     1   1   1
+mv:    0,0      62,0 for all MB1..15
+cbp:   15,1 1,1 4,1 1,0 5,2 0,0 6,0 0,0 15,0 10,0 5,0 3,1 2,2 11,1 15,0 12,0
+```
+(type 0=I4x4, 1=I8x8, 2=I16x16, 4=P_L0 per x264's internal enum.)
+
+Requirements to match frame 7 in a P-slice:
+1. P_L0 with MV (0,0) + full luma/chroma residual for MB0.
+2. I8x8 (MB1-6, 11, 13-15), I16x16 (MB7), I4x4 (MB8-10, 12) MB types with
+   P-slice mb_type codes (i_mb_i_offset differs from I-slice).
+3. I4x4/I8x8 pred modes + residuals using the existing i4x4enc/i8x8enc
+   emitters, but wired into the P-slice CAVLC path.
+4. x264 subme=1 RD mode decision to choose these types automatically.
+
+This is a substantial integration; the current P encoder only supports
+P_L0(16x16) and I16x16. A general x264-faithful decision + multi-type P-slice
+emitter is the concrete next work item for superfast frame 7.
