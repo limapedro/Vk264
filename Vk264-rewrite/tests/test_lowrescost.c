@@ -11,10 +11,12 @@ int main(int argc,char**argv){
     uint8_t**lo=malloc(n*sizeof(*lo));
     for(int i=0;i<n;++i){lo[i]=malloc(dw*dh);
         vk_lowres_luma(raw+i*fs,w,h,lo[i],dw,dh);}
+    vk_lowres_mv_t st[6]; memset(st,0,sizeof(st));
     for(int i=1;i<n-1;++i){
-        int p0=vk_lowres_p_cost(lo[i],lo[i-1],dw,dh);
-        int p2=vk_lowres_p_cost(lo[i],lo[i+1],dw,dh);
-        int b=vk_lowres_b_cost(lo[i],lo[i-1],lo[i+1],dw,dh);
+        int p0=vk_lowres_p_cost(lo[i],lo[i-1],dw,dh,&st[i]);
+        int p2=vk_lowres_p_cost(lo[i],lo[i+1],dw,dh,&st[i]);
+        int b=vk_lowres_b_cost(lo[i],lo[i-1],lo[i+1],dw,dh,
+                               &st[i-1],&st[i+1],i-1,i+1,i);
         printf("frame %d: P(prev)=%d P(next)=%d B=%d\n",i,p0,p2,b);
     }
     return 0;

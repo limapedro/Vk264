@@ -1410,3 +1410,19 @@ b-adapt=fast's MV prediction (dmv from previous frame's lowres MVs), the
 dist_scale_factor, and hpel interpolation — not the cost primitive anymore.
 
 Gates unchanged: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03 dmv/dist_scale_factor infrastructure (this turn)
+Added `vk_lowres_mv_t` state carrying lookahead MVs between frames, threaded
+through `vk_lowres_p_cost` (stores best fullpel MV) and
+`vk_slicetype_path_cost`/`vk_lowres_b_cost`. Implemented x264's
+`dist_scale_factor = ((b-p0)<<8 + (p1-p0)/2)/(p1-p0)` and dmv prediction
+`dmv = (mv_future * dsf + 128)>>8` with a dmv-predicted bidirectional
+candidate alongside the zero-MV and searched-MV ones.
+
+Result: costs unchanged for this clip (cp=4121 cb=3697 at j=1) because the
+frame-level aggregated MV is zero — x264 stores PER-MB lowres MVs, so a
+per-frame aggregate cannot reproduce dmv accurately. Frame types still do
+not match x264 (oracle coding order [0,1,2,4,3,5,6,7] vs x264
+[0,3,1,2,4,...]). Next step: per-MB lowres MV storage indexed by mb_xy.
+
+Gates unchanged: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
