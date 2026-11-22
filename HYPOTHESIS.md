@@ -125,6 +125,20 @@ luma DC block, so the extra bit is likely in the chroma DC block's
 `total_zeros`/`run_before` tail or a duplicated `mb_qp_delta` se(0).
 Earlier "MB 15" conclusion was an artefact of a stale MB tag in the tracer.
 
+Additional evidence (bit-position instrumentation of the correct writer
+functions, frame 4 / MB 13):
+```
+x264    luma DC 585->614, chroma DC0 614->617, chroma DC1 617->619
+oracle  luma DC 585->614, chroma DC0 614->617, chroma DC1 617->619
+```
+All three residual sections have IDENTICAL start/end bit positions, so the
+extra bit is not in those sections' lengths. x264's `x264_total_zeros_2x2_dc`
+and the oracle's `vk_total_zeros_2x2_dc` tables are byte-identical. The
+whole-slice W-trace totals only 704 bits while the NAL payload has 952 bits,
+so the tracer demonstrably misses writes; the exact MB attribution of the
+8-bit-longer region is therefore still uncertain and needs a complete
+write-trace (including all `bs_write*` macro paths) before a fix is safe.
+
 ## What is proven
 
 - IDR CAVLC and CABAC paths: byte-exact, including 8-frame clips on warzone.
