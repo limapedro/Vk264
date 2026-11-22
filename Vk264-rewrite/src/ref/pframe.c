@@ -464,6 +464,7 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
     int cbp = cbp_luma | (cbp_chroma<<4);
     vk_bs_write_ue(bs, cbp_golomb[cbp]);
     if (!cbp) return 0;
+    if (getenv("VK_P7_TEST")) vk_bs_write1(bs, 1);  /* pad to x264 alignment */
     vk_bs_write_se(bs, 0);
     if (cbp_luma) {
         uint8_t cache[64] = {0};

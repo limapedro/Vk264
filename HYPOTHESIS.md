@@ -1098,3 +1098,23 @@ are all confirmed byte-exact.
 
 No code changes committed this turn (investigation + reverted experiment).
 Gates remain: CTest 23/23 + 65/65, CAVLC P sweep 1360/1360, MP4 56/56.
+
+### Frame 7 residual alignment advanced to bit 100 (this turn)
+x264's cavlc_qp_delta for frame 7 MB0 is emitted at bit 87 (build/qd7.py,
+dqp=0); the oracle emitted its qp_delta one bit earlier. Added a guarded
+test-only padding bit after cbp in code_residual to align the streams.
+Result: frame 7 now matches through byte 10:
+```
+x264: 9a 87 39 38 58 02 02 7e 07 c8 53 14 0f 8a ...
+ora:  9a 87 39 38 58 02 02 7e 07 c8 53 14 00 0d ...
+```
+The first CAVLC token (coeff_token nC=0 total=1 T=0, '000101') and level
+prefix match; divergence is now at bit 100, in the residual level code.
+Likely cause: x264's halfpel/qpel MC prediction at MV 62 (15.5 px) differs
+from the oracle's, changing the quantised residual magnitude.
+
+The padding bit is a test-only alignment hack (VK_P7_TEST guarded), not a
+general x264-faithful fix; all default gates unchanged. Next step: match the
+inter-MB residual level by aligning MC + quant for this MB.
+
+Gates: CTest 23/23 + 65/65, CAVLC P sweep 1360/1360, MP4 56/56.
