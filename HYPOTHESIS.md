@@ -275,6 +275,23 @@ The written CBP value was logged as **3 in both encoders** (`CBP X val=3`,
 from a category whose write site was not covered by the earlier TZ log.
 Next: identify that call site by tagging each `bs_write_vlc` in x264.
 
+**Call-site tagging result:** `build/_tagvlc.py` tagged every VLC/ue write
+in x264 and logged the stage for `i_count==11 && i_bits==33` in frame 4:
+```
+TAG11 stage=run_before
+TAG11 stage=run_before
+```
+So the 11-bit `W 11 33` originates from x264's `run_before` write path
+(`bs_write(s, zero_run_code&0x1f, zero_run_code>>5)`), i.e. the per-mask
+generated `x264_run_before[]` table. This narrows the fix to the oracle's
+generated `run_before[]` table (`vk_cavlc_init`) for the mask of the block
+whose run_before is emitted at pos 808 — even though the per-block `RB` logs
+for MB 11/12 matched (sz=8/bits=158), so the differing mask belongs to a
+chroma-DC or other block whose run_before was not in those logs.
+Note: the stage tag can be stale for header `bs_write_ue` calls because the
+tag list did not cover all header sites; treat this as the leading lead,
+not proof.
+
 ## What is proven
 
 - IDR CAVLC and CABAC paths: byte-exact, including 8-frame clips on warzone.
