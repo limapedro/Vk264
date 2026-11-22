@@ -1303,9 +1303,15 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
             int cmvx = qmvx, cmvy = qmvy;
             clip_mv_mc(mx, my, mw, mh, &cmvx, &cmvy);
             uint8_t *rcon_l = ry + (my*16+LPAD)*rs + LPAD + mx*16;
-            if (hpelp)
-                vk_mc_luma_qpel(rcon_l, rs, refp, rs, hpelp,
+            if (hpelp) {
+                /* vk_mc_luma_qpel indexes x,y from the frame origin, so the
+                 * padded reference and hpel planes must be offset by LPAD. */
+                vk_hpel_planes_t hp2 = *hpelp;
+                size_t off = (size_t)LPAD*rs + LPAD;
+                hp2.h += off; hp2.v += off; hp2.c += off;
+                vk_mc_luma_qpel(rcon_l, rs, refp + off, rs, &hp2,
                                 mx*16, my*16, cmvx, cmvy);
+            }
             else {
                 int sx = cmvx/4, sy = cmvy/4;
                 for (int yy = 0; yy < 16; ++yy)
@@ -1320,6 +1326,7 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
             if (p7 >= 0)
                 for (int yy = 0; yy < 16; ++yy)
                     for (int xx = 0; xx < 16; ++xx) {
+                        /* x264 mc_weight with denom=0, scale 11, offset -128 */
                         int v = rcon_l[yy*rs + xx]*11 - 128;
                         rcon_l[yy*rs + xx] = (uint8_t)(v<0?0:(v>255?255:v));
                     }

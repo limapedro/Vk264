@@ -1155,3 +1155,21 @@ that must be fixed before the weighted prediction can take effect.
 
 No net byte-exactness gain; all gates unchanged (CTest 23/23 + 65/65, CAVLC
 P sweep 1360/1360, MP4 56/56). The 7/8 superfast slices remain byte-exact.
+
+### MC plane offset bug found and fixed (this turn)
+Found a real bug in the P encoder's qpel MC call: `vk_mc_luma_qpel` indexes
+x,y from the frame origin, but the caller passed the LPAD-padded `refp` and
+unshifted hpel planes. The MC prediction therefore read the zero padding
+(rcon0=0) instead of 15. Fixed by offsetting ref/h/v/c pointers by
+`LPAD*rs+LPAD` at the call site. Debug confirmed rcon0 now reads 16.
+
+The x264-faithful weighted-pred transform (pred = clip(src*11 - 128)) is now
+active in guarded P-slice test mode. Frame 7's slice is 260 B (was 294 B);
+x264 is 200 B, so the residual is closer but still not byte-exact. Experiments
+with effective scale 12 gave 248 B (not closer at the divergence byte), so
+scale 11 was kept. Remaining gap: exact weighted-pred/ref prediction and the
+intra MB residuals.
+
+This MC offset fix is general (not env-gated) and all gates pass:
+CTest 23/23 + 65/65, CAVLC P sweep 1360/1360, MP4 56/56. The 7/8 byte-exact
+superfast slices remain unchanged.
