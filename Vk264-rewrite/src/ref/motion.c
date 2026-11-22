@@ -56,7 +56,10 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
         int bestc = bcost;
         for (int i = 0; i < ncands; ++i) {
             int cx = cands[2*i], cy = cands[2*i+1];
-            if (!MV_IN_RANGE(cx, cy)) continue;
+            /* x264's x264_predictor_roundclip clips out-of-range candidate
+             * MVs to the search limits instead of discarding them. */
+            if (cx < lim_xmin) cx = lim_xmin; else if (cx > lim_xmax) cx = lim_xmax;
+            if (cy < lim_ymin) cy = lim_ymin; else if (cy > lim_ymax) cy = lim_ymax;
             int c = sad16(cur, cur_stride, rpad, ref_stride, pad, ph, x, y, cx, cy)
                   + mv_cost((cx-mvpx)*4, lambda) + mv_cost((cy-mvpy)*4, lambda);
             if (c < bestc) { bestc = c; bmx = cx; bmy = cy; }
