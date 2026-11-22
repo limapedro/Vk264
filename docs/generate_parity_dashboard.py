@@ -23,7 +23,7 @@ from datetime import date
 # ---------------------------------------------------------------------------
 # Data — update these after each parity PR, then regenerate the SVG.
 # ---------------------------------------------------------------------------
-SNAPSHOT = "602383c"
+SNAPSHOT = "6f6a8f3"
 GENERATED = date.today().isoformat()
 
 # Overall numbers (from build/*_parity_sweep.py, ctest, tests/video_experiments.json)
@@ -32,7 +32,7 @@ GENERATED = date.today().isoformat()
 CAVLC_P_EXACT, CAVLC_P_TOTAL = 1360, 1360
 CABAC_P_EXACT, CABAC_P_TOTAL = 1360, 1360
 CAVLC_I_EXACT, CAVLC_I_TOTAL = 72, 72
-VIDEO_EXACT, VIDEO_TOTAL = 32, 56
+VIDEO_EXACT, VIDEO_TOTAL = 36, 56
 FUNC_PORTED, FUNC_TOTAL_INV = 23, 831
 STATS = [
     ("CAVLC I-FRAMES", f"{CAVLC_I_EXACT} / {CAVLC_I_TOTAL}",
