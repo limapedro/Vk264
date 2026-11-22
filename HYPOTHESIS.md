@@ -1208,3 +1208,23 @@ x264's quantized AC coefficients or the nC/neighbour handling.
 No default gates affected (all changes VK_P7_TEST guarded): CTest 23/23 +
 65/65, CAVLC P sweep 1360/1360, MP4 56/56. The 7/8 byte-exact superfast
 slices remain unchanged.
+
+### Frame 7 MB0 full coefficient sequence confirmed (this turn)
+Extended build/dct7.py to dump all 16 quantized coefficients of every 4x4
+block of x264's POC=14 MB0:
+```
+block 0: 1,0,0,...,0
+blocks 1-15: all zero
+```
+So the residual is a single DC coefficient of magnitude 1. The oracle's
+code_residual now produces the same DC (1) with prediction 52 (source 57),
+but its CAVLC token differs from x264's first token (nC=0 total=1 T=0,
+code 5/6 from build/res7.py) — a coefficient of magnitude 1 would normally
+give T=1. This suggests either x264's coefficient at CAVLC-write time differs
+from the post-encode dump, or its trailing-ones/nC handling differs.
+
+Resolving this requires dumping x264's coefficients at the exact CAVLC write
+point (not just after x264_macroblock_encode) — the next concrete step.
+
+No code changes this turn; gates unchanged (CTest 23/23 + 65/65, CAVLC P
+sweep 1360/1360, MP4 56/56). The 7/8 byte-exact superfast slices remain.
