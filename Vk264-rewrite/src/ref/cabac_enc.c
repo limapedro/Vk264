@@ -887,7 +887,20 @@ static void compute_p_residual(const uint8_t *cur, const uint8_t *refp,
             out->dcnz[pl] |= t[i] != 0;
             out->cbp_chroma |= t[i] != 0;
         }
-        for (int b = 0; b < 4; ++b) if (out->cnnz[pl][b]) out->cbp_chroma = 2;
+        /* x264's mb_encode_chroma_internal decimates the whole plane's AC
+         * when the JVT-B118 score stays below 7 (CAVLC path does the same). */
+        int dec = 0;
+        for (int b = 0; b < 4; ++b) {
+            if (!out->cnnz[pl][b] || dec >= 7) continue;
+            dec += p_decimate_score(out->cacq[pl][b], 15);
+        }
+        if (dec < 7) {
+            for (int b = 0; b < 4; ++b) {
+                out->cnnz[pl][b] = 0;
+                memset(out->cacq[pl][b], 0, sizeof(out->cacq[pl][b]));
+            }
+        } else
+            out->cbp_chroma = 2;
     }
 }
 
