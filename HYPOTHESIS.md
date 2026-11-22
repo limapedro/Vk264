@@ -255,6 +255,26 @@ between MB 11's residual and MB 12's first logged block — most likely the
 coeff0 tokens for unlogged all-zero blocks (x264 logs 36 = 18 unique; the
 oracle's correct-input log still needs re-capturing). This is the live lead.
 
+## EXACT DIVERGENT WRITES CAPTURED (correct input)
+
+`build/_gapwrites.py` traced every `bs_write` with bit positions in [760,840]
+for frame 4 from both encoders. Writes at pos 805 onward:
+```
+x264:   pos805 W 1 1 | pos806 W 1 1 | pos807 W 1 1 | pos808 W 11 33
+        pos819 W 5 4 | pos824 W 1 1 | pos825 W 2 1 ...
+oracle: pos805 W 1 1 | pos806 W 1 1 | pos807 W 1 1 | pos808 W 1 1
+        pos809 W 2 0 | pos811 W 3 4 | pos814 W 1 1 | pos815 W 2 1
+        pos817 W 1 0 | pos818 W 1 1 | pos819 W 6 5 ...
+```
+`W 11 33` is an 11-bit write of value 33 (i.e. `bs_write_ue(val=32)`,
+bits `00000100001`) in x264, while the oracle writes a sequence of shorter
+VLCs totalling fewer bits at the same position. This is the 10-bit gap.
+The written CBP value was logged as **3 in both encoders** (`CBP X val=3`,
+`CBP B val=3 cbp=2`), and level/total_zeros/run_before/sign logs match, so
+`W 11 33` is a different syntax element — most likely a `total_zeros` VLC
+from a category whose write site was not covered by the earlier TZ log.
+Next: identify that call site by tagging each `bs_write_vlc` in x264.
+
 ## What is proven
 
 - IDR CAVLC and CABAC paths: byte-exact, including 8-frame clips on warzone.
