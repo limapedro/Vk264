@@ -292,6 +292,16 @@ Note: the stage tag can be stale for header `bs_write_ue` calls because the
 tag list did not cover all header sites; treat this as the leading lead,
 not proof.
 
+**run_before table ruled out:** `build/dumprb.py` dumped all 65536 generated
+entries from x264's `x264_run_before[]` and the oracle's `run_before[]`:
+```
+table sizes 262144 / 262144 bytes; entry diffs 0
+```
+The generated tables are byte-identical. If the tagged stage is correct, the
+11-bit write must come from a different per-block mask than the logged MB
+11/12 blocks; if the tag is stale, the write is a header `bs_write_ue` whose
+call site is still untagged. Both remain open; no fix was established.
+
 ## What is proven
 
 - IDR CAVLC and CABAC paths: byte-exact, including 8-frame clips on warzone.
