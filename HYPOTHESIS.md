@@ -204,6 +204,22 @@ remaining unlogged writes are the trailing-sign bits (`bs_write(trailing,
 sign)`), level escape codes (`block_residual_escape`), and the per-mask
 generated `run_before` table. The next diagnostic must hook those three.
 
+**All three were then logged and all match.** `build/_rest4.py` instrumented
+trailing signs, total_zeros and run_before for frame 4:
+```
+TS  x264 40 / oracle 40   -> identical sequences
+RB  x264 40 / oracle 40   -> identical sequences
+TZ  x264 logs 2x per block (analysis+write); values match oracle 1x per block
+    e.g. mb=13: {sz3/bits5, sz1/bits1} in both
+```
+Every logged CAVLC element and every VLC table is now proven identical for
+frame 4, while NAL 6 still differs by exactly 8 bits (59 vs 51) and then
+resynchronises. The remaining candidates are write-order/state effects not
+captured by per-element logs (e.g. how `i_suffix_length` carries across
+blocks in a path not exercised by the 2-frame sweeps, or an emulation-
+prevention/byte-alignment edge case). No safe fix was established; no source
+change was committed.
+
 ## What is proven
 
 - IDR CAVLC and CABAC paths: byte-exact, including 8-frame clips on warzone.
