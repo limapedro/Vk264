@@ -1218,7 +1218,9 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                 int nu_dc = 0, nv_dc = 0;
                 for (int i = 0; i < 4; ++i) { nu_dc |= qu[i]!=0; nv_dc |= qv[i]!=0; }
                 mbcbp[idx] = cbp_luma | (nzl?0x100:0) | (nu_dc?0x200:0) | (nv_dc?0x400:0);
-                cbp_c[idx] = mbcbp[idx] & 0x3f;
+                /* x264's mb.cbp[] stores (i_cbp_chroma<<4)|i_cbp_luma; the
+                 * chroma bits drive neighbours' cbp_chroma context (77..84). */
+                cbp_c[idx] = mbcbp[idx] | (cbp_chroma << 4);
 
                 /* reconstruct I16 MB into the current-frame buffers */
                 uint8_t *rbase = ry + LPAD*rs + LPAD;
