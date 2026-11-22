@@ -1353,3 +1353,18 @@ where x264 chooses B: cp~700 vs cb~4000+. The remaining gap is in x264's
 exact row-SATD accumulation / AQ weighting and hpel interpolation for the
 bidirectional average. All gates unchanged: CTest 27/27 + 65/65, CAVLC P
 sweep 1360/1360, MP4 56/56.
+
+### Stage 03 path indexing + B-cost candidates (this turn)
+Fixed `vk_slicetype_path_cost` to match x264's `path--` convention exactly:
+path[1] (not path[0]) is the type of frames[1]; the B-run scan and the P/I
+frame placement now use the same indices as encoder/slicetype.c:1294-1325.
+Added the missing zero-MV bidirectional candidate (x264 TRY_BIDIR(dmv=0,
+penalty=0)) alongside the searched-MV bidirectional and list0/list1 P costs.
+
+Frame-by-frame agreement is still NOT reached: build/compare_slicetype.py
+shows oracle P for frames 1-5 where x264 picks B; B path costs (~4000-31000)
+far exceed P (~400-500). The residual gap is in x264's exact lowres motion
+search (x264_me_search with cost_mv predicates, hex method, subpel refine)
+and row-SATD/AQ accumulation — our integer diamond search over-penalizes
+B-frame MVs. Gates unchanged: CTest 27/27 + 65/65, CAVLC P 1360/1360,
+MP4 56/56.

@@ -10,17 +10,26 @@ static uint64_t frame_cost(uint8_t **frames,int dw,int dh,int p0,int p1,int b)
     return vk_lowres_b_cost(frames[b],frames[p0],frames[p1],dw,dh);
 }
 
+/* Mirrors x264 slicetype_path_cost (encoder/slicetype.c:1288).
+ * x264 does `path--` so path[1] is the type of frames[1].
+ * Our caller passes a path with path[0] as a dummy prefix, so path[1]
+ * likewise represents frames[1]. */
 uint64_t vk_slicetype_path_cost(uint8_t **frames,int dw,int dh,
                                 const char *path,int nframes,uint64_t threshold)
 {
     uint64_t cost=0;
     int loc=1, cur_nonb=0;
-    while(loc<nframes && path[loc-1]){
+    while(loc<nframes && path[loc]){
         int next_nonb=loc;
-        while(next_nonb<nframes-1 && path[next_nonb-1]=='B') next_nonb++;
+        while(next_nonb<nframes-1 && path[next_nonb]=='B') next_nonb++;
         if(next_nonb>=nframes) next_nonb=nframes-1;
-        cost+=frame_cost(frames,dw,dh,cur_nonb,next_nonb,next_nonb);
+        /* P (or I) frame at the next non-B position */
+        if(path[next_nonb]=='I')
+            cost+=frame_cost(frames,dw,dh,next_nonb,next_nonb,next_nonb);
+        else
+            cost+=frame_cost(frames,dw,dh,cur_nonb,next_nonb,next_nonb);
         if(cost>threshold) break;
+        /* B frames between cur_nonb and next_nonb, predicted from both */
         for(int nb=loc;nb<next_nonb && cost<threshold;++nb)
             cost+=frame_cost(frames,dw,dh,cur_nonb,next_nonb,nb);
         loc=next_nonb+1; cur_nonb=next_nonb;

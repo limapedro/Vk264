@@ -101,6 +101,17 @@ int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh)
     return total;
 }
 
+/* Zero-MV bidirectional: x264 TRY_BIDIR(dmv=0, penalty=0), which is often
+ * the cheapest candidate for similar frames. */
+static int mb_b_cost_zero(const uint8_t *cur,int dw,int bx,int by,
+                          const uint8_t *r0,const uint8_t *r1)
+{
+    uint8_t avg[64];
+    for(int y=0;y<8;++y) for(int x=0;x<8;++x)
+        avg[y*8+x]=(uint8_t)((r0[(by+y)*dw+bx+x]+r1[(by+y)*dw+bx+x]+1)>>1);
+    return satd8(cur,dw,bx,by,avg,8,0,0) + LOWRES_PENALTY;
+}
+
 /* Bidirectional cost with per-list MV search, then average at found MVs. */
 static int mb_b_cost(const uint8_t *cur,int dw,int dh,int bx,int by,
                      const uint8_t *r0,const uint8_t *r1)
@@ -140,7 +151,8 @@ int vk_lowres_b_cost(const uint8_t *cur,const uint8_t *r0,const uint8_t *r1,int 
         int c0=mb_p_cost(cur,dw,bx,by,r0,bx,by)-mv_cost(0)+LOWRES_PENALTY;
         int c1=mb_p_cost(cur,dw,bx,by,r1,bx,by)-mv_cost(0)+LOWRES_PENALTY;
         int cb=mb_b_cost(cur,dw,dh,bx,by,r0,r1);
-        int m=c0<c1?c0:c1; if(cb<m) m=cb;
+        int cz=mb_b_cost_zero(cur,dw,bx,by,r0,r1);
+        int m=c0<c1?c0:c1; if(cb<m) m=cb; if(cz<m) m=cz;
         total+=m;
     }
     return total;
