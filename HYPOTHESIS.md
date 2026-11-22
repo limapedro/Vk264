@@ -764,3 +764,19 @@ block (-41) vs x264's 3 (-41, 1, 1). So x264's reconstructed neighbours are
 slightly different (lossy dequant/IDCT rounding), leaving small residuals in
 two later blocks. The next concrete step is a reconstructed-sample comparison
 for MB0's 4x4 blocks to pin down the DCT/dequant/IDCT rounding difference.
+
+### Reconstructed-sample diff (this turn)
+x264 (instrumented `add4x4_idct`, --no-asm --no-cabac, QP28):
+```
+block 0: raw DCT DC -7216 -> dequant -7216 -> recon 15,15,15,15,17,17,17,17,16,16,16,16,16,16,16,16
+```
+Oracle `vk_encode_i4x4_mb`:
+```
+block 0: quant -41 -> dequant -7216 (MATCHES) -> recon 15,15,15,15,15,...  (uniform)
+```
+So dequantisation is byte-exact; the divergence is in the **IDCT/add** stage:
+x264's `add4x4_idct` yields non-uniform samples (15/17/16) from a DC-only
+coefficient while the oracle's `vk_ref_idct4`+`add_block` yields uniform 15.
+That is why later blocks get small coefficients (1,1) in x264 but zero in the
+oracle. Next: compare x264's `add4x4_idct` output against the oracle's
+`vk_ref_idct4` for the same dequantised block and fix the rounding.
