@@ -65,7 +65,7 @@ void vk_encode_i8x8_mb(vk_bs_t *bs, const uint8_t *src_y,
                        int stride_y, int stride_c,
                        const uint8_t modes[4], int chroma_mode,
                        uint8_t out_nnz[16], uint8_t out_cnnz[2][4],
-                       uint8_t *out_dcnz)
+                       uint8_t *out_dcnz, int mb_type_offset)
 {
     (void)stride_y; (void)stride_c; (void)src_u; (void)src_v;
     (void)recon_u; (void)recon_v; (void)out_cnnz; (void)out_dcnz;
@@ -134,7 +134,7 @@ void vk_encode_i8x8_mb(vk_bs_t *bs, const uint8_t *src_y,
     if (recon_v) memcpy(recon_v, pred_v, 64);
 
     /* ---- entropy: mb_type, transform8 flag, 4 pred modes, chroma, cbp ---- */
-    vk_bs_write_ue(bs, 0);   /* mb_type: I4x4/I8x8 */
+    vk_bs_write_ue(bs, (unsigned)mb_type_offset);  /* I-slice 0, P-slice 5 */
     vk_bs_write1(bs, 1);     /* b_transform_8x8 = 1 => I8x8 */
     /* pred modes: x264 writes the fixed mode; pred=min(left,top), default 2 */
     for (int g = 0; g < 4; ++g) {

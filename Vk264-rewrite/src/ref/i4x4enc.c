@@ -51,7 +51,7 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
                        int stride_y, int stride_c,
                        const uint8_t modes[16],
                        uint8_t out_nnz[16], uint8_t out_cnnz[2][4],
-                       uint8_t *out_dcnz)
+                       uint8_t *out_dcnz, int mb_type_offset)
 {
     int mf[16],bias[16],deq[16],cmf[16],cbias[16],cdeq[16];
     vk_ref_quant_tables(qp,0,mf,bias,deq);
@@ -73,8 +73,8 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
     vk_predict_chroma8(pu,t8,l8,nb?nb->tl_u:128,cmode);
     vk_predict_chroma8(pv,t8v,l8v,nb?nb->tl_v:128,cmode);
 
-    /* ---- mb_type = 0 (I4x4) + transform8 flag + 16 prediction modes ---- */
-    vk_bs_write_ue(bs,0);
+    /* ---- mb_type = offset+0 (I4x4) + transform8 flag + 16 prediction modes ---- */
+    vk_bs_write_ue(bs, (unsigned)mb_type_offset);
     /* x264 cavlc_mb_header_i: PPS b_transform_8x8_mode is on for every preset
      * except ultrafast (which never uses this I4x4 path), so write the
      * b_transform_8x8 flag; an I4x4 MB is always 0. */

@@ -18,7 +18,7 @@ int main(int argc,char**argv){
     memset(buf,0,sizeof(buf));vk_bs_init(&bs,buf,sizeof(buf));
     uint8_t on[16],oc[2][4],od;
     vk_encode_i4x4_mb(&bs,src,src+256,src+384,
-        ry+32*64+32,ru+32*64+32,rv+32*64+32,25,&nb,16,8,modes,on,oc,&od);
+        ry+32*64+32,ru+32*64+32,rv+32*64+32,25,&nb,16,8,modes,on,oc,&od,0);
     int n=(int)((vk_bs_pos(&bs)+7)/8);
     FILE*o=fopen(argv[2],"wb"); fwrite(buf,1,n,o); fclose(o);
     printf("emitted %d bits / %d bytes\n",(int)vk_bs_pos(&bs),n);

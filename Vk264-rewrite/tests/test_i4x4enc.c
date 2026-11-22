@@ -30,7 +30,7 @@ int main(void)
     uint8_t on[16],oc[2][4],od;
     vk_encode_i4x4_mb(&bs,src,src+256,src+384,
                       ry+ORIGIN*RS+ORIGIN,ru+ORIGIN*32+ORIGIN,rv+ORIGIN*32+ORIGIN,
-                      25,&nb,16,8,modes,on,oc,&od);
+                      25,&nb,16,8,modes,on,oc,&od,0);
     int bits=(int)vk_bs_pos(&bs);
     printf("i4x4enc: emitted %d bits\n",bits);
     if(bits<16){fprintf(stderr,"i4x4enc: too few bits\n");return 1;}

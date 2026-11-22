@@ -15,6 +15,6 @@ void vk_encode_i8x8_mb(vk_bs_t *bs, const uint8_t *src_y,
                        int stride_y, int stride_c,
                        const uint8_t modes[4], int chroma_mode,
                        uint8_t out_nnz[16], uint8_t out_cnnz[2][4],
-                       uint8_t *out_dcnz);
+                       uint8_t *out_dcnz, int mb_type_offset);
 
 #endif

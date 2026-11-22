@@ -88,7 +88,7 @@ static void encode_idr_cavlc(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
                 vk_i4x4_decide(sy, tmp+32*rs+32, rs, px, py, qp, 0,0,0,0, modes);
                 free(tmp);
                 vk_encode_i4x4_mb(bs, sy, su, sv, oy, ou, ov, qp, &nb, w, w/2,
-                                  modes, on, oc, &od);
+                                  modes, on, oc, &od, 0);
             } else if (getenv("ORACLE_I8X8") &&
                        ((mx==1 && my==0) || (mx==0 && my==1))) {
                 /* Test path for x264's I8x8 MBs on the 64x64 clip. */
@@ -102,7 +102,7 @@ static void encode_idr_cavlc(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
                 for (int yy=0; yy<16; ++yy)
                     memcpy(sy16+yy*16, sy+yy*w, 16);
                 vk_encode_i8x8_mb(bs, sy16, su, sv, oy, ou, ov, qp, &nb,
-                                  16, 8, modes, cm, on, oc, &od);
+                                  16, 8, modes, cm, on, oc, &od, 0);
             } else
             vk_encode_i16_mb(bs, sy, su, sv, oy, ou, ov, qp, mx, my, &nb,
                              w, w/2, on, oc, &od);

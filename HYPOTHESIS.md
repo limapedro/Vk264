@@ -1016,3 +1016,16 @@ Requirements to match frame 7 in a P-slice:
 This is a substantial integration; the current P encoder only supports
 P_L0(16x16) and I16x16. A general x264-faithful decision + multi-type P-slice
 emitter is the concrete next work item for superfast frame 7.
+
+### P-slice mb_type offset support added (this turn)
+x264 writes intra MBs in P/B slices via cavlc_mb_header_i(h, type, offset=5),
+where I-slices use offset=0. Added an `mb_type_offset` parameter to
+`vk_encode_i4x4_mb` and `vk_encode_i8x8_mb` so the existing emitters can be
+reused inside a P-slice (offset=5). Existing I-slice callers pass 0; all gates
+unchanged (CTest 23/23 + 65/65, CAVLC P sweep 1360/1360, MP4 56/56).
+
+Remaining work for frame 7: the P encoder's intra path is a custom I16-only
+implementation (code_i16_chroma_dc / code_i16_dc). It must dispatch to the
+I4x4/I8x8 emitters (with offset=5) based on x264's RD mode decision, using
+tight source/recon buffers and neighbour nnz caches. That integration is the
+concrete next step.
