@@ -220,6 +220,17 @@ blocks in a path not exercised by the 2-frame sweeps, or an emulation-
 prevention/byte-alignment edge case). No safe fix was established; no source
 change was committed.
 
+Bit-level alignment of the divergent region (NAL payload bits):
+```
+common prefix 808 bits, common suffix 85 bits
+x264 middle (59 bits): 0000010000 + [47-bit common run] + 11
+oracle middle (51 bits):           [47-bit common run] + 0100
+```
+x264 has 10 extra bits before the shared 47-bit run and 2 fewer after it.
+`0000010000` resembles a long VLC/escape prefix, yet no logged level,
+total_zeros, run_before, sign or coeff0 write differs. This is the exact
+signature that needs a byte-level (emitted-NAL) write trace to resolve.
+
 ## What is proven
 
 - IDR CAVLC and CABAC paths: byte-exact, including 8-frame clips on warzone.
