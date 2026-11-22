@@ -1,0 +1,229 @@
+exp003 MISMATCH NAL1 byte1 small64 superfast cavlc
+exp004 MISMATCH NAL2 byte5 small64 superfast cabac
+exp005 MISMATCH NAL1 byte1 small64 veryfast cavlc
+exp006 MISMATCH NAL2 byte5 small64 veryfast cabac
+exp007 MISMATCH NAL1 byte1 small64 faster cavlc
+exp008 MISMATCH NAL2 byte5 small64 faster cabac
+exp009 MISMATCH NAL1 byte1 small64 fast cavlc
+exp010 MISMATCH NAL1 byte3 small64 fast cabac
+exp011 MISMATCH NAL1 byte1 small64 medium cavlc
+exp012 MISMATCH NAL1 byte3 small64 medium cabac
+exp013 MISMATCH NAL1 byte1 small64 slow cavlc
+exp014 MISMATCH NAL1 byte3 small64 slow cabac
+exp015 MISMATCH NAL0 byte5 small64 slower cavlc
+exp016 MISMATCH NAL0 byte5 small64 slower cabac
+exp017 MISMATCH NAL0 byte5 small64 veryslow cavlc
+exp018 MISMATCH NAL0 byte5 small64 veryslow cabac
+exp019 MISMATCH NAL0 byte5 small64 placebo cavlc
+exp020 MISMATCH NAL0 byte5 small64 placebo cabac
+exp023 MISMATCH NAL1 byte1 small64 superfast cavlc
+exp024 MISMATCH NAL2 byte5 small64 superfast cabac
+exp025 MISMATCH NAL1 byte1 small64 veryfast cavlc
+exp026 MISMATCH NAL2 byte5 small64 veryfast cabac
+exp027 MISMATCH NAL1 byte1 small64 faster cavlc
+exp028 MISMATCH NAL2 byte5 small64 faster cabac
+exp029 MISMATCH NAL1 byte1 small64 fast cavlc
+exp030 MISMATCH NAL1 byte3 small64 fast cabac
+exp031 MISMATCH NAL1 byte1 small64 medium cavlc
+exp032 MISMATCH NAL1 byte3 small64 medium cabac
+exp033 MISMATCH NAL1 byte1 small64 slow cavlc
+exp034 MISMATCH NAL1 byte3 small64 slow cabac
+exp035 MISMATCH NAL0 byte5 small64 slower cavlc
+exp036 MISMATCH NAL0 byte5 small64 slower cabac
+exp037 MISMATCH NAL0 byte5 small64 veryslow cavlc
+exp038 MISMATCH NAL0 byte5 small64 veryslow cabac
+exp039 MISMATCH NAL0 byte5 small64 placebo cavlc
+exp040 MISMATCH NAL0 byte5 small64 placebo cabac
+exp043 MISMATCH NAL1 byte1 small64 superfast cavlc
+exp044 MISMATCH NAL2 byte5 small64 superfast cabac
+exp045 MISMATCH NAL1 byte1 small64 veryfast cavlc
+exp046 MISMATCH NAL2 byte5 small64 veryfast cabac
+exp047 MISMATCH NAL1 byte1 small64 faster cavlc
+exp048 MISMATCH NAL2 byte5 small64 faster cabac
+exp049 MISMATCH NAL1 byte1 small64 fast cavlc
+exp050 MISMATCH NAL1 byte3 small64 fast cabac
+exp051 MISMATCH NAL1 byte1 small64 medium cavlc
+exp052 MISMATCH NAL1 byte3 small64 medium cabac
+exp053 MISMATCH NAL1 byte1 small64 slow cavlc
+exp054 MISMATCH NAL1 byte3 small64 slow cabac
+exp055 MISMATCH NAL0 byte5 small64 slower cavlc
+exp056 MISMATCH NAL0 byte5 small64 slower cabac
+exp057 MISMATCH NAL0 byte5 small64 veryslow cavlc
+exp058 MISMATCH NAL0 byte5 small64 veryslow cabac
+exp059 MISMATCH NAL0 byte5 small64 placebo cavlc
+exp060 MISMATCH NAL0 byte5 small64 placebo cabac
+exp063 MISMATCH NAL COUNT 12/10 small64 superfast cavlc
+exp064 MISMATCH NAL COUNT 12/10 small64 superfast cabac
+exp065 MISMATCH NAL1 byte1 small64 veryfast cavlc
+exp066 MISMATCH NAL2 byte5 small64 veryfast cabac
+exp067 MISMATCH NAL1 byte1 small64 faster cavlc
+exp068 MISMATCH NAL2 byte5 small64 faster cabac
+exp069 MISMATCH NAL1 byte1 small64 fast cavlc
+exp070 MISMATCH NAL1 byte3 small64 fast cabac
+exp071 MISMATCH NAL1 byte1 small64 medium cavlc
+exp072 MISMATCH NAL1 byte3 small64 medium cabac
+exp073 MISMATCH NAL1 byte1 small64 slow cavlc
+exp074 MISMATCH NAL1 byte3 small64 slow cabac
+exp075 MISMATCH NAL0 byte5 small64 slower cavlc
+exp076 MISMATCH NAL0 byte5 small64 slower cabac
+exp077 MISMATCH NAL0 byte5 small64 veryslow cavlc
+exp078 MISMATCH NAL0 byte5 small64 veryslow cabac
+exp079 MISMATCH NAL0 byte5 small64 placebo cavlc
+exp080 MISMATCH NAL0 byte5 small64 placebo cabac
+exp083 MISMATCH NAL1 byte1 small64 superfast cavlc
+exp084 MISMATCH NAL2 byte5 small64 superfast cabac
+exp085 MISMATCH NAL1 byte1 small64 veryfast cavlc
+exp086 MISMATCH NAL2 byte5 small64 veryfast cabac
+exp087 MISMATCH NAL1 byte1 small64 faster cavlc
+exp088 MISMATCH NAL2 byte5 small64 faster cabac
+exp089 MISMATCH NAL1 byte1 small64 fast cavlc
+exp090 MISMATCH NAL1 byte3 small64 fast cabac
+exp091 MISMATCH NAL1 byte1 small64 medium cavlc
+exp092 MISMATCH NAL1 byte3 small64 medium cabac
+exp093 MISMATCH NAL1 byte1 small64 slow cavlc
+exp094 MISMATCH NAL1 byte3 small64 slow cabac
+exp095 MISMATCH NAL0 byte5 small64 slower cavlc
+exp096 MISMATCH NAL0 byte5 small64 slower cabac
+exp097 MISMATCH NAL0 byte5 small64 veryslow cavlc
+exp098 MISMATCH NAL0 byte5 small64 veryslow cabac
+exp099 MISMATCH NAL0 byte5 small64 placebo cavlc
+exp100 MISMATCH NAL0 byte5 small64 placebo cabac
+exp103 MISMATCH NAL COUNT 12/10 small64 superfast cavlc
+exp104 MISMATCH NAL COUNT 12/10 small64 superfast cabac
+exp105 MISMATCH NAL COUNT 12/10 small64 veryfast cavlc
+exp106 MISMATCH NAL COUNT 12/10 small64 veryfast cabac
+exp107 MISMATCH NAL COUNT 12/10 small64 faster cavlc
+exp108 MISMATCH NAL COUNT 12/10 small64 faster cabac
+exp109 MISMATCH NAL COUNT 12/10 small64 fast cavlc
+exp110 MISMATCH NAL COUNT 12/10 small64 fast cabac
+exp111 MISMATCH NAL COUNT 12/10 small64 medium cavlc
+exp112 MISMATCH NAL COUNT 12/10 small64 medium cabac
+exp113 MISMATCH NAL COUNT 12/10 small64 slow cavlc
+exp114 MISMATCH NAL COUNT 12/10 small64 slow cabac
+exp115 MISMATCH NAL0 byte5 small64 slower cavlc
+exp116 MISMATCH NAL0 byte5 small64 slower cabac
+exp117 MISMATCH NAL0 byte5 small64 veryslow cavlc
+exp118 MISMATCH NAL0 byte5 small64 veryslow cabac
+exp119 MISMATCH NAL0 byte5 small64 placebo cavlc
+exp120 MISMATCH NAL0 byte5 small64 placebo cabac
+exp121 oracle EXIT 2: exp121_oracle_fullres2_1920x1080_2f_ultrafast_cavlc: 
+exp122 oracle EXIT 2: exp122_oracle_fullres2_1920x1080_2f_ultrafast_cabac: 
+exp123 oracle EXIT 2: exp123_oracle_fullres2_1920x1080_2f_superfast_cavlc: 
+exp124 oracle EXIT 2: exp124_oracle_fullres2_1920x1080_2f_superfast_cabac: 
+exp125 oracle EXIT 2: exp125_oracle_fullres2_1920x1080_2f_veryfast_cavlc: 
+exp126 oracle EXIT 2: exp126_oracle_fullres2_1920x1080_2f_veryfast_cabac: 
+exp127 oracle EXIT 2: exp127_oracle_fullres2_1920x1080_2f_faster_cavlc: 
+exp128 oracle EXIT 2: exp128_oracle_fullres2_1920x1080_2f_faster_cabac: 
+exp129 oracle EXIT 2: exp129_oracle_fullres2_1920x1080_2f_fast_cavlc: 
+exp130 oracle EXIT 2: exp130_oracle_fullres2_1920x1080_2f_fast_cabac: 
+exp131 oracle EXIT 2: exp131_oracle_fullres2_1920x1080_2f_medium_cavlc: 
+exp132 oracle EXIT 2: exp132_oracle_fullres2_1920x1080_2f_medium_cabac: 
+exp133 oracle EXIT 2: exp133_oracle_fullres2_1920x1080_2f_slow_cavlc: 
+exp134 oracle EXIT 2: exp134_oracle_fullres2_1920x1080_2f_slow_cabac: 
+exp135 oracle EXIT 2: exp135_oracle_fullres2_1920x1080_2f_slower_cavlc: 
+exp136 oracle EXIT 2: exp136_oracle_fullres2_1920x1080_2f_slower_cabac: 
+exp137 oracle EXIT 2: exp137_oracle_fullres2_1920x1080_2f_veryslow_cavlc: 
+exp138 oracle EXIT 2: exp138_oracle_fullres2_1920x1080_2f_veryslow_cabac: 
+exp139 oracle EXIT 2: exp139_oracle_fullres2_1920x1080_2f_placebo_cavlc: 
+exp140 oracle EXIT 2: exp140_oracle_fullres2_1920x1080_2f_placebo_cabac: 
+exp141 oracle EXIT 2: exp141_oracle_fullres4_1920x1080_4f_ultrafast_cavlc: 
+exp142 oracle EXIT 2: exp142_oracle_fullres4_1920x1080_4f_ultrafast_cabac: 
+exp143 oracle EXIT 2: exp143_oracle_fullres4_1920x1080_4f_superfast_cavlc: 
+exp144 oracle EXIT 2: exp144_oracle_fullres4_1920x1080_4f_superfast_cabac: 
+exp145 oracle EXIT 2: exp145_oracle_fullres4_1920x1080_4f_veryfast_cavlc: 
+exp146 oracle EXIT 2: exp146_oracle_fullres4_1920x1080_4f_veryfast_cabac: 
+exp147 oracle EXIT 2: exp147_oracle_fullres4_1920x1080_4f_faster_cavlc: 
+exp148 oracle EXIT 2: exp148_oracle_fullres4_1920x1080_4f_faster_cabac: 
+exp149 oracle EXIT 2: exp149_oracle_fullres4_1920x1080_4f_fast_cavlc: 
+exp150 oracle EXIT 2: exp150_oracle_fullres4_1920x1080_4f_fast_cabac: 
+exp151 oracle EXIT 2: exp151_oracle_fullres4_1920x1080_4f_medium_cavlc: 
+exp152 oracle EXIT 2: exp152_oracle_fullres4_1920x1080_4f_medium_cabac: 
+exp153 oracle EXIT 2: exp153_oracle_fullres4_1920x1080_4f_slow_cavlc: 
+exp154 oracle EXIT 2: exp154_oracle_fullres4_1920x1080_4f_slow_cabac: 
+exp155 oracle EXIT 2: exp155_oracle_fullres4_1920x1080_4f_slower_cavlc: 
+exp156 oracle EXIT 2: exp156_oracle_fullres4_1920x1080_4f_slower_cabac: 
+exp157 oracle EXIT 2: exp157_oracle_fullres4_1920x1080_4f_veryslow_cavlc: 
+exp158 oracle EXIT 2: exp158_oracle_fullres4_1920x1080_4f_veryslow_cabac: 
+exp159 oracle EXIT 2: exp159_oracle_fullres4_1920x1080_4f_placebo_cavlc: 
+exp160 oracle EXIT 2: exp160_oracle_fullres4_1920x1080_4f_placebo_cabac: 
+exp161 oracle EXIT 2: exp161_oracle_fullres2_1920x1080_2f_ultrafast_cavlc: 
+exp162 oracle EXIT 2: exp162_oracle_fullres2_1920x1080_2f_ultrafast_cabac: 
+exp163 oracle EXIT 2: exp163_oracle_fullres2_1920x1080_2f_superfast_cavlc: 
+exp164 oracle EXIT 2: exp164_oracle_fullres2_1920x1080_2f_superfast_cabac: 
+exp165 oracle EXIT 2: exp165_oracle_fullres2_1920x1080_2f_veryfast_cavlc: 
+exp166 oracle EXIT 2: exp166_oracle_fullres2_1920x1080_2f_veryfast_cabac: 
+exp167 oracle EXIT 2: exp167_oracle_fullres2_1920x1080_2f_faster_cavlc: 
+exp168 oracle EXIT 2: exp168_oracle_fullres2_1920x1080_2f_faster_cabac: 
+exp169 oracle EXIT 2: exp169_oracle_fullres2_1920x1080_2f_fast_cavlc: 
+exp170 oracle EXIT 2: exp170_oracle_fullres2_1920x1080_2f_fast_cabac: 
+exp171 oracle EXIT 2: exp171_oracle_fullres2_1920x1080_2f_medium_cavlc: 
+exp172 oracle EXIT 2: exp172_oracle_fullres2_1920x1080_2f_medium_cabac: 
+exp173 oracle EXIT 2: exp173_oracle_fullres2_1920x1080_2f_slow_cavlc: 
+exp174 oracle EXIT 2: exp174_oracle_fullres2_1920x1080_2f_slow_cabac: 
+exp175 oracle EXIT 2: exp175_oracle_fullres2_1920x1080_2f_slower_cavlc: 
+exp176 oracle EXIT 2: exp176_oracle_fullres2_1920x1080_2f_slower_cabac: 
+exp177 oracle EXIT 2: exp177_oracle_fullres2_1920x1080_2f_veryslow_cavlc: 
+exp178 oracle EXIT 2: exp178_oracle_fullres2_1920x1080_2f_veryslow_cabac: 
+exp179 oracle EXIT 2: exp179_oracle_fullres2_1920x1080_2f_placebo_cavlc: 
+exp180 oracle EXIT 2: exp180_oracle_fullres2_1920x1080_2f_placebo_cabac: 
+exp181 oracle EXIT 2: exp181_oracle_fullres4_1920x1080_4f_ultrafast_cavlc: 
+exp182 oracle EXIT 2: exp182_oracle_fullres4_1920x1080_4f_ultrafast_cabac: 
+exp183 oracle EXIT 2: exp183_oracle_fullres4_1920x1080_4f_superfast_cavlc: 
+exp184 oracle EXIT 2: exp184_oracle_fullres4_1920x1080_4f_superfast_cabac: 
+exp185 oracle EXIT 2: exp185_oracle_fullres4_1920x1080_4f_veryfast_cavlc: 
+exp186 oracle EXIT 2: exp186_oracle_fullres4_1920x1080_4f_veryfast_cabac: 
+exp187 oracle EXIT 2: exp187_oracle_fullres4_1920x1080_4f_faster_cavlc: 
+exp188 oracle EXIT 2: exp188_oracle_fullres4_1920x1080_4f_faster_cabac: 
+exp189 oracle EXIT 2: exp189_oracle_fullres4_1920x1080_4f_fast_cavlc: 
+exp190 oracle EXIT 2: exp190_oracle_fullres4_1920x1080_4f_fast_cabac: 
+exp191 oracle EXIT 2: exp191_oracle_fullres4_1920x1080_4f_medium_cavlc: 
+exp192 oracle EXIT 2: exp192_oracle_fullres4_1920x1080_4f_medium_cabac: 
+exp193 oracle EXIT 2: exp193_oracle_fullres4_1920x1080_4f_slow_cavlc: 
+exp194 oracle EXIT 2: exp194_oracle_fullres4_1920x1080_4f_slow_cabac: 
+exp195 oracle EXIT 2: exp195_oracle_fullres4_1920x1080_4f_slower_cavlc: 
+exp196 oracle EXIT 2: exp196_oracle_fullres4_1920x1080_4f_slower_cabac: 
+exp197 oracle EXIT 2: exp197_oracle_fullres4_1920x1080_4f_veryslow_cavlc: 
+exp198 oracle EXIT 2: exp198_oracle_fullres4_1920x1080_4f_veryslow_cabac: 
+exp199 oracle EXIT 2: exp199_oracle_fullres4_1920x1080_4f_placebo_cavlc: 
+exp200 oracle EXIT 2: exp200_oracle_fullres4_1920x1080_4f_placebo_cabac: 
+exp201 MISMATCH NAL COUNT 640/602 fulllen600 ultrafast cavlc
+exp202 MISMATCH NAL COUNT 640/602 fulllen600 ultrafast cabac
+exp203 MISMATCH NAL COUNT 676/602 fulllen600 superfast cavlc
+exp204 MISMATCH NAL COUNT 676/602 fulllen600 superfast cabac
+exp205 MISMATCH NAL COUNT 678/602 fulllen600 veryfast cavlc
+exp206 MISMATCH NAL COUNT 678/602 fulllen600 veryfast cabac
+exp207 MISMATCH NAL COUNT 678/602 fulllen600 faster cavlc
+exp208 MISMATCH NAL COUNT 678/602 fulllen600 faster cabac
+exp209 MISMATCH NAL COUNT 678/602 fulllen600 fast cavlc
+exp210 MISMATCH NAL COUNT 678/602 fulllen600 fast cabac
+exp211 MISMATCH NAL COUNT 678/602 fulllen600 medium cavlc
+exp212 MISMATCH NAL COUNT 678/602 fulllen600 medium cabac
+exp213 MISMATCH NAL COUNT 678/602 fulllen600 slow cavlc
+exp214 MISMATCH NAL COUNT 678/602 fulllen600 slow cabac
+exp215 MISMATCH NAL COUNT 642/602 fulllen600 slower cavlc
+exp216 MISMATCH NAL COUNT 642/602 fulllen600 slower cabac
+exp217 MISMATCH NAL COUNT 642/602 fulllen600 veryslow cavlc
+exp218 MISMATCH NAL COUNT 642/602 fulllen600 veryslow cabac
+exp219 MISMATCH NAL COUNT 642/602 fulllen600 placebo cavlc
+exp220 MISMATCH NAL COUNT 642/602 fulllen600 placebo cabac
+exp221 MISMATCH NAL COUNT 640/602 fulllen600 ultrafast cavlc
+exp222 MISMATCH NAL COUNT 640/602 fulllen600 ultrafast cabac
+exp223 MISMATCH NAL COUNT 750/602 fulllen600 superfast cavlc
+exp224 MISMATCH NAL COUNT 750/602 fulllen600 superfast cabac
+exp225 MISMATCH NAL COUNT 780/602 fulllen600 veryfast cavlc
+exp226 MISMATCH NAL COUNT 780/602 fulllen600 veryfast cabac
+exp227 MISMATCH NAL COUNT 780/602 fulllen600 faster cavlc
+exp228 MISMATCH NAL COUNT 780/602 fulllen600 faster cabac
+exp229 MISMATCH NAL COUNT 780/602 fulllen600 fast cavlc
+exp230 MISMATCH NAL COUNT 780/602 fulllen600 fast cabac
+exp231 MISMATCH NAL COUNT 780/602 fulllen600 medium cavlc
+exp232 MISMATCH NAL COUNT 780/602 fulllen600 medium cabac
+exp233 MISMATCH NAL COUNT 780/602 fulllen600 slow cavlc
+exp234 MISMATCH NAL COUNT 780/602 fulllen600 slow cabac
+exp235 MISMATCH NAL COUNT 662/602 fulllen600 slower cavlc
+exp236 MISMATCH NAL COUNT 662/602 fulllen600 slower cabac
+exp237 MISMATCH NAL COUNT 642/602 fulllen600 veryslow cavlc
+exp238 MISMATCH NAL COUNT 642/602 fulllen600 veryslow cabac
+exp239 MISMATCH NAL COUNT 642/602 fulllen600 placebo cavlc
+exp240 MISMATCH NAL COUNT 642/602 fulllen600 placebo cabac
+228 errors logged
