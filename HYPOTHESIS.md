@@ -493,3 +493,37 @@ video MP4 byte-exact 36/56 -> 40/56 (4 streams gained, 0 lost)
   gained: exp004 + exp026 pairs (warzone 64x64 8f CAVLC + CABAC)
 ```
 Remaining 8f mismatches are on other crops (320x240/640x480).
+
+## 04 Analysis — clip the ME starting predictor to fullpel limits
+
+`build/nalcmp8.py c12.yuv` (forza 64x64 8f) first diverged at NAL 6 = frame 4
+byte 102; `build/f4dump.py` traced it to MB 12: x264 inter MV (-44,72) vs
+oracle (-44,88). `build/me4.py` + `build/sel4.py` showed:
+```
+x264 candidate selection: bmx=-11 bmy=18 pmv=-11,18 bcost=654
+oracle start:             mvp=-11,22 (unclipped), limits y<=18
+```
+x264 `me.c:281-283` clips FPEL(m->mvp) to the fullpel MV limits before the
+search; the oracle used the raw mvp, starting the diamond search at a point
+x264 never considers. Fixed in `motion.c` by clipping bmx/bmy to lim_*.
+
+After the fix, c12.yuv frames 0-6 are byte-exact; the divergence advanced to
+frame 7 (NAL 9 byte 126).
+
+### Fast-intra investigation (frame 7, not yet a clean fix)
+At frame 7 MB 11, x264 chooses inter (inter=2101, i16=2416) while the oracle
+chose intra (i16=1336 via Plane mode). `build/fastintra.py` proved x264's
+`b_fast_intra` is dynamic: 0 at frame 1 / frame 4, 1 at frame 7. When set,
+`mb_analyse_intra` skips the expensive Plane mode if best(V,H,DC)>inter_cost.
+A heuristic port (ref-MV zero proxy + intra-MB count) made all frame-7 MB
+*decisions* match and moved the divergence to byte 100 (MB 13 residual), but
+did not reach byte-exactness and is not committed because it is approximate.
+Correct port needs a per-frame collocated intra MB-type map threaded through
+the CLI/encoder APIs. Deferred.
+
+### Verified for the mvp-clip fix
+```
+c12.yuv 64x64 8f: frames 0-6 NALs byte-exact (NAL 6 now 120 bytes both)
+ctest rewrite 18/18, main 65/65 (prior state)
+video MP4: 40/56 unchanged (0 gained, 0 lost) - correctness fix only
+```
