@@ -591,3 +591,23 @@ video MP4 54/56 -> 56/56 (2 streams gained = exp008 pair, 0 lost)
 All 28 MP4 pairs across 3 clips, 4 crops, 2/8 frames, CAVLC/CABAC are now
 byte-exact vs x264. 04 Analysis (single-frame and multi-frame CAVLC/CABAC
 mode-decision path) is closed for these configurations.
+
+## Function parity — honest scope (this turn)
+
+56/56 byte-exact is scoped to **ultrafast** only. Full preset/config parity
+requires porting many more x264 functions: the inventory lists 831 functions,
+with 24 ported/represented (~2.9%). Key missing portable-C families:
+- `x264_me_refine_qpel` + half-pel MC (subme>0, i.e. superfast+)
+- `x264_mb_encode_i4x4` and I4x4 mode decision (superfast+)
+- 8x8 transform (`sub8x8_dct`, `add8x8_idct`, `quant_8x8`) for High profile
+- `x264_rd_cost*`, trellis quant (`rdo.c`, ~26 functions)
+- Lookahead / slicetype / scenecut / mbtree (~43 functions)
+- B-frame analysis (`mb_analyse_inter_b*`, 9 functions)
+- Rate control (AQ/CRF/VBV, ~45 functions)
+- Deblocking filter (not present in the C oracle; disabled at ultrafast)
+
+This turn added `vk_hpel_filter` (src/ref/hpel.c), a byte-exact port of x264
+common/mc.c `hpel_filter()`, with CTest `rewrite_hpel_filter` (3072 pixels).
+Gates now 19/19 rewrite + 65/65 main; 56/56 MP4 unchanged.
+Next building block: wire hpel into subpel ME (`x264_me_refine_qpel`) so the
+superfast preset can be attempted.
