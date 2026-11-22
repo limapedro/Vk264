@@ -60,8 +60,27 @@ After decimation, set `oc[pl][b] = cnnz[pl][b]`.
 CAVLC P-slice parity 1350 -> **1355/1360**. Gained: 0,420,16 / 120,960,12 /
 120,960,16 / 120,960,4 / 960,0,16. Lost: none.
 
-### Remaining 5 cases
+### Remaining 5 cases (now fixed)
 `0,900,16`, `120,360,12`, `120,960,8`, `1800,960,16`, `480,960,16`
 
-## Next step
-Apply the same accurate-trace / block-dump technique to the remaining 5 cases.
+## BREAKTHROUGH #2 — full parity (2026-11-22)
+
+### Root cause
+`code_i16_dc()` wrote I16 luma AC residual blocks with `VK_DCT_LUMA_4x4`
+(count_cat[2]=16) but x264 uses `DCT_LUMA_AC` (count_cat[1]=15). For a
+15-coefficient AC block, x264 skips total_zeros (`15 < 15` false) while the
+oracle wrote an invalid `sz=1 bits=0` VLC — a 1-bit stream shift.
+
+### Evidence (case 0,900,16)
+Accurate trace: first divergent bit at MB7 offset 509; oracle wrote an extra
+`W 1 0` before the next VLC. Tagged VLC logging showed:
+- x264: no total_zeros after the total=15 block
+- oracle: `TZ sz=1 bits=0` after the total=15 block
+
+### Fix
+Pass `VK_DCT_LUMA_AC` instead of `VK_DCT_LUMA_4x4` in `code_i16_dc()`.
+
+### Result — FULL ORACLE PARITY
+CAVLC P-slice parity 1355 -> **1360/1360**. Gained all 5 remaining cases,
+lost 0. CABAC P 1360/1360, CAVLC I 72/72.
+CTest 65/65 + 18/18. GPU shaders can now be un-deferred.
