@@ -8,6 +8,7 @@
  */
 #include "pframe.h"
 #include <stdio.h>
+#include <stdio.h>
 #include "motion.h"
 #include "slice.h"
 #include "cavlc.h"
@@ -830,6 +831,16 @@ void vk_encode_p_frame_recon(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
                              int w, int h, int qp, int frame_num,
                              uint8_t *recon_out)
 {
+    vk_encode_p_frame_recon_mv(bs, sps, pps, cur, ref, w, h, qp, frame_num,
+                               recon_out, NULL, NULL);
+}
+
+void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
+                                const uint8_t *cur, const uint8_t *ref,
+                                int w, int h, int qp, int frame_num,
+                                uint8_t *recon_out,
+                                const int (*ref_mv)[2], int (*cur_mv)[2])
+{
     int mw = w/16, mh = h/16;
     int rs = w + 2*LPAD;
     int crs = w/2 + 2*CPAD;
@@ -942,11 +953,57 @@ void vk_encode_p_frame_recon(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
                     cand[2*nc] = ax; cand[2*nc+1] = ay;
                     ++nc;
                 }
+                /* x264_mb_predict_mv_ref16x16 also appends temporal
+                 * predictors from the reference frame's mv16x16 cache:
+                 * collocated, right and bottom neighbours, scaled by
+                 * POC distance (256/256 for consecutive P frames).  These
+                 * are added unconditionally (no duplicate/zero filtering).
+                 * The IDR reference has only zero MVs, so 2-frame fixtures
+                 * never exercise this path. */
+                if (ref_mv) {
+                    int tm[3][2], nt = 0;
+                    tm[nt][0] = ref_mv[idx][0]; tm[nt][1] = ref_mv[idx][1]; ++nt;
+                    if (mx+1 < mw) {
+                        tm[nt][0] = ref_mv[idx+1][0]; tm[nt][1] = ref_mv[idx+1][1]; ++nt;
+                    }
+                    if (my+1 < mh) {
+                        tm[nt][0] = ref_mv[idx+mw][0]; tm[nt][1] = ref_mv[idx+mw][1]; ++nt;
+                    }
+                    for (int k = 0; k < nt && nc < 8; ++k) {
+                        /* scale = 256 for consecutive P frames, then
+                         * x264_predictor_roundclip() rounds qpel -> fullpel
+                         * with (mv+2)>>2. */
+                        int ax = (tm[k][0] + 2) >> 2;
+                        int ay = (tm[k][1] + 2) >> 2;
+                        if (!ax && !ay) continue;              /* x264: !mv */
+                        if (ax == mvpx/4 && ay == mvpy/4) continue; /* == pmv */
+                        cand[2*nc] = ax; cand[2*nc+1] = ay;
+                        ++nc;
+                    }
+                }
+                if (frame_num == 3 && idx == 0 && ref_mv) {
+                    fprintf(stderr,"MVCACHE B ");
+                    for(int i=0;i<16;i++) fprintf(stderr,"[%d,%d]",ref_mv[i][0],ref_mv[i][1]);
+                    fprintf(stderr,"\n");
+                }
+                if (frame_num == 2 && idx == 9) {
+                    fprintf(stderr,"TMV B nc=%d mvp=%d,%d refmv=%d,%d cands=",
+                            nc,mvpx,mvpy,ref_mv?ref_mv[idx][0]:-99999,ref_mv?ref_mv[idx][1]:-99999);
+                    for(int q=0;q<nc;++q) fprintf(stderr,"[%d,%d]",cand[2*q],cand[2*q+1]);
+                    fprintf(stderr,"\n");
+                }
+                if (frame_num == 4 && idx == 0 && ref_mv) {
+                    fprintf(stderr,"TMV4 B refmv=[%d,%d][%d,%d][%d,%d] cands=",
+                        ref_mv[0][0],ref_mv[0][1],ref_mv[1][0],ref_mv[1][1],ref_mv[16][0],ref_mv[16][1]);
+                    for(int q=0;q<nc;++q) fprintf(stderr,"[%d,%d]",cand[2*q],cand[2*q+1]);
+                    fprintf(stderr,"\n");
+                }
                 inter_cost = vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
                             mvpx/4, mvpy/4, 16,
                             lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
                             cand, nc, &mvx, &mvy, h);
                 mvr[idx][0] = mvx*4; mvr[idx][1] = mvy*4;
+                if (cur_mv) { cur_mv[idx][0] = mvr[idx][0]; cur_mv[idx][1] = mvr[idx][1]; }
                 /* x264 promotes P16 to P_SKIP when cbp==0 and MV==pskip_mv. */
                 int qx = mvx*4, qy = mvy*4;
                 if (qx == psk_x && qy == psk_y &&

@@ -150,7 +150,7 @@
         "duration": "0.133336"
       }
     },
-    "comparison": "MISMATCH nal_count=10/10 first_diff_nal=4 byte=39"
+    "comparison": "MISMATCH nal_count=10/10 first_diff_nal=6 byte=102"
   },
   {
     "experiment": 4,
@@ -168,19 +168,19 @@
     "qp_i": 25,
     "entropy": "cavlc",
     "x264_preset_reference": "ultrafast",
-    "h264_sha256": "eec39ba6d243bae65cc57b17fa79f56a5094b276be876b1c0f84e16115043619",
-    "h264_bytes": 1348,
+    "h264_sha256": "e00fd76013e4a40f5dc33ce60a16234d41b30b86f048349e43e6b2c19552dc93",
+    "h264_bytes": 1375,
     "nal_lengths": [
       20,
       4,
       221,
       119,
-      97,
-      165,
-      179,
-      182,
-      162,
-      159
+      100,
+      172,
+      171,
+      171,
+      169,
+      188
     ],
     "ffprobe": {
       "programs": [],
@@ -201,7 +201,7 @@
         "duration": "0.133336"
       }
     },
-    "comparison": "MISMATCH nal_count=10/10 first_diff_nal=4 byte=39"
+    "comparison": "MISMATCH nal_count=10/10 first_diff_nal=6 byte=102"
   },
   {
     "experiment": 5,
@@ -252,7 +252,7 @@
         "duration": "0.133336"
       }
     },
-    "comparison": "MISMATCH nal_count=10/10 first_diff_nal=4 byte=36"
+    "comparison": "MISMATCH nal_count=10/10 first_diff_nal=6 byte=89"
   },
   {
     "experiment": 6,
@@ -270,19 +270,19 @@
     "qp_i": 25,
     "entropy": "cabac",
     "x264_preset_reference": "ultrafast",
-    "h264_sha256": "1c625caa431bcc3da678da2b71684415255f33a87288c473bdedaf2ece64d174",
-    "h264_bytes": 1148,
+    "h264_sha256": "1b87c1e624d91e9f4dd6307c4ed26af5522496cd9c57553d11608f52769fd173",
+    "h264_bytes": 1157,
     "nal_lengths": [
       20,
       4,
       171,
       102,
-      88,
-      138,
-      156,
-      154,
-      137,
-      138
+      90,
+      145,
+      147,
+      142,
+      140,
+      156
     ],
     "ffprobe": {
       "programs": [],
@@ -303,7 +303,7 @@
         "duration": "0.133336"
       }
     },
-    "comparison": "MISMATCH nal_count=10/10 first_diff_nal=4 byte=36"
+    "comparison": "MISMATCH nal_count=10/10 first_diff_nal=6 byte=89"
   },
   {
     "experiment": 7,
@@ -372,19 +372,19 @@
     "qp_i": 25,
     "entropy": "cavlc",
     "x264_preset_reference": "fast",
-    "h264_sha256": "f81edba3dedc6d65b8c0103d5985fcd279e4127aa6a8b9044a24d937034b335d",
-    "h264_bytes": 1344,
+    "h264_sha256": "1158ffef7de066d711ee5c7273ad21f0027e096a6128d037563eef5a0ceaa8d4",
+    "h264_bytes": 1370,
     "nal_lengths": [
       20,
       4,
       221,
       119,
-      97,
-      165,
-      176,
-      181,
-      161,
-      160
+      100,
+      172,
+      166,
+      171,
+      169,
+      188
     ],
     "ffprobe": {
       "programs": [],
