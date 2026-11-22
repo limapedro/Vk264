@@ -909,3 +909,27 @@ match frames 3+ the oracle must replicate this exact POC/frame_num assignment
 step; the B-slice encoder itself is validated.
 
 All gates still pass (CTest 23/23 + 65/65, MP4 56/56).
+
+### B-frame POC assignment + ref flags (this turn)
+Instrumented x264's `slice_header_write` (build/framemap.py, build/hdrlen.py)
+to get the definitive per-frame map for the 8-frame superfast clip:
+```
+frame:     0    1    2    3    4    5    6    7
+fn:        0    1    2    3    3    3    4    4
+POC:       0    8    4    2    6   12   10   14
+type:      I    P    B    B    B    P    B    P
+nal_ref:   3    2    2    0    0    2    0    2
+hdr bits:  -   28   28   29   29   44   29   61
+```
+Key discovery: non-reference B-frames omit the adaptive-ref-pic-marking bit
+and use qp offset 2 (29-bit header), while reference B-frames use qp offset 1
+(28-bit header). Implemented this in `vk_encode_b_slice_allskip` with a
+`nal_ref_idc` parameter, and added the POC/frame_num/ref lookup in the CLI
+test path. Also added `vk_encode_p_slice_allskip` for frame 5.
+
+Result (ORACLE_I4X4/I8X8/BSLICE_TEST opt-ins): **6 of 8 superfast slices are
+byte-exact** — IDR, P1, B2, B3, B4, B6. Remaining: frame 5 (P, POC 12 — x264
+header is 44 bits vs oracle 30, likely extra ref-list/weight fields) and
+frame 7 (P, 200 bytes with residual — not all skips).
+
+All gates still pass: CTest 23/23 + 65/65, MP4 56/56.

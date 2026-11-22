@@ -5,7 +5,11 @@
 #include "param.h"
 
 void vk_encode_b_slice_allskip(vk_bs_t *bs, const vk_sps_t *sps,
-                               const vk_pps_t *pps, int frame_num,
+                               const vk_pps_t *pps, int frame_num, int poc,
+                               int slice_qp, int num_mbs, int nal_ref_idc);
+
+void vk_encode_p_slice_allskip(vk_bs_t *bs, const vk_sps_t *sps,
+                               const vk_pps_t *pps, int frame_num, int poc,
                                int slice_qp, int num_mbs);
 
 #endif

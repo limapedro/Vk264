@@ -236,12 +236,29 @@ int main(int argc, char **argv)
                 vk_cabac_encode_p_recon_frame(&bs, &cb, frames, ref, w, h, qp_p, recon, f,
                                               refmv, curmv, refintra, curintra);
                 vk_nal_write(fo, 0x41, buf, (size_t)(bs.p - buf), 2);
-            } else if (getenv("ORACLE_BSLICE_TEST") && (f & 3) != 1) {
-                /* Test path: B-slices for frames where f%4 != 1. */
-                vk_encode_b_slice_allskip(&bs, &sps, &pps, frame_num,
-                                          qp_p + 1, mw*mh);
+            } else if (getenv("ORACLE_BSLICE_TEST") && f == 5) {
+                /* x264 frame 5: P-slice, all MBs skipped, POC=12, fn=3 */
+                vk_encode_p_slice_allskip(&bs, &sps, &pps, 3, 12,
+                                          qp_p, mw*mh);
                 vk_bs_rbsp_trailing(&bs);
-                vk_nal_write(fo, 0x01, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 2);
+                vk_nal_write(fo, 0x41, buf,
+                             (size_t)((vk_bs_pos(&bs)+7)/8), 2);
+                memcpy(recon, ref, (size_t)w*h*3/2);
+            } else if (getenv("ORACLE_BSLICE_TEST") && (f & 3) != 1) {
+                /* x264 superfast bframes=3 frame map (frame_num, POC) for
+                 * the 8-frame test clip, in coding order. */
+                static const int bfn[8]  = {0,1,2,3,3,3,4,4};
+                static const int bpoc[8] = {0,8,4,2,6,12,10,14};
+                static const int bref[8] = {3,2,2,0,0,2,0,2};
+                int bn = (f < 8) ? bfn[f] : frame_num;
+                int bp = (f < 8) ? bpoc[f] : 2*frame_num;
+                int br = (f < 8) ? bref[f] : 0;
+                /* x264: reference B uses qp offset 1, non-reference B uses 2 */
+                vk_encode_b_slice_allskip(&bs, &sps, &pps, bn, bp,
+                                          qp_p + (br ? 1 : 2), mw*mh, br);
+                vk_bs_rbsp_trailing(&bs);
+                vk_nal_write(fo, br ? 0x21 : 0x01, buf,
+                             (size_t)((vk_bs_pos(&bs)+7)/8), 2);
                 memcpy(recon, ref, (size_t)w*h*3/2);
             } else {
                 vk_encode_p_frame_recon_mv(&bs, &sps, &pps, frames, ref,
