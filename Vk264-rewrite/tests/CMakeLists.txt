@@ -43,6 +43,14 @@ add_executable(vk264_i4x4enc_test test_i4x4enc.c)
 target_link_libraries(vk264_i4x4enc_test PRIVATE vk264_rewrite_ref)
 add_test(NAME rewrite_i4x4_emit COMMAND vk264_i4x4enc_test)
 
+add_executable(vk264_encoder_test test_encoder.c)
+target_link_libraries(vk264_encoder_test PRIVATE vk264_rewrite_ref)
+add_test(NAME rewrite_encoder_orchestration COMMAND vk264_encoder_test)
+
+add_executable(vk264_ratecontrol_test test_ratecontrol.c)
+target_link_libraries(vk264_ratecontrol_test PRIVATE vk264_rewrite_ref)
+add_test(NAME rewrite_ratecontrol_primitives COMMAND vk264_ratecontrol_test)
+
 add_executable(vk264_slicetype_test test_slicetype.c)
 target_link_libraries(vk264_slicetype_test PRIVATE vk264_rewrite_ref)
 add_test(NAME rewrite_slicetype_decide COMMAND vk264_slicetype_test)

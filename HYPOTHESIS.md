@@ -1288,3 +1288,22 @@ irregular B-frame runs. `build/compare_slicetype.py` documents the mismatch
 frame by frame. Next: port lowres frame cost + `x264_slicetype_analyse`.
 
 Verification: CTest 23/23 -> 24/24 (new gate), all prior gates unchanged.
+
+## Pipeline stage 10 - rate control (new work)
+Added `src/ref/ratecontrol.c/h`: x264's `qp2qscale`/`qscale2qp` with exact
+float arithmetic (`0.85f*powf(2,(qp-12)/6)`), `vk_rc_lambda` (x264 lambda tab
+pow(2,qp/6-2) clamped to >=1) and `qscale2bits` (power 1.1). New byte-exact
+CTest `rewrite_ratecontrol_primitives` compares QP 0..51 against host copies
+of x264's formulas and the full lambda table.
+
+## Pipeline stage 12 - encoder orchestration (new work)
+Added `src/ref/encoder.c/h`: `vk_encoder_t` state (frame_num, IDR counter,
+last IDR, keyframe) plus `vk_encoder_frame_begin/end` that fill
+`vk_enc_frame_state_t` (frame_num, POC, nal_ref_idc, idr_pic_id, keyframe) from
+the slicetype decision. New CTest `rewrite_encoder_orchestration` verifies a
+5-frame GOP's coding order/state.
+
+CTest: 23/23 -> 26/26 (three new gates). All prior gates green.
+
+## Pipeline stage 04 - analysis / mode decision
+Next: general RD-based I16/I8/I4 decision (emitters exist but are opt-in).
