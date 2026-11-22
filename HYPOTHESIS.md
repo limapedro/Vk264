@@ -359,6 +359,20 @@ Remaining candidate differences in the oracle's `probe()`:
 Next: compare the oracle's probe MC prediction and quantized coefficients
 against x264 for MB 32. This is the live 04 Analysis lead.
 
+**Probe result captured (MB 32, 320x240):**
+```
+x264:  clipped mvp=(20,0), luma decimate scores 2,4 -> RESULT=1 (skip)
+oracle: psk=(20,4), probe result 0 (not skip), qp=28
+```
+The 1-pixel y difference in the P_SKIP MV predictor (20,0 vs 20,4) flips
+the decision. x264 clips `pskip_mv` to `mv_min/mv_max` (mvpred.c:1001-1002);
+the oracle's `probe()` does not clip at all. Verified x264's
+`x264_mb_predict_mv_16x16` uses top-right with top-left fallback — the
+oracle's `mvp16_avail` mirrors this. The MV-clipping difference is the
+leading hypothesis; note x264's reported mv_min/max at this MB were
+(-864,-160)/(544,928), which do NOT clip (20,4), so the (20,0) likely comes
+from a different pskip-MV source and needs one more trace to resolve.
+
 **run_before table ruled out:** `build/dumprb.py` dumped all 65536 generated
 entries from x264's `x264_run_before[]` and the oracle's `run_before[]`:
 ```
