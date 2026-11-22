@@ -153,6 +153,22 @@ So the 8-bit divergence begins AFTER the last MB header, in residual data.
 The decoder cannot parse the residual blocks (`no coeff token`), which is
 itself evidence that the residual VLC state diverges there.
 
+**Per-block residual dumps from both encoders (frame 4) contradict that:**
+`build/_blk4.py` logged every `cavlc_block_residual_internal` /
+`vk_cavlc_block_residual` call and `build/cmp_blk4.py` compared them:
+```
+counts 40 / 40
+ALL BLOCKS MATCH (levels truncated to total)
+```
+Every block's `mb`, `cat`, `nC`, `total`, `trailing`, `mask` and all nonzero
+level values are identical. Combined with the identical MB headers, this
+means the 8-bit divergence is NOT in any logged residual block or header.
+It must be in a write that bypasses those hooks — most likely the
+`x264_coeff0_token` for all-zero blocks (written directly by x264's macro,
+so not logged) or the end-of-slice skip_run. The bit-position instrumentation
+needed to confirm this could not be completed (the oracle build rejected the
+`vk_bs_pos` instrumentation call), so no fix was committed.
+
 ## What is proven
 
 - IDR CAVLC and CABAC paths: byte-exact, including 8-frame clips on warzone.
