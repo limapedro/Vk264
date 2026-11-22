@@ -14,6 +14,12 @@
 void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                        const uint8_t *cur, const uint8_t *ref,
                        int w, int h, int qp, int frame_num);
+/* As above, but also exports the reconstructed YUV420 frame (for chained
+ * P-slices in a multi-frame video encode). recon_out may be NULL. */
+void vk_encode_p_frame_recon(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
+                             const uint8_t *cur, const uint8_t *ref,
+                             int w, int h, int qp, int frame_num,
+                             uint8_t *recon_out);
 
 /* Decide P_SKIP for one MB: 1 iff the residual at the P_SKIP MV predictor
  * quantises to zero (x264 macroblock_probe_pskip). mvp is in quarter-pel. */

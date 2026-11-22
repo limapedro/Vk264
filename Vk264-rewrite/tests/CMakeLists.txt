@@ -33,6 +33,9 @@ target_link_libraries(vk264_oracle_pcli PRIVATE vk264_rewrite_ref)
 add_executable(vk264_oracle_pme_cli oracle_pme_cli.c)
 target_link_libraries(vk264_oracle_pme_cli PRIVATE vk264_rewrite_ref)
 
+add_executable(vk264_oracle_video_cli oracle_video_cli.c)
+target_link_libraries(vk264_oracle_video_cli PRIVATE vk264_rewrite_ref)
+
 add_executable(vk264_oracle_cabac_cli oracle_cabac_cli.c)
 target_link_libraries(vk264_oracle_cabac_cli PRIVATE vk264_rewrite_ref)
 add_test(NAME rewrite_cabac

@@ -33,7 +33,10 @@ STATS = [
     ("CABAC P-SLICES", f"{CABAC_P_EXACT} / {CABAC_P_TOTAL}",
      f"{CABAC_P_EXACT/CABAC_P_TOTAL*100:.1f}%", "#2ea043"),
     ("CTEST GATES", "65 + 18 / 83", "100.0%", "#2ea043"),
-    ("x264 INVENTORY", "669 funcs / 35 files", "42 N/A", "#388bfd"),
+    # Video-level MP4 experiments (tests/video_experiments.json). These are
+    # 8-frame real-clip encodes; 2-frame fixtures alone are not sufficient.
+    ("VIDEO MP4 EXPERIMENTS", "1 / 4 exact", "25.0%", "#d29922"),
+    ("x264 INVENTORY", "831 funcs / 23 ported", "808 missing", "#d29922"),
 ]
 
 # Byte-exact sweep progression (each row is one merged PR)

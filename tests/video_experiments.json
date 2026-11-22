@@ -1,0 +1,410 @@
+[
+  {
+    "experiment": 1,
+    "file": "E:\\__PROJECTS__\\Vk264-Subaru\\tests\\exp001_x264_warzone_ultrafast_cavlc.mp4",
+    "encoder": "x264",
+    "clip": "warzone2020_verdansk_1080p60_600f.yuv",
+    "crop": [
+      0,
+      420,
+      64,
+      64
+    ],
+    "frames": 8,
+    "qp": 28,
+    "qp_i": 25,
+    "entropy": "cavlc",
+    "x264_preset_reference": "ultrafast",
+    "h264_sha256": "f80d862ed3242f605816deeec5bbaba98b95c5b6bbd9027a401540fafd712692",
+    "h264_bytes": 855,
+    "nal_lengths": [
+      20,
+      4,
+      126,
+      5,
+      5,
+      5,
+      5,
+      5,
+      56,
+      41
+    ],
+    "ffprobe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "profile": "Constrained Baseline",
+          "width": 64,
+          "height": 64,
+          "pix_fmt": "yuv420p",
+          "r_frame_rate": "60/1",
+          "nb_frames": "8"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "0.133336"
+      }
+    },
+    "comparison": "BYTE-EXACT"
+  },
+  {
+    "experiment": 2,
+    "file": "E:\\__PROJECTS__\\Vk264-Subaru\\tests\\exp002_oracle_warzone_ultrafast_cavlc.mp4",
+    "encoder": "oracle",
+    "clip": "warzone2020_verdansk_1080p60_600f.yuv",
+    "crop": [
+      0,
+      420,
+      64,
+      64
+    ],
+    "frames": 8,
+    "qp": 28,
+    "qp_i": 25,
+    "entropy": "cavlc",
+    "x264_preset_reference": "ultrafast",
+    "h264_sha256": "bd1fd4e2cabd164524a3dd0a345bcdd4324d8051740851e8c839b8651a93836c",
+    "h264_bytes": 312,
+    "nal_lengths": [
+      20,
+      4,
+      126,
+      5,
+      5,
+      5,
+      5,
+      5,
+      56,
+      41
+    ],
+    "ffprobe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "profile": "Constrained Baseline",
+          "width": 64,
+          "height": 64,
+          "pix_fmt": "yuv420p",
+          "r_frame_rate": "60/1",
+          "nb_frames": "8"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "0.133336"
+      }
+    },
+    "comparison": "BYTE-EXACT"
+  },
+  {
+    "experiment": 3,
+    "file": "E:\\__PROJECTS__\\Vk264-Subaru\\tests\\exp003_x264_forza_ultrafast_cavlc.mp4",
+    "encoder": "x264",
+    "clip": "forza_1080p60_600f.yuv",
+    "crop": [
+      1200,
+      600,
+      64,
+      64
+    ],
+    "frames": 8,
+    "qp": 28,
+    "qp_i": 25,
+    "entropy": "cavlc",
+    "x264_preset_reference": "ultrafast",
+    "h264_sha256": "f0fe352291c518e69e25e4631ca665c9e8e4380aab1ad778231586f0a2dc5450",
+    "h264_bytes": 1852,
+    "nal_lengths": [
+      20,
+      4,
+      221,
+      119,
+      100,
+      172,
+      120,
+      167,
+      157,
+      189
+    ],
+    "ffprobe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "profile": "Constrained Baseline",
+          "width": 64,
+          "height": 64,
+          "pix_fmt": "yuv420p",
+          "r_frame_rate": "60/1",
+          "nb_frames": "8"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "0.133336"
+      }
+    },
+    "comparison": "MISMATCH nal_count=10/10 first_diff_nal=4 byte=39"
+  },
+  {
+    "experiment": 4,
+    "file": "E:\\__PROJECTS__\\Vk264-Subaru\\tests\\exp004_oracle_forza_ultrafast_cavlc.mp4",
+    "encoder": "oracle",
+    "clip": "forza_1080p60_600f.yuv",
+    "crop": [
+      1200,
+      600,
+      64,
+      64
+    ],
+    "frames": 8,
+    "qp": 28,
+    "qp_i": 25,
+    "entropy": "cavlc",
+    "x264_preset_reference": "ultrafast",
+    "h264_sha256": "eec39ba6d243bae65cc57b17fa79f56a5094b276be876b1c0f84e16115043619",
+    "h264_bytes": 1348,
+    "nal_lengths": [
+      20,
+      4,
+      221,
+      119,
+      97,
+      165,
+      179,
+      182,
+      162,
+      159
+    ],
+    "ffprobe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "profile": "Constrained Baseline",
+          "width": 64,
+          "height": 64,
+          "pix_fmt": "yuv420p",
+          "r_frame_rate": "60/1",
+          "nb_frames": "8"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "0.133336"
+      }
+    },
+    "comparison": "MISMATCH nal_count=10/10 first_diff_nal=4 byte=39"
+  },
+  {
+    "experiment": 5,
+    "file": "E:\\__PROJECTS__\\Vk264-Subaru\\tests\\exp005_x264_forza_ultrafast_cabac.mp4",
+    "encoder": "x264",
+    "clip": "forza_1080p60_600f.yuv",
+    "crop": [
+      1200,
+      600,
+      64,
+      64
+    ],
+    "frames": 8,
+    "qp": 28,
+    "qp_i": 25,
+    "entropy": "cabac",
+    "x264_preset_reference": "ultrafast",
+    "h264_sha256": "94148a15aa29ac26bbb3482bd1fce42cb1c2bff88e1dff38c706e4102fb9a52a",
+    "h264_bytes": 1653,
+    "nal_lengths": [
+      20,
+      4,
+      171,
+      102,
+      90,
+      145,
+      105,
+      139,
+      136,
+      158
+    ],
+    "ffprobe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "profile": "Main",
+          "width": 64,
+          "height": 64,
+          "pix_fmt": "yuv420p",
+          "r_frame_rate": "60/1",
+          "nb_frames": "8"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "0.133336"
+      }
+    },
+    "comparison": "MISMATCH nal_count=10/10 first_diff_nal=4 byte=36"
+  },
+  {
+    "experiment": 6,
+    "file": "E:\\__PROJECTS__\\Vk264-Subaru\\tests\\exp006_oracle_forza_ultrafast_cabac.mp4",
+    "encoder": "oracle",
+    "clip": "forza_1080p60_600f.yuv",
+    "crop": [
+      1200,
+      600,
+      64,
+      64
+    ],
+    "frames": 8,
+    "qp": 28,
+    "qp_i": 25,
+    "entropy": "cabac",
+    "x264_preset_reference": "ultrafast",
+    "h264_sha256": "1c625caa431bcc3da678da2b71684415255f33a87288c473bdedaf2ece64d174",
+    "h264_bytes": 1148,
+    "nal_lengths": [
+      20,
+      4,
+      171,
+      102,
+      88,
+      138,
+      156,
+      154,
+      137,
+      138
+    ],
+    "ffprobe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "profile": "Main",
+          "width": 64,
+          "height": 64,
+          "pix_fmt": "yuv420p",
+          "r_frame_rate": "60/1",
+          "nb_frames": "8"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "0.133336"
+      }
+    },
+    "comparison": "MISMATCH nal_count=10/10 first_diff_nal=4 byte=36"
+  },
+  {
+    "experiment": 7,
+    "file": "E:\\__PROJECTS__\\Vk264-Subaru\\tests\\exp007_x264_forza_fast_cavlc.mp4",
+    "encoder": "x264",
+    "clip": "forza_1080p60_600f.yuv",
+    "crop": [
+      1200,
+      600,
+      64,
+      64
+    ],
+    "frames": 8,
+    "qp": 28,
+    "qp_i": 25,
+    "entropy": "cavlc",
+    "x264_preset_reference": "fast",
+    "h264_sha256": "939ccc53073f314b05c3051638816d2b70cc80ca60d33335ced33fe2d3c9a969",
+    "h264_bytes": 1605,
+    "nal_lengths": [
+      23,
+      6,
+      131,
+      89,
+      93,
+      126,
+      113,
+      120,
+      124,
+      114
+    ],
+    "ffprobe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "profile": "High",
+          "width": 64,
+          "height": 64,
+          "pix_fmt": "yuv420p",
+          "r_frame_rate": "60/1",
+          "nb_frames": "8"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "0.100003"
+      }
+    },
+    "comparison": "MISMATCH nal_count=10/10 first_diff_nal=0 byte=1"
+  },
+  {
+    "experiment": 8,
+    "file": "E:\\__PROJECTS__\\Vk264-Subaru\\tests\\exp008_oracle_forza_fast_cavlc.mp4",
+    "encoder": "oracle",
+    "clip": "forza_1080p60_600f.yuv",
+    "crop": [
+      1200,
+      600,
+      64,
+      64
+    ],
+    "frames": 8,
+    "qp": 28,
+    "qp_i": 25,
+    "entropy": "cavlc",
+    "x264_preset_reference": "fast",
+    "h264_sha256": "f81edba3dedc6d65b8c0103d5985fcd279e4127aa6a8b9044a24d937034b335d",
+    "h264_bytes": 1344,
+    "nal_lengths": [
+      20,
+      4,
+      221,
+      119,
+      97,
+      165,
+      176,
+      181,
+      161,
+      160
+    ],
+    "ffprobe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "profile": "Constrained Baseline",
+          "width": 64,
+          "height": 64,
+          "pix_fmt": "yuv420p",
+          "r_frame_rate": "60/1",
+          "nb_frames": "8"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "0.133336"
+      }
+    },
+    "comparison": "MISMATCH nal_count=10/10 first_diff_nal=0 byte=1"
+  }
+]

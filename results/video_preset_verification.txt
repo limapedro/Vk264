@@ -1,0 +1,75 @@
+## CLIP warzone2020_verdansk_1080p60_600f.yuv crop=(0,420)
+=== entropy=cavlc  64x64  frames=8  keyint=30  qp=28 (I=25) ===
+  ultrafast  BYTE-EXACT
+  superfast  NAL 0 len 23/20 first diff byte 1
+  veryfast   NAL 0 len 23/20 first diff byte 1
+  faster     NAL 0 len 23/20 first diff byte 1
+  fast       NAL 0 len 23/20 first diff byte 1
+  medium     NAL 0 len 23/20 first diff byte 1
+  slow       NAL 0 len 23/20 first diff byte 1
+  slower     NAL 0 len 23/20 first diff byte 1
+  veryslow   NAL 0 len 25/20 first diff byte 1
+  placebo    NAL 0 len 25/20 first diff byte 1
+
+=== entropy=cabac  64x64  frames=8  keyint=30  qp=28 (I=25) ===
+  ultrafast  BYTE-EXACT
+  superfast  NAL 0 len 23/20 first diff byte 1
+  veryfast   NAL 0 len 23/20 first diff byte 1
+  faster     NAL 0 len 23/20 first diff byte 1
+  fast       NAL 0 len 23/20 first diff byte 1
+  medium     NAL 0 len 23/20 first diff byte 1
+  slow       NAL 0 len 23/20 first diff byte 1
+  slower     NAL 0 len 23/20 first diff byte 1
+  veryslow   NAL 0 len 25/20 first diff byte 1
+  placebo    NAL 0 len 25/20 first diff byte 1
+
+## CLIP fortnite_1080p60_600f.yuv crop=(600,360)
+=== entropy=cavlc  64x64  frames=8  keyint=30  qp=28 (I=25) ===
+  ultrafast  NAL 4 len 43/61 first diff byte 27
+  superfast  NAL 0 len 23/20 first diff byte 1
+  veryfast   NAL count 12 != 10
+  faster     NAL count 12 != 10
+  fast       NAL count 12 != 10
+  medium     NAL count 12 != 10
+  slow       NAL count 12 != 10
+  slower     NAL 0 len 23/20 first diff byte 1
+  veryslow   NAL 0 len 25/20 first diff byte 1
+  placebo    NAL 0 len 25/20 first diff byte 1
+
+=== entropy=cabac  64x64  frames=8  keyint=30  qp=28 (I=25) ===
+  ultrafast  NAL 4 len 42/56 first diff byte 26
+  superfast  NAL 0 len 23/20 first diff byte 1
+  veryfast   NAL count 12 != 10
+  faster     NAL count 12 != 10
+  fast       NAL count 12 != 10
+  medium     NAL count 12 != 10
+  slow       NAL count 12 != 10
+  slower     NAL 0 len 23/20 first diff byte 1
+  veryslow   NAL 0 len 25/20 first diff byte 1
+  placebo    NAL 0 len 25/20 first diff byte 1
+
+## CLIP forza_1080p60_600f.yuv crop=(1200,600)
+=== entropy=cavlc  64x64  frames=8  keyint=30  qp=28 (I=25) ===
+  ultrafast  NAL 4 len 100/97 first diff byte 39
+  superfast  NAL count 12 != 10
+  veryfast   NAL 0 len 23/20 first diff byte 1
+  faster     NAL 0 len 23/20 first diff byte 1
+  fast       NAL 0 len 23/20 first diff byte 1
+  medium     NAL 0 len 23/20 first diff byte 1
+  slow       NAL 0 len 23/20 first diff byte 1
+  slower     NAL 0 len 23/20 first diff byte 1
+  veryslow   NAL 0 len 25/20 first diff byte 1
+  placebo    NAL 0 len 25/20 first diff byte 1
+
+=== entropy=cabac  64x64  frames=8  keyint=30  qp=28 (I=25) ===
+  ultrafast  NAL 4 len 90/88 first diff byte 36
+  superfast  NAL count 12 != 10
+  veryfast   NAL 0 len 23/20 first diff byte 1
+  faster     NAL 0 len 23/20 first diff byte 1
+  fast       NAL 0 len 23/20 first diff byte 1
+  medium     NAL 0 len 23/20 first diff byte 1
+  slow       NAL 0 len 23/20 first diff byte 1
+  slower     NAL 0 len 23/20 first diff byte 1
+  veryslow   NAL 0 len 25/20 first diff byte 1
+  placebo    NAL 0 len 25/20 first diff byte 1
+
