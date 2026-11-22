@@ -1,6 +1,6 @@
 # Video encode comparison (x264 vs oracle)
 
-40/56 encoder streams byte-exact; 28 video pairs.
+54/56 encoder streams byte-exact; 28 video pairs.
 
 - exp001 x264   warzone2020_ 64x64 2f cavlc: BYTE-EXACT
 - exp001 oracle warzone2020_ 64x64 2f cavlc: BYTE-EXACT
@@ -12,28 +12,28 @@
 - exp004 oracle warzone2020_ 64x64 8f cavlc: BYTE-EXACT
 - exp005 x264   warzone2020_ 320x240 2f cavlc: BYTE-EXACT
 - exp005 oracle warzone2020_ 320x240 2f cavlc: BYTE-EXACT
-- exp006 x264   warzone2020_ 320x240 8f cavlc: MISMATCH NAL 6 byte 4489
-- exp006 oracle warzone2020_ 320x240 8f cavlc: MISMATCH NAL 6 byte 4489
+- exp006 x264   warzone2020_ 320x240 8f cavlc: BYTE-EXACT
+- exp006 oracle warzone2020_ 320x240 8f cavlc: BYTE-EXACT
 - exp007 x264   warzone2020_ 640x480 2f cavlc: BYTE-EXACT
 - exp007 oracle warzone2020_ 640x480 2f cavlc: BYTE-EXACT
-- exp008 x264   warzone2020_ 640x480 8f cavlc: MISMATCH NAL 4 byte 315
-- exp008 oracle warzone2020_ 640x480 8f cavlc: MISMATCH NAL 4 byte 315
+- exp008 x264   warzone2020_ 640x480 8f cavlc: MISMATCH NAL 9 byte 12030
+- exp008 oracle warzone2020_ 640x480 8f cavlc: MISMATCH NAL 9 byte 12030
 - exp009 x264   forza_1080p6 64x64 2f cavlc: BYTE-EXACT
 - exp009 oracle forza_1080p6 64x64 2f cavlc: BYTE-EXACT
 - exp010 x264   forza_1080p6 64x64 8f cavlc: BYTE-EXACT
 - exp010 oracle forza_1080p6 64x64 8f cavlc: BYTE-EXACT
 - exp011 x264   forza_1080p6 64x64 2f cavlc: BYTE-EXACT
 - exp011 oracle forza_1080p6 64x64 2f cavlc: BYTE-EXACT
-- exp012 x264   forza_1080p6 64x64 8f cavlc: MISMATCH NAL 9 byte 126
-- exp012 oracle forza_1080p6 64x64 8f cavlc: MISMATCH NAL 9 byte 126
+- exp012 x264   forza_1080p6 64x64 8f cavlc: BYTE-EXACT
+- exp012 oracle forza_1080p6 64x64 8f cavlc: BYTE-EXACT
 - exp013 x264   forza_1080p6 320x240 2f cavlc: BYTE-EXACT
 - exp013 oracle forza_1080p6 320x240 2f cavlc: BYTE-EXACT
-- exp014 x264   forza_1080p6 320x240 8f cavlc: MISMATCH NAL 4 byte 2876
-- exp014 oracle forza_1080p6 320x240 8f cavlc: MISMATCH NAL 4 byte 2876
+- exp014 x264   forza_1080p6 320x240 8f cavlc: BYTE-EXACT
+- exp014 oracle forza_1080p6 320x240 8f cavlc: BYTE-EXACT
 - exp015 x264   forza_1080p6 640x480 2f cavlc: BYTE-EXACT
 - exp015 oracle forza_1080p6 640x480 2f cavlc: BYTE-EXACT
-- exp016 x264   forza_1080p6 640x480 8f cavlc: MISMATCH NAL 4 byte 985
-- exp016 oracle forza_1080p6 640x480 8f cavlc: MISMATCH NAL 4 byte 985
+- exp016 x264   forza_1080p6 640x480 8f cavlc: BYTE-EXACT
+- exp016 oracle forza_1080p6 640x480 8f cavlc: BYTE-EXACT
 - exp017 x264   fortnite_108 64x64 2f cavlc: BYTE-EXACT
 - exp017 oracle fortnite_108 64x64 2f cavlc: BYTE-EXACT
 - exp018 x264   fortnite_108 64x64 8f cavlc: BYTE-EXACT
@@ -44,17 +44,17 @@
 - exp020 oracle fortnite_108 64x64 8f cavlc: BYTE-EXACT
 - exp021 x264   fortnite_108 320x240 2f cavlc: BYTE-EXACT
 - exp021 oracle fortnite_108 320x240 2f cavlc: BYTE-EXACT
-- exp022 x264   fortnite_108 320x240 8f cavlc: MISMATCH NAL 6 byte 239
-- exp022 oracle fortnite_108 320x240 8f cavlc: MISMATCH NAL 6 byte 239
+- exp022 x264   fortnite_108 320x240 8f cavlc: BYTE-EXACT
+- exp022 oracle fortnite_108 320x240 8f cavlc: BYTE-EXACT
 - exp023 x264   fortnite_108 640x480 2f cavlc: BYTE-EXACT
 - exp023 oracle fortnite_108 640x480 2f cavlc: BYTE-EXACT
-- exp024 x264   fortnite_108 640x480 8f cavlc: MISMATCH NAL 4 byte 1381
-- exp024 oracle fortnite_108 640x480 8f cavlc: MISMATCH NAL 4 byte 1381
+- exp024 x264   fortnite_108 640x480 8f cavlc: BYTE-EXACT
+- exp024 oracle fortnite_108 640x480 8f cavlc: BYTE-EXACT
 - exp025 x264   warzone2020_ 64x64 2f cabac: BYTE-EXACT
 - exp025 oracle warzone2020_ 64x64 2f cabac: BYTE-EXACT
 - exp026 x264   warzone2020_ 64x64 8f cabac: BYTE-EXACT
 - exp026 oracle warzone2020_ 64x64 8f cabac: BYTE-EXACT
 - exp027 x264   forza_1080p6 64x64 2f cabac: BYTE-EXACT
 - exp027 oracle forza_1080p6 64x64 2f cabac: BYTE-EXACT
-- exp028 x264   forza_1080p6 64x64 8f cabac: MISMATCH NAL 9 byte 107
-- exp028 oracle forza_1080p6 64x64 8f cabac: MISMATCH NAL 9 byte 107
+- exp028 x264   forza_1080p6 64x64 8f cabac: BYTE-EXACT
+- exp028 oracle forza_1080p6 64x64 8f cabac: BYTE-EXACT

@@ -33,7 +33,8 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                                   const uint8_t *cur, const uint8_t *ref,
                                   int w, int h, int qp, uint8_t *recon_out,
                                   int frame_idx,
-                                  const int (*ref_mv)[2], int (*cur_mv)[2]);
+                                  const int (*ref_mv)[2], int (*cur_mv)[2],
+                                  const uint8_t *ref_intra, uint8_t *cur_intra);
 
 /* Write an IDR slice and optionally copy out the reconstructed YUV420 frame. */
 int vk_cabac_encode_idr_recon(vk_bs_t *bs, vk_cabac_t *cb,
