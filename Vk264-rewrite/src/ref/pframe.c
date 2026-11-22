@@ -408,7 +408,10 @@ static int code_residual(vk_bs_t *bs, const uint8_t *cur, const uint8_t *refp,
         int dec = 0;
         for (int b = 0; b < 4; ++b) {
             if (!cnnz[pl][b] || dec >= 7) continue;
-            dec += decimate_score(cacq[pl][b], 16);
+            /* x264 decimate_score15() sees only the zigzag AC coefficients
+             * (h->dct.luma4x4[idx]+1); cacq[0] is the zeroed DC slot and must
+             * not count as a leading zero run. */
+            dec += decimate_score(cacq[pl][b]+1, 15);
         }
         if (dec < 7) {
             for (int b = 0; b < 4; ++b) {
