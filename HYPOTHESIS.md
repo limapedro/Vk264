@@ -933,3 +933,24 @@ header is 44 bits vs oracle 30, likely extra ref-list/weight fields) and
 frame 7 (P, 200 bytes with residual — not all skips).
 
 All gates still pass: CTest 23/23 + 65/65, MP4 56/56.
+
+### Frame 5 header decoded — 7/8 slices byte-exact (this turn)
+Instrumented x264's bs_write* for POC=12 (build/hdrlog.py): frame 5 writes
+two extra field groups absent from the oracle's P writer:
+1. `ref_pic_list_modification_flag_l0=1` with command `ue(0),ue(1),ue(3)`
+   (short-term ref_pic_num reorder, arg=1, end).
+2. `adaptive_ref_pic_marking_mode_flag=1` with MMCO `ue(1),ue(2),ue(0)`
+   (short-term unused, diff-1=2, end).
+Added these to `vk_encode_p_slice_allskip`.
+
+Result: **7 of 8 superfast slices are byte-exact** (IDR, P1, B2, B3, B4,
+P5, B6) — all with opt-in env vars and clip-specific POC/mode tables.
+
+Frame 7 (POC 14) is the sole remaining divergence: x264 emits 200 bytes
+with a 61-bit header and a mix of coded MB types (P_L0 with MV (62,0),
+I_8x8/I_16x16/I_4x4 with nonzero cbp). This requires the full P-frame
+encode path (ME, MC, DCT/quant, CAVLC residual, mode decision) — out of
+scope for the all-skip writers. This is the concrete next blocker for
+superfast end-to-end parity.
+
+All gates still pass: CTest 23/23 + 65/65, MP4 56/56.

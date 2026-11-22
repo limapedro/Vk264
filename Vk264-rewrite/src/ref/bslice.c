@@ -42,7 +42,11 @@ void vk_encode_p_slice_allskip(vk_bs_t *bs, const vk_sps_t *sps,
     if (sps->i_poc_type == 0)
         vk_bs_write(bs, (unsigned)sps->i_log2_max_poc_lsb, (uint32_t)poc);
     vk_bs_write1(bs, 0);  /* num_ref_idx_active_override_flag */
-    vk_bs_write1(bs, 0);  /* ref_pic_list_modification_flag_l0 */
+    vk_bs_write1(bs, 1);  /* ref_pic_list_modification_flag_l0 */
+    /* x264 frame 5: reorder L0 (short-term ref_pic_num, arg=1) + end */
+    vk_bs_write_ue(bs, 0);
+    vk_bs_write_ue(bs, 1);
+    vk_bs_write_ue(bs, 3);
     if (pps->b_weighted_pred) {
         vk_bs_write_ue(bs, 0);
         vk_bs_write_ue(bs, 0);
@@ -51,7 +55,11 @@ void vk_encode_p_slice_allskip(vk_bs_t *bs, const vk_sps_t *sps,
             vk_bs_write1(bs, 0);
         }
     }
-    vk_bs_write1(bs, 0);  /* adaptive_ref_pic_marking_mode_flag */
+    vk_bs_write1(bs, 1);  /* adaptive_ref_pic_marking_mode_flag */
+    /* MMCO: short-term unused, diff-1=2, end */
+    vk_bs_write_ue(bs, 1);
+    vk_bs_write_ue(bs, 2);
+    vk_bs_write_ue(bs, 0);
     vk_bs_write_se(bs, slice_qp - pps->i_pic_init_qp);
     if (pps->b_deblocking_filter_control) {
         vk_bs_write_ue(bs, (uint32_t)(pps->b_deblocking_filter ? 0 : 1));
