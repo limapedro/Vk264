@@ -1392,6 +1392,8 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
             int nz_dc = (rr.dcnz[0] || rr.dcnz[1]) ? 1 : 0;
             cbp_c[idx] = cb_l | (cb_c<<4) | (nz_dc?0x100:0)
                        | ((rr.dcnz[0]?1:0)<<9) | ((rr.dcnz[1]?1:0)<<10);
+            if (cb_c) mbcbp[idx] = cb_l
+                                | ((rr.dcnz[0]?1:0)<<9) | ((rr.dcnz[1]?1:0)<<10);
 
             mv[idx][0] = mvx*4; mv[idx][1] = mvy*4;
             /* reconstruct: copy reference at MV into the current-frame buffer */
