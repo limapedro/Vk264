@@ -16,6 +16,7 @@
 #include "pframe.h"
 #include "i4x4.h"
 #include "i4x4enc.h"
+#include "i8x8enc.h"
 #include "cabac.h"
 #include "cabac_enc.h"
 #include <stdio.h>
@@ -87,6 +88,20 @@ static void encode_idr_cavlc(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
                 free(tmp);
                 vk_encode_i4x4_mb(bs, sy, su, sv, oy, ou, ov, qp, &nb, w, w/2,
                                   modes, on, oc, &od);
+            } else if (getenv("ORACLE_I8X8") &&
+                       ((mx==1 && my==0) || (mx==0 && my==1))) {
+                /* Test path for x264's I8x8 MBs on the 64x64 clip. */
+                /* x264 internal pred modes: MB1 (top row) uses DC_LEFT(9)
+                 * for its top 8x8 blocks; MB4 (left col) uses DC_TOP(10). */
+                uint8_t modes[4];
+                if (mx==1 && my==0) { modes[0]=9; modes[1]=9; modes[2]=2; modes[3]=2; }
+                else { modes[0]=10; modes[1]=2; modes[2]=10; modes[3]=2; }
+                int cm = 0;  /* x264 writes DC (0) for these I8x8 MBs */
+                uint8_t sy16[256];
+                for (int yy=0; yy<16; ++yy)
+                    memcpy(sy16+yy*16, sy+yy*w, 16);
+                vk_encode_i8x8_mb(bs, sy16, su, sv, oy, ou, ov, qp, &nb,
+                                  16, 8, modes, cm, on, oc, &od);
             } else
             vk_encode_i16_mb(bs, sy, su, sv, oy, ou, ov, qp, mx, my, &nb,
                              w, w/2, on, oc, &od);

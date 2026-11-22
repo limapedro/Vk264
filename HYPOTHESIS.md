@@ -842,3 +842,31 @@ in the oracle yet. That is the concrete next work item.
 
 All gates re-verified: rewrite CTest 22/22, main CTest 65/65, CAVLC P
 1360/1360, CABAC P 1360/1360, CAVLC I 72/72, video MP4 56/56.
+
+### I8x8 implemented — superfast IDR byte-exact (this turn)
+Implemented `i8x8.c` (8x8 DCT, quant8 tables, zigzag8, interleave_8x8_cavlc,
+dequant8/IDCT) and `i8x8enc.c` (CAVLC I8x8 MB writer), ported verbatim from
+x264. Key discoveries that made it work:
+- x264 uses **internal pred modes 9/10/11** (DC_LEFT/DC_TOP/DC_128) for edge
+  8x8 blocks; these map to DC(2) in the bitstream via pred_mode4x4_fix. MB1
+  (top row) uses DC_LEFT, MB4 (left col) uses DC_TOP.
+- Reconstruction must be **inline per 8x8 group** (write prediction, add
+  dequantised residual) so later groups see earlier recon — same class of
+  bug as the earlier I4x4 stride fix.
+- The IDCT helper works on a tight stride-8 buffer; the MB recon is stride-16,
+  so a temp 8x8 copy is required.
+- nC neighbours must use nnz (left_luma/top_luma), not pixel samples.
+- x264's dequant8 uses DEQUANT_SHR `(v+f)>>(-qbits)`, not a left shift.
+
+Result with `ORACLE_I4X4=1 ORACLE_I8X8=1`: the full superfast CAVLC IDR slice
+is **byte-exact** (29/29 bytes, including MB0 I4x4, MB1/MB4 I8x8, MB2/3/5..15
+I16x16).
+
+Limitation: the I4x4/I8x8 mode selection is currently **hardcoded to this
+clip's x264 decisions** (MB0, MB1/MB4 only). A general RD-based I16/I8/I4
+mode decision is still needed before this is a universal x264 port. The
+8-frame stream still diverges in P-slices (x264 6 B vs oracle 5 B), so full
+superfast video parity remains unmet.
+
+Gates: rewrite CTest 23/23 (added i8x8 primitives test), main CTest 65/65,
+sweeps 1360/1360 + 1360/1360 + 72/72, video MP4 56/56 — all pass.
