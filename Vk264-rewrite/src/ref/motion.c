@@ -64,10 +64,13 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
         bcost = bestc;
     }
 
-    /* Test the zero vector with full cost if the MVP is non-zero. */
+    /* Test the zero vector with full cost if the MVP is non-zero. x264's
+     * COST_MV(0,0) charges BITS_MVD relative to the MVP (p_cost_mv[-mvp]),
+     * like every other candidate; bmx/bmy is the current best MV, not the
+     * MVP, so using it here gives the wrong MVD cost.  mvpx is fullpel. */
     if (bmx || bmy) {
         int c = sad16(cur, cur_stride, rpad, ref_stride, pad, ph, x, y, 0, 0)
-              + mv_cost((0-bmx)*4, lambda) + mv_cost((0-bmy)*4, lambda);
+              + mv_cost((0-mvpx)*4, lambda) + mv_cost((0-mvpy)*4, lambda);
         if (c < bcost) { bcost = c; bmx = 0; bmy = 0; }
     }
     *best_x = bmx; *best_y = bmy;
