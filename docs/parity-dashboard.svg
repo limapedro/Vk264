@@ -23,7 +23,7 @@
 </defs>
 <rect width="1680" height="2797" fill="#0d1117"/>
 <text x="32" y="48" fill="#e6edf3" font-size="30" font-weight="bold">Vk264 / Oracle Byte-Exact Parity Dashboard</text>
-<text x="32" y="74" fill="#8b949e" font-size="14">function-by-function x264 &#8594; Vulkan port · snapshot fcbb2fc · generated 2026-11-22</text>
+<text x="32" y="74" fill="#8b949e" font-size="14">function-by-function x264 &#8594; Vulkan port · snapshot 6592e0c · generated 2026-11-22</text>
 <rect x="32.0" y="92.0" width="1616.0" height="11" fill="#21262d" rx="5"/><rect x="32.0" y="92.0" width="1026.1" height="11" fill="#2ea043" rx="5"/>
 <text x="1644" y="102" fill="#c9d1d9" font-size="15" text-anchor="end">byte-exact function coverage 63.5% (327/515 weighted families)</text>
 <rect x="32" y="120" width="256" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
