@@ -1063,6 +1063,14 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
              * (encoder/macroblock.c:953-964). Save the whole CABAC state so
              * the header bits can be replaced by skip_flag=1 if that happens. */
             vk_cabac_t mb_start = *cb;
+            /* cabac putbyte() propagates carries backwards into already
+             * written bytes.  A later P_SKIP rollback restores the struct
+             * but not those bytes, so snapshot them too. */
+            uint8_t mb_saved[64];
+            int mb_nsave = (int)(cb->p - cb->p_start);
+            if (mb_nsave > 64) mb_nsave = 64;
+            uint8_t *mb_save_ptr = cb->p - mb_nsave;
+            memcpy(mb_saved, mb_save_ptr, mb_nsave);
             int skip_ctx = 11 + (have_l && !is_skip[idx-1])
                               + (have_t && !is_skip[idx-mw]);
             vk_cabac_decision(cb, skip_ctx, do_skip);
@@ -1289,6 +1297,7 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                 mvx*4 == psk_x && mvy*4 == psk_y) {
                 /* Encode-time P_SKIP promotion: discard the mb_type/mvd/cbp
                  * decisions and emit only skip_flag=1 from the saved state. */
+                memcpy(mb_save_ptr, mb_saved, mb_nsave);
                 *cb = mb_start;
                 vk_cabac_decision(cb, skip_ctx, 1);
                 mv[idx][0] = psk_x; mv[idx][1] = psk_y;
