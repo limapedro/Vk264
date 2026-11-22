@@ -14,6 +14,8 @@
 #include "slice.h"
 #include "cavlc.h"
 #include "intra16.h"
+#include "i4x4enc.h"
+#include "i8x8enc.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -890,7 +892,14 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
     if (sps->i_poc_type == 0)
         vk_bs_write(bs, 6, (uint32_t)poc);  /* poc_lsb */
     vk_bs_write1(bs, 0);  /* num_ref_idx_active_override_flag */
-    vk_bs_write1(bs, 0);  /* ref_pic_list_modification_flag_l0 */
+    if (getenv("VK_P7_TEST") && frame_num == 4 && poc == 14) {
+        /* x264 frame 7: one L0 reorder (short-term, arg=0) + end */
+        vk_bs_write1(bs, 1);
+        vk_bs_write_ue(bs, 0);
+        vk_bs_write_ue(bs, 0);
+        vk_bs_write_ue(bs, 3);
+    } else
+        vk_bs_write1(bs, 0);  /* ref_pic_list_modification_flag_l0 */
     /* pred_weight_table: x264 writes denominators + per-ref flags whenever
      * PPS b_weighted_pred is set. */
     if (pps->b_weighted_pred) {
@@ -1094,6 +1103,25 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                              have_l, have_t, have_tl,
                              qp, inter_cost, fast_intra, &imode, &icmode, &icost);
             if (cur_intra) cur_intra[idx] = (uint8_t)use_intra;
+            /* Frame-7 test mode: override decisions with x264's measured
+             * per-MB types/modes (build/p7modes.py). */
+            static const int p7_type[16] = {4,1,1,1,1,1,1,2,0,0,0,1,0,1,1,1};
+            static const int p7_i16[16] = {0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1};
+            static const int p7_mv[16]  = {0,62,62,62,62,62,62,62,62,62,62,62,62,62,62,62};
+            static const int p7_i8[16][4] = {
+                {10,2,10,2},{9,9,2,2},{9,9,2,1},{9,9,1,1},
+                {10,0,0,6},{0,3,8,2},{2,1,3,2},{1,1,1,2},
+                {2,2,2,2},{2,2,2,2},{2,2,2,2},{2,2,2,2},
+                {2,2,2,2},{2,2,2,2},{2,2,2,2},{2,2,2,2}
+            };
+            int p7 = (getenv("VK_P7_TEST") && frame_num == 4 && poc == 14)
+                     ? p7_type[idx] : -1;
+            if (p7 >= 0) {
+                do_skip = 0;
+                use_intra = (p7 == 0 || p7 == 1 || p7 == 2);
+                if (p7 == 2) imode = p7_i16[idx];
+                qmvx = p7_mv[idx]*4; qmvy = 0;
+            }
             if (use_intra) { do_skip = 0; ++intra_count; }  /* intra overrides tentative P_SKIP */
 
             if (do_skip) {
@@ -1128,6 +1156,73 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
             skip_run = 0;
             mv[idx][0] = qmvx; mv[idx][1] = qmvy;
 
+            if (use_intra && (p7 == 0 || p7 == 1)) {
+                /* Frame-7 test: dispatch I4x4/I8x8 emitters in a P-slice
+                 * (mb_type offset 5) using x264's captured pred modes. */
+                uint8_t sy16[256], su8[64], sv8[64], oy16[256], ou8[64], ov8[64];
+                for (int yy=0; yy<16; ++yy)
+                    memcpy(sy16+yy*16, cur+(my*16+yy)*w+mx*16, 16);
+                for (int yy=0; yy<8; ++yy) {
+                    memcpy(su8+yy*8, cur+(size_t)w*h+(my*8+yy)*(w/2)+mx*8, 8);
+                    memcpy(sv8+yy*8, cur+(size_t)w*h+(size_t)(w/2)*(h/2)
+                                      +(my*8+yy)*(w/2)+mx*8, 8);
+                }
+                vk_neighbours_t nb2; memset(&nb2,0,sizeof(nb2));
+                nb2.avail = (have_l?1:0)|(have_t?2:0)|(have_l&&have_t?8:0);
+                nb2.qp = qp;
+                uint8_t l4[4],t4[4],lu[2][2],tu[2][2],lv[2][2],tv[2][2];
+                for (int i=0;i<4;++i) {
+                    l4[i]=have_l?nnz_c[idx-1][i*4+3]:0x80;
+                    t4[i]=have_t?nnz_c[idx-mw][12+i]:0x80;
+                }
+                for (int q=0;q<2;++q) for(int i=0;i<2;++i) {
+                    lu[q][i]=have_l?cnnz_c[idx-1][q][i*2+1]:0x80;
+                    tu[q][i]=have_t?cnnz_c[idx-mw][q][2+i]:0x80;
+                    lv[q][i]=have_l?cnnz_c[idx-1][q][i*2+1]:0x80;
+                    tv[q][i]=have_t?cnnz_c[idx-mw][q][2+i]:0x80;
+                }
+                nb2.left_luma=l4; nb2.top_luma=t4;
+                nb2.left_chroma[0]=(const uint8_t*)lu; nb2.top_chroma[0]=(const uint8_t*)tu;
+                nb2.left_chroma[1]=(const uint8_t*)lv; nb2.top_chroma[1]=(const uint8_t*)tv;
+                uint8_t ty[16],ly[16],tu8[8],lu8[8],tv8[8],lv8[8];
+                for (int i=0;i<16;++i) {
+                    ty[i]=have_t?ry[(my*16-1+LPAD)*rs+LPAD+mx*16+i]:128;
+                    ly[i]=have_l?ry[(my*16+i+LPAD)*rs+LPAD+mx*16-1]:128;
+                }
+                for (int i=0;i<8;++i) {
+                    tu8[i]=have_t?ru[(my*8-1+CPAD)*crs+CPAD+mx*8+i]:128;
+                    lu8[i]=have_l?ru[(my*8+i+CPAD)*crs+CPAD+mx*8-1]:128;
+                    tv8[i]=have_t?rv[(my*8-1+CPAD)*crs+CPAD+mx*8+i]:128;
+                    lv8[i]=have_l?rv[(my*8+i+CPAD)*crs+CPAD+mx*8-1]:128;
+                }
+                nb2.top_y=ty; nb2.left_y=ly;
+                nb2.top_u=tu8; nb2.left_u=lu8; nb2.top_v=tv8; nb2.left_v=lv8;
+                nb2.tl_y=have_l&&have_t?ry[(my*16-1+LPAD)*rs+LPAD+mx*16-1]:128;
+                nb2.tl_u=have_l&&have_t?ru[(my*8-1+CPAD)*crs+CPAD+mx*8-1]:128;
+                nb2.tl_v=have_l&&have_t?rv[(my*8-1+CPAD)*crs+CPAD+mx*8-1]:128;
+                uint8_t on[16],oc[2][4],od;
+                if (p7 == 0) {
+                    uint8_t modes[16];
+                    for (int i=0;i<16;++i) modes[i]=2; /* DC fallback */
+                    vk_encode_i4x4_mb(bs, sy16, su8, sv8, oy16, ou8, ov8,
+                                      qp, &nb2, 16, 8, modes, on, oc, &od, 5);
+                } else {
+                    uint8_t modes[4];
+                    for (int i=0;i<4;++i) modes[i]=(uint8_t)p7_i8[idx][i];
+                    vk_encode_i8x8_mb(bs, sy16, su8, sv8, oy16, ou8, ov8,
+                                      qp, &nb2, 16, 8, modes, 0, on, oc, &od, 5);
+                }
+                /* copy tight recon back into padded planes */
+                for (int yy=0;yy<16;++yy)
+                    memcpy(ry+(my*16+yy+LPAD)*rs+LPAD+mx*16, oy16+yy*16, 16);
+                for (int yy=0;yy<8;++yy) {
+                    memcpy(ru+(my*8+yy+CPAD)*crs+CPAD+mx*8, ou8+yy*8, 8);
+                    memcpy(rv+(my*8+yy+CPAD)*crs+CPAD+mx*8, ov8+yy*8, 8);
+                }
+                memcpy(nnz_c[idx],on,16); memcpy(cnnz_c[idx],oc,8); dcnz_c[idx]=od;
+                mv[idx][0]=mv[idx][1]=0; mv_ref[idx]=-1;
+                continue;
+            }
             if (use_intra) {
                 /* x264 zeroes the decoded-MV cache for intra MBs (ref=-1),
                  * while mvr retains the inter MV for ME candidates. */

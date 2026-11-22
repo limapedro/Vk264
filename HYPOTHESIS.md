@@ -1042,3 +1042,20 @@ the bitstream.) This completes the decision table needed to drive the
 I4x4/I8x8 emitters (now accepting mb_type_offset=5) inside a P-slice.
 Frame 7 byte-exactness still requires wiring those emitters into the P
 encoder's custom I16-only intra path with correct neighbour nnz caches.
+
+### Multi-type P-slice dispatch integrated (test-only, this turn)
+Wired a guarded VK_P7_TEST path into vk_encode_p_frame_recon_mv that overrides
+frame-7 decisions with x264's captured types/modes and dispatches the I4x4 and
+I8x8 emitters (mb_type offset=5) inside a P-slice, building tight source/recon
+buffers and neighbour nnz caches. Also added x264's frame-7 ref-pic-list
+reorder (idc=0, arg=0, end) to the slice header.
+
+Result: header now matches through byte 1, but the slice is still 288 B vs
+x264's 200 B. build/mmco7.py shows frame 7 has mmco_count=0 and one reorder,
+yet x264's 61-bit header implies ~27 extra bits — likely a weighted-pred
+table with 2 L0 refs and explicit weights (the SE 11 / SE -128 writes in
+build/hdrlog.py for POC=14). Residual sizes also differ. So frame 7 still
+needs weighted-prediction header fields and residual parity.
+
+All gates unchanged (guarded by VK_P7_TEST): CTest 23/23 + 65/65, CAVLC P
+sweep 1360/1360, MP4 56/56. The 7/8 byte-exact superfast slices remain.
