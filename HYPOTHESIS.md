@@ -780,3 +780,12 @@ coefficient while the oracle's `vk_ref_idct4`+`add_block` yields uniform 15.
 That is why later blocks get small coefficients (1,1) in x264 but zero in the
 oracle. Next: compare x264's `add4x4_idct` output against the oracle's
 `vk_ref_idct4` for the same dequantised block and fix the rounding.
+
+Correction: the earlier "x264 recon 15/17/16" dump read `p_dst[z]` with a
+tight stride but x264 uses FDEC_STRIDE=32 — those bytes span neighbouring
+blocks. With a correct stride, both sides reconstruct block 0 uniformly. The
+quant parameters also match exactly (mf=1490, bias=14) and block 1's raw DC
+is 16 on both sides, which `QUANT_ONE` maps to 0. So the source of x264's two
+extra coefficients (1,1) is still unresolved — likely those symbols belong
+to a different block/QP context than the one instrumented. Needs a per-block
+dump keyed by mb_xy AND idx to resolve definitively.
