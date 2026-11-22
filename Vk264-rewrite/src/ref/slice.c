@@ -250,8 +250,9 @@ void vk_slice_header_init(vk_slice_header_t *sh, const vk_sps_t *sps,
     sh->i_pps_id = pps->i_id;
     sh->i_idr_pic_id = 0;
     sh->i_qp_delta = slice_qp - pps->i_pic_init_qp;
-    /* x264 ultrafast disables the deblocking filter (b_deblocking_filter=0). */
-    sh->i_disable_deblocking_filter_idc = 1;
+    /* x264: ultrafast disables deblocking (idc=1); all other presets enable it
+     * (idc=0, with alpha/beta = 0). */
+    sh->i_disable_deblocking_filter_idc = pps->b_deblocking_filter ? 0 : 1;
 }
 
 void vk_slice_header_write(vk_bs_t *s, const vk_slice_header_t *sh,
@@ -292,7 +293,6 @@ void vk_slice_header_write(vk_bs_t *s, const vk_slice_header_t *sh,
 void vk_write_pskip_slice(vk_bs_t *s, const vk_sps_t *sps, const vk_pps_t *pps,
                           int frame_num, int slice_qp, int num_mbs)
 {
-    (void)pps;
     vk_bs_write_ue(s, 0);   /* first_mb_in_slice */
     vk_bs_write_ue(s, 5);   /* slice_type: P (x264 writes i_type+5) */
     vk_bs_write_ue(s, 0);   /* pps_id */
@@ -302,7 +302,7 @@ void vk_write_pskip_slice(vk_bs_t *s, const vk_sps_t *sps, const vk_pps_t *pps,
     vk_bs_write1(s, 0);     /* ref_pic_list_modification_flag_l0 */
     vk_bs_write1(s, 0);     /* adaptive_ref_pic_marking_mode_flag */
     vk_bs_write_se(s, slice_qp - pps->i_pic_init_qp);
-    vk_bs_write_ue(s, 1);   /* disable_deblocking_filter_idc (x264 ultrafast) */
+    vk_bs_write_ue(s, pps->b_deblocking_filter ? 0 : 1); /* disable_deblocking_filter_idc */
     vk_bs_write_ue(s, (uint32_t)num_mbs);  /* mb_skip_run: all MBs skipped */
     vk_bs_rbsp_trailing(s);
 }

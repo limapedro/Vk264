@@ -18,6 +18,7 @@ typedef struct {
     int b_interlaced;
     int i_chroma_qp_offset;
     int i_qp_constant;
+    int b_deblocking_filter; /* x264 param.b_deblocking_filter (0 only for ultrafast) */
     int i_mv_range;         /* derived from level when 0 */
     int i_subme;            /* x264 analyse.i_subpel_refine (0=fullpel only) */
     int b_weighted_pred;    /* PPS weighted_pred / weighted_bipred_idc */
@@ -65,6 +66,7 @@ typedef struct {
     int b_weighted_pred, b_weighted_bipred;
     int i_pic_init_qp, i_pic_init_qs, i_chroma_qp_index_offset;
     int b_deblocking_filter_control, b_constrained_intra_pred, b_redundant_pic_cnt;
+    int b_deblocking_filter; /* derived from param.b_deblocking_filter */
     int b_transform_8x8_mode;
 } vk_pps_t;
 

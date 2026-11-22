@@ -13,7 +13,10 @@ static const int XY[16][2] = {
 };
 static const int SCAN8[16] = {12,13,20,21,14,15,22,23,28,29,36,37,30,31,38,39};
 static const int IDX2XY[16] = {0,1,4,5,2,3,6,7,8,9,12,13,10,11,14,15};
-static const uint8_t CBP2GOL[16] = {0,1,2,5,3,6,14,10,4,15,7,11,8,12,13,9};
+/* x264 cbp_to_golomb[1][1] (4:2:0, intra I-slice). */
+static const uint8_t CBP2GOL[16] = {
+    3,29,30,17, 31,18,37,8, 32,38,19,9, 20,10,11,2
+};
 static const uint8_t CT_INDEX[17] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
 
 static int clip(int v){return v<0?0:(v>255?255:v);}
@@ -70,8 +73,12 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
     vk_predict_chroma8(pu,t8,l8,nb?nb->tl_u:128,cmode);
     vk_predict_chroma8(pv,t8v,l8v,nb?nb->tl_v:128,cmode);
 
-    /* ---- mb_type = 0 (I4x4) + 16 prediction modes ---- */
+    /* ---- mb_type = 0 (I4x4) + transform8 flag + 16 prediction modes ---- */
     vk_bs_write_ue(bs,0);
+    /* x264 cavlc_mb_header_i: PPS b_transform_8x8_mode is on for every preset
+     * except ultrafast (which never uses this I4x4 path), so write the
+     * b_transform_8x8 flag; an I4x4 MB is always 0. */
+    vk_bs_write1(bs,0);
     int cidx[64]; for(int i=0;i<64;++i)cidx[i]=-1;
     for(int i=0;i<16;++i)cidx[SCAN8[i]]=i;
     int dct[16][16],nnz[16]={0};
@@ -117,7 +124,6 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
         }
     }
     vk_bs_write_ue(bs,(uint32_t)(cmode<=3?cmode:0));
-    vk_bs_write_se(bs,0);
 
     /* H.264 cbp for I4x4: 4 luma bits (one per 8x8 group), 2 chroma bits.
      * x264's cbp_to_golomb index is luma | chroma<<4. */
@@ -128,6 +134,9 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
     }
     int cbp=cbp_luma;
     vk_bs_write_ue(bs,(unsigned)CBP2GOL[cbp]);
+    /* x264 cavlc_qp_delta comes AFTER cbp (and after transform8 flag when
+     * 8x8dct is enabled in the PPS; superfast has it off). */
+    vk_bs_write_se(bs,0);
     if(out_nnz) memcpy(out_nnz,nnz,16);
 
     /* ---- luma residuals (VK_DCT_LUMA_4x4, 16 coeffs incl. DC) ---- */
@@ -137,15 +146,22 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
         cache[tpos[i]]=nb&&nb->top_luma?nb->top_luma[i]:0x80;
         cache[lpos[i]]=nb&&nb->left_luma?nb->left_luma[i]:0x80;
     }
+    /* x264 cavlc_macroblock_luma_residual writes a coeff_token for EVERY
+     * 4x4 block in each coded 8x8 group — including zero blocks (coeff0 token).
+     * Skipping them (as this emitter previously did) drops bits and desyncs
+     * everything after the first nonzero block. */
     for(int idx=0;idx<16;++idx){
         int b=IDX2XY[idx],p=SCAN8[idx];
-        if(!nnz[b]){cache[p]=0;continue;}
+        int gx=XY[b][0]/2, gy=XY[b][1]/2;
+        if(!(cbp_luma & (1<<(gy*2+gx)))){cache[p]=0;continue;}
         int sum=cache[p-1]+cache[p-8];
         int pr=sum<0x80?(sum+1)>>1:sum&0x7f;
         int nC=CT_INDEX[pr&0x7f];
-        int zig[16];
-        static const int zz[16]={0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
-        for(int i=0;i<16;++i)zig[i]=dct[b][zz[i]];
+        int zig[16]={0};
+        if(nnz[b]){
+            static const int zz[16]={0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
+            for(int i=0;i<16;++i)zig[i]=dct[b][zz[i]];
+        }
         vk_cavlc_block_residual(bs,VK_DCT_LUMA_4x4,zig,nC,1,16);
         cache[p]=(uint8_t)nnz[b];
     }

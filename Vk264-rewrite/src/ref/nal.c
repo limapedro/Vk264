@@ -27,6 +27,10 @@ void vk_param_default(vk_param_t *p)
     p->i_keyint_max = 1;
     p->i_csp = CHROMA_420;
     p->i_qp_constant = 28;
+    /* Default param (used by the sweep tests) keeps the historical
+     * deblocking-disabled behaviour; only explicit non-ultrafast presets
+     * enable it, matching x264. */
+    p->b_deblocking_filter = 0;
     p->b_vui = 1;
     p->i_sar_width = 1; p->i_sar_height = 1;
     p->i_vidformat = 5;    /* unspecified */
@@ -63,10 +67,12 @@ int vk_param_apply_preset(vk_param_t *p, const char *preset)
     /* x264 default analyse.i_weighted_pred = SMART(2) => PPS 1/2; ultrafast
      * overrides to NONE(0). */
     p->b_weighted_pred = 1; p->i_weighted_bipred = 2;
+    p->b_deblocking_filter = 1;
     if (preset_eq(preset, "ultrafast")) {
         p->i_frame_reference = 1; p->i_bframe = 0;
         p->b_transform_8x8 = 0; p->b_cabac = 0;
         p->i_subme = 0;
+        p->b_deblocking_filter = 0;
         p->b_weighted_pred = 0; p->i_weighted_bipred = 0;
     } else if (preset_eq(preset, "superfast")) {
         p->i_frame_reference = 1; p->i_subme = 1;
@@ -342,6 +348,7 @@ void vk_pps_init(vk_pps_t *p, int id, const vk_param_t *param, const vk_sps_t *s
     p->i_pic_init_qs = 26 + QP_BD_OFFSET;
     p->i_chroma_qp_index_offset = param->i_chroma_qp_offset;
     p->b_deblocking_filter_control = 1;
+    p->b_deblocking_filter = param->b_deblocking_filter;
     p->b_constrained_intra_pred = 0;
     p->b_redundant_pic_cnt = 0;
     p->b_transform_8x8_mode = param->b_transform_8x8 ? 1 : 0;
