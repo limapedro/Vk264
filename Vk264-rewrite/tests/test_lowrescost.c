@@ -17,7 +17,8 @@ int main(int argc,char**argv){
         int p2=vk_lowres_p_cost(lo[i],lo[i+1],dw,dh,&st[i]);
         int b=vk_lowres_b_cost(lo[i],lo[i-1],lo[i+1],dw,dh,
                                &st[i-1],&st[i+1],i-1,i+1,i);
-        printf("frame %d: P(prev)=%d P(next)=%d B=%d\n",i,p0,p2,b);
+        printf("frame %d: P(prev)=%d P(next)=%d B=%d mv0=%d,%d mv4=%d,%d\n",
+               i,p0,p2,b,st[i].mv[0][0],st[i].mv[0][1],st[i].mv[4][0],st[i].mv[4][1]);
     }
     return 0;
 }

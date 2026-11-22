@@ -1426,3 +1426,23 @@ not match x264 (oracle coding order [0,1,2,4,3,5,6,7] vs x264
 [0,3,1,2,4,...]). Next step: per-MB lowres MV storage indexed by mb_xy.
 
 Gates unchanged: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03 per-MB lowres MV storage (this turn)
+Replaced the frame-level aggregated MV with per-MB storage
+`vk_lowres_mv_t.mv[256][2]` (x264 frame_t.lowres_mvs indexed by mb_xy).
+`vk_lowres_p_cost` now stores the best fullpel MV for each 8x8 lowres MB;
+`vk_lowres_b_cost` computes dmv per MB from the future ref's stored MV
+scaled by dist_scale_factor, and evaluates a dmv-predicted bidirectional
+candidate (`x264 TRY_BIDIR(dmv,0)`).
+
+Verified nonzero per-MB MVs:
+```
+frame 1 mv0=(0,7) mv4=(0,6);  frame 2 mv0=(0,3) mv4=(0,2)
+```
+So dmv infrastructure is functional. However build/compare_slicetype.py
+frame types are unchanged (oracle coding order [0,1,2,4,3,5,6,7] vs x264
+[0,3,1,2,4,...]): the dmv candidate is not cheaper than the zero-MV or
+searched-MV alternatives for this clip. Remaining gap: x264's exact
+x264_me_search (hex method, subpel refine, cost_mv predicate cache) and
+row-SATD accumulation. Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360,
+MP4 56/56.

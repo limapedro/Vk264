@@ -28,6 +28,12 @@ void vk_lowres_luma(const uint8_t *src,int sw,int sh,uint8_t *dst,int dw,int dh)
     }
 }
 
+void vk_lowres_mv_init(vk_lowres_mv_t *st,int dw,int dh)
+{
+    st->n_mbs = (dw/8)*(dh/8);
+    memset(st->mv,0,sizeof(st->mv));
+}
+
 /* x264 mbcmp_init (encoder/encoder.c:1411): for subpel_refine<=1, mbcmp is
  * SAD (not SATD). superfast uses i_subpel_refine=1, so lowres costs are SAD. */
 static int satd8(const uint8_t *a,int aw,int ax,int ay,
@@ -54,7 +60,7 @@ static int mb_p_cost(const uint8_t *cur,int dw,int bx,int by,
 int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
                      vk_lowres_mv_t *st)
 {
-    int total=0, sumx=0, sumy=0;
+    int total=0, mb=0;
     static const int dir[8][2]={{1,0},{-1,0},{0,1},{0,-1},
                                 {1,1},{1,-1},{-1,1},{-1,-1}};
     for(int by=0;by+8<=dh;by+=8) for(int bx=0;bx+8<=dw;bx+=8){
@@ -76,9 +82,9 @@ int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
         best -= mv_cost(0);
         if(bmx||bmy) best += 5*LAMBDA;
         total += best + LOWRES_PENALTY;
-        sumx += bmx; sumy += bmy;
+        if(st && mb<VK_LOWRES_MAX_MBS){ st->mv[mb][0]=bmx; st->mv[mb][1]=bmy; }
+        mb++;
     }
-    if(st){ st->mv[0][0]=sumx; st->mv[0][1]=sumy; }
     return total;
 }
 
@@ -129,32 +135,33 @@ int vk_lowres_b_cost(const uint8_t *cur,const uint8_t *r0,const uint8_t *r1,
                      int dw,int dh,const vk_lowres_mv_t *st_p0,
                      const vk_lowres_mv_t *st_p1,int p0,int p1,int b)
 {
-    int total=0;
-    /* x264 dist_scale_factor and dmv prediction from fref1's lowres MV. */
+    int total=0, mb=0;
+    /* x264 dist_scale_factor; dmv is per-MB from fref1's lowres MV. */
     int dsf = (p1!=p0) ? (((b-p0)<<8) + ((p1-p0)>>1))/(p1-p0) : 128;
     int dmx=0,dmy=0;
-    if(st_p1){
-        dmx = (st_p1->mv[0][0]*dsf + 128)>>8;
-        dmy = (st_p1->mv[0][1]*dsf + 128)>>8;
-    }
     for(int by=0;by+8<=dh;by+=8) for(int bx=0;bx+8<=dw;bx+=8){
         int c0=mb_p_cost(cur,dw,bx,by,r0,bx,by)-mv_cost(0)+LOWRES_PENALTY;
         int c1=mb_p_cost(cur,dw,bx,by,r1,bx,by)-mv_cost(0)+LOWRES_PENALTY;
         int cb=mb_b_cost(cur,dw,dh,bx,by,r0,r1);
         int cz=mb_b_cost_zero(cur,dw,bx,by,r0,r1);
-        /* dmv-predicted bidirectional average (x264 TRY_BIDIR(dmv,0)). */
+        /* x264 dmv: scale the FUTURE ref's per-MB MV by dist_scale_factor. */
         int cd=0x7fffffff;
-        if(dmx||dmy){
-            uint8_t avg[64];
+        if(st_p1 && mb<st_p1->n_mbs){
+            int dmx=(st_p1->mv[mb][0]*dsf + 128)>>8;
+            int dmy=(st_p1->mv[mb][1]*dsf + 128)>>8;
+            int dmx2=dmx-st_p1->mv[mb][0], dmy2=dmy-st_p1->mv[mb][1];
+            uint8_t avg[64]; int ok=1;
             for(int y=0;y<8;++y) for(int x=0;x<8;++x){
                 int sx=bx+dmx+x, sy=by+dmy+y;
-                if(sx<0||sy<0||sx+8>dw||sy+8>dh){cd=0x7fffffff;break;}
-                avg[y*8+x]=(uint8_t)((r0[(by+y)*dw+bx+x]+r1[sy*dw+sx]+1)>>1);
+                int sx2=bx+dmx2+x, sy2=by+dmy2+y;
+                if(sx<0||sy<0||sx+8>dw||sy+8>dh||
+                   sx2<0||sy2<0||sx2+8>dw||sy2+8>dh){ok=0;break;}
+                avg[y*8+x]=(uint8_t)((r0[sy*dw+sx]+r1[sy2*dw+sx2]+1)>>1);
             }
-            if(cd!=0x7fffffff) cd=satd8(cur,dw,bx,by,avg,8,0,0)+LOWRES_PENALTY;
+            if(ok) cd=satd8(cur,dw,bx,by,avg,8,0,0)+LOWRES_PENALTY;
         }
         int m=c0<c1?c0:c1; if(cb<m) m=cb; if(cz<m) m=cz; if(cd<m) m=cd;
-        total+=m;
+        total+=m; mb++;
     }
     return total;
 }

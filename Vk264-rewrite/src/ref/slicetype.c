@@ -123,6 +123,7 @@ void vk_slicetype_decide(const uint8_t *frames, int n, int w, int h,
             int npath = nb+4;
             if (npath > gop_end-last_nonb) npath = gop_end-last_nonb;
             vk_lowres_mv_t *st = calloc(n, sizeof(*st));
+            for(int qf=0;qf<n;++qf) vk_lowres_mv_init(&st[qf],dw,dh);
             uint64_t cp=vk_slicetype_path_cost(lo+last_nonb,dw,dh,path,npath,UINT64_MAX,st);
             path[1+nb]='B'; /* path[2+nb] stays 'P' */
             uint64_t cb=vk_slicetype_path_cost(lo+last_nonb,dw,dh,path,npath,cp,st);
