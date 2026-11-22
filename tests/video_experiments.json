@@ -552,7 +552,7 @@
         "duration": "0.133336"
       }
     },
-    "comparison": "MISMATCH NAL 9 byte 12030"
+    "comparison": "BYTE-EXACT"
   },
   {
     "experiment": 8,
@@ -569,8 +569,8 @@
     "keyint": 30,
     "entropy": "cavlc",
     "preset": "ultrafast",
-    "h264_sha256": "caa82ecc0aa467917004f3d5a2a10bbee541fe8f23d88d0e9ff907f0ec9c8784",
-    "h264_bytes": 114490,
+    "h264_sha256": "164eef6c9819ff6e8ec5236edd46b72f4309f3ed56074abd6e08392986eef2fe",
+    "h264_bytes": 114487,
     "ffprobe": {
       "programs": [],
       "stream_groups": [],
@@ -589,7 +589,7 @@
         "duration": "0.133336"
       }
     },
-    "comparison": "MISMATCH NAL 9 byte 12030"
+    "comparison": "BYTE-EXACT"
   },
   {
     "experiment": 9,

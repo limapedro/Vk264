@@ -32,7 +32,7 @@ GENERATED = date.today().isoformat()
 CAVLC_P_EXACT, CAVLC_P_TOTAL = 1360, 1360
 CABAC_P_EXACT, CABAC_P_TOTAL = 1360, 1360
 CAVLC_I_EXACT, CAVLC_I_TOTAL = 72, 72
-VIDEO_EXACT, VIDEO_TOTAL = 54, 56
+VIDEO_EXACT, VIDEO_TOTAL = 56, 56
 FUNC_PORTED, FUNC_TOTAL_INV = 23, 831
 STATS = [
     ("CAVLC I-FRAMES", f"{CAVLC_I_EXACT} / {CAVLC_I_TOTAL}",
@@ -45,7 +45,8 @@ STATS = [
     # Video-level MP4 experiments (tests/video_experiments.json). These are
     # 8-frame real-clip encodes; 2-frame fixtures alone are not sufficient.
     ("VIDEO MP4 EXPERIMENTS", f"{VIDEO_EXACT} / {VIDEO_TOTAL} exact",
-     f"{VIDEO_EXACT/VIDEO_TOTAL*100:.1f}%", "#d29922"),
+     f"{VIDEO_EXACT/VIDEO_TOTAL*100:.1f}%",
+     "#2ea043" if VIDEO_EXACT == VIDEO_TOTAL else "#d29922"),
     ("x264 INVENTORY", f"{FUNC_TOTAL_INV} funcs / {FUNC_PORTED} ported",
      f"{FUNC_PORTED/FUNC_TOTAL_INV*100:.1f}%", "#d29922"),
 ]

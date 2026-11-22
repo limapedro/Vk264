@@ -562,3 +562,32 @@ remaining: exp008 warzone 640x480 8f CAVLC (NAL 9 byte 12030)
 NOTE: initial heuristic using a ref-MV-zero proxy for collocated-intra was
 rejected (regressed pme test on 2-frame IDR-reference clips); the explicit
 map is what achieves the gain.
+
+## 04 Analysis CLOSED — MV clipping in P_SKIP probe and MC: 54/56 -> 56/56
+
+exp008 (warzone 640x480 8f CAVLC) diverged at NAL 9 (frame 7) byte 12030.
+`build/skip8b.py` / `build/fastskip8.py` traced MB 1143/1144:
+```
+x264:  psk=(20,196), mv_max_y=160 -> probe uses clipped MV -> P_SKIP
+oracle: psk=(20,196) unclipped -> probe fails -> intra
+```
+Two distinct x264 clipping behaviours were missing:
+1. `macroblock.c:1001-1002` clips `pskip_mv` to `mv_min/mv_max` before the
+   P_SKIP probe (so the residual score uses the clipped MV).
+2. `common/macroblock.c mb_mc_01xywh` clips the cache MV to `mv_min/mv_max`
+   before EVERY motion-compensated read, including P_SKIP reconstruction and
+   inter residual computation. The bitstream still carries the unclipped MV.
+
+Fixed both in `pframe.c` (`probe()` + new `clip_mv_mc()` used in skip and inter
+reconstruction) and the same in `cabac_enc.c` (`p_probe()` + `clip_mv_mc()`).
+
+### Verified — 100% byte-exact
+```
+c8.yuv 640x480 8f: all 10 NALs byte-exact (NAL 9 = 12367 bytes both)
+ctest rewrite 18/18, main 65/65
+CAVLC P 1360/1360, CABAC P 1360/1360, CAVLC I 72/72
+video MP4 54/56 -> 56/56 (2 streams gained = exp008 pair, 0 lost)
+```
+All 28 MP4 pairs across 3 clips, 4 crops, 2/8 frames, CAVLC/CABAC are now
+byte-exact vs x264. 04 Analysis (single-frame and multi-frame CAVLC/CABAC
+mode-decision path) is closed for these configurations.
