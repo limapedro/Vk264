@@ -814,3 +814,31 @@ superfast CAVLC IDR: 25 B (opt-in on) vs x264 30 B; 23 B opt-in off.
 Also confirmed x264 MB0 type=0/cbp=1/csp=0 in BOTH CABAC and CAVLC modes.
 Next: the remaining 5-byte gap is in CAVLC symbol emission (pred modes /
 cbp table / transform_8x8 flag / token), needs a proper symbol decoder.
+
+### Byte-exact superfast MB0 achieved (this turn)
+A precise bit decoder (build/mbdecode.py) plus x264 instrumentation fixed 4
+real CAVLC/preset bugs:
+1. **Preset deblocking header**: x264 writes disable_deblock_idc=0 (alpha=0,
+   beta=0) for every preset except ultrafast; the oracle hardcoded 1. Added
+   `b_deblocking_filter` to param/PPS and wired it through both slice-header
+   writers (default param stays 0 so the sweep gates keep passing).
+2. **CAVLC order**: cbp uses cbp_to_golomb[1][1] (I-slice table), and
+   mb_qp_delta comes AFTER cbp.
+3. **transform_8x8 flag**: PPS b_transform_8x8_mode is on for superfast, so
+   an I4x4 MB writes a 1-bit flag (0) after mb_type.
+4. **coeff0 tokens**: x264 writes a coeff_token for EVERY block in a coded
+   8x8 group, including zero blocks; the emitter skipped them.
+Result: superfast CAVLC IDR MB0 is now BYTE-EXACT — first 97 bits of the
+slice match x264 exactly (header + all MB0 symbols + residual). Full IDR
+still diverges at bit 97 (MB1).
+
+### Next blocker: I8x8 mode + 8x8 transform
+x264 MB types for this IDR (build/mbtypes.py): MB0=I4x4, MB1/MB4=I8x8,
+MB2/3/5..15=I16x16. Decoded MB1 (build/mbdecode.py):
+`mb_type=0, transform8=1, 4 DC pred modes, chroma=0, cbp_gol=29 (luma=1),
+qp_delta=0, residual from bit 114`. Implementing it needs an 8x8 forward DCT,
+8x8 quant/dequant, CAVLC interleave_8x8, and 8x8 IDCT — none of which exist
+in the oracle yet. That is the concrete next work item.
+
+All gates re-verified: rewrite CTest 22/22, main CTest 65/65, CAVLC P
+1360/1360, CABAC P 1360/1360, CAVLC I 72/72, video MP4 56/56.
