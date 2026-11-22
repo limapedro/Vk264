@@ -54,8 +54,8 @@
 <rect x="1392" y="120" width="256" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
 <rect x="1392" y="120" width="4" height="74" fill="#d29922"/>
 <text x="1406" y="142" fill="#8b949e" font-size="11">x264 INVENTORY</text>
-<text x="1406" y="168" fill="#e6edf3" font-size="16" font-weight="bold">831 funcs / 23 ported</text>
-<text x="1636" y="168" fill="#d29922" font-size="16" text-anchor="end">2.8%</text>
+<text x="1406" y="168" fill="#e6edf3" font-size="16" font-weight="bold">831 funcs / 24 ported</text>
+<text x="1636" y="168" fill="#d29922" font-size="16" text-anchor="end">2.9%</text>
 <text x="32" y="212" fill="#e6edf3" font-size="17" font-weight="bold">Pipeline stage coverage — stacked status bar + a progress bar on every function family</text>
 <rect x="32" y="222" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
 <text x="44" y="244" fill="#e6edf3" font-size="13" font-weight="bold">01  Parameters, SPS/PPS, headers</text>

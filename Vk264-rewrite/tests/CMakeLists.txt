@@ -27,6 +27,10 @@ add_test(NAME rewrite_oracle_pme
             "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_pme.py"
             "$<TARGET_FILE:vk264_oracle_pme_cli>" "${CMAKE_BINARY_DIR}")
 
+add_executable(vk264_hpel_test test_hpel.c)
+target_link_libraries(vk264_hpel_test PRIVATE vk264_rewrite_ref)
+add_test(NAME rewrite_hpel_filter COMMAND vk264_hpel_test)
+
 add_executable(vk264_oracle_pcli oracle_pcli.c)
 target_link_libraries(vk264_oracle_pcli PRIVATE vk264_rewrite_ref)
 

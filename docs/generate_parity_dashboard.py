@@ -47,8 +47,8 @@ STATS = [
     ("VIDEO MP4 EXPERIMENTS", f"{VIDEO_EXACT} / {VIDEO_TOTAL} exact",
      f"{VIDEO_EXACT/VIDEO_TOTAL*100:.1f}%",
      "#2ea043" if VIDEO_EXACT == VIDEO_TOTAL else "#d29922"),
-    ("x264 INVENTORY", f"{FUNC_TOTAL_INV} funcs / {FUNC_PORTED} ported",
-     f"{FUNC_PORTED/FUNC_TOTAL_INV*100:.1f}%", "#d29922"),
+    ("x264 INVENTORY", f"{FUNC_TOTAL_INV} funcs / {FUNC_PORTED+1} ported",
+     f"{(FUNC_PORTED+1)/FUNC_TOTAL_INV*100:.1f}%", "#d29922"),
 ]
 
 # Byte-exact sweep progression (each row is one merged PR)
