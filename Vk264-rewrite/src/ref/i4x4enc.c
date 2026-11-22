@@ -98,6 +98,18 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
         for(int y=0;y<4;++y)for(int x=0;x<4;++x) pred[by*16+bx+y*4+x]=p[y*4+x];
         vk_ref_dct4x4(dct[idx],s,p);
         nnz[idx]=vk_ref_quant4x4(dct[idx],mf,bias);
+        /* x264 x264_mb_encode_i4x4: write prediction to fdec for EVERY block,
+         * then add the dequantised residual inline, so later 4x4 blocks in
+         * this MB predict from already-reconstructed samples. */
+        for(int y=0;y<4;++y) for(int x=0;x<4;++x)
+            recon_y[(by+y)*16+bx+x]=p[y*4+x];
+        if (nnz[idx]) {
+            int blk[16];
+            for(int i=0;i<16;++i) blk[i]=dct[idx][i];
+            vk_ref_dequant4(blk,deq,qp);
+            vk_ref_idct4(blk);
+            vk_ref_add_block(recon_y+by*16+bx,16,blk);
+        }
     }
     vk_bs_write_ue(bs,(uint32_t)(cmode<=3?cmode:0));
     vk_bs_write_se(bs,0);
@@ -187,13 +199,8 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
     if(out_dcnz)*out_dcnz=(uint8_t)((cdnz[0]?1:0)|(cdnz[1]?2:0));
 
     /* ---- reconstruction ---- */
-    memcpy(recon_y,pred,256); memcpy(recon_u,pu,64); memcpy(recon_v,pv,64);
-    for(int b=0;b<16;++b){
-        int by=(b/4)*4,bx=(b%4)*4;
-        uint8_t *dst=recon_y+by*16+bx;
-        if(nnz[b]){int blk[16];for(int i=0;i<16;++i)blk[i]=dct[b][i];
-            vk_ref_dequant4(blk,deq,qp);vk_ref_idct4(blk);vk_ref_add_block(dst,16,blk);}
-    }
+    memcpy(recon_u,pu,64); memcpy(recon_v,pv,64);
+    /* luma reconstruction (with DC residual) was added inline above */
     for(int pl=0;pl<2;++pl){
         uint8_t *dst=pl?recon_v:recon_u;
         int d0=chad[pl][0]+chad[pl][1],d1=chad[pl][2]+chad[pl][3];

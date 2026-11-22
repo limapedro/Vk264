@@ -747,3 +747,14 @@ mode decision and nnz pattern agree; only the CAVLC token/level emission
 differs — symbol-by-symbol comparison is the next concrete step.
 
 Default 56/56 MP4, gates and sweeps unchanged by the entropy fix.
+
+### x264-faithful inline reconstruction (this turn)
+Using the working CAVLC symbol dump, x264 MB0 (matching QP=28) emits 3 nonzero
+luma blocks with coefficients -41, 1, 1 — later blocks become cheap because
+x264 reconstructs each 4x4 block INLINE. The oracle emitter instead did all
+reconstruction after the block loop, so every block predicted 128 and emitted
+-41. Fixed: write the prediction to fdec for EVERY block, then add the
+dequantised residual inline (x264_mb_encode_i4x4). Also earlier fixed a cbp
+bug (0xFFFF -> 4-bit luma cbp). Effect with ORACLE_I4X4=1: IDR 82 B -> 59 B
+-> 50 B (x264 30 B). Still not byte-exact; residual tokens differ. Default
+gates/sweeps/56-stream MP4 unchanged.
