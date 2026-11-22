@@ -1059,3 +1059,21 @@ needs weighted-prediction header fields and residual parity.
 
 All gates unchanged (guarded by VK_P7_TEST): CTest 23/23 + 65/65, CAVLC P
 sweep 1360/1360, MP4 56/56. The 7/8 byte-exact superfast slices remain.
+
+### Frame 7 header byte-exact; residual is now the gap (this turn)
+Dumped x264's frame-7 weighted-pred state (build/wp7.py): nrefs0=1,
+luma_weight_l0_flag=1 with scale=11, offset=-128 (chroma flag 0). Added those
+fields to the guarded P-slice header, and fixed MB0's MVD (x264 mvd_x=62 in
+quarter-pel; the earlier *4 was wrong). Built a precise header decoder
+(build/p7hdr.py). Result:
+```
+x264: 9a 87 39 38 58 02 02 7e 07 c8 53 14 0f 8a ...
+ora:  9a 87 39 38 58 02 02 7e 07 c8 52 28 00 1a ...
+```
+The full 61-bit slice header and MB0 skip_run/mb_type/mvd now match exactly;
+divergence begins at bit 87, inside MB0's residual (cbp_luma=15, cbp_chroma=1).
+So the remaining frame-7 gap is residual/CAVLC parity for a coded P_L0 MB,
+plus the I4/I8/I16 intra MB residuals. That is the concrete next step.
+
+All gates unchanged (VK_P7_TEST guarded): CTest 23/23 + 65/65, CAVLC P sweep
+1360/1360, MP4 56/56. The other 7/8 superfast slices remain byte-exact.

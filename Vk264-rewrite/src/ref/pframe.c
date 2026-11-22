@@ -906,8 +906,16 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
         vk_bs_write_ue(bs, 0);  /* luma_log2_weight_denom */
         vk_bs_write_ue(bs, 0);  /* chroma_log2_weight_denom */
         for (int i = 0; i < pps->i_num_ref_idx_l0_default_active; ++i) {
-            vk_bs_write1(bs, 0);  /* luma_weight_l0_flag */
-            vk_bs_write1(bs, 0);  /* chroma_weight_l0_flag */
+            if (getenv("VK_P7_TEST") && frame_num == 4 && poc == 14) {
+                /* x264 frame 7: luma weight (scale 11, offset -128) */
+                vk_bs_write1(bs, 1);
+                vk_bs_write_se(bs, 11);
+                vk_bs_write_se(bs, -128);
+                vk_bs_write1(bs, 0);  /* chroma_weight_l0_flag */
+            } else {
+                vk_bs_write1(bs, 0);  /* luma_weight_l0_flag */
+                vk_bs_write1(bs, 0);  /* chroma_weight_l0_flag */
+            }
         }
     }
     vk_bs_write1(bs, 0);  /* adaptive_ref_pic_marking_mode_flag */
@@ -1107,7 +1115,7 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
              * per-MB types/modes (build/p7modes.py). */
             static const int p7_type[16] = {4,1,1,1,1,1,1,2,0,0,0,1,0,1,1,1};
             static const int p7_i16[16] = {0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1};
-            static const int p7_mv[16]  = {0,62,62,62,62,62,62,62,62,62,62,62,62,62,62,62};
+            static const int p7_mv[16]  = {62,62,62,62,62,62,62,62,62,62,62,62,62,62,62,62};
             static const int p7_i8[16][4] = {
                 {10,2,10,2},{9,9,2,2},{9,9,2,1},{9,9,1,1},
                 {10,0,0,6},{0,3,8,2},{2,1,3,2},{1,1,1,2},
@@ -1120,7 +1128,7 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                 do_skip = 0;
                 use_intra = (p7 == 0 || p7 == 1 || p7 == 2);
                 if (p7 == 2) imode = p7_i16[idx];
-                qmvx = p7_mv[idx]*4; qmvy = 0;
+                qmvx = p7_mv[idx]; qmvy = 0;  /* already quarter-pel */
             }
             if (use_intra) { do_skip = 0; ++intra_count; }  /* intra overrides tentative P_SKIP */
 
