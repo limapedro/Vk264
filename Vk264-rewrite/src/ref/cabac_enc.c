@@ -12,8 +12,8 @@
 
 static uint8_t clip8(int v) { return v < 0 ? 0 : (v > 255 ? 255 : (uint8_t)v); }
 
-#define LPAD 16
-#define CPAD 8
+#define LPAD 32   /* mirror x264 PADH/PADV=32 */
+#define CPAD 16
 
 /* x264's mc_chroma: luma qpel MV is a 1/8-chroma-pixel offset, so integer
  * luma MVs still land on fractional chroma positions and need bilinear

@@ -139,8 +139,9 @@ int main(int argc, char **argv)
     vk_pps_write(&bs, &sps, &pps);
     vk_nal_write(fo, 0x68, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 1);
 
-    int rs = w + 32, rh = h + 32, ro = 16*rs + 16;
-    int cs = w/2 + 32, co = 8*cs + 8;
+    /* match x264 PADH/PADV=32 (luma) and the 4:2:0 chroma equivalent */
+    int rs = w + 64, rh = h + 64, ro = 32*rs + 32;
+    int cs = w/2 + 32, co = 16*cs + 16;
     uint8_t (*nnz_c)[16] = calloc((size_t)mw*mh, 16);
     uint8_t (*cnnz_c)[2][4] = calloc((size_t)mw*mh, 8);
     uint8_t *dcnz_c = calloc((size_t)mw*mh, 1);
