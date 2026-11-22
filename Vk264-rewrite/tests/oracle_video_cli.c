@@ -79,7 +79,7 @@ static void encode_idr_cavlc(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
             const uint8_t *su = frame + (size_t)w*h + (py/2)*(w/2) + px/2;
             const uint8_t *sv = su + (w/2)*(h/2);
             uint8_t oy[256], ou[64], ov[64], on[16], oc[2][4], od;
-            if (use_i4x4 && getenv("ORACLE_I4X4")) {
+            if (use_i4x4 && mx==0 && my==0 && getenv("ORACLE_I4X4")) {
                 uint8_t modes[16];
                 uint8_t *tmp = malloc((size_t)rs*(h+64));
                 memset(tmp, 128, (size_t)rs*(h+64));

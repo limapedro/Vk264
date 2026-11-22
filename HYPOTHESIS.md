@@ -703,3 +703,15 @@ therefore NOT enabled by default; the exact remaining work is:
 - correct neighbour reconstruction feedback across MBs for I4x4 decisions
 - confirm 8x8dct state for the 15 I16 MBs
 Verified with the opt-in OFF: rewrite 22/22, main 65/65, 56/56 MP4 unchanged.
+
+### MB0 mode decision verified byte-exact on real clip (this turn)
+x264's superfast IDR MB0 raw I4x4 modes on `build/preset_verify/clip.yuv`:
+```
+11,9,10,2,9,9,2,2,10,2,10,2,2,2,2,2
+```
+`vk_i4x4_decide` reproduces these EXACTLY (test_i4mb0, bad=0). So the
+remaining I4x4 gap is purely the emitter: with opt-in I4x4 for MB0 only, the
+IDR is 69 B vs x264 32 B — the emitted residual is ~5x too large. Likely the
+nC context or coefficient ordering in `vk_encode_i4x4_mb`; needs bit-level
+comparison against x264's MB0 CAVLC symbols. Also I8x8 mode must be considered
+in the per-MB selection (x264 superfast enables I8x8|I4x4 analysis).
