@@ -1,6 +1,6 @@
 # Video encode comparison (x264 vs oracle)
 
-32/56 encoder streams byte-exact; 28 video pairs.
+36/56 encoder streams byte-exact; 28 video pairs.
 
 - exp001 x264   warzone2020_ 64x64 2f cavlc: BYTE-EXACT
 - exp001 oracle warzone2020_ 64x64 2f cavlc: BYTE-EXACT
@@ -10,14 +10,14 @@
 - exp003 oracle warzone2020_ 64x64 2f cavlc: BYTE-EXACT
 - exp004 x264   warzone2020_ 64x64 8f cavlc: MISMATCH NAL 9 byte 280
 - exp004 oracle warzone2020_ 64x64 8f cavlc: MISMATCH NAL 9 byte 280
-- exp005 x264   warzone2020_ 320x240 2f cavlc: MISMATCH NAL 3 byte 3774
-- exp005 oracle warzone2020_ 320x240 2f cavlc: MISMATCH NAL 3 byte 3774
-- exp006 x264   warzone2020_ 320x240 8f cavlc: MISMATCH NAL 3 byte 3774
-- exp006 oracle warzone2020_ 320x240 8f cavlc: MISMATCH NAL 3 byte 3774
-- exp007 x264   warzone2020_ 640x480 2f cavlc: MISMATCH NAL 3 byte 6856
-- exp007 oracle warzone2020_ 640x480 2f cavlc: MISMATCH NAL 3 byte 6856
-- exp008 x264   warzone2020_ 640x480 8f cavlc: MISMATCH NAL 3 byte 6856
-- exp008 oracle warzone2020_ 640x480 8f cavlc: MISMATCH NAL 3 byte 6856
+- exp005 x264   warzone2020_ 320x240 2f cavlc: BYTE-EXACT
+- exp005 oracle warzone2020_ 320x240 2f cavlc: BYTE-EXACT
+- exp006 x264   warzone2020_ 320x240 8f cavlc: MISMATCH NAL 6 byte 4489
+- exp006 oracle warzone2020_ 320x240 8f cavlc: MISMATCH NAL 6 byte 4489
+- exp007 x264   warzone2020_ 640x480 2f cavlc: BYTE-EXACT
+- exp007 oracle warzone2020_ 640x480 2f cavlc: BYTE-EXACT
+- exp008 x264   warzone2020_ 640x480 8f cavlc: MISMATCH NAL 4 byte 315
+- exp008 oracle warzone2020_ 640x480 8f cavlc: MISMATCH NAL 4 byte 315
 - exp009 x264   forza_1080p6 64x64 2f cavlc: BYTE-EXACT
 - exp009 oracle forza_1080p6 64x64 2f cavlc: BYTE-EXACT
 - exp010 x264   forza_1080p6 64x64 8f cavlc: BYTE-EXACT
@@ -48,8 +48,8 @@
 - exp022 oracle fortnite_108 320x240 8f cavlc: MISMATCH NAL 6 byte 239
 - exp023 x264   fortnite_108 640x480 2f cavlc: BYTE-EXACT
 - exp023 oracle fortnite_108 640x480 2f cavlc: BYTE-EXACT
-- exp024 x264   fortnite_108 640x480 8f cavlc: MISMATCH NAL 4 byte 321
-- exp024 oracle fortnite_108 640x480 8f cavlc: MISMATCH NAL 4 byte 321
+- exp024 x264   fortnite_108 640x480 8f cavlc: MISMATCH NAL 4 byte 1381
+- exp024 oracle fortnite_108 640x480 8f cavlc: MISMATCH NAL 4 byte 1381
 - exp025 x264   warzone2020_ 64x64 2f cabac: BYTE-EXACT
 - exp025 oracle warzone2020_ 64x64 2f cabac: BYTE-EXACT
 - exp026 x264   warzone2020_ 64x64 8f cabac: MISMATCH NAL 9 byte 259

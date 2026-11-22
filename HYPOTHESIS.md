@@ -420,3 +420,38 @@ Instrument `vk_me16_dia` for MB 9 of frame 2: log candidate MVs, SAD, MVD
 cost, and final MV; compare with x264's `mb_analyse_inter_p16x16` result.
 The first hypothesis to test is H1 (window clamping) because it is the only
 code path known to be frame-size dependent.
+
+## 04 Analysis CLOSED for the 2-frame warzone case — MV range clamp 4x too narrow
+
+After the V-plane fix, `build/nalcmp.py` on `build/clip_videos/c5.yuv`
+(warzone 320x240, frame 1) localized the remaining divergence to P-slice byte
+3774. `build/mb_offset.py` mapped that to MB 274; `build/finalmb.py` showed the
+real cause: **x264 coded MB 274 as I16x16 (type=2) while the oracle coded it as
+P_L0 inter**. `build/cost_trace.py` confirmed the intra cost matched exactly
+(1916) but the inter cost did not (x264 2994 vs oracle 1853).
+
+`build/me_trace.py` / `build/x264_me_trace.py` traced `vk_me16_dia`:
+```
+oracle: mvp=(0,0), cands=[38,-47][22,-31][38,-31][7,-30] -> MV (25,-44), cost 1853
+x264:   mvp=(0,0), cands=[51,-53][24,-31][40,-31][32,-30], limits -242,-226..98,34
+```
+Root cause: `motion.c::vk_me16_dia` clamped the border-derived MV range to
++/-256 (in the 4x units) but x264 `analyse.c:330-349` clamps to
++/-i_fmv_range = +/-4*i_mv_range = **+/-1024** at level 2.1 (256 qpel).
+The oracle's search range was therefore **4x too narrow** (64 vs 256 fullpel),
+corrupting the ME results of intra MBs and the candidate list of later MBs,
+which flipped mode decisions.
+
+Fixed the 4 clamps in `Vk264-rewrite/src/ref/motion.c`.
+
+### Verified
+```
+c5.yuv 320x240 2f: all 4 NALs BYTE-EXACT (P-slice 4177 bytes both)
+ctest rewrite 18/18, main 65/65
+CAVLC P 1360/1360, CABAC P 1360/1360, CAVLC I 72/72
+video MP4 byte-exact 32/56 -> 36/56 (4 streams gained, 0 lost)
+  gained: exp005/exp007 pairs (warzone 320x240 2f CAVLC,
+          warzone 640x480 2f CAVLC)
+```
+Remaining 8f/64x64 divergences are a separate issue (multi-frame reference
+MV cache), not the single-frame mode decision.

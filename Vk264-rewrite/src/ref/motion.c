@@ -38,10 +38,16 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
     int ph = frame_h + 2*pad;   /* padded reference plane height */
     int rx0 = 4*(-16*mbx-24), rx1 = 4*(16*(mbw-mbx-1)+24);
     int ry0 = 4*(-16*mby-24), ry1 = 4*(16*(mbh-mby-1)+24);
-    int lim_xmin = ((rx0 > -256 ? rx0 : -256) >> 2) + 6;
-    int lim_xmax = ((rx1 <  255 ? rx1 :  255) >> 2) - 6;
-    int lim_ymin = ((ry0 > -256 ? ry0 : -256) >> 2) + 6;
-    int lim_ymax = ((ry1 <  255 ? ry1 :  255) >> 2) - 6;
+    /* x264 analyse.c:330-349 clamps mv_min/mv_max_spel to
+     * -i_fmv_range .. i_fmv_range-1, where i_fmv_range = 4*i_mv_range.
+     * i_mv_range comes from the SPS level (level 2.1 => 256 qpel), so the
+     * clamp is +/-1024 in the 4x units used here, NOT +/-256.  The old
+     * +/-256 made the oracle's search range 4x too narrow (64 vs 256
+     * fullpel), corrupting the ME candidate list of later MBs. */
+    int lim_xmin = ((rx0 > -1024 ? rx0 : -1024) >> 2) + 6;
+    int lim_xmax = ((rx1 <  1023 ? rx1 :  1023) >> 2) - 6;
+    int lim_ymin = ((ry0 > -1024 ? ry0 : -1024) >> 2) + 6;
+    int lim_ymax = ((ry1 <  1023 ? ry1 :  1023) >> 2) - 6;
 #define MV_IN_RANGE(mx,my) ((mx)>=lim_xmin && (mx)<=lim_xmax && (my)>=lim_ymin && (my)<=lim_ymax)
     int bmx = mvpx, bmy = mvpy;
     /* At subme=0 x264 omits the MV cost of the rounded MVP. */
