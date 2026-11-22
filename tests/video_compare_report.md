@@ -24,8 +24,8 @@
 - exp010 oracle forza_1080p6 64x64 8f cavlc: BYTE-EXACT
 - exp011 x264   forza_1080p6 64x64 2f cavlc: BYTE-EXACT
 - exp011 oracle forza_1080p6 64x64 2f cavlc: BYTE-EXACT
-- exp012 x264   forza_1080p6 64x64 8f cavlc: MISMATCH NAL 6 byte 102
-- exp012 oracle forza_1080p6 64x64 8f cavlc: MISMATCH NAL 6 byte 102
+- exp012 x264   forza_1080p6 64x64 8f cavlc: MISMATCH NAL 9 byte 126
+- exp012 oracle forza_1080p6 64x64 8f cavlc: MISMATCH NAL 9 byte 126
 - exp013 x264   forza_1080p6 320x240 2f cavlc: BYTE-EXACT
 - exp013 oracle forza_1080p6 320x240 2f cavlc: BYTE-EXACT
 - exp014 x264   forza_1080p6 320x240 8f cavlc: MISMATCH NAL 4 byte 2876
@@ -56,5 +56,5 @@
 - exp026 oracle warzone2020_ 64x64 8f cabac: BYTE-EXACT
 - exp027 x264   forza_1080p6 64x64 2f cabac: BYTE-EXACT
 - exp027 oracle forza_1080p6 64x64 2f cabac: BYTE-EXACT
-- exp028 x264   forza_1080p6 64x64 8f cabac: MISMATCH NAL 6 byte 89
-- exp028 oracle forza_1080p6 64x64 8f cabac: MISMATCH NAL 6 byte 89
+- exp028 x264   forza_1080p6 64x64 8f cabac: MISMATCH NAL 9 byte 107
+- exp028 oracle forza_1080p6 64x64 8f cabac: MISMATCH NAL 9 byte 107

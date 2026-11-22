@@ -49,7 +49,13 @@ int vk_me16_dia(const uint8_t *cur, int cur_stride,
     int lim_ymin = ((ry0 > -1024 ? ry0 : -1024) >> 2) + 6;
     int lim_ymax = ((ry1 <  1023 ? ry1 :  1023) >> 2) - 6;
 #define MV_IN_RANGE(mx,my) ((mx)>=lim_xmin && (mx)<=lim_xmax && (my)>=lim_ymin && (my)<=lim_ymax)
-    int bmx = mvpx, bmy = mvpy;
+    /* x264 me.c:281-283 clips FPEL(m->mvp) to the fullpel MV limits before
+     * searching: bmx = pmx = x264_clip3(FPEL(m->mvp[0]), mv_x_min, mv_x_max).
+     * Using the raw mvp can start the diamond search at a point x264 never
+     * considers (e.g. y=22 with lim_ymax=18), changing the chosen MV and the
+     * byte-exact bitstream (forza 64x64 frame 4 MB 12). */
+    int bmx = mvpx < lim_xmin ? lim_xmin : (mvpx > lim_xmax ? lim_xmax : mvpx);
+    int bmy = mvpy < lim_ymin ? lim_ymin : (mvpy > lim_ymax ? lim_ymax : mvpy);
     /* At subme=0 x264 omits the MV cost of the rounded MVP. */
     int bcost = sad16(cur, cur_stride, rpad, ref_stride, pad, ph, x, y, bmx, bmy);
     *best_x = bmx; *best_y = bmy;

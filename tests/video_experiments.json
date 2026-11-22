@@ -848,7 +848,7 @@
         "duration": "0.133336"
       }
     },
-    "comparison": "MISMATCH NAL 6 byte 102"
+    "comparison": "MISMATCH NAL 9 byte 126"
   },
   {
     "experiment": 12,
@@ -865,8 +865,8 @@
     "keyint": 30,
     "entropy": "cavlc",
     "preset": "ultrafast",
-    "h264_sha256": "6dc3a6760b39d211ec3dd43ebfabbf14439ddf65e094f89ca07b0998de069c2f",
-    "h264_bytes": 1294,
+    "h264_sha256": "f1db3b76dbc6bb9f6cf311b8b90bfbaadb247abc4c059b83f30f57ca58af60ef",
+    "h264_bytes": 1295,
     "ffprobe": {
       "programs": [],
       "stream_groups": [],
@@ -885,7 +885,7 @@
         "duration": "0.133336"
       }
     },
-    "comparison": "MISMATCH NAL 6 byte 102"
+    "comparison": "MISMATCH NAL 9 byte 126"
   },
   {
     "experiment": 13,
@@ -2032,7 +2032,7 @@
         "duration": "0.133336"
       }
     },
-    "comparison": "MISMATCH NAL 6 byte 89"
+    "comparison": "MISMATCH NAL 9 byte 107"
   },
   {
     "experiment": 28,
@@ -2049,7 +2049,7 @@
     "keyint": 30,
     "entropy": "cabac",
     "preset": "ultrafast",
-    "h264_sha256": "c12ddc6db8657b87bbb736871857b86e3ac7d448fdaf173ba62c9c6b3c5ae771",
+    "h264_sha256": "9af7a999899ff2ae8b09ee493859ea087f8963f47c749ba81a16a49824d277c3",
     "h264_bytes": 1102,
     "ffprobe": {
       "programs": [],
@@ -2069,6 +2069,6 @@
         "duration": "0.133336"
       }
     },
-    "comparison": "MISMATCH NAL 6 byte 89"
+    "comparison": "MISMATCH NAL 9 byte 107"
   }
 ]
