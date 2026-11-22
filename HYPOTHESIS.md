@@ -165,9 +165,24 @@ level values are identical. Combined with the identical MB headers, this
 means the 8-bit divergence is NOT in any logged residual block or header.
 It must be in a write that bypasses those hooks — most likely the
 `x264_coeff0_token` for all-zero blocks (written directly by x264's macro,
-so not logged) or the end-of-slice skip_run. The bit-position instrumentation
-needed to confirm this could not be completed (the oracle build rejected the
-`vk_bs_pos` instrumentation call), so no fix was committed.
+so not logged) or the end-of-slice skip_run.
+
+**coeff0 tokens also match.** `build/_coeff0_x.py` + `build/_coeff0_4.py`
+logged every zero-block token from both encoders (x264 logs each twice due
+to its analysis/write macro calls; the oracle once). Unique values:
+```
+mb=13 nC=4 sz=2 bits=1   (both)
+mb=14 nC=0 sz=1 bits=1   (both)
+mb=15 nC=0 sz=1 bits=1   (both)
+all other zero blocks nC=0 sz=1 bits=1 (both)
+```
+So headers, 40 residual blocks, coeff0 tokens and skip runs all match, yet
+NAL 6 differs by exactly 8 bits (59 vs 51) and then resynchronises. This
+points to a VLC *encoding* difference for an identical symbol (e.g. a
+level-suffix state or table index) in a path not covered by the per-block
+dumps. The bit-position instrumentation needed to isolate it could not be
+completed (the oracle build rejected the `vk_bs_pos` call), so no fix was
+committed.
 
 ## What is proven
 
