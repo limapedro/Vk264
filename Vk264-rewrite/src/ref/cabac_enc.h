@@ -25,10 +25,23 @@ int vk_cabac_encode_pskip(vk_bs_t *bs, vk_cabac_t *cb, int w, int h);
 int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
                       const uint8_t *cur, const uint8_t *ref,
                       int w, int h, int qp);
+/* As above, with optional reconstructed-frame output for multi-frame encodes. */
+int vk_cabac_encode_p_recon(vk_bs_t *bs, vk_cabac_t *cb,
+                            const uint8_t *cur, const uint8_t *ref,
+                            int w, int h, int qp, uint8_t *recon_out);
+int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
+                                  const uint8_t *cur, const uint8_t *ref,
+                                  int w, int h, int qp, uint8_t *recon_out,
+                                  int frame_idx);
 
 /* Write an IDR slice and optionally copy out the reconstructed YUV420 frame. */
 int vk_cabac_encode_idr_recon(vk_bs_t *bs, vk_cabac_t *cb,
                               const uint8_t *frame, int w, int h, int qp,
                               uint8_t *recon_out);
+/* As above with the real frame index (x264's CABAC flush terminator bit
+ * depends on h->i_frame & 31). */
+int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
+                                    const uint8_t *frame, int w, int h, int qp,
+                                    uint8_t *recon_out, int frame_idx);
 
 #endif

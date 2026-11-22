@@ -357,17 +357,28 @@ static void compute_chroma_dc(const uint8_t *src, int cs, int x, int y,
     }
 }
 
+int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
+                                    const uint8_t *frame, int w, int h, int qp,
+                                    uint8_t *recon_out, int frame_idx);
+
 int vk_cabac_encode_idr(vk_bs_t *bs, vk_cabac_t *cb,
                         const uint8_t *frame, int w, int h, int qp,
                         int frame_num)
 {
     (void)frame_num;
-    return vk_cabac_encode_idr_recon(bs, cb, frame, w, h, qp, NULL);
+    return vk_cabac_encode_idr_recon_frame(bs, cb, frame, w, h, qp, NULL, 0);
 }
 
 int vk_cabac_encode_idr_recon(vk_bs_t *bs, vk_cabac_t *cb,
                               const uint8_t *frame, int w, int h, int qp,
                               uint8_t *recon_out)
+{
+    return vk_cabac_encode_idr_recon_frame(bs, cb, frame, w, h, qp, recon_out, 0);
+}
+
+int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
+                                    const uint8_t *frame, int w, int h, int qp,
+                                    uint8_t *recon_out, int frame_idx)
 {
     int mw = w/16, mh = h/16;
     uint8_t *data = bs->p;
@@ -578,7 +589,7 @@ int vk_cabac_encode_idr_recon(vk_bs_t *bs, vk_cabac_t *cb,
     free(mbcbp);
     free(cmode_fix);
     free(recon);
-    int bytes = vk_cabac_flush(cb, 0);
+    int bytes = vk_cabac_flush(cb, frame_idx);
     bs->p = data + bytes;
     return bytes;
 }
@@ -908,9 +919,23 @@ static void compute_p_residual(const uint8_t *cur, const uint8_t *refp,
     if (out->cbp_chroma == 3) out->cbp_chroma = 2;
 }
 
-int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
-                      const uint8_t *cur, const uint8_t *ref,
-                      int w, int h, int qp)
+int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
+                                  const uint8_t *cur, const uint8_t *ref,
+                                  int w, int h, int qp, uint8_t *recon_out,
+                                  int frame_idx);
+
+int vk_cabac_encode_p_recon(vk_bs_t *bs, vk_cabac_t *cb,
+                            const uint8_t *cur, const uint8_t *ref,
+                            int w, int h, int qp, uint8_t *recon_out)
+{
+    return vk_cabac_encode_p_recon_frame(bs, cb, cur, ref, w, h, qp,
+                                         recon_out, 1);
+}
+
+int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
+                                  const uint8_t *cur, const uint8_t *ref,
+                                  int w, int h, int qp, uint8_t *recon_out,
+                                  int frame_idx)
 {
     int mw = w/16, mh = h/16;
     uint8_t *data = bs->p;
@@ -1467,12 +1492,29 @@ int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
             }
         }
 
+    if (recon_out) {
+        for (int y = 0; y < h; ++y)
+            memcpy(recon_out + (size_t)y*w, ry + (y+LPAD)*rs + LPAD, w);
+        for (int y = 0; y < h/2; ++y) {
+            memcpy(recon_out + (size_t)w*h + y*(w/2),
+                   ru + (y+CPAD)*crs + CPAD, w/2);
+            memcpy(recon_out + (size_t)w*h + (size_t)(w/2)*(h/2) + y*(w/2),
+                   rv + (y+CPAD)*crs + CPAD, w/2);
+        }
+    }
     free(ry); free(ru); free(rv);
     free(cmode_fix); free(cnnzc); free(nnzc); free(mbcbp);
     free(mvd_c); free(cbp_c); free(is_skip); free(mv); free(mvr); free(mv_ref); free(refp);
-    int bytes = vk_cabac_flush(cb, 1);
+    int bytes = vk_cabac_flush(cb, frame_idx);
     bs->p = data + bytes;
     return bytes;
+}
+
+int vk_cabac_encode_p(vk_bs_t *bs, vk_cabac_t *cb,
+                      const uint8_t *cur, const uint8_t *ref,
+                      int w, int h, int qp)
+{
+    return vk_cabac_encode_p_recon(bs, cb, cur, ref, w, h, qp, NULL);
 }
 
 

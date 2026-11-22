@@ -7,6 +7,7 @@
  * must select material where every coded MB quantises to cbp=0.
  */
 #include "pframe.h"
+#include <stdio.h>
 #include "motion.h"
 #include "slice.h"
 #include "cavlc.h"
@@ -824,9 +825,10 @@ static int intra_decide(const uint8_t *cy, const uint8_t *cu, const uint8_t *cv,
     return *cost < inter_cost;
 }
 
-void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
-                       const uint8_t *cur, const uint8_t *ref,
-                       int w, int h, int qp, int frame_num)
+void vk_encode_p_frame_recon(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
+                             const uint8_t *cur, const uint8_t *ref,
+                             int w, int h, int qp, int frame_num,
+                             uint8_t *recon_out)
 {
     int mw = w/16, mh = h/16;
     int rs = w + 2*LPAD;
@@ -1092,7 +1094,27 @@ void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
         }
     if (skip_run) vk_bs_write_ue(bs, (uint32_t)skip_run);
     vk_bs_rbsp_trailing(bs);
+    if (recon_out) {
+        /* copy out the unpadded reconstructed YUV420 frame for use as the
+         * reference of the next P-slice in a multi-frame video encode. */
+        for (int y = 0; y < h; ++y)
+            memcpy(recon_out + (size_t)y*w,
+                   ry + (y+LPAD)*rs + LPAD, w);
+        for (int y = 0; y < h/2; ++y) {
+            memcpy(recon_out + (size_t)w*h + y*(w/2),
+                   ru + (y+CPAD)*crs + CPAD, w/2);
+            memcpy(recon_out + (size_t)w*h + (size_t)(w/2)*(h/2) + y*(w/2),
+                   rv + (y+CPAD)*crs + CPAD, w/2);
+        }
+    }
     free(dcnz_c); free(cnnz_c); free(nnz_c);
     free(ry); free(ru); free(rv);
     free(is_skip); free(mv); free(mvr); free(mv_ref); free(refp);
+}
+
+void vk_encode_p_frame(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
+                       const uint8_t *cur, const uint8_t *ref,
+                       int w, int h, int qp, int frame_num)
+{
+    vk_encode_p_frame_recon(bs, sps, pps, cur, ref, w, h, qp, frame_num, NULL);
 }
