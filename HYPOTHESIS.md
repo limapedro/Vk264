@@ -1173,3 +1173,21 @@ intra MB residuals.
 This MC offset fix is general (not env-gated) and all gates pass:
 CTest 23/23 + 65/65, CAVLC P sweep 1360/1360, MP4 56/56. The 7/8 byte-exact
 superfast slices remain unchanged.
+
+### Frame 7 MB0 prediction definitively measured (this turn)
+build/mc7b.py dumps x264 after encoding POC=14 MB0:
+```
+type=4 (P_L0)  fenc=57  fdec=58,58,0  mv=0,0
+```
+So x264's MB0 MV is (0,0) (the earlier mvd_x=62 comes from a temporal MV
+predictor of -62), its reconstruction is 58 vs source 57, and its luma
+residual DC=1 (build/dct7.py). The prediction before residual must therefore
+be ~56-58. With ref recon 15 and the bitstream weight scale=11/offset=-128,
+the mc_weight formula (clip(src*11-128)) gives 37 — too low. An effective
+scale of 12 gives 52, closer. The exact effective weight/denominator handling
+in x264's mc_weight path still needs to be matched.
+
+This measurement supersedes the earlier assumption that MB0's MV was 62.
+
+No code changes this turn; gates unchanged (CTest 23/23 + 65/65, CAVLC P
+sweep 1360/1360, MP4 56/56). The 7/8 byte-exact superfast slices remain.
