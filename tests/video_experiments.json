@@ -168,8 +168,8 @@
     "qp_i": 25,
     "entropy": "cavlc",
     "x264_preset_reference": "ultrafast",
-    "h264_sha256": "f18af6025a1427f9277a571cff5812d4bf3f92f417404afe6ef56c7d6b1f6514",
-    "h264_bytes": 1374,
+    "h264_sha256": "6dc3a6760b39d211ec3dd43ebfabbf14439ddf65e094f89ca07b0998de069c2f",
+    "h264_bytes": 1294,
     "nal_lengths": [
       20,
       4,
@@ -177,10 +177,10 @@
       119,
       100,
       172,
-      170,
-      171,
-      169,
-      188
+      119,
+      167,
+      157,
+      175
     ],
     "ffprobe": {
       "programs": [],
@@ -270,8 +270,8 @@
     "qp_i": 25,
     "entropy": "cabac",
     "x264_preset_reference": "ultrafast",
-    "h264_sha256": "26bf85362e6f1abe453e20d18f30897b6e112c941ade9f243f693529846128f9",
-    "h264_bytes": 1156,
+    "h264_sha256": "c12ddc6db8657b87bbb736871857b86e3ac7d448fdaf173ba62c9c6b3c5ae771",
+    "h264_bytes": 1102,
     "nal_lengths": [
       20,
       4,
@@ -279,10 +279,10 @@
       102,
       90,
       145,
-      146,
-      142,
-      140,
-      156
+      105,
+      139,
+      136,
+      150
     ],
     "ffprobe": {
       "programs": [],
@@ -372,8 +372,8 @@
     "qp_i": 25,
     "entropy": "cavlc",
     "x264_preset_reference": "fast",
-    "h264_sha256": "e0a68d3e9498f840762df41a177970f711dc00dcc21aa49088de24626203db24",
-    "h264_bytes": 1376,
+    "h264_sha256": "6dc3a6760b39d211ec3dd43ebfabbf14439ddf65e094f89ca07b0998de069c2f",
+    "h264_bytes": 1294,
     "nal_lengths": [
       20,
       4,
@@ -381,10 +381,10 @@
       119,
       100,
       172,
-      172,
-      171,
-      169,
-      188
+      119,
+      167,
+      157,
+      175
     ],
     "ffprobe": {
       "programs": [],

@@ -99,16 +99,25 @@ NAL 0 (SPS) differs at byte 1 for every preset above ultrafast: x264 emits
 The oracle needs the missing SPS/PPS/param fields plus the corresponding
 analysis features before these presets can match.
 
-### H6 — non-determinism in chained P-slices (OBSERVED, unfixed)
-Running the oracle twice on the same forza crop produces different streams:
-three runs gave SHA-256 prefixes `B08230014A75`, `6E65C090EB8F`,
-`246F97E70F4D`; x264 on the same input is stable (`F0FE352291C5`). The first
-differing NAL is 6 (frame 4), the same frame where x264 parity diverges.
-Flat content is deterministic. This predates the temporal-predictor change
-(verified with worktree at 96ff318), so it is a separate pre-existing
-uninitialized read or out-of-bounds access in the chained-P path.
-Test: MSVC `/fsanitize=address` build (ASAN runtime DLL unavailable here), or
-instrument the frame-4 MB loop for reads of uninitialised `mvr`/nnz cache.
+### H6 — non-determinism in chained P-slices (FIXED, PR #188)
+Running the oracle twice on the same forza crop produced different streams
+(SHA prefixes `B08230014A75`, `6E65C090EB8F`, `246F97E70F4D`). Root cause:
+the oracle used `LPAD=16`/`CPAD=8` reference-plane borders while x264 uses
+`PADH=PADV=32` (`common/frame.h:32-34`). High-motion MVs (e.g. -132,-232 qpel
+at frame 4 MB 14) read past the narrower border into uninitialised heap.
+Fix: `LPAD=32`/`CPAD=16` in `pframe.c` and `cabac_enc.c`, with matching CLI
+stride/offset changes. Verified: 3 consecutive encodes now produce the same
+SHA (`6DC3A6760B39...`), and 2-frame sweeps stay 1360/1360.
+
+### H7 — last-MB VLC sequence at frame 4 (NEXT, now reproducible)
+With determinism fixed and per-MB write tracing, frame 4 MBs 0-14 produce
+identical bit strings in x264 and the oracle. Only **MB 15** (the last MB)
+differs (46 bits each, first differing bit 1). MB 15's decisions match
+(x264 type=4, cbp=1, mv=-132,-232; oracle cbp=1, mv=-132,-232). The write
+sequences are reordered: x264 ends with `2:2`, the oracle with `6:0`.
+Likely the final `mb_skip_run`/`total_zeros` write placement or a last-MB
+neighbour-cache (`nnz_c`) difference. Compare x264's end-of-slice skip_run
+write with `pframe.c`'s `if (skip_run) vk_bs_write_ue(...)`.
 
 ## What is proven
 

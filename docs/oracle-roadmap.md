@@ -15,6 +15,7 @@ against libx264 for **multi-frame video**, not just isolated 2-frame fixtures.
 | 8-frame video, warzone, ultrafast CAVLC | EXACT | exp001/002 |
 | 8-frame video, warzone, ultrafast CABAC | EXACT | (CABAC flush frame-index fix) |
 | 8-frame video, forza, ultrafast | **FAIL** frame 4 (frames 0-3 exact) | exp003..006 |
+| video determinism | **FIXED** (PADH/PADV=32, PR #188) | 3 identical hashes |
 | any preset above ultrafast | **FAIL** SPS | exp007/008 |
 
 ## Phases
