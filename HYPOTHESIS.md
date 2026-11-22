@@ -801,3 +801,16 @@ x264 28 B (was 50/82); slice headers match (88 84 00), divergence at byte 3,
 inside MB0's CAVLC symbols. The remaining gap is in prediction-mode / cbp /
 token emission, not the transform or quant. Next: decode MB0's symbol stream
 from both bitstreams and fix the first mismatching symbol.
+
+### Real bug fixed (this turn): fdec stride mismatch
+The emitter's reconstruction feedback read neighbours at the caller's
+`stride_y` (64) but wrote predictions at a hardcoded tight stride 16 — so
+block 1+ read uninitialised/garbage, cbp_luma became 15 and the IDR was 48 B.
+Fixed to use a consistent tight stride 16 for all fdec feedback. Now:
+```
+MB0 cbp_l=1 cbp_c=0 cdnz=0,0   (x264: cbp=1, chroma=0 — MATCH)
+superfast CAVLC IDR: 25 B (opt-in on) vs x264 30 B; 23 B opt-in off.
+```
+Also confirmed x264 MB0 type=0/cbp=1/csp=0 in BOTH CABAC and CAVLC modes.
+Next: the remaining 5-byte gap is in CAVLC symbol emission (pred modes /
+cbp table / transform_8x8 flag / token), needs a proper symbol decoder.

@@ -76,15 +76,20 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
     for(int i=0;i<16;++i)cidx[SCAN8[i]]=i;
     int dct[16][16],nnz[16]={0};
     uint8_t pred[256];
+    /* recon_y is a TIGHT 16x16 block (stride 16) in this oracle path — the
+     * caller's stride_y is the source stride and must not be used for fdec
+     * feedback reads/writes. */
+    const int fds = 16;
+    (void)stride_y;
     for(int idx=0;idx<16;++idx){
         int bx=XY[idx][0]*4,by=XY[idx][1]*4;
         uint8_t l[4],t[4],tr[4],lt;
         for(int i=0;i<4;++i){
-            l[i]=bx>0?recon_y[(by+i)*stride_y+bx-1]:(nb&&nb->left_y?nb->left_y[by+i]:128);
-            t[i]=by>0?recon_y[(by-1)*stride_y+bx+i]:(nb&&nb->top_y?nb->top_y[bx+i]:128);
-            tr[i]=by>0?recon_y[(by-1)*stride_y+bx+4+i]:128;
+            l[i]=bx>0?recon_y[(by+i)*fds+bx-1]:(nb&&nb->left_y?nb->left_y[by+i]:128);
+            t[i]=by>0?recon_y[(by-1)*fds+bx+i]:(nb&&nb->top_y?nb->top_y[bx+i]:128);
+            tr[i]=by>0?recon_y[(by-1)*fds+bx+4+i]:128;
         }
-        lt=(bx>0&&by>0)?recon_y[(by-1)*stride_y+bx-1]:128;
+        lt=(bx>0&&by>0)?recon_y[(by-1)*fds+bx-1]:128;
         int li=cidx[SCAN8[idx]-1],ti=cidx[SCAN8[idx]-8];
         int ma=li>=0?vk_i4x4_fix(modes[li]):-1;
         int mb=ti>=0?vk_i4x4_fix(modes[ti]):-1;
