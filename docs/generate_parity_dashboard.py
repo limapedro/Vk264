@@ -35,7 +35,7 @@ STATS = [
     ("CTEST GATES", "65 + 18 / 83", "100.0%", "#2ea043"),
     # Video-level MP4 experiments (tests/video_experiments.json). These are
     # 8-frame real-clip encodes; 2-frame fixtures alone are not sufficient.
-    ("VIDEO MP4 EXPERIMENTS", "24 / 56 exact", "42.9%", "#d29922"),
+    ("VIDEO MP4 EXPERIMENTS", "32 / 56 exact", "57.1%", "#d29922"),
     ("x264 INVENTORY", "831 funcs / 23 ported", "808 missing", "#d29922"),
 ]
 

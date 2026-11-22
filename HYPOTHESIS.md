@@ -373,6 +373,27 @@ leading hypothesis; note x264's reported mv_min/max at this MB were
 (-864,-160)/(544,928), which do NOT clip (20,4), so the (20,0) likely comes
 from a different pskip-MV source and needs one more trace to resolve.
 
+## ROOT CAUSE FOUND & FIXED — V-plane offset assumes square frames
+
+Tracing x264 vs oracle chroma SSD for MB 32:
+```
+x264:  ch0 ssd=9,  ch1 ssd=62   (thresh=145) -> both skip, probe returns 1
+oracle: pl0 ssd=9, pl1 ssd=436  (thresh=145) -> DC check fails, probe returns 0
+```
+Plane U matched; plane V was wrong. Cause: four sites computed the V-plane
+offset as `cs*cs` where `cs = w/2`, i.e. `(w/2)^2`. That equals the chroma
+plane size `(w/2)*(h/2)` only for SQUARE frames — for 320x240 it reads 6400
+bytes past the U plane, corrupting all V-plane chroma MC and probe decisions.
+
+Fixed all four sites (pframe.c lines 155/319, cabac_enc.c lines 685/808) to
+`(w/2)*(h/2)`.
+
+**Result: video byte-exact streams 24/56 -> 32/56 (8 gained, 0 lost).**
+Previously-failing 2-frame 320x240 and 640x480 cases on forza and fortnite
+are now byte-exact; warzone cases now diverge ~3700/6800 bytes into the
+P-slice instead of at byte 5. Gates unchanged: 18/18, 65/65, CAVLC/CABAC
+1360/1360, I-frames 72/72. This is the concrete 04 Analysis fix.
+
 **run_before table ruled out:** `build/dumprb.py` dumped all 65536 generated
 entries from x264's `x264_run_before[]` and the oracle's `run_before[]`:
 ```
