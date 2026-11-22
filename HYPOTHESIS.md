@@ -1273,3 +1273,18 @@ block, so the difference is in nC/neighbour handling or symbol ordering.
 No default gates affected (VK_P7_TEST guarded): CTest 23/23 + 65/65,
 CAVLC P sweep 1360/1360, MP4 56/56. The 7/8 byte-exact superfast slices
 remain unchanged.
+
+## Pipeline stage 03 - lookahead & slice type (new work)
+Added `Vk264-rewrite/src/ref/slicetype.c/h`: SATD (Hadamard) cost, x264's
+scenecut_bias formula and scenecut comparison, frame-type assignment,
+B-frame minigop grouping, B-pyramid BREF marking, coding-order reorder with
+P-first, frame_num and POC (2*(display - last_idr)). New CTest
+`rewrite_slicetype_decide` (now 24/24).
+
+Honest gap: the frame-type pattern still differs from x264 because x264's
+`x264_slicetype_analyse` uses lowres SATD costs for B-frame adaptive decisions
+and scenecut refinement; our fixed minigop grouping cannot yet reproduce the
+irregular B-frame runs. `build/compare_slicetype.py` documents the mismatch
+frame by frame. Next: port lowres frame cost + `x264_slicetype_analyse`.
+
+Verification: CTest 23/23 -> 24/24 (new gate), all prior gates unchanged.
