@@ -47,13 +47,15 @@ static int satd8(const uint8_t *a,int aw,int ax,int ay,
     return s;
 }
 
-/* Motion search cost of one 8x8 lowres MB from `ref` at its base position.
- * Returns SATD + MV cost with x264's post-processing. */
+/* x264 me.c:779-783 (subpel_refine<3): m->cost = bcost (pure SAD); the MV
+ * cost is added only when the chosen MV equals the predictor (bmv==pmv).
+ * In lowres with mvp=0, this means only the zero-MV candidate pays mv_cost. */
 static int mb_p_cost(const uint8_t *cur,int dw,int bx,int by,
                      const uint8_t *ref,int rx,int ry)
 {
-    int satd=satd8(cur,dw,bx,by,ref,dw,rx,ry);
-    return satd + mv_cost(rx-bx) + mv_cost(ry-by);
+    int sad=satd8(cur,dw,bx,by,ref,dw,rx,ry);
+    if(rx==bx && ry==by) sad += 2*mv_cost(0);  /* bmv==pmv(0) case */
+    return sad;
 }
 
 /* Full P frame cost against a reference (diamond ME radius 16). */
@@ -114,8 +116,8 @@ static int mb_b_cost(const uint8_t *cur,int dw,int dh,int bx,int by,
             int dx=dir[k][0]*rad,dy=dir[k][1]*rad;
             int sx=bx+dx,sy=by+dy;
             if(sx<0||sy<0||sx+8>dw||sy+8>dh) continue;
-            int c0=satd8(cur,dw,bx,by,r0,dw,sx,sy)+mv_cost(dx)+mv_cost(dy);
-            int c1=satd8(cur,dw,bx,by,r1,dw,sx,sy)+mv_cost(dx)+mv_cost(dy);
+            int c0=satd8(cur,dw,bx,by,r0,dw,sx,sy)+(dx||dy?0:2*mv_cost(0));
+            int c1=satd8(cur,dw,bx,by,r1,dw,sx,sy)+(dx||dy?0:2*mv_cost(0));
             if(c0<b0){b0=c0;m0x=dx;m0y=dy;imp0=1;}
             if(c1<b1){b1=c1;m1x=dx;m1y=dy;imp1=1;}
         }

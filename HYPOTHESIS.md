@@ -1446,3 +1446,17 @@ searched-MV alternatives for this clip. Remaining gap: x264's exact
 x264_me_search (hex method, subpel refine, cost_mv predicate cache) and
 row-SATD accumulation. Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360,
 MP4 56/56.
+
+### Stage 03 ME cost correction (this turn)
+Found in x264 me.c:779-783 (subpel_refine<3 path, which applies to lowres):
+`m->cost = bcost` (pure SAD), and the MV cost is added ONLY when the chosen
+MV equals the predictor (`bmv == pmv`, pmv=0 in lowres). Our model added MV
+cost to every candidate, inflating costs ~2-3x. Fixed: only the zero-MV
+candidate pays `2*mv_cost(0)`.
+
+Measured: frame1 P(prev) 2126 -> 1403 (x264 246); B 1136 -> 1131.
+Frame types still do not match x264 (oracle coding order
+[0,1,2,4,3,5,6,7] vs x264 [0,3,1,2,4,...]) — remaining gap is x264's
+x264_me_search hex/refine details and row-SATD accumulation.
+
+Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
