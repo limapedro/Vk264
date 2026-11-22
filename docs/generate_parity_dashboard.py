@@ -18,20 +18,20 @@ from datetime import date
 # ---------------------------------------------------------------------------
 # Data — update these after each parity PR, then regenerate the SVG.
 # ---------------------------------------------------------------------------
-SNAPSHOT = "70b87a8"
+SNAPSHOT = "5e1d240"
 GENERATED = date.today().isoformat()
 
 # Overall numbers (from build/cavlc_parity_sweep.py, cavlc_iframe_sweep.py, ctest)
 # FUNCTION PARITY is derived from the weighted STAGES table below so the
 # dashboard stays self-consistent when a family changes status.
-CAVLC_P_EXACT, CAVLC_P_TOTAL = 1343, 1360
-CABAC_P_EXACT, CABAC_P_TOTAL = 1359, 1360
+CAVLC_P_EXACT, CAVLC_P_TOTAL = 1344, 1360
+CABAC_P_EXACT, CABAC_P_TOTAL = 1360, 1360
 STATS = [
     ("CAVLC I-FRAMES", "72 / 72", "100.0%", "#2ea043"),
     ("CAVLC P-SLICES", f"{CAVLC_P_EXACT} / {CAVLC_P_TOTAL}",
      f"{CAVLC_P_EXACT/CAVLC_P_TOTAL*100:.1f}%", "#d29922"),
     ("CABAC P-SLICES", f"{CABAC_P_EXACT} / {CABAC_P_TOTAL}",
-     f"{CABAC_P_EXACT/CABAC_P_TOTAL*100:.1f}%", "#d29922"),
+     f"{CABAC_P_EXACT/CABAC_P_TOTAL*100:.1f}%", "#2ea043"),
     ("CTEST GATES", "65 + 18 / 83", "100.0%", "#2ea043"),
     ("x264 INVENTORY", "669 funcs / 35 files", "42 N/A", "#388bfd"),
 ]
@@ -71,6 +71,7 @@ SWEEPS = [
     ("#155", 1339, "#2ea043"),
     ("#157", 1339, "#2ea043"),
     ("#175", 1343, "#2ea043"),
+    ("#177", 1344, "#2ea043"),
 ]
 
 # CABAC P-slice byte-exact sweep progression (parallel to SWEEPS).  Values
@@ -94,6 +95,7 @@ CABAC_SWEEPS = [
     ("#171", 1351, "#2ea043"),
     ("#173", 1355, "#2ea043"),
     ("#175", 1359, "#2ea043"),
+    ("#177", 1360, "#2ea043"),
 ]
 
 # Pipeline stages → function families → (name, weight, status).
