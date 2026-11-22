@@ -292,6 +292,20 @@ Note: the stage tag can be stale for header `bs_write_ue` calls because the
 tag list did not cover all header sites; treat this as the leading lead,
 not proof.
 
+## Correct-input reconstruction check (build/recon_correct.py)
+```
+frame 0-6: 0 recon byte diffs (x264 --dump-yuv vs oracle recon)
+frame 7: 259 recon byte diffs, first at byte 2097 (chroma region)
+```
+So the frame-4 bitstream divergence (NAL 6) decodes to an IDENTICAL picture
+through frame 6 — it is a semantically equivalent but byte-different
+encoding, not a wrong decision. The frame-7 recon difference is a separate
+late-stage issue. `tests/case_classification.md` (55/73 byte-exact) shows all
+fortnite cases and all forza crop (0,420) cases are exact; failures are
+confined to forza crop (1200,600) from frame 4 onward and all presets above
+ultrafast at SPS. This strongly points to a VLC-choice/state difference in a
+high-motion residual pattern rather than a general architectural gap.
+
 **run_before table ruled out:** `build/dumprb.py` dumped all 65536 generated
 entries from x264's `x264_run_before[]` and the oracle's `run_before[]`:
 ```
