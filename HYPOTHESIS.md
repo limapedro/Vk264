@@ -1077,3 +1077,24 @@ plus the I4/I8/I16 intra MB residuals. That is the concrete next step.
 
 All gates unchanged (VK_P7_TEST guarded): CTest 23/23 + 65/65, CAVLC P sweep
 1360/1360, MP4 56/56. The other 7/8 superfast slices remain byte-exact.
+
+### Frame 7 MB0 residual symbols dumped (this turn)
+Instrumented x264's cavlc_block_residual_internal for POC=14 MB0
+(build/res7.py). Its residual tokens are:
+```
+nC=0 total=1 T=0 (code 5/6), nC=0 total=1 T=0, nC=0 total=2 T=1 (code 4/6),
+nC=0 total=1 T=0, nC=4 total=1 T=0 (code 7/6), nC=4 total=1 T=0
+```
+A CAVLC token decoder (build/resdec.py) on the two bitstreams at bit 87
+shows x264's first token as nC=1/total=1/T=1 and the oracle's as
+nC=0/total=1/T=0 — but this is an alignment artifact: x264's cbp_golomb=19
+(bits 77-86) matches the oracle's exactly. Adding mb_qp_delta after the mvd
+shifted the oracle's bits and was reverted.
+
+So frame 7's divergence begins immediately after cbp_golomb at bit 87, inside
+MB0's luma residual token/level stream. The exact token sequence above is the
+target for the next fix; the slice header, MB0 skip_run/mb_type/mvd, and cbp
+are all confirmed byte-exact.
+
+No code changes committed this turn (investigation + reverted experiment).
+Gates remain: CTest 23/23 + 65/65, CAVLC P sweep 1360/1360, MP4 56/56.
