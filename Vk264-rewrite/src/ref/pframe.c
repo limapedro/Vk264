@@ -7,6 +7,7 @@
  * must select material where every coded MB quantises to cbp=0.
  */
 #include "pframe.h"
+#include "subpel.h"
 #include <stdio.h>
 #include <stdio.h>
 #include "motion.h"
@@ -856,7 +857,7 @@ void vk_encode_p_frame_recon(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
                              uint8_t *recon_out)
 {
     vk_encode_p_frame_recon_mv(bs, sps, pps, cur, ref, w, h, qp, frame_num,
-                               recon_out, NULL, NULL, NULL, NULL);
+                               recon_out, NULL, NULL, NULL, NULL, 0);
 }
 
 void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
@@ -864,7 +865,8 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                                 int w, int h, int qp, int frame_num,
                                 uint8_t *recon_out,
                                 const int (*ref_mv)[2], int (*cur_mv)[2],
-                                const uint8_t *ref_intra, uint8_t *cur_intra)
+                                const uint8_t *ref_intra, uint8_t *cur_intra,
+                                int subme)
 {
     int mw = w/16, mh = h/16;
     int rs = w + 2*LPAD;
@@ -897,6 +899,8 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
     uint8_t (*cnnz_c)[2][4] = calloc((size_t)mw*mh, 8);
     uint8_t *dcnz_c = calloc((size_t)mw*mh, 1);
     int intra_count = 0;  /* x264 h->stat.frame.i_mb_count[I_*] so far */
+    (void)subme;  /* subpel refinement is available via vk_me_refine_qpel but
+                   * wiring it in requires a qpel-MV refactor of the MC path. */
     /* reconstructed current-frame planes (with border) for intra prediction */
     int pcrs = rs/2;
     size_t rys = (size_t)rs*(h+2*LPAD), rcs = (size_t)pcrs*(h/2+2*CPAD);

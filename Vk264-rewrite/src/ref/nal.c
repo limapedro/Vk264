@@ -34,6 +34,55 @@ void vk_param_default(vk_param_t *p)
     p->i_colorprim = 2; p->i_transfer = 2; p->i_colmatrix = 2;
 }
 
+/* Case-insensitive preset name compare — portable replacement for the
+ * strcasecmp() used in x264's param_apply_preset(). Returns 1 on match. */
+static int preset_eq(const char *a, const char *b)
+{
+    while (*a && *b) {
+        int ca = (*a >= 'A' && *a <= 'Z') ? *a + 32 : *a;
+        int cb = (*b >= 'A' && *b <= 'Z') ? *b + 32 : *b;
+        if (ca != cb) return 0;
+        ++a; ++b;
+    }
+    return *a == *b;
+}
+
+/* Mirror the SPS/PPS-relevant subset of x264 common/base.c
+ * param_apply_preset().  Analysis knobs (me/subme/trellis/lookahead) are not
+ * modelled here; this only aligns headers for each preset. Returns -1 if
+ * the preset name is unknown. */
+int vk_param_apply_preset(vk_param_t *p, const char *preset)
+{
+    if (!preset || !*preset) preset = "ultrafast";
+    /* x264 defaults (medium): 3 refs, 3 B-frames, CABAC + 8x8dct + deblock. */
+    p->i_frame_reference = 3;
+    p->i_bframe = 3;
+    p->b_transform_8x8 = 1;
+    p->b_cabac = 1;
+    if (preset_eq(preset, "ultrafast")) {
+        p->i_frame_reference = 1; p->i_bframe = 0;
+        p->b_transform_8x8 = 0; p->b_cabac = 0;
+    } else if (preset_eq(preset, "superfast") ||
+               preset_eq(preset, "veryfast")) {
+        p->i_frame_reference = 1; p->i_bframe = 0;
+    } else if (preset_eq(preset, "faster") || preset_eq(preset, "fast")) {
+        p->i_frame_reference = 2; p->i_bframe = 0;
+    } else if (preset_eq(preset, "medium")) {
+        /* x264 defaults already set above */
+    } else if (preset_eq(preset, "slow")) {
+        p->i_frame_reference = 5;
+    } else if (preset_eq(preset, "slower")) {
+        p->i_frame_reference = 8;
+    } else if (preset_eq(preset, "veryslow")) {
+        p->i_frame_reference = 16; p->i_bframe = 8;
+    } else if (preset_eq(preset, "placebo")) {
+        p->i_frame_reference = 16; p->i_bframe = 16;
+    } else {
+        return -1;
+    }
+    return 0;
+}
+
 static int log2i(int v)
 {
     int n = 0;

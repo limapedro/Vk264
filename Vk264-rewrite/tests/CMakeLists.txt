@@ -31,6 +31,10 @@ add_executable(vk264_hpel_test test_hpel.c)
 target_link_libraries(vk264_hpel_test PRIVATE vk264_rewrite_ref)
 add_test(NAME rewrite_hpel_filter COMMAND vk264_hpel_test)
 
+add_executable(vk264_subpel_test test_subpel.c)
+target_link_libraries(vk264_subpel_test PRIVATE vk264_rewrite_ref)
+add_test(NAME rewrite_subpel_me COMMAND vk264_subpel_test)
+
 add_executable(vk264_oracle_pcli oracle_pcli.c)
 target_link_libraries(vk264_oracle_pcli PRIVATE vk264_rewrite_ref)
 

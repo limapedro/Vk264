@@ -103,10 +103,11 @@ static void encode_idr_cavlc(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
 
 int main(int argc, char **argv)
 {
-    if (argc != 10) {
-        fprintf(stderr, "usage: oracle_video_cli in.yuv w h qp_i qp_p entropy(0/1) keyint frames out.h264\n");
+    if (argc != 10 && argc != 11) {
+        fprintf(stderr, "usage: oracle_video_cli in.yuv w h qp_i qp_p entropy(0/1) keyint frames out.h264 [preset]\n");
         return 2;
     }
+    const char *preset = (argc == 11) ? argv[10] : "ultrafast";
     int w = atoi(argv[2]), h = atoi(argv[3]);
     int qp_i = atoi(argv[4]), qp_p = atoi(argv[5]);
     int entropy = atoi(argv[6]), keyint = atoi(argv[7]), nframes = atoi(argv[8]);
@@ -124,11 +125,14 @@ int main(int argc, char **argv)
     static uint8_t buf[1 << 24];
     vk_cavlc_init();
     vk_param_default(&p);
+    if (vk_param_apply_preset(&p, preset) < 0) {
+        fprintf(stderr, "unknown preset: %s\n", preset);
+        return 2;
+    }
     p.i_width = w; p.i_height = h; p.i_qp_constant = qp_p;
-    p.b_cabac = entropy ? 1 : 0;
+    /* --cabac is an explicit override; without it the preset default stands. */
+    if (entropy) p.b_cabac = 1;
     p.i_keyint_max = keyint;
-    p.i_frame_reference = 1;
-    p.i_bframe = 0;
     vk_sps_init(&sps, 0, &p);
     vk_pps_init(&pps, 0, &p, &sps);
 
@@ -208,7 +212,7 @@ int main(int argc, char **argv)
             } else {
                 vk_encode_p_frame_recon_mv(&bs, &sps, &pps, frames, ref,
                                            w, h, qp_p, frame_num, recon,
-                                           refmv, curmv, refintra, curintra);
+                                           refmv, curmv, refintra, curintra, 0);
                 vk_nal_write(fo, 0x41, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 2);
             }
         }

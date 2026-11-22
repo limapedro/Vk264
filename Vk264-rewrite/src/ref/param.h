@@ -25,6 +25,8 @@ typedef struct {
 } vk_param_t;
 
 void vk_param_default(vk_param_t *p);
+/* Apply the SPS/PPS-relevant subset of an x264 preset. Returns -1 if unknown. */
+int vk_param_apply_preset(vk_param_t *p, const char *preset);
 
 /* x264 SPS/PPS structures, reduced to the fields the writers need. */
 typedef struct {

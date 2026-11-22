@@ -611,3 +611,28 @@ common/mc.c `hpel_filter()`, with CTest `rewrite_hpel_filter` (3072 pixels).
 Gates now 19/19 rewrite + 65/65 main; 56/56 MP4 unchanged.
 Next building block: wire hpel into subpel ME (`x264_me_refine_qpel`) so the
 superfast preset can be attempted.
+
+## Preset SPS profile fix + subpel ME building block (this turn)
+
+The earlier preset attempt had `if (!preset_eq(...))` — an inversion from
+replacing strcasecmp() (0 on match) with preset_eq() (1 on match). Fixed:
+- `vk_param_apply_preset()` in nal.c now sets x264's header-relevant knobs per
+  preset (refs, bframes, b_cabac, b_transform_8x8), declared in param.h.
+- `oracle_video_cli.c` accepts an optional 11th preset argument (default
+  ultrafast, so all existing 56-stream tests are unchanged). `--cabac` remains
+  an explicit override; otherwise the preset default stands.
+
+Verified SPS profile_idc now matches x264 for ALL 10 presets:
+```
+ultrafast  x=66 o=66 (Baseline)     medium/slow/slower  x=100 o=100 (High)
+superfast..fast x=100 o=100         veryslow/placebo    x=100 o=100
+```
+SPS *lengths* still differ for some presets (23/21, 23/24, 25/23) — the
+remaining fields (num_ref_frames-derived bits, VUI) need separate work.
+
+Also added `subpel.c/.h`: `vk_hpel_planes_init()` + `vk_me_refine_qpel()`,
+a port of x264 me.c refine_subpel() subme=1 path (halfpel + qpel diamond).
+CTest `rewrite_subpel_me` verifies convergence (20/20 rewrite CTests now).
+It is NOT wired into the encoder: doing so needs a qpel-MV refactor of the
+MC/residual path (the oracle currently keeps MVs as fullpel locally). Full
+byte-exact superfast output still requires that refactor + I4x4 + deblock.

@@ -33,7 +33,9 @@ and `Vk264-rewrite/src/ref` (70 functions).
 
 | `hpel_filter` (x264 common/mc.c) | `vk_hpel_filter` (src/ref/hpel.c, byte-exact CTest) |
 
-Total ported/represented: **24**
+| `x264_me_refine_qpel` / `hpel_filter` (encoder/me.c, common/mc.c) | `vk_me_refine_qpel` / `vk_hpel_planes_init` (src/ref/subpel.c, byte-exact CTest) |
+
+Total ported/represented: **26**
 
 ## Oracle functions (C reference implementation)
 
