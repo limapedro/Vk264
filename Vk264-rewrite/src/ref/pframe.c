@@ -144,6 +144,16 @@ static int probe(const uint8_t *cur, const uint8_t *refp,
      * whose deadzone is 11 (intra categories use 21). */
     vk_ref_quant_tables(qp, 1, mf, bias, deq);
     vk_ref_quant_tables(qp, 3, cmf, cbias, cdeq);
+    /* x264 macroblock.c:1001-1002 clips pskip_mv to mv_min/mv_max (border
+     * limits, NOT the spel-clamped ones) before motion compensation.  A
+     * clipped predictor changes the residual score and the skip decision;
+     * e.g. frame 7 MB 1143 of the warzone 640x480 clip has psk=(20,196)
+     * with mv_max_y=160, which x264 clips to (20,160). */
+    int mbx = x/16, mby = y/16, mbw = w/16, mbh = h/16;
+    int mn_x = 4*(-16*mbx-24), mx_x = 4*(16*(mbw-mbx-1)+24);
+    int mn_y = 4*(-16*mby-24), mx_y = 4*(16*(mbh-mby-1)+24);
+    if (mvx_qp < mn_x) mvx_qp = mn_x; else if (mvx_qp > mx_x) mvx_qp = mx_x;
+    if (mvy_qp < mn_y) mvy_qp = mn_y; else if (mvy_qp > mx_y) mvy_qp = mx_y;
     int mx = mvx_qp / 4, my = mvy_qp / 4;
     int cs = w/2, crs = rs/2, cp = CPAD;
 

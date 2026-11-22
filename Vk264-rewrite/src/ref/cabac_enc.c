@@ -678,6 +678,13 @@ static int p_probe(const uint8_t *cur, const uint8_t *refp,
     int mf[16], bias[16], deq[16], cmf[16], cbias[16], cdeq[16];
     vk_ref_quant_tables(qp, 1, mf, bias, deq);
     vk_ref_quant_tables(qp, 3, cmf, cbias, cdeq);
+    /* x264 macroblock.c:1001-1002: clip pskip_mv to the border-derived
+     * mv_min/mv_max before probing (cf. pframe.c probe()). */
+    int mbx = x/16, mby = y/16, mbw = w/16, mbh = h/16;
+    int mn_x = 4*(-16*mbx-24), mx_x = 4*(16*(mbw-mbx-1)+24);
+    int mn_y = 4*(-16*mby-24), mx_y = 4*(16*(mbh-mby-1)+24);
+    if (mvx_qp < mn_x) mvx_qp = mn_x; else if (mvx_qp > mx_x) mvx_qp = mx_x;
+    if (mvy_qp < mn_y) mvy_qp = mn_y; else if (mvy_qp > mx_y) mvy_qp = mx_y;
     int mx = mvx_qp / 4, my = mvy_qp / 4;
     int cs = w/2, crs = rs/2, cp = CPAD;
     const uint8_t *cy = cur;
