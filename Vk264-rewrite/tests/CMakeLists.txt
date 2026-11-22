@@ -46,6 +46,9 @@ add_test(NAME rewrite_i4x4_emit COMMAND vk264_i4x4enc_test)
 add_executable(vk264_i4mb0 test_i4mb0.c)
 target_link_libraries(vk264_i4mb0 PRIVATE vk264_rewrite_ref)
 
+add_executable(vk264_dump_i4mb0 dump_i4mb0.c)
+target_link_libraries(vk264_dump_i4mb0 PRIVATE vk264_rewrite_ref)
+
 add_executable(vk264_oracle_pcli oracle_pcli.c)
 target_link_libraries(vk264_oracle_pcli PRIVATE vk264_rewrite_ref)
 

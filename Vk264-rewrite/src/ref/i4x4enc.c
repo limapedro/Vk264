@@ -5,6 +5,8 @@
 #include "i4x4.h"
 #include "intra16.h"
 #include "cavlc.h"
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const int XY[16][2] = {

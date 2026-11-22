@@ -715,3 +715,10 @@ IDR is 69 B vs x264 32 B — the emitted residual is ~5x too large. Likely the
 nC context or coefficient ordering in `vk_encode_i4x4_mb`; needs bit-level
 comparison against x264's MB0 CAVLC symbols. Also I8x8 mode must be considered
 in the per-MB selection (x264 superfast enables I8x8|I4x4 analysis).
+
+Bit-level diagnostic (this turn): `vk_dump_i4mb0` emits 650 bits (82 B) for
+MB0 of the real clip (whose luma is uniform 16). All 16 blocks quantise to a
+single DC coefficient of -41, so the excess bits are in the CAVLC token/level
+or pred-mode emission, not the transform. x264's whole IDR is 30 B, so MB0's
+I4x4 must be far more compact — precise symbol-by-symbol comparison against
+x264's MB0 remains the next concrete step. Default (opt-in off): gates green.
