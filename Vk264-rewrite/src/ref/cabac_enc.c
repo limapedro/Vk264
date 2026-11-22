@@ -682,7 +682,7 @@ static int p_probe(const uint8_t *cur, const uint8_t *refp,
     int cs = w/2, crs = rs/2, cp = CPAD;
     const uint8_t *cy = cur;
     const uint8_t *cu = cur + (size_t)w*h;
-    const uint8_t *cv = cu + (size_t)cs*cs;
+    const uint8_t *cv = cu + (size_t)(w/2)*(h/2);
     size_t ysz = (size_t)rs*(h+2*LPAD);
     size_t csz = (size_t)crs*(h/2+2*CPAD);
     const uint8_t *ry = refp + LPAD*rs + LPAD;
@@ -805,7 +805,7 @@ static void compute_p_residual(const uint8_t *cur, const uint8_t *refp,
     vk_ref_quant_tables(qp, 3, cmf, cbias, cdeq); /* CQM_4PC */
     int mx = mvx_qp/4, my = mvy_qp/4;
     int cs = w/2, crs = rs/2, cp = CPAD;
-    const uint8_t *cy = cur, *cu = cur + (size_t)w*h, *cv = cu + (size_t)cs*cs;
+    const uint8_t *cy = cur, *cu = cur + (size_t)w*h, *cv = cu + (size_t)(w/2)*(h/2);
     const uint8_t *ry = refp + LPAD*rs + LPAD;
     const uint8_t *ru = refp + (size_t)rs*(h+2*LPAD);
     const uint8_t *rv = ru + (size_t)crs*(h/2+2*CPAD);
