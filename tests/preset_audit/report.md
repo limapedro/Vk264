@@ -110,7 +110,7 @@
 | 104 | forza | 30 | superfast | cabac | NAL COUNT 40/32 | 31.08 | 3.64 | 1728 |
 | 105 | forza | 30 | veryfast | cavlc | NAL COUNT 34/32 | 25.5 | 23.24 | 0 |
 | 106 | forza | 30 | veryfast | cabac | NAL COUNT 34/32 | 25.49 | 3.64 | 1728 |
-| 107 | forza | 30 | faster | cavlc | NAL COUNT 34/32 | 25.48 | 24.78 | 0 |
+| 107 | forza | 30 | faster | cavlc | NAL COUNT 34/32 | 25.48 | 24.79 | 0 |
 | 108 | forza | 30 | faster | cabac | NAL COUNT 34/32 | 25.46 | 3.61 | 1600 |
 | 109 | forza | 30 | fast | cavlc | NAL COUNT 34/32 | 25.48 | 24.88 | 0 |
 | 110 | forza | 30 | fast | cabac | NAL COUNT 34/32 | 25.48 | 3.6 | 1600 |
