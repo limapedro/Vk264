@@ -2271,3 +2271,18 @@ path evaluation recomputes P costs and the seeded MVs do not alter decisions.
 Reverted; tree clean. Stage 03 remains conclusively blocked under incremental
 changes; all differential artifacts preserved in build/.
 Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03: edge-MV predictor zeroing (this turn, reverted)
+
+x264 `slicetype.c:823-831` evaluates only interior MBs; edge MBs keep
+lowres_mvs = 0x7FFF and contribute zero predictor candidates. This exactly
+matches x264's dumped mvc lists for frame1-P (MB(1,2) has only the right
+candidate nonzero; MB(2,2) all zero). Implemented zeroing of edge-sourced
+predictor candidates in `vk_lowres_p_cost`. Result REGRESSED 13/16 -> 11/16
+(frame1 P 478 -> 464). Reverted.
+
+Notably even an exact match to x264's predictor-candidate pattern regresses
+frame types, reinforcing that the 13/16 configuration relies on compensating
+errors across the whole cost pipeline. Stage 03 conclusively blocked under
+isolated changes; tree clean at the verified baseline.
+Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56.
