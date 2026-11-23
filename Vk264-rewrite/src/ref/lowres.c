@@ -350,7 +350,9 @@ int vk_lowres_me_exact(const uint8_t fenc[64],const uint8_t *ref,int rw,int rh,
     /* refine_subpel hpel: planes 1/2 at +-1 fullpel positions (me.c:903-911). */
     int best=FSAD(bmx,bmy);
     int fx=bmx,fy=bmy,hx=0,hy=0;
-    const int p[4][2]={{bmx,bmy-1},{bmx,bmy+1},{bmx-1,bmy},{bmx+1,bmy}};
+    /* mv +-2 qpel maps to plane2 at (fx,fy-1)/(fx,fy) and plane1 at
+     * (fx-1,fy)/(fx,fy), because spel>>2 rounds toward -inf. */
+    const int p[4][2]={{bmx,bmy-1},{bmx,bmy},{bmx-1,bmy},{bmx,bmy}};
     const int pl[4]={2,2,1,1};
     for(int i=0;i<4;++i){
         const uint8_t *refp=LR_PLANE(ref,rw,rh,pl[i]);

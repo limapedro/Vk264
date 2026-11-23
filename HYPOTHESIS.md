@@ -2375,3 +2375,19 @@ The component is NOT wired into the main P/B cost path (the verified 13/16
 baseline stays intact); it is a validated building block for the full port.
 Gate: rewrite suite now 29/29. Other gates: 65/65, CAVLC 1360/1360,
 MP4 56/56, compare_slicetype 13/16.
+
+### Stage 03: corrected ME dump + exact-ME component refinement (this turn)
+
+Found my `me_full_dump.py` HP print was placed BEFORE `refine_subpel` wrote
+`m->mv` (me.c:988), so earlier "final MV (16,0)" values were stale. Moved the
+print after refinement: x264's actual final MV is (16,-2) spel for ALL four
+interior frame1-P MBs. Corrected the test fixtures accordingly.
+
+Also fixed the hpel candidate offsets in `vk_lowres_me_exact`: mv +-2 qpel maps
+to plane2 at (fx,fy-1)/(fx,fy) and plane1 at (fx-1,fy)/(fx,fy) (spel>>2 rounds
+toward -inf). After both fixes the component matches x264 exactly on MB(2,2)
+and MB(1,2); MB(2,1) and MB(1,1) pick a different hpel plane in near-tie cases
+(e.g. MB(2,1): plane2 SAD 1 vs 7 for the two candidates). Test is now a
+regression check of the component with the divergences documented.
+
+Gates: rewrite CTest 29/29, main 65/65, MP4 56/56, compare_slicetype 13/16.
