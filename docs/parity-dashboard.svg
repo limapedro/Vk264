@@ -23,39 +23,49 @@
 </defs>
 <rect width="1680" height="2797" fill="#0d1117"/>
 <text x="32" y="48" fill="#e6edf3" font-size="30" font-weight="bold">Vk264 / Oracle Byte-Exact Parity Dashboard</text>
-<text x="32" y="74" fill="#8b949e" font-size="14">function-by-function x264 &#8594; Vulkan port · snapshot 8e1b6f7 · generated 2026-11-23</text>
+<text x="32" y="74" fill="#8b949e" font-size="14">function-by-function x264 &#8594; Vulkan port · snapshot c480423 · generated 2026-11-23</text>
 <rect x="32.0" y="92.0" width="1616.0" height="11" fill="#21262d" rx="5"/><rect x="32.0" y="92.0" width="1026.1" height="11" fill="#2ea043" rx="5"/>
 <text x="1644" y="102" fill="#c9d1d9" font-size="15" text-anchor="end">byte-exact function coverage 63.5% (327/515 weighted families)</text>
-<rect x="32" y="120" width="256" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
+<rect x="32" y="120" width="188" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
 <rect x="32" y="120" width="4" height="74" fill="#2ea043"/>
 <text x="46" y="142" fill="#8b949e" font-size="11">CAVLC I-FRAMES</text>
 <text x="46" y="168" fill="#e6edf3" font-size="22" font-weight="bold">72 / 72</text>
-<text x="276" y="168" fill="#2ea043" font-size="16" text-anchor="end">100.0%</text>
-<rect x="304" y="120" width="256" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
-<rect x="304" y="120" width="4" height="74" fill="#2ea043"/>
-<text x="318" y="142" fill="#8b949e" font-size="11">CAVLC P-SLICES</text>
-<text x="318" y="168" fill="#e6edf3" font-size="22" font-weight="bold">1360 / 1360</text>
-<text x="548" y="168" fill="#2ea043" font-size="16" text-anchor="end">100.0%</text>
-<rect x="576" y="120" width="256" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
-<rect x="576" y="120" width="4" height="74" fill="#2ea043"/>
-<text x="590" y="142" fill="#8b949e" font-size="11">CABAC P-SLICES</text>
-<text x="590" y="168" fill="#e6edf3" font-size="22" font-weight="bold">1360 / 1360</text>
+<text x="208" y="168" fill="#2ea043" font-size="16" text-anchor="end">100.0%</text>
+<rect x="236" y="120" width="188" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
+<rect x="236" y="120" width="4" height="74" fill="#2ea043"/>
+<text x="250" y="142" fill="#8b949e" font-size="11">CAVLC P-SLICES</text>
+<text x="250" y="168" fill="#e6edf3" font-size="22" font-weight="bold">1360 / 1360</text>
+<text x="412" y="168" fill="#2ea043" font-size="16" text-anchor="end">100.0%</text>
+<rect x="440" y="120" width="188" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
+<rect x="440" y="120" width="4" height="74" fill="#2ea043"/>
+<text x="454" y="142" fill="#8b949e" font-size="11">CABAC P-SLICES</text>
+<text x="454" y="168" fill="#e6edf3" font-size="22" font-weight="bold">1360 / 1360</text>
+<text x="616" y="168" fill="#2ea043" font-size="16" text-anchor="end">100.0%</text>
+<rect x="644" y="120" width="188" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
+<rect x="644" y="120" width="4" height="74" fill="#2ea043"/>
+<text x="658" y="142" fill="#8b949e" font-size="11">CTEST GATES</text>
+<text x="658" y="168" fill="#e6edf3" font-size="22" font-weight="bold">65 + 18 / 83</text>
 <text x="820" y="168" fill="#2ea043" font-size="16" text-anchor="end">100.0%</text>
-<rect x="848" y="120" width="256" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
+<rect x="848" y="120" width="188" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
 <rect x="848" y="120" width="4" height="74" fill="#2ea043"/>
-<text x="862" y="142" fill="#8b949e" font-size="11">CTEST GATES</text>
-<text x="862" y="168" fill="#e6edf3" font-size="22" font-weight="bold">65 + 18 / 83</text>
-<text x="1092" y="168" fill="#2ea043" font-size="16" text-anchor="end">100.0%</text>
-<rect x="1120" y="120" width="256" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
-<rect x="1120" y="120" width="4" height="74" fill="#2ea043"/>
-<text x="1134" y="142" fill="#8b949e" font-size="11">VIDEO MP4 EXPERIMENTS</text>
-<text x="1134" y="168" fill="#e6edf3" font-size="19" font-weight="bold">56 / 56 exact</text>
-<text x="1364" y="168" fill="#2ea043" font-size="16" text-anchor="end">100.0%</text>
-<rect x="1392" y="120" width="256" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
-<rect x="1392" y="120" width="4" height="74" fill="#d29922"/>
-<text x="1406" y="142" fill="#8b949e" font-size="11">x264 INVENTORY</text>
-<text x="1406" y="168" fill="#e6edf3" font-size="16" font-weight="bold">831 funcs / 26 ported</text>
-<text x="1636" y="168" fill="#d29922" font-size="16" text-anchor="end">3.1%</text>
+<text x="862" y="142" fill="#8b949e" font-size="11">VIDEO MP4 EXPERIMENTS</text>
+<text x="862" y="168" fill="#e6edf3" font-size="19" font-weight="bold">56 / 56 exact</text>
+<text x="1024" y="168" fill="#2ea043" font-size="16" text-anchor="end">100.0%</text>
+<rect x="1052" y="120" width="188" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
+<rect x="1052" y="120" width="4" height="74" fill="#d29922"/>
+<text x="1066" y="142" fill="#8b949e" font-size="11">x264 INVENTORY</text>
+<text x="1066" y="168" fill="#e6edf3" font-size="16" font-weight="bold">831 funcs / 26 ported</text>
+<text x="1228" y="168" fill="#d29922" font-size="16" text-anchor="end">3.1%</text>
+<rect x="1256" y="120" width="188" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
+<rect x="1256" y="120" width="4" height="74" fill="#2ea043"/>
+<text x="1270" y="142" fill="#8b949e" font-size="11">PRESET SPS/PPS HEADERS</text>
+<text x="1270" y="168" fill="#e6edf3" font-size="16" font-weight="bold">10 / 10 presets exact</text>
+<text x="1432" y="168" fill="#2ea043" font-size="16" text-anchor="end">100.0%</text>
+<rect x="1460" y="120" width="188" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
+<rect x="1460" y="120" width="4" height="74" fill="#d29922"/>
+<text x="1474" y="142" fill="#8b949e" font-size="11">PRESET BYTE-EXACT VIDEO</text>
+<text x="1474" y="168" fill="#e6edf3" font-size="19" font-weight="bold">2 / 10 presets</text>
+<text x="1636" y="168" fill="#d29922" font-size="16" text-anchor="end">20.0%</text>
 <text x="32" y="212" fill="#e6edf3" font-size="17" font-weight="bold">Pipeline stage coverage — stacked status bar + a progress bar on every function family</text>
 <rect x="32" y="222" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
 <text x="44" y="244" fill="#e6edf3" font-size="13" font-weight="bold">01  Parameters, SPS/PPS, headers</text>
