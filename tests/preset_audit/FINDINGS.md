@@ -339,3 +339,37 @@ Tested whether x264 `--partitions none` (I4x4/I8x8 disabled) lets the
 oracle I16-only encoder match non-ultrafast presets. Result: unchanged —
 superfast still uses I4 (NAL2 byte4/5), all presets still diverge. So there
 is no invocation shortcut; the I4x4/I8x8 CABAC path must be implemented.
+
+## I4 CABAC bit-level differential (this turn) — PR #211
+
+Built a gold-standard differential: patched x264's C CABAC encoder
+(`common/cabac.c`) and `analyse.c` to dump every decision plus raw
+`i_predict4x4[]`/DCT/quant values, rebuilt via `build/build_ref_x264_scratch.ps1`,
+and captured `build/x264_trace.txt`. Added an equivalent env-gated tracer to the
+oracle (subsequently removed from the final diff).
+
+**Result: the first 25 CABAC decisions now match x264 exactly for superfast MB0:**
+```
+d 3 0, d 399 0, d 68 1 x16, d 64 0, d 73 1, d 73 0, d 73 0, d 76 0, d 77 0, d 60 0
+```
+Bugs found and fixed:
+1. `cabac_enc.c`: intra4x4 pred modes were written as RAW modes (9/10/11),
+   but x264 applies `x264_mb_pred_mode4x4_fix()` → 2 before signalling.
+   Now `vk_i4x4_fix()` is applied to modes and their predictors.
+2. `cabac_enc.c`: CBP neighbour contexts used `0` for unavailable neighbours;
+   x264 uses `-1` (all bits set). Now `-1` is passed when no left/top MB.
+
+Verified x264 raw modes for MB0 (`11,9,10,2,9,9,2,2,10,2,10,2,2,2,2,2`) match
+the oracle's `vk_i4x4_decide` output exactly — the decision primitive is correct.
+
+**Remaining divergence (first mismatch at decision #20, cbp_luma bin1):**
+x264 cbp_luma=1 (blocks 0-3 nonzero), oracle cbp_luma=3 (blocks 0-7). Root cause:
+x264's I4 residual prediction for blocks 2/4 is ~16, oracle's is ~128. The raw
+modes match, so this is in the reconstruction/nnz-cache state: x264's FDEC
+edge/reconstruction values feeding later 4x4 blocks differ from the oracle's
+local `rmb[]`. Also x264 encodes I4 MBs at QP 25 (IP-ratio) — the oracle CLI's
+`qp_i = argv[4]` was verified to carry 25 in the 120-case audit (60 in manual
+runs using `--fps 60`), so QP is not the cause.
+
+Gates remain green; audit remains 12/120. Next step: port x264's FDEC padding
+and per-block reconstruction exactly so blocks 2+ see the same neighbours.

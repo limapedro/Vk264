@@ -570,12 +570,15 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 vk_cabac_decision_noup(cb,3+ic,0);
                 /* x264 cabac_transform_size: decision(399+ctx, 0=4x4) */
                 vk_cabac_decision_noup(cb,399,0);
+                uint8_t fixed4[16];
+                for(int i=0;i<16;++i) fixed4[i]=(uint8_t)vk_i4x4_fix(modes4[i]);
                 for(int i=0;i<16;++i)
-                    cb_pred4(cb,i4_pred(modes4,i,left,top),modes4[i]);
+                    cb_pred4(cb,i4_pred(fixed4,i,left,top),fixed4[i]);
                 cabac_chroma_mode(cb,cmode,cmode_ctx);
                 cmode_fix[my*mw+mx]=(uint8_t)(cmode<=3?cmode:0);
-                cb_cbp_i4(cb,i4cbp,left?mbcbp[my*mw+mx-1]:0,
-                          top?mbcbp[(my-1)*mw+mx]:0);
+                /* x264 uses -1 (all bits set) for unavailable CBP neighbours. */
+                cb_cbp_i4(cb,i4cbp,left?mbcbp[my*mw+mx-1]:-1,
+                          top?mbcbp[(my-1)*mw+mx]:-1);
                 vk_cabac_decision_noup(cb,77,0); /* chroma cbp 0 */
                 cabac_qp_delta0(cb);
                 for(int i=0;i<16;++i) if(i4cbp&(1<<(i/4))){
