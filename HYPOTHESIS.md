@@ -1651,3 +1651,26 @@ hpel helped; bipred still base-plane).
 - LAMBDA=1 with hpel: 11/16.
 
 Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56. Best 13/16.
+
+### Stage 03: halfpel bits stored in searched MVs (this turn) — 13/16
+
+Implemented x264-faithful MV storage: `vk_lowres_mv_t.mv[][]` now holds MVs in
+halfpel units (`mv = 2*fullpel + hpel_bit`). Added `hpel_best_offset` (picks
+the best shifted plane at a fullpel MV) and `bipred_cost` (selects each list's
+hpel plane from the MV bits, matching x264 TRY_BIDIR's `hpel_idx`). Used for
+searched MVs in P and B costs, for neighbour predictors (`px>>1`), and for
+dmv (`(mvr*dsf+64)>>8`, equivalent to x264's spel scaling then >>1).
+
+Effect: display 1 now agrees (x264 B / oracle B), but display 2 flipped
+(x264 B / oracle P), net **13/16 unchanged**. Path costs:
+```
+j=1 cp=889 cb=868 (B wins, direction now correct)
+j=2 cp=1319 cb=1431 (P wins, x264: 639/521 -> B wins)
+```
+The remaining j=2 gap is not dmv hpel bits (clearing them left cb=1431).
+
+Negative results (reverted):
+- B-scale compensation 100/135 (vs x264's 100/120): regressed 13/16 -> 10/16
+  (flipped several P frames to B). The scale is not the source of the gap.
+
+Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56. Best 13/16.

@@ -58,15 +58,41 @@ static int sad_hpel(const uint8_t *cur,int dw,int bx,int by,
     return s;
 }
 
-static int hpel_min_sad(const uint8_t *cur,int dw,int bx,int by,
-                        const uint8_t *refbase,int rw,int rh,int fx,int fy)
+/* x264 refine_subpel: pick the best halfpel offset at a fullpel MV. MVs are
+ * stored in halfpel units: mv = 2*fullpel + hpel_bit, so plane index for
+ * TRY_BIDIR is (mvx&1) + 2*(mvy&1) and fullpel offset is (mv>>1). */
+static int hpel_best_offset(const uint8_t *cur,int dw,int bx,int by,
+                            const uint8_t *refbase,int rw,int rh,int fx,int fy,
+                            int *bhx,int *bhy)
 {
     int best=0x7fffffff;
+    *bhx=*bhy=0;
     for(int hy=0;hy<2;++hy) for(int hx=0;hx<2;++hx){
         int s=sad_hpel(cur,dw,bx,by,refbase,rw,rh,fx,fy,hx,hy);
-        if(s<best) best=s;
+        if(s<best){best=s;*bhx=hx;*bhy=hy;}
     }
     return best;
+}
+
+/* Bidirectional prediction cost with per-list hpel-shifted planes selected by
+ * the stored MVs' halfpel bits (x264 TRY_BIDIR / hpel_idx). */
+static int bipred_cost(const uint8_t *cur,int dw,int bx,int by,
+                       const uint8_t *r0,const uint8_t *r1,int rw,int rh,
+                       int mv0x,int mv0y,int mv1x,int mv1y)
+{
+    const uint8_t *p0=LR_PLANE(r0,rw,rh,(mv0x&1)+2*(mv0y&1));
+    const uint8_t *p1=LR_PLANE(r1,rw,rh,(mv1x&1)+2*(mv1y&1));
+    int fx0=mv0x>>1, fy0=mv0y>>1, fx1=mv1x>>1, fy1=mv1y>>1;
+    int s=0;
+    for(int y=0;y<8;++y) for(int x=0;x<8;++x){
+        int ax=bx+fx0+x, ay=by+fy0+y;
+        int cx=bx+fx1+x, cy=by+fy1+y;
+        if(ax<0||ay<0||ax>=rw||ay>=rh||cx<0||cy<0||cx>=rw||cy>=rh) return 0x7fffffff;
+        int avg=(p0[ay*rw+ax]+p1[cy*rw+cx]+1)>>1;
+        int d=cur[(by+y)*dw+bx+x]-avg;
+        s+=d<0?-d:d;
+    }
+    return s;
 }
 
 void vk_lowres_mv_init(vk_lowres_mv_t *st,int dw,int dh)
@@ -123,16 +149,15 @@ int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
         }
         /* x264 lowres i_subpel_refine=2 does 1 hpel iteration around the
          * fullpel MV using the 4 shifted lowres planes (me.c:792-796). */
-        int hbest=0x7fffffff;
-        for(int hy=0;hy<2;++hy) for(int hx=0;hx<2;++hx){
-            int s=sad_hpel(cur,dw,bx,by,ref,dw,dh,bmx,bmy,hx,hy);
-            if(s<hbest) hbest=s;
-        }
+        int hx=0,hy=0;
+        int hbest=hpel_best_offset(cur,dw,bx,by,ref,dw,dh,bmx,bmy,&hx,&hy);
         if(hbest<0x7fffffff) best=hbest;
         /* x264: cost -= p_cost_mv[0]; if MV!=0 cost += 5*lambda */
         best -= mv_cost(0);
         if(bmx||bmy) best += 5*LAMBDA;
-        if(st && mb<VK_LOWRES_MAX_MBS){ st->mv[mb][0]=bmx; st->mv[mb][1]=bmy; }
+        if(st && mb<VK_LOWRES_MAX_MBS){
+            st->mv[mb][0]=2*bmx+hx; st->mv[mb][1]=2*bmy+hy;  /* halfpel units */
+        }
         /* x264 slicetype.c:532/782 - COST_EST counts only interior MBs. */
         int nbx=(dw/8), nby=(dh/8), mx=(bx/8), my=(by/8);
         if(nbx>2 && nby>2 && mx>0 && mx<nbx-1 && my>0 && my<nby-1)
@@ -205,46 +230,37 @@ int vk_lowres_b_cost(const uint8_t *cur,const uint8_t *r0,const uint8_t *r1,
             int mxv=0,myv=0;
             if(px==0&&py==0&&satd8(cur,dw,bx,by,ref,dw,bx,by)<64)
                 ; /* x264 skip: mv=0, cost=SAD0 */
-            else
-                me_search_pred(cur,dw,bx,by,ref,dh,px,py,&mxv,&myv);
+            else{
+                me_search_pred(cur,dw,bx,by,ref,dh,px>>1,py>>1,&mxv,&myv);
+                int hx=0,hy=0;
+                hpel_best_offset(cur,dw,bx,by,ref,dw,dh,mxv,myv,&hx,&hy);
+                mxv=2*mxv+hx; myv=2*myv+hy;  /* store halfpel bits */
+            }
             mv[l][mb][0]=mxv; mv[l][mb][1]=myv;
         }
-        /* list0 / list1 single-prediction costs */
-        int c0=hpel_min_sad(cur,dw,bx,by,r0,dw,dh,mv[0][mb][0],mv[0][mb][1])+LOWRES_PENALTY;
-        int c1=hpel_min_sad(cur,dw,bx,by,r1,dw,dh,mv[1][mb][0],mv[1][mb][1])+LOWRES_PENALTY;
+        /* list0 / list1 single-prediction costs at the MVs' own hpel plane */
+        int c0=sad_hpel(cur,dw,bx,by,r0,dw,dh,mv[0][mb][0]>>1,mv[0][mb][1]>>1,
+                        mv[0][mb][0]&1,mv[0][mb][1]&1)+LOWRES_PENALTY;
+        int c1=sad_hpel(cur,dw,bx,by,r1,dw,dh,mv[1][mb][0]>>1,mv[1][mb][1]>>1,
+                        mv[1][mb][0]&1,mv[1][mb][1]&1)+LOWRES_PENALTY;
         if(mv[0][mb][0]||mv[0][mb][1]) c0+=5*LAMBDA;
         if(mv[1][mb][0]||mv[1][mb][1]) c1+=5*LAMBDA;
-        /* zero-MV bipred (penalty 0): x264 TRY_BIDIR with hpel_idx=0 reads
-         * the base plane of each list. */
-        uint8_t avg[64];
-        for(int y=0;y<8;++y) for(int x=0;x<8;++x)
-            avg[y*8+x]=(uint8_t)((r0[(by+y)*dw+bx+x]+r1[(by+y)*dw+bx+x]+1)>>1);
-        int m=satd8(cur,dw,bx,by,avg,8,0,0)+LOWRES_PENALTY;
+        /* zero-MV bipred (penalty 0): hpel_idx=0 reads the base planes. */
+        int m=bipred_cost(cur,dw,bx,by,r0,r1,dw,dh,0,0,0,0)+LOWRES_PENALTY;
         if(c0<m)m=c0; if(c1<m)m=c1;
         /* dmv-predicted bipred from future ref (penalty 0) */
         if(st_p1 && mb<st_p1->n_mbs){
-            int dmx=(st_p1->mv[mb][0]*dsf+128)>>8;
-            int dmy=(st_p1->mv[mb][1]*dsf+128)>>8;
-            int dmx2=dmx-st_p1->mv[mb][0], dmy2=dmy-st_p1->mv[mb][1];
-            int ok=1;
-            for(int y=0;y<8;++y) for(int x=0;x<8;++x){
-                int sx=bx+dmx+x, sy=by+dmy+y;
-                int sx2=bx+dmx2+x, sy2=by+dmy2+y;
-                if(sx<0||sy<0||sx+8>dw||sy+8>dh||sx2<0||sy2<0||sx2+8>dw||sy2+8>dh){ok=0;break;}
-                avg[y*8+x]=(uint8_t)((r0[sy*dw+sx]+r1[sy2*dw+sx2]+1)>>1);
-            }
-            if(ok){int cd=satd8(cur,dw,bx,by,avg,8,0,0)+LOWRES_PENALTY; if(cd<m)m=cd;}
+            int mvr0=st_p1->mv[mb][0], mvr1=st_p1->mv[mb][1];
+            int dmx=(mvr0*dsf+64)>>8, dmy=(mvr1*dsf+64)>>8;
+            int dmx2=dmx-mvr0, dmy2=dmy-mvr1;
+            int cd=bipred_cost(cur,dw,bx,by,r0,r1,dw,dh,dmx,dmy,dmx2,dmy2);
+            if(cd<0x7fffffff){cd+=LOWRES_PENALTY; if(cd<m)m=cd;}
         }
-        /* searched bipred (penalty 5*lambda) */
+        /* searched bipred (penalty 5*lambda) at the MVs' own hpel planes */
         if(mv[0][mb][0]||mv[0][mb][1]||mv[1][mb][0]||mv[1][mb][1]){
-            int ok=1;
-            for(int y=0;y<8;++y) for(int x=0;x<8;++x){
-                int sx=bx+mv[0][mb][0]+x, sy=by+mv[0][mb][1]+y;
-                int sx2=bx+mv[1][mb][0]+x, sy2=by+mv[1][mb][1]+y;
-                if(sx<0||sy<0||sx+8>dw||sy+8>dh||sx2<0||sy2<0||sx2+8>dw||sy2+8>dh){ok=0;break;}
-                avg[y*8+x]=(uint8_t)((r0[sy*dw+sx]+r1[sy2*dw+sx2]+1)>>1);
-            }
-            if(ok){int cs=satd8(cur,dw,bx,by,avg,8,0,0)+5*LAMBDA+LOWRES_PENALTY; if(cs<m)m=cs;}
+            int cs=bipred_cost(cur,dw,bx,by,r0,r1,dw,dh,
+                        mv[0][mb][0],mv[0][mb][1],mv[1][mb][0],mv[1][mb][1]);
+            if(cs<0x7fffffff){cs+=5*LAMBDA+LOWRES_PENALTY; if(cs<m)m=cs;}
         }
         if(nbx<=2||nby<=2||(mx>0&&mx<nbx-1&&my>0&&my<nby-1)) total+=m;
     }
