@@ -55,7 +55,10 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
 {
     int mf[16],bias[16],deq[16],cmf[16],cbias[16],cdeq[16];
     vk_ref_quant_tables(qp,0,mf,bias,deq);
-    vk_ref_quant_tables(qp,2,cmf,cbias,cdeq);
+    /* x264 quantizes chroma at qp + pps.i_chroma_qp_index_offset. */
+    int cqp = qp + vk_chroma_qp_offset;
+    if(cqp<0)cqp=0; if(cqp>51)cqp=51;
+    vk_ref_quant_tables(cqp,2,cmf,cbias,cdeq);
 
     /* ---- chroma prediction mode (same as I16) ---- */
     uint8_t t8[8],l8[8],t8v[8],l8v[8],su[64],sv[64],pu[64],pv[64];
@@ -226,14 +229,14 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
         uint8_t *dst=pl?recon_v:recon_u;
         int d0=chad[pl][0]+chad[pl][1],d1=chad[pl][2]+chad[pl][3];
         int d2=chad[pl][0]-chad[pl][1],d3=chad[pl][2]-chad[pl][3];
-        int dmf=cdeq[0]<<(qp/6);
+        int dmf=cdeq[0]<<(cqp/6);
         int cdq[16]={0};
         cdq[0]=((d0+d1)*dmf)>>5;cdq[1]=((d0-d1)*dmf)>>5;
         cdq[2]=((d2+d3)*dmf)>>5;cdq[3]=((d2-d3)*dmf)>>5;
         for(int b=0;b<4;++b){
             int by=(b/2)*4,bx=(b%2)*4;uint8_t *d=dst+by*8+bx;
             if(cnnz[pl][b]){int blk[16];for(int i=0;i<16;++i)blk[i]=cdct[pl][b][i];
-                vk_ref_dequant4(blk,cdeq,qp);blk[0]=cdnz[pl]?cdq[b]:0;
+                vk_ref_dequant4(blk,cdeq,cqp);blk[0]=cdnz[pl]?cdq[b]:0;
                 vk_ref_idct4(blk);vk_ref_add_block(d,8,blk);}
             else if(cdnz[pl]) vk_ref_add_block_dc(d,8,cdq[b]);
         }

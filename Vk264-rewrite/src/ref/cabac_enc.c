@@ -296,7 +296,9 @@ static void compute_chroma_dc(const uint8_t *src, int cs, int x, int y,
 {
     vk_predict_chroma8(pred, top, left, tl, mode);
     int cmf[16], cbias[16], cdeq[16];
-    vk_ref_quant_tables(qp, 2, cmf, cbias, cdeq);
+    int cqp=qp+vk_chroma_qp_offset;
+    if(cqp<0)cqp=0; if(cqp>51)cqp=51;
+    vk_ref_quant_tables(cqp, 2, cmf, cbias, cdeq);
     static const uint8_t zz[16] = {0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
     int dct[4][16], dc[4];
     for (int b = 0; b < 4; ++b) {
@@ -324,7 +326,7 @@ static void compute_chroma_dc(const uint8_t *src, int cs, int x, int y,
     int qt[4];
     for (int i = 0; i < 4; ++i) qt[i] = vk_ref_quant_one(had[i], dmf, dbias);
     /* x264 mb_optimize_chroma_dc: zero out DC that rounds to the same pixels */
-    int optmf = cdeq[0] << (qp/6);  /* x264 dequant4_mf already includes *16 */
+    int optmf = cdeq[0] << (cqp/6);  /* x264 dequant4_mf already includes *16 */
     if (optmf <= 32*64 && !chroma_dc_opt(qt, optmf))
         for (int i = 0; i < 4; ++i) qt[i] = 0;
     /* x264 zigzag_scan_2x2_dc: {0,2,1,3} */
@@ -333,7 +335,7 @@ static void compute_chroma_dc(const uint8_t *src, int cs, int x, int y,
     /* x264 idct_dequant_2x2_dconly operates on natural-order dct_dc */
     int d0=qt[0]+qt[1], d1=qt[2]+qt[3];
     int d2=qt[0]-qt[1], d3=qt[2]-qt[3];
-    int cdmf = cdeq[0] << (qp/6);
+    int cdmf = cdeq[0] << (cqp/6);
     int rr[4] = {((d0+d1)*cdmf)>>5, ((d0-d1)*cdmf)>>5,
                  ((d2+d3)*cdmf)>>5, ((d2-d3)*cdmf)>>5};
     for (int b = 0; b < 4; ++b) {
@@ -343,7 +345,7 @@ static void compute_chroma_dc(const uint8_t *src, int cs, int x, int y,
             /* DC+AC reconstruction: add8x8_idct with quantized AC blocks */
             int blk[16];
             for (int i = 0; i < 16; ++i) blk[zz[i]] = dct[b][zz[i]];
-            vk_ref_dequant4(blk, cdeq, qp);
+            vk_ref_dequant4(blk, cdeq, cqp);
             blk[0] = rr[b];
             vk_ref_idct4(blk);
             for (int yy=0; yy<4; ++yy)

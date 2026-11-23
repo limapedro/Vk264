@@ -347,7 +347,10 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
         predict_dc(pred_v, 8, 128);
     }
     quant_tables(qp, 0, mf, bias, dequant);
-    quant_tables(qp, 2, cmf, cbias, cdeq);
+    /* x264: chroma is quantized at qp + pps.i_chroma_qp_index_offset. */
+    int cqp = qp + vk_chroma_qp_offset;
+    if(cqp<0)cqp=0; if(cqp>51)cqp=51;
+    quant_tables(cqp, 2, cmf, cbias, cdeq);
 
     /* ---- luma: 16 4x4 DCTs, split DC, quantise AC ---- */
     int dct4[16][16], dc4[16], nnz[16] = {0}, acq[16][16];
@@ -542,7 +545,7 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
         /* x264 encoder/macroblock.c:72 idct_dequant_2x2_dconly */
         int d0 = chad[p][0]+chad[p][1], d1 = chad[p][2]+chad[p][3];
         int d2 = chad[p][0]-chad[p][1], d3 = chad[p][2]-chad[p][3];
-        int dmf = cdeq[0] << (qp/6);
+        int dmf = cdeq[0] << (cqp/6);
         int cdq[16] = {0};
         cdq[0] = ((d0+d1)*dmf)>>5; cdq[1] = ((d0-d1)*dmf)>>5;
         cdq[2] = ((d2+d3)*dmf)>>5; cdq[3] = ((d2-d3)*dmf)>>5;
@@ -552,7 +555,7 @@ void vk_encode_i16_mb(vk_bs_t *s, const uint8_t *src_y, const uint8_t *src_u,
             if (cacbp && cnnz[p][b]) {
                 int blk[16];
                 for (int i = 0; i < 16; ++i) blk[i] = cdct[p][b][i];
-                dequant4(blk, cdeq, qp);
+                dequant4(blk, cdeq, cqp);
                 blk[0] = cdnz[p] ? cdq[b] : 0;
                 idct4(blk);
                 add_block(d, 8, blk);

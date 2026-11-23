@@ -17,6 +17,8 @@
 #define CHROMA_420 1
 #define QP_BD_OFFSET 0
 
+int vk_chroma_qp_offset = 0;
+
 void vk_param_default(vk_param_t *p)
 {
     memset(p, 0, sizeof(*p));
@@ -99,6 +101,7 @@ int vk_param_apply_preset(vk_param_t *p, const char *preset)
      * lowering chroma QP offset by 2 (default f_psy_rd = 1.0). Applies to
      * fast and above; ultrafast..faster keep 0. */
     p->i_chroma_qp_offset = (p->i_subme >= 6) ? -2 : 0;
+    vk_chroma_qp_offset = p->i_chroma_qp_offset;
     return 0;
 }
 
