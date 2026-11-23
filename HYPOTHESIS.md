@@ -1938,3 +1938,29 @@ isolated fidelity fixes. Further progress requires a different strategy or a
 full bit-exact port validated component-by-component against x264 internals.
 
 Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56. Tree clean.
+
+### Stage 03: complete x264 ME state dump for frame1-P (this turn)
+
+`build/me_full_dump.py` dumps, for all four interior MBs of frame1-P, the
+predictor candidate list (spel), mvp, fullpel DIA result and final hpel MV:
+```
+MB(2,2): mvc all 0            mvp=(0,0) FP=(4,-1) cost 56  HP=(16,-4) cost 45
+MB(1,2): mvc[0]=(16,-2)       mvp=(0,0) FP=(4,0)  cost 110 HP=(16,0)  cost 60
+MB(2,1): mvc[1,2]=(16,-2)     mvp=(0,0) FP=(4,0)  cost 4   HP=(16,0)  cost 9
+MB(1,1): mvc[0,1,3]=(16,-2)   mvp=(0,0) FP=(4,0)  cost 99  HP=(16,0)  cost 103
+```
+Notably mvp is (0,0) for ALL four MBs (median of candidates), yet x264's DIA
+from (0,0) reaches fullpel (4,0) in every case. My model's DIA from (0,0) gets
+stuck at a local minimum on several calls, which is the direct source of the
+cost/type divergence.
+
+Also confirmed `build/dia_trace.py`: x264 steps (0,0)->(1,0)->(2,0)->(3,0)->
+(4,0) with costs 976->582->265->60->56. My SAD at (0,0) matches x264's 976,
+so the search primitive is right; the difference is in how the search is
+seeded/stepped.
+
+Tried x264's exact interior-only MB scan (edge MVs stay zero) -- regressed
+13/16 -> 11/16. Reverted. Conclusion unchanged: the 13/16 configuration is an
+empirical fit whose residual is not closable by isolated fidelity changes.
+
+Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56. Tree clean.
