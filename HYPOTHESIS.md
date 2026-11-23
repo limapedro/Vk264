@@ -2391,3 +2391,22 @@ and MB(1,2); MB(2,1) and MB(1,1) pick a different hpel plane in near-tie cases
 regression check of the component with the divergences documented.
 
 Gates: rewrite CTest 29/29, main 65/65, MP4 56/56, compare_slicetype 13/16.
+
+### Stage 03: hpel near-tie investigation (this turn)
+
+Investigated why `vk_lowres_me_exact` picks a different hpel plane on MB(2,1)
+and MB(1,1) while matching x264 on MB(2,2)/MB(1,2). Verified x264 `get_ref`
+(mc.c:221-249): for hpel MV (16,-2) qpel_idx=8, `qpel_idx & 5 == 0`, so no
+qpel interpolation — it selects one of the 4 lowres planes directly, matching
+my component's plane selection. The hpel refinement evaluates src0 and
+src0+stride (two vertical positions on that plane), also matching my loop.
+
+The remaining difference is in near-tie cost accounting: x264's refine_subpel
+compares `SAD + p_cost_mvx[omx] + p_cost_mvy[omy±2]` with packed direction
+tie-breaking against the initial fullpel cost, while my component compares raw
+SADs. For MB(2,1) the competing plane2 positions have SADs 1 and 7 — a near
+tie that x264 resolves differently. Resolving this needs the exact packed-cost
+comparison including BITS_MVD at the hpel candidates.
+
+No code change beyond the documented component; tree clean at the verified
+baseline. Gates: CTest 29/29, MP4 56/56, compare_slicetype 13/16.
