@@ -23,7 +23,7 @@ from datetime import date
 # ---------------------------------------------------------------------------
 # Data — update these after each parity PR, then regenerate the SVG.
 # ---------------------------------------------------------------------------
-SNAPSHOT = "b33aac9"
+SNAPSHOT = "8f6a655"
 GENERATED = date.today().isoformat()
 
 # Overall numbers (from build/*_parity_sweep.py, ctest, tests/video_experiments.json)
