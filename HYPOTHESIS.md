@@ -2286,3 +2286,32 @@ frame types, reinforcing that the 13/16 configuration relies on compensating
 errors across the whole cost pipeline. Stage 03 conclusively blocked under
 isolated changes; tree clean at the verified baseline.
 Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03: root cause is ME optima ambiguity (this turn)
+
+Computed the full SAD surface for frame1-P interior MBs from the byte-exact
+lowres planes:
+```
+MB        SAD0   SAD(4,0)   global best        x264 chosen MV
+(1,1)     1693      99       98 @ (5,1)         (4,0) spel
+(1,2)      406      99       76 @ (8,7)         (4,0) spel
+(2,1)      111       4        4 @ (4,0)         (4,0) spel
+(2,2)     1386      49       25 @ (5,1)         (4,-1) spel
+```
+There are MANY near-equal SAD minima. x264 converges on (4,0) for three MBs
+because its predictor chain starts there (from the right/bottom neighbour
+candidates) — the ME cost is nearly flat, so the predictor decides the MV.
+
+My search, starting from a different predictor, settles on a different but
+nearly-equal optimum (e.g. MB(2,1) finds (0,0.5), SAD~4, instead of (4,0),
+SAD 4). Both are locally optimal, but they propagate DIFFERENT candidate MVs
+to neighbouring MBs, so MB(1,1) gets cost 163 in my model vs 103 in x264.
+
+This explains why no isolated fidelity fix works: reproducing x264's candidate
+chain requires matching the exact MV chosen at every prior MB, which in turn
+depends on that MB's predictor chain — a deeply stateful, whole-pipeline
+property. The 13/16 baseline is an empirical fit; byte-exact ME parity needs a
+full stateful port validated MB-by-MB against `me_full_dump.py`.
+
+No code change; tree clean at the verified baseline. Gates: CTest 28/28 +
+65/65, CAVLC P 1360/1360, MP4 56/56.
