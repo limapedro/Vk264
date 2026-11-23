@@ -208,6 +208,22 @@ needs the per-4x4 mode decision, 16 sub-block residual quantisation/CBP, and
 the corresponding CABAC context coding (`cabac_mb_header_i` I4 branch). It is
 the concrete blocker for superfast..placebo byte-exactness.
 
+### Partial I4x4 experiment (reverted)
+
+Attempted a first I4x4 integration: compute `vk_i4x4_decide()` cost, compare
+to the I16 SATD, and if I4 wins emit `cabac_mb_type_i4` + 16 pred-mode
+signals before the existing I16 residual path. Result **regressed badly**:
+MP4 56/56 → 48/56, audit 12/120 → 6/120, and the first NAL2 diff moved
+*earlier* (byte 10 → 5). Causes: (a) the raw-SATD comparison also selected I4
+for ultrafast CABAC cases that must stay byte-exact, and (b) emitting an I4
+mb_type with I16 residual/CBP coding produces a malformed MB. Reverted fully;
+baseline restored (29/29, 56/56, 12/120).
+
+Conclusion: I4x4 support must be **atomic** — mb_type, 16 pred modes, CBP,
+luma/chroma residual and reconstruction all together — before it can be
+enabled. A partial implementation makes streams worse. This is the concrete
+scope of the remaining work.
+
 **FIXED:** added global `vk_chroma_qp_offset` (set by `vk_param_apply_preset`)
 and applied `cqp = clip(qp + offset)` to chroma quantisation/dequantisation in
 `i4x4enc.c`, `slice.c` and `cabac_enc.c`. Gates unchanged (ultrafast offset=0).
