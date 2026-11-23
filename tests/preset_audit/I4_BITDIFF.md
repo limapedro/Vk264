@@ -70,3 +70,21 @@ The decision stream now agrees through MB0 completely and into MB1
 (block order, DCT_LUMA_4x4 category, CBF bin, scan8 nnz cache) and the
 mode-decision candidate-class fix. The next remaining issue is MB1's
 intra mode selection on textured content.
+
+## Diagnostic update (this turn): x3 input discrepancy
+
+Direct instrumentation of x264's `mb_analyse_intra` for MB1 idx2 produced
+conflicting fenc values across differently-configured scratch runs
+(`16,15,25,55,...` with `--frames 2` vs `16,16,16,15,...` with
+`--frames 1`), showing x264 invokes intra analysis more than once per MB
+(lookahead plus encode) and the two passes see different buffers. The
+gold decision trace was captured with `--frames 2`; matching the oracle's
+analysis input therefore requires pinning the exact pass, not just the MB.
+
+Measured x3 results with `--frames 2`: x264 V/H/DC = 992/548/892,
+oracle = 290/82/146. Given that a single-frame run shows flat fenc data,
+the remaining mode mismatch is attributed to the wrong analysis pass
+being compared rather than a predictor bug. Resolving it requires tagging
+the x264 dump with the pass identifier; this is the concrete next step.
+
+No code changes landed this turn (all gates remain green at 42e2caf).
