@@ -7,13 +7,20 @@ static void i8_build_edge(uint8_t e[36], const uint8_t l[8],
                           const uint8_t t[16], int lt, int have_tr);
 static void i8_pred_edge(uint8_t out[64], int m, const uint8_t e[36]);
 
-/* Reconstruction predictor using x264's filtered edge (same as decision). */
+/* As vk_predict8_filtered with explicit top-right availability (x264's
+ * final I8x8 encode uses a mode-dependent neighbour mask). */
+void vk_predict8_filtered_ex(uint8_t out[64], int m, const uint8_t l[8],
+                             const uint8_t t[16], int lt, int have_tr)
+{
+    uint8_t e[36];
+    i8_build_edge(e,l,t,lt,have_tr);
+    i8_pred_edge(out,m,e);
+}
+
 void vk_predict8_filtered(uint8_t out[64], int m, const uint8_t l[8],
                           const uint8_t t[16], int lt)
 {
-    uint8_t e[36];
-    i8_build_edge(e,l,t,lt,1);
-    i8_pred_edge(out,m,e);
+    vk_predict8_filtered_ex(out,m,l,t,lt,1);
 }
 
 void vk_predict8(uint8_t out[64], int m, const uint8_t l[8],
@@ -265,10 +272,10 @@ static const int8_t I8_SC[2][2][5] = {
     {{4,6,8,-1,-1},  {3,4,5,7,-1}}
 };
 
-int vk_i8x8_decide(const uint8_t src[64], const uint8_t l[8],
+int vk_i8x8_decide_ex(const uint8_t src[64], const uint8_t l[8],
                    const uint8_t t[8], const uint8_t tr[8], int lt_in,
                    int have_l, int have_t, int lambda, int *cost_out,
-                   int use_satd, int mb_gate)
+                   int use_satd, int mb_gate, int have_tr)
 {
     (void)use_satd;
     /* Exact x264 filtered-edge x3 + shortcut, only for MBs with all
@@ -278,7 +285,7 @@ int vk_i8x8_decide(const uint8_t src[64], const uint8_t l[8],
         uint8_t t16[16], e[36], pred[64];
         for(int i=0;i<8;++i) t16[i]=t[i];
         for(int i=0;i<8;++i) t16[8+i]=tr[i];
-        i8_build_edge(e,l,t16,lt_in,1);
+        i8_build_edge(e,l,t16,lt_in,have_tr);
         int pred_mode=2, satd[3];
         for(int m=0;m<3;++m){ i8_pred_edge(pred,m,e); satd[m]=i8_sad(src,pred); }
         int favor=satd[1]>satd[0];
@@ -326,4 +333,13 @@ int vk_i8x8_decide(const uint8_t src[64], const uint8_t l[8],
     }
     if(cost_out) *cost_out=best;
     return best_mode;
+}
+
+int vk_i8x8_decide(const uint8_t src[64], const uint8_t l[8],
+                   const uint8_t t[8], const uint8_t tr[8], int lt_in,
+                   int have_l, int have_t, int lambda, int *cost_out,
+                   int use_satd, int mb_gate)
+{
+    return vk_i8x8_decide_ex(src,l,t,tr,lt_in,have_l,have_t,lambda,cost_out,
+                             use_satd,mb_gate,1);
 }

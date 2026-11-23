@@ -69,8 +69,8 @@
 <rect x="1480" y="120" width="165" height="74" fill="#161b22" stroke="#30363d" rx="6"/>
 <rect x="1480" y="120" width="4" height="74" fill="#d29922"/>
 <text x="1494" y="142" fill="#8b949e" font-size="11">SUPERFAST NAL2 PREFIX</text>
-<text x="1494" y="168" fill="#e6edf3" font-size="22" font-weight="bold">49 / 130 B</text>
-<text x="1633" y="168" fill="#d29922" font-size="16" text-anchor="end">37.7%</text>
+<text x="1494" y="168" fill="#e6edf3" font-size="22" font-weight="bold">80 / 130 B</text>
+<text x="1633" y="168" fill="#d29922" font-size="16" text-anchor="end">61.5%</text>
 <text x="32" y="212" fill="#e6edf3" font-size="17" font-weight="bold">Pipeline stage coverage — stacked status bar + a progress bar on every function family</text>
 <rect x="32" y="222" width="393" height="182" fill="#161b22" stroke="#30363d" rx="6"/>
 <text x="44" y="244" fill="#e6edf3" font-size="13" font-weight="bold">01  Parameters, SPS/PPS, headers</text>
@@ -736,8 +736,8 @@
 <rect x="1343.0" y="2046.0" width="192.0" height="10" fill="#21262d" rx="2"/><rect x="1343.0" y="2046.0" width="192.0" height="10" fill="#2ea043" rx="2"/>
 <text x="1646" y="2054" fill="#2ea043" font-size="9" text-anchor="end">1/1</text>
 <text x="847" y="2073" fill="#c9d1d9" font-size="10">Superfast NAL2 macroblock prefix</text>
-<rect x="1343.0" y="2065.0" width="192.0" height="10" fill="#21262d" rx="2"/><rect x="1343.0" y="2065.0" width="72.4" height="10" fill="#d29922" rx="2"/>
-<text x="1646" y="2073" fill="#d29922" font-size="9" text-anchor="end">49/130</text>
+<rect x="1343.0" y="2065.0" width="192.0" height="10" fill="#21262d" rx="2"/><rect x="1343.0" y="2065.0" width="118.2" height="10" fill="#d29922" rx="2"/>
+<text x="1646" y="2073" fill="#d29922" font-size="9" text-anchor="end">80/130</text>
 <text x="847" y="2092" fill="#c9d1d9" font-size="10">Full NAL2 byte-exact (all presets)</text>
 <rect x="1343.0" y="2084.0" width="192.0" height="10" fill="#21262d" rx="2"/><rect x="1343.0" y="2084.0" width="19.2" height="10" fill="#f85149" rx="2"/>
 <text x="1646" y="2092" fill="#f85149" font-size="9" text-anchor="end">2/20</text>
@@ -915,32 +915,40 @@
 <text x="32" y="2796" fill="#8b949e" font-size="11">Bytes of the slice NAL2 identical to x264 before the first divergence (full NAL2 = 130 bytes)</text>
 <text x="46" y="2820" fill="#8b949e" font-size="11">baseline</text>
 <text x="46" y="2850" fill="#484f58" font-size="20" font-weight="bold">5</text>
-<rect x="46.0" y="2858.0" width="212.0" height="8" fill="#21262d" rx="2"/><rect x="46.0" y="2858.0" width="8.2" height="8" fill="#484f58" rx="2"/>
+<rect x="46.0" y="2858.0" width="161.0" height="8" fill="#21262d" rx="2"/><rect x="46.0" y="2858.0" width="6.2" height="8" fill="#484f58" rx="2"/>
 <text x="46" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
-<text x="274" y="2820" fill="#8b949e" font-size="11">#210</text>
-<text x="274" y="2850" fill="#6e7681" font-size="20" font-weight="bold">5</text>
-<rect x="274.0" y="2858.0" width="212.0" height="8" fill="#21262d" rx="2"/><rect x="274.0" y="2858.0" width="8.2" height="8" fill="#6e7681" rx="2"/>
-<text x="274" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
-<text x="502" y="2820" fill="#8b949e" font-size="11">#211</text>
-<text x="502" y="2850" fill="#8b949e" font-size="20" font-weight="bold">5</text>
-<rect x="502.0" y="2858.0" width="212.0" height="8" fill="#21262d" rx="2"/><rect x="502.0" y="2858.0" width="8.2" height="8" fill="#8b949e" rx="2"/>
-<text x="502" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
-<text x="730" y="2820" fill="#8b949e" font-size="11">#212</text>
-<text x="730" y="2850" fill="#c9a227" font-size="20" font-weight="bold">8</text>
-<rect x="730.0" y="2858.0" width="212.0" height="8" fill="#21262d" rx="2"/><rect x="730.0" y="2858.0" width="13.0" height="8" fill="#c9a227" rx="2"/>
-<text x="730" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
-<text x="958" y="2820" fill="#8b949e" font-size="11">#215</text>
-<text x="958" y="2850" fill="#d29922" font-size="20" font-weight="bold">17</text>
-<rect x="958.0" y="2858.0" width="212.0" height="8" fill="#21262d" rx="2"/><rect x="958.0" y="2858.0" width="27.7" height="8" fill="#d29922" rx="2"/>
-<text x="958" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
-<text x="1186" y="2820" fill="#8b949e" font-size="11">#216</text>
-<text x="1186" y="2850" fill="#d29922" font-size="20" font-weight="bold">43</text>
-<rect x="1186.0" y="2858.0" width="212.0" height="8" fill="#21262d" rx="2"/><rect x="1186.0" y="2858.0" width="70.1" height="8" fill="#d29922" rx="2"/>
-<text x="1186" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
-<text x="1414" y="2820" fill="#8b949e" font-size="11">#217</text>
-<text x="1414" y="2850" fill="#2ea043" font-size="20" font-weight="bold">49</text>
-<rect x="1414.0" y="2858.0" width="212.0" height="8" fill="#21262d" rx="2"/><rect x="1414.0" y="2858.0" width="79.9" height="8" fill="#2ea043" rx="2"/>
-<text x="1414" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
+<text x="223" y="2820" fill="#8b949e" font-size="11">#210</text>
+<text x="223" y="2850" fill="#6e7681" font-size="20" font-weight="bold">5</text>
+<rect x="223.0" y="2858.0" width="161.0" height="8" fill="#21262d" rx="2"/><rect x="223.0" y="2858.0" width="6.2" height="8" fill="#6e7681" rx="2"/>
+<text x="223" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
+<text x="400" y="2820" fill="#8b949e" font-size="11">#211</text>
+<text x="400" y="2850" fill="#8b949e" font-size="20" font-weight="bold">5</text>
+<rect x="400.0" y="2858.0" width="161.0" height="8" fill="#21262d" rx="2"/><rect x="400.0" y="2858.0" width="6.2" height="8" fill="#8b949e" rx="2"/>
+<text x="400" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
+<text x="577" y="2820" fill="#8b949e" font-size="11">#212</text>
+<text x="577" y="2850" fill="#c9a227" font-size="20" font-weight="bold">8</text>
+<rect x="577.0" y="2858.0" width="161.0" height="8" fill="#21262d" rx="2"/><rect x="577.0" y="2858.0" width="9.9" height="8" fill="#c9a227" rx="2"/>
+<text x="577" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
+<text x="754" y="2820" fill="#8b949e" font-size="11">#215</text>
+<text x="754" y="2850" fill="#d29922" font-size="20" font-weight="bold">17</text>
+<rect x="754.0" y="2858.0" width="161.0" height="8" fill="#21262d" rx="2"/><rect x="754.0" y="2858.0" width="21.1" height="8" fill="#d29922" rx="2"/>
+<text x="754" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
+<text x="931" y="2820" fill="#8b949e" font-size="11">#216</text>
+<text x="931" y="2850" fill="#d29922" font-size="20" font-weight="bold">43</text>
+<rect x="931.0" y="2858.0" width="161.0" height="8" fill="#21262d" rx="2"/><rect x="931.0" y="2858.0" width="53.3" height="8" fill="#d29922" rx="2"/>
+<text x="931" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
+<text x="1108" y="2820" fill="#8b949e" font-size="11">#217</text>
+<text x="1108" y="2850" fill="#2ea043" font-size="20" font-weight="bold">49</text>
+<rect x="1108.0" y="2858.0" width="161.0" height="8" fill="#21262d" rx="2"/><rect x="1108.0" y="2858.0" width="60.7" height="8" fill="#2ea043" rx="2"/>
+<text x="1108" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
+<text x="1285" y="2820" fill="#8b949e" font-size="11">#251</text>
+<text x="1285" y="2850" fill="#3fb950" font-size="20" font-weight="bold">67</text>
+<rect x="1285.0" y="2858.0" width="161.0" height="8" fill="#21262d" rx="2"/><rect x="1285.0" y="2858.0" width="83.0" height="8" fill="#3fb950" rx="2"/>
+<text x="1285" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
+<text x="1462" y="2820" fill="#8b949e" font-size="11">#255</text>
+<text x="1462" y="2850" fill="#2ea043" font-size="20" font-weight="bold">80</text>
+<rect x="1462.0" y="2858.0" width="161.0" height="8" fill="#21262d" rx="2"/><rect x="1462.0" y="2858.0" width="99.1" height="8" fill="#2ea043" rx="2"/>
+<text x="1462" y="2874" fill="#6e7681" font-size="10">bytes exact</text>
 <text x="32" y="2900" fill="#8b949e" font-size="12">LEGEND:</text>
 <rect x="112" y="2889" width="14" height="14" fill="url(#grid-exact)" stroke="#2ea043" rx="2"/>
 <text x="132" y="2900" fill="#c9d1d9" font-size="12">EXACT</text>

@@ -10,6 +10,8 @@
  * top-right tr[8]. Edge samples unavailable should be passed as 128. */
 void vk_predict8_filtered(uint8_t out[64], int m, const uint8_t left[8],
                           const uint8_t top[16], int lt);
+void vk_predict8_filtered_ex(uint8_t out[64], int m, const uint8_t left[8],
+                             const uint8_t top[16], int lt, int have_tr);
 void vk_predict8(uint8_t out[64], int m, const uint8_t left[8],
                  const uint8_t top[8], const uint8_t tr[8]);
 
@@ -19,6 +21,14 @@ int vk_i8x8_decide(const uint8_t src[64], const uint8_t left[8],
                    const uint8_t top[8], const uint8_t tr[8], int lt,
                    int have_l, int have_t, int lambda, int *cost_out,
                    int use_satd, int mb_gate);
+/* As above with an explicit top-right availability flag: x264's
+ * i_neighbour8[idx] includes MB_TOPRIGHT only for idx0 (when TOP is
+ * available), idx1 (when the MB's top-right neighbour exists) and
+ * idx2; idx3 never has it. */
+int vk_i8x8_decide_ex(const uint8_t src[64], const uint8_t left[8],
+                   const uint8_t top[8], const uint8_t tr[8], int lt,
+                   int have_l, int have_t, int lambda, int *cost_out,
+                   int use_satd, int mb_gate, int have_tr);
 
 /* SATD of two 8x8 blocks (Hadamard, x264 pixel_satd_8x8). */
 int vk_satd8(const uint8_t a[64], const uint8_t b[64]);

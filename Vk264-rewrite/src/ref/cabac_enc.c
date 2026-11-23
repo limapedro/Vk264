@@ -514,14 +514,21 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                                     :(top?rbase[(my*16-1)*rs+mx*16+bx-1]:128))
                              :(by>0)?(left?rbase[(my*16+by-1)*rs+mx*16-1]:128)
                              :(top?(left?rbase[(my*16-1)*rs+mx*16-1]:t8[0]):(left?l8[0]:128));
-                    int m=vk_i8x8_decide(src8,l8,t8,tr8,lt8,hl,ht,lambda,&bc,0,mx>0&&my>0);
+                    /* x264 i_neighbour8[idx] & MB_TOPRIGHT: idx0 when TOP
+                     * exists, idx1 when the MB top-right neighbour exists,
+                     * idx2 always, idx3 never. */
+                    int have_tr8 = (idx==0) ? top
+                                 : (idx==1) ? (top && mx+1<mw)
+                                 : (idx==2) ? 1 : 0;
+                    int m=vk_i8x8_decide_ex(src8,l8,t8,tr8,lt8,hl,ht,lambda,
+                                            &bc,0,mx>0&&my>0,have_tr8);
                     modes8[idx]=(uint8_t)m;
                     i8cost += bc + 3*lambda;
                     if(mx>0 && my>0){
                         uint8_t t16[16];
                         for(int k=0;k<8;++k) t16[k]=t8[k];
                         for(int k=0;k<8;++k) t16[8+k]=tr8[k];
-                        vk_predict8_filtered(p8,m,l8,t16,lt8);
+                        vk_predict8_filtered_ex(p8,m,l8,t16,lt8,have_tr8);
                     } else vk_predict8(p8,m,l8,t8,tr8);
                     int d8[64];vk_ref_dct8x8(d8,src8,p8);
                     int nz=vk_ref_quant8(d8,mf8,bias8);
