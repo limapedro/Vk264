@@ -2838,7 +2838,7 @@
       "flat_blocks": 86,
       "avgU": 123.1,
       "avgV": 134.2,
-      "psnr": 23.23
+      "psnr": 23.24
     }
   },
   {
@@ -3003,10 +3003,10 @@
       "sha": "dfbf40523caf",
       "frames": 28,
       "green_blocks": 0,
-      "flat_blocks": 96,
+      "flat_blocks": 92,
       "avgU": 123.6,
       "avgV": 134.0,
-      "psnr": 24.88
+      "psnr": 24.86
     }
   },
   {

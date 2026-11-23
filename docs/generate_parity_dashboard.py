@@ -23,7 +23,7 @@ from datetime import date
 # ---------------------------------------------------------------------------
 # Data — update these after each parity PR, then regenerate the SVG.
 # ---------------------------------------------------------------------------
-SNAPSHOT = "ead8f7e"
+SNAPSHOT = "4950e94"
 GENERATED = date.today().isoformat()
 
 # Overall numbers (from build/*_parity_sweep.py, ctest, tests/video_experiments.json)
@@ -41,7 +41,7 @@ STATS = [
      f"{CAVLC_P_EXACT/CAVLC_P_TOTAL*100:.1f}%", "#2ea043"),
     ("CABAC P-SLICES", f"{CABAC_P_EXACT} / {CABAC_P_TOTAL}",
      f"{CABAC_P_EXACT/CABAC_P_TOTAL*100:.1f}%", "#2ea043"),
-    ("CTEST GATES", "65 + 18 / 83", "100.0%", "#2ea043"),
+    ("CTEST GATES", "29 + 65 / 94", "100.0%", "#2ea043"),
     # Video-level MP4 experiments (tests/video_experiments.json). These are
     # 8-frame real-clip encodes; 2-frame fixtures alone are not sufficient.
     ("VIDEO MP4 EXPERIMENTS", f"{VIDEO_EXACT} / {VIDEO_TOTAL} exact",
@@ -53,7 +53,24 @@ STATS = [
     # for all 10 presets; slice/POC parity remains open.
     ("PRESET SPS/PPS HEADERS", "10 / 10 presets exact", "100.0%", "#2ea043"),
     ("PRESET BYTE-EXACT VIDEO", "2 / 10 presets", "20.0%", "#d29922"),
+    # Non-ultrafast macroblock payload: byte-exact prefix of the IDR slice
+    # NAL2 for the superfast preset against x264 (build/progress_metrics.py).
+    ("SUPERFAST NAL2 PREFIX", "49 / 130 B", "37.7%", "#d29922"),
 ]
+
+# Superfast IDR slice NAL2 byte-exact prefix progression, by merged PR.
+# Measured with build/progress_metrics.py against the 64x64 c004 clip.
+# 130 bytes is the full x264 NAL2; higher prefix = closer to byte-exact.
+NAL2_PREFIX_PROGRESSION = [
+    ("baseline", 5, "#484f58"),
+    ("#210", 5, "#6e7681"),
+    ("#211", 5, "#8b949e"),
+    ("#212", 8, "#c9a227"),
+    ("#215", 17, "#d29922"),
+    ("#216", 43, "#d29922"),
+    ("#217", 49, "#2ea043"),
+]
+NAL2_FULL = 130
 
 # Byte-exact sweep progression (each row is one merged PR)
 SWEEPS = [
@@ -314,7 +331,7 @@ SUITES = [
 OPEN_TARGETS = [
     ("Video MP4 experiments (real 8f clips)", VIDEO_EXACT, VIDEO_TOTAL, "#d29922"),
     ("x264 functions ported (inventory)", FUNC_PORTED, FUNC_TOTAL_INV, "#d29922"),
-    ("Presets > ultrafast (SPS High profile)", 0, 1, "#f85149"),
+    ("Presets > ultrafast (SPS High profile)", 1, 1, "#2ea043"),
     ("1080p60 multi-frame stability (3f+)", 0, 1, "#f85149"),
     ("Lookahead / slicetype (03 family)", 0, 43, "#f85149"),
     ("B-frame inter analysis / CABAC / CAVLC", 0, 9, "#f85149"),
@@ -322,7 +339,9 @@ OPEN_TARGETS = [
     ("mbtree / frame_filter", 0, 6, "#f85149"),
     ("CQM scaling lists", 0, 2, "#f85149"),
     ("Rate control VBV / CRF", 0, 45, "#d29922"),
-    ("I4x4 emission (superfast)", 0, 1, "#d29922"),
+    ("I4x4/I8x8 CABAC emission (superfast)", 1, 1, "#2ea043"),
+    ("Superfast NAL2 macroblock prefix", 49, 130, "#d29922"),
+    ("Full NAL2 byte-exact (all presets)", 2, 20, "#f85149"),
     ("04 Analysis weighted family coverage", 2, 10, "#d29922"),
 ]
 
@@ -441,8 +460,12 @@ sweep_col_w = (W - 2 * M - gap) // 2
 sweep_band_h = 30 + sweep_max_rows * sweep_row_h
 sweep_bottom = sweep_top + sweep_band_h
 
+# NAL2 macroblock prefix band (superfast progress toward byte-exact)
+nal2_top = sweep_bottom + 34
+nal2_band_h = 78
+
 # legend
-H = sweep_bottom + 70
+H = nal2_top + nal2_band_h + 70
 
 add(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
     f'viewBox="0 0 {W} {H}" font-family="Consolas, SFMono-Regular, Menlo, monospace">')
@@ -605,6 +628,21 @@ for c, (sweeps, bx0) in enumerate(((SWEEPS, gx), (CABAC_SWEEPS, gx+ot_col_w+gap)
         add(f'<text x="{bx0+8}" y="{y+11}" fill="#8b949e" font-size="11">{esc(label)}</text>')
         add(bar(bar_x, y, bar_w, 11, val/1360, color, rx=2))
         add(f'<text x="{bar_x+bar_w+8}" y="{y+11}" fill="#e6edf3" font-size="11">{val}/1360</text>')
+
+# --- Superfast NAL2 macroblock byte-exact prefix progression ------------------
+add(f'<text x="{gx}" y="{nal2_top}" fill="#e6edf3" font-size="17" font-weight="bold">'
+    'Superfast IDR NAL2 byte-exact prefix — by merged PR (macroblock payload parity)</text>')
+add(f'<text x="{gx}" y="{nal2_top+16}" fill="#8b949e" font-size="11">'
+    f'Bytes of the slice NAL2 identical to x264 before the first divergence (full NAL2 = {NAL2_FULL} bytes)</text>')
+nal2_x = gx + 8
+nal2_y = nal2_top + 28
+nal2_cell = (W - 2 * M - 16) // len(NAL2_PREFIX_PROGRESSION)
+for i, (label, val, color) in enumerate(NAL2_PREFIX_PROGRESSION):
+    cx = nal2_x + i * nal2_cell
+    add(f'<text x="{cx+6}" y="{nal2_y+12}" fill="#8b949e" font-size="11">{esc(label)}</text>')
+    add(f'<text x="{cx+6}" y="{nal2_y+42}" fill="{color}" font-size="20" font-weight="bold">{val}</text>')
+    add(bar(cx+6, nal2_y+50, nal2_cell-16, 8, val/NAL2_FULL, color, rx=2))
+    add(f'<text x="{cx+6}" y="{nal2_y+66}" fill="#6e7681" font-size="10">bytes exact</text>')
 
 # --- Legend ------------------------------------------------------------------
 ly = H - 28
