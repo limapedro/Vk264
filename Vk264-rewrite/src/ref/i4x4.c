@@ -147,20 +147,56 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
             srcblock[y*4+x]=src_y[(by+y)*16 + bx+x];
 
         int best=0x7fffffff, bestm=2;
-        for(int k=0;k<nc;++k) {
-            int m=cands[k];
-            vk_predict4(p,m,left,top,lt,tr);
-            int sad=0;
-            for(int i=0;i<16;++i) { int d=srcblock[i]-p[i]; sad += d<0?-d:d; }
-            int c;
-            /* x264 analyse.c:173 cost_i4x4_mode[i]=3*lambda*(i!=8);
-             * the x9 SIMD is passed cost_i4x4_mode+8-i_pred_mode, so the
-             * zero-bias case is m==pred (not m==8, and not "-pred"). */
-            if (use_x9) c = sad + (m!=pred ? 3*lambda : 0);
-            else c = sad + (vk_i4x4_fix(m)==pred ? -3*lambda : 0);
-            if (c<best) { best=c; bestm=m; }
+        /* x264 superfast has subme=1 -> mbcmp=SAD, mbrd=0, b_fast_intra=0,
+         * no x9 SIMD: analyse.c:903-950 uses intra_sad_x3 (DC,H,V) followed
+         * by the intra_analysis_shortcut table. Replicate that exactly. */
+        const int8_t *loop=cands; int loop_n=nc;
+        if (nc>=6) {
+            int s3[3];  /* indexed by mode 0=V, 1=H, 2=DC */
+            for (int m=0;m<3;++m) {
+                vk_predict4(p,m,left,top,lt,tr);
+                int sad=0;
+                for(int i=0;i<16;++i){int d=srcblock[i]-p[i];sad+=d<0?-d:d;}
+                s3[m]=sad;
+            }
+            if (pred<3) s3[pred]-=3*lambda;
+            best=s3[2]; bestm=2;
+            if (s3[1]<best){best=s3[1];bestm=1;}
+            if (s3[0]<best){best=s3[0];bestm=0;}
+            int favor_vertical = s3[1] > s3[0];
+            /* intra_analysis_shortcut[avoid_topright=0][cand9][favor] */
+            static const int8_t sc[2][2][5] = {
+                {{8,-1,-1,-1,-1}, {3,7,-1,-1,-1}},
+                {{4,6,8,-1,-1},  {3,4,5,7,-1}}
+            };
+            loop=sc[use_x9?1:0][favor_vertical];
+            loop_n=0; while(loop[loop_n]>=0) loop_n++;
         }
-        raw[idx]=bestm; modes_out[idx]=(uint8_t)bestm; total+=best;
+        if (nc<6) {
+            /* x264 full candidate loop (no x3 for small candidate sets). */
+            for(int k=0;k<nc;++k) {
+                int m=cands[k];
+                vk_predict4(p,m,left,top,lt,tr);
+                int sad=0;
+                for(int i=0;i<16;++i){int d=srcblock[i]-p[i];sad+=d<0?-d:d;}
+                int c = sad + (vk_i4x4_fix(m)==pred ? -3*lambda : 0);
+                if (c<best){best=c;bestm=m;}
+            }
+        } else if (best>0) {
+            for(int k=0;k<loop_n;++k) {
+                int m=loop[k];
+                vk_predict4(p,m,left,top,lt,tr);
+                int sad=0;
+                for(int i=0;i<16;++i){int d=srcblock[i]-p[i];sad+=d<0?-d:d;}
+                if (vk_i4x4_fix(m)==pred) {
+                    sad-=3*lambda;
+                    if (sad<=0) { best=sad; bestm=m; break; }
+                }
+                if (sad<best){best=sad;bestm=m;}
+            }
+        }
+        raw[idx]=bestm; modes_out[idx]=(uint8_t)bestm;
+        total += best + 3*lambda;
 
         /* reconstruction feedback: predict, DCT, quant, dequant, IDCT, add */
         vk_predict4(p,bestm,left,top,lt,tr);

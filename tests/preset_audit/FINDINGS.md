@@ -404,3 +404,25 @@ blocks) and most of MB1; remaining mismatch is MB1's intra mode choice
 
 Gates: CTest 29/29 + 65/65, CAVLC 1360/1360, MP4 56/56, slicetype 13/16.
 Audit remains 12/120 — parity still not achieved.
+
+## x264 superfast uses SAD, not SATD; x3+shortcut and FDEC border fix (this turn)
+
+Instrumented `encoder/encoder.c`:1411 and confirmed
+`satd = !b_lossless && i_subpel_refine > 1`. Superfast has subme=1, hence
+`satd = 0` and `pixf.mbcmp` / `intra_mbcmp_x3_4x4` are **SAD**, not SATD.
+The oracle's SAD is therefore correct; the SATD experiment was reverted.
+
+Instrumented `analyse.c` for MB1: mbrd=0, b_fast_intra=0, x9=NULL.
+Ported the exact `intra_sad_x3_4x4` + `intra_analysis_shortcut` path for
+candidate sets with >=6 modes; small candidate sets keep the full loop
+(required by the `rewrite_i4x4_decide` fixture).
+
+Found and fixed an out-of-bounds read in `cabac_enc.c`: the fresh per-MB
+`rmb[256]` was indexed at `rmb[-1]` for MB-edge neighbours, giving garbage
+(e.g. 69 instead of x264's 15). MB-edge neighbours now come from the
+padded reconstruction buffer `rbase`.
+
+Gates remain green (29/29, 65/65, 1360/1360, 56/56, slicetype 13/16),
+audit still 12/120. MB1's mode choice still differs: oracle x3 SADs
+(V/H/DC = 290/82/146) differ from x264's (992/548/892), indicating a
+remaining input/prediction discrepancy in MB1 analysis, not a syntax issue.

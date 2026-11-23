@@ -104,8 +104,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 305,
-      "sha": "50ca1b7c31ba",
+      "bytes": 293,
+      "sha": "25ca1c35b933",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -164,8 +164,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 305,
-      "sha": "50ca1b7c31ba",
+      "bytes": 293,
+      "sha": "25ca1c35b933",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -224,8 +224,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 306,
-      "sha": "e001f8e730fd",
+      "bytes": 294,
+      "sha": "eeddf3848ffa",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -284,8 +284,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 312,
-      "sha": "443ef30f9a6d",
+      "bytes": 300,
+      "sha": "3fa049940acd",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -344,8 +344,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 312,
-      "sha": "e8cc31983a80",
+      "bytes": 300,
+      "sha": "c4920ea97229",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -404,8 +404,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 312,
-      "sha": "e9d7615bdd31",
+      "bytes": 300,
+      "sha": "5b1f2c59610d",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -464,8 +464,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 312,
-      "sha": "566c613464ae",
+      "bytes": 300,
+      "sha": "20e75eb7fc05",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -518,8 +518,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 315,
-      "sha": "af0e2187bb9e",
+      "bytes": 303,
+      "sha": "655aa2905895",
       "decode": "FAIL"
     }
   },
@@ -566,8 +566,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 315,
-      "sha": "c23634d04429",
+      "bytes": 303,
+      "sha": "0b99e517c018",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -679,11 +679,11 @@
       "psnr": 24.49
     },
     "oracle": {
-      "bytes": 1703,
-      "sha": "40b81fafd6ee",
+      "bytes": 1699,
+      "sha": "206716d56526",
       "frames": 5,
       "green_blocks": 320,
-      "flat_blocks": 296,
+      "flat_blocks": 300,
       "avgU": 0.0,
       "avgV": 0.0,
       "psnr": 9.43
@@ -735,11 +735,11 @@
       "psnr": 24.52
     },
     "oracle": {
-      "bytes": 1703,
-      "sha": "40b81fafd6ee",
+      "bytes": 1699,
+      "sha": "206716d56526",
       "frames": 5,
       "green_blocks": 320,
-      "flat_blocks": 296,
+      "flat_blocks": 300,
       "avgU": 0.0,
       "avgV": 0.0,
       "psnr": 9.43
@@ -791,8 +791,8 @@
       "psnr": 24.48
     },
     "oracle": {
-      "bytes": 1704,
-      "sha": "2568d440bac4",
+      "bytes": 1700,
+      "sha": "6458bb9b1319",
       "frames": 2,
       "green_blocks": 128,
       "flat_blocks": 119,
@@ -847,8 +847,8 @@
       "psnr": 24.42
     },
     "oracle": {
-      "bytes": 1719,
-      "sha": "36aa917a402b",
+      "bytes": 1711,
+      "sha": "40fa1c0d32ba",
       "frames": 2,
       "green_blocks": 128,
       "flat_blocks": 128,
@@ -903,8 +903,8 @@
       "psnr": 24.43
     },
     "oracle": {
-      "bytes": 1719,
-      "sha": "225b7146dd84",
+      "bytes": 1711,
+      "sha": "16153fd2271b",
       "frames": 5,
       "green_blocks": 320,
       "flat_blocks": 320,
@@ -959,14 +959,14 @@
       "psnr": 24.43
     },
     "oracle": {
-      "bytes": 1719,
-      "sha": "daea6bf1ce3f",
+      "bytes": 1711,
+      "sha": "dcfabf074958",
       "frames": 3,
-      "green_blocks": 186,
-      "flat_blocks": 156,
+      "green_blocks": 181,
+      "flat_blocks": 138,
       "avgU": 3.9,
-      "avgV": 3.8,
-      "psnr": 9.65
+      "avgV": 10.5,
+      "psnr": 9.66
     }
   },
   {
@@ -1015,8 +1015,8 @@
       "psnr": 24.7
     },
     "oracle": {
-      "bytes": 1719,
-      "sha": "6612dd3ffbe1",
+      "bytes": 1711,
+      "sha": "344d9c7f1300",
       "frames": 5,
       "green_blocks": 313,
       "flat_blocks": 306,
@@ -1066,8 +1066,8 @@
       "psnr": 28.83
     },
     "oracle": {
-      "bytes": 1722,
-      "sha": "0d54e612b925",
+      "bytes": 1714,
+      "sha": "15de36f9ceec",
       "decode": "FAIL"
     }
   },
@@ -1112,8 +1112,8 @@
       "psnr": 24.24
     },
     "oracle": {
-      "bytes": 1722,
-      "sha": "ab8a30c49c7b",
+      "bytes": 1714,
+      "sha": "943e629498dd",
       "frames": 3,
       "green_blocks": 192,
       "flat_blocks": 192,
@@ -1224,13 +1224,13 @@
       "psnr": 28.17
     },
     "oracle": {
-      "bytes": 6533,
-      "sha": "9c10c3e033c6",
+      "bytes": 6524,
+      "sha": "30e434725333",
       "frames": 28,
       "green_blocks": 1792,
-      "flat_blocks": 1625,
+      "flat_blocks": 1607,
       "avgU": 0.0,
-      "avgV": 0.1,
+      "avgV": 0.0,
       "psnr": 9.47
     }
   },
@@ -1280,13 +1280,13 @@
       "psnr": 28.06
     },
     "oracle": {
-      "bytes": 6533,
-      "sha": "9c10c3e033c6",
+      "bytes": 6524,
+      "sha": "30e434725333",
       "frames": 28,
       "green_blocks": 1792,
-      "flat_blocks": 1625,
+      "flat_blocks": 1607,
       "avgU": 0.0,
-      "avgV": 0.1,
+      "avgV": 0.0,
       "psnr": 9.47
     }
   },
@@ -1336,11 +1336,11 @@
       "psnr": 28.06
     },
     "oracle": {
-      "bytes": 6534,
-      "sha": "0b8270bd3e42",
+      "bytes": 6525,
+      "sha": "95000c9622a7",
       "frames": 27,
       "green_blocks": 1728,
-      "flat_blocks": 1640,
+      "flat_blocks": 1659,
       "avgU": 0.0,
       "avgV": 0.0,
       "psnr": 9.45
@@ -1392,11 +1392,11 @@
       "psnr": 28.04
     },
     "oracle": {
-      "bytes": 6582,
-      "sha": "4a77c7e8a39c",
+      "bytes": 6567,
+      "sha": "5aef4f003bda",
       "frames": 27,
       "green_blocks": 1728,
-      "flat_blocks": 1688,
+      "flat_blocks": 1700,
       "avgU": 0.0,
       "avgV": 0.0,
       "psnr": 9.45
@@ -1448,11 +1448,11 @@
       "psnr": 28.03
     },
     "oracle": {
-      "bytes": 6582,
-      "sha": "0ae84f2692bf",
+      "bytes": 6567,
+      "sha": "150c87b1ee3e",
       "frames": 28,
       "green_blocks": 1792,
-      "flat_blocks": 1733,
+      "flat_blocks": 1776,
       "avgU": 0.0,
       "avgV": 0.0,
       "psnr": 9.46
@@ -1504,13 +1504,13 @@
       "psnr": 28.04
     },
     "oracle": {
-      "bytes": 6582,
-      "sha": "cc143dc81068",
+      "bytes": 6567,
+      "sha": "a3109be64bb1",
       "frames": 27,
-      "green_blocks": 1718,
-      "flat_blocks": 1476,
-      "avgU": 0.8,
-      "avgV": 0.7,
+      "green_blocks": 1713,
+      "flat_blocks": 1480,
+      "avgU": 0.7,
+      "avgV": 1.4,
       "psnr": 9.48
     }
   },
@@ -1560,14 +1560,14 @@
       "psnr": 29.14
     },
     "oracle": {
-      "bytes": 6582,
-      "sha": "1fb07353e487",
+      "bytes": 6567,
+      "sha": "dfc6b61654ba",
       "frames": 27,
       "green_blocks": 1721,
-      "flat_blocks": 1418,
-      "avgU": 1.0,
-      "avgV": 0.6,
-      "psnr": 9.49
+      "flat_blocks": 1625,
+      "avgU": 0.9,
+      "avgV": 0.7,
+      "psnr": 9.48
     }
   },
   {
@@ -1611,14 +1611,14 @@
       "psnr": 35.89
     },
     "oracle": {
-      "bytes": 6585,
-      "sha": "b817431e306f",
-      "frames": 29,
-      "green_blocks": 1824,
-      "flat_blocks": 1565,
-      "avgU": 2.3,
-      "avgV": 2.5,
-      "psnr": 9.47
+      "bytes": 6570,
+      "sha": "64f356da7955",
+      "frames": 28,
+      "green_blocks": 1776,
+      "flat_blocks": 1409,
+      "avgU": 1.3,
+      "avgV": 1.8,
+      "psnr": 9.49
     }
   },
   {
@@ -1662,14 +1662,14 @@
       "psnr": 22.85
     },
     "oracle": {
-      "bytes": 6585,
-      "sha": "20b829327af4",
-      "frames": 25,
-      "green_blocks": 1600,
-      "flat_blocks": 1504,
+      "bytes": 6570,
+      "sha": "04fd62144faa",
+      "frames": 28,
+      "green_blocks": 1791,
+      "flat_blocks": 1527,
       "avgU": 0.1,
-      "avgV": 1.1,
-      "psnr": 9.49
+      "avgV": 2.2,
+      "psnr": 9.53
     }
   },
   {
@@ -1777,8 +1777,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 349,
-      "sha": "1e8ebd30c662",
+      "bytes": 344,
+      "sha": "84532fda2375",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -1837,8 +1837,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 349,
-      "sha": "1e8ebd30c662",
+      "bytes": 344,
+      "sha": "84532fda2375",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -1897,8 +1897,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 350,
-      "sha": "fc47840e3906",
+      "bytes": 345,
+      "sha": "8ace385587ef",
       "decode": "FAIL"
     }
   },
@@ -1951,8 +1951,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 357,
-      "sha": "c89b199c191b",
+      "bytes": 352,
+      "sha": "f3a073e78882",
       "decode": "FAIL"
     }
   },
@@ -2005,8 +2005,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 357,
-      "sha": "a6c8b00443d4",
+      "bytes": 352,
+      "sha": "af567edc8966",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -2065,8 +2065,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 357,
-      "sha": "7710ff796ae6",
+      "bytes": 352,
+      "sha": "f8926b2f8c24",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -2125,15 +2125,9 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 357,
-      "sha": "ad0cec967146",
-      "decode": "EMPTY",
-      "frames": 0,
-      "green_blocks": -1,
-      "flat_blocks": -1,
-      "avgU": -1,
-      "avgV": -1,
-      "psnr": -1
+      "bytes": 352,
+      "sha": "a228ae63c9a8",
+      "decode": "FAIL"
     }
   },
   {
@@ -2179,15 +2173,9 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 360,
-      "sha": "6e3f47c24210",
-      "decode": "EMPTY",
-      "frames": 0,
-      "green_blocks": -1,
-      "flat_blocks": -1,
-      "avgU": -1,
-      "avgV": -1,
-      "psnr": -1
+      "bytes": 355,
+      "sha": "7ccc14d792ef",
+      "decode": "FAIL"
     }
   },
   {
@@ -2233,8 +2221,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 360,
-      "sha": "c9370b946eda",
+      "bytes": 355,
+      "sha": "a99688b642be",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -2346,14 +2334,14 @@
       "psnr": 25.37
     },
     "oracle": {
-      "bytes": 1163,
-      "sha": "1cc07c53ced1",
-      "frames": 5,
-      "green_blocks": 320,
-      "flat_blocks": 312,
+      "bytes": 1160,
+      "sha": "8901d22d06dc",
+      "frames": 6,
+      "green_blocks": 384,
+      "flat_blocks": 368,
       "avgU": 0.0,
       "avgV": 0.0,
-      "psnr": 3.69
+      "psnr": 3.71
     }
   },
   {
@@ -2402,14 +2390,14 @@
       "psnr": 24.36
     },
     "oracle": {
-      "bytes": 1163,
-      "sha": "1cc07c53ced1",
-      "frames": 5,
-      "green_blocks": 320,
-      "flat_blocks": 312,
+      "bytes": 1160,
+      "sha": "8901d22d06dc",
+      "frames": 6,
+      "green_blocks": 384,
+      "flat_blocks": 368,
       "avgU": 0.0,
       "avgV": 0.0,
-      "psnr": 3.69
+      "psnr": 3.71
     }
   },
   {
@@ -2458,14 +2446,9 @@
       "psnr": 24.33
     },
     "oracle": {
-      "bytes": 1164,
-      "sha": "6dc93c3eb7d2",
-      "frames": 3,
-      "green_blocks": 192,
-      "flat_blocks": 192,
-      "avgU": 0.0,
-      "avgV": 0.0,
-      "psnr": 3.69
+      "bytes": 1161,
+      "sha": "3978ed62f86f",
+      "decode": "FAIL"
     }
   },
   {
@@ -2515,13 +2498,8 @@
     },
     "oracle": {
       "bytes": 1177,
-      "sha": "b6d9f35adb3b",
-      "frames": 3,
-      "green_blocks": 183,
-      "flat_blocks": 171,
-      "avgU": 6.0,
-      "avgV": 6.0,
-      "psnr": 3.75
+      "sha": "36750f0094e1",
+      "decode": "FAIL"
     }
   },
   {
@@ -2571,13 +2549,13 @@
     },
     "oracle": {
       "bytes": 1177,
-      "sha": "7b271d61e795",
+      "sha": "7f38aa28f5e4",
       "frames": 6,
-      "green_blocks": 381,
-      "flat_blocks": 378,
-      "avgU": 1.0,
-      "avgV": 1.0,
-      "psnr": 3.73
+      "green_blocks": 384,
+      "flat_blocks": 382,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 3.7
     }
   },
   {
@@ -2627,13 +2605,13 @@
     },
     "oracle": {
       "bytes": 1177,
-      "sha": "95042f7c5ee7",
+      "sha": "c74ad8df1a93",
       "frames": 4,
-      "green_blocks": 230,
-      "flat_blocks": 214,
-      "avgU": 7.1,
-      "avgV": 15.4,
-      "psnr": 3.88
+      "green_blocks": 256,
+      "flat_blocks": 256,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 3.69
     }
   },
   {
@@ -2683,13 +2661,8 @@
     },
     "oracle": {
       "bytes": 1177,
-      "sha": "d740c51d7d8f",
-      "frames": 5,
-      "green_blocks": 320,
-      "flat_blocks": 276,
-      "avgU": 0.2,
-      "avgV": 0.4,
-      "psnr": 3.71
+      "sha": "06936f548dbc",
+      "decode": "FAIL"
     }
   },
   {
@@ -2734,13 +2707,8 @@
     },
     "oracle": {
       "bytes": 1180,
-      "sha": "ae070aa8c91c",
-      "frames": 4,
-      "green_blocks": 252,
-      "flat_blocks": 244,
-      "avgU": 3.0,
-      "avgV": 1.1,
-      "psnr": 3.7
+      "sha": "54236d723c4c",
+      "decode": "FAIL"
     }
   },
   {
@@ -2790,7 +2758,7 @@
     },
     "oracle": {
       "bytes": 1180,
-      "sha": "ac884f817e6b",
+      "sha": "31cd600f6363",
       "decode": "FAIL"
     }
   },
@@ -2875,7 +2843,7 @@
       "flat_blocks": 86,
       "avgU": 123.1,
       "avgV": 134.2,
-      "psnr": 23.23
+      "psnr": 21.45
     }
   },
   {
@@ -2896,14 +2864,14 @@
       "psnr": 31.08
     },
     "oracle": {
-      "bytes": 3157,
-      "sha": "6ceda4987e8a",
-      "frames": 26,
-      "green_blocks": 1664,
-      "flat_blocks": 1549,
+      "bytes": 3158,
+      "sha": "215a6cec6206",
+      "frames": 28,
+      "green_blocks": 1792,
+      "flat_blocks": 1662,
       "avgU": 0.0,
       "avgV": 0.0,
-      "psnr": 3.62
+      "psnr": 3.65
     }
   },
   {
@@ -2931,7 +2899,7 @@
       "flat_blocks": 86,
       "avgU": 123.1,
       "avgV": 134.2,
-      "psnr": 23.26
+      "psnr": 23.24
     }
   },
   {
@@ -2952,14 +2920,14 @@
       "psnr": 25.49
     },
     "oracle": {
-      "bytes": 3157,
-      "sha": "6ceda4987e8a",
-      "frames": 26,
-      "green_blocks": 1664,
-      "flat_blocks": 1549,
+      "bytes": 3158,
+      "sha": "215a6cec6206",
+      "frames": 28,
+      "green_blocks": 1792,
+      "flat_blocks": 1662,
       "avgU": 0.0,
       "avgV": 0.0,
-      "psnr": 3.62
+      "psnr": 3.65
     }
   },
   {
@@ -3008,14 +2976,14 @@
       "psnr": 25.46
     },
     "oracle": {
-      "bytes": 3158,
-      "sha": "cebb6c0fded9",
-      "frames": 26,
-      "green_blocks": 1664,
-      "flat_blocks": 1651,
+      "bytes": 3159,
+      "sha": "2b0070a1be14",
+      "frames": 25,
+      "green_blocks": 1600,
+      "flat_blocks": 1590,
       "avgU": 0.0,
       "avgV": 0.0,
-      "psnr": 3.62
+      "psnr": 3.6
     }
   },
   {
@@ -3064,14 +3032,14 @@
       "psnr": 25.48
     },
     "oracle": {
-      "bytes": 3172,
-      "sha": "b0a553dc3404",
-      "frames": 26,
-      "green_blocks": 1655,
-      "flat_blocks": 1643,
-      "avgU": 0.7,
-      "avgV": 0.7,
-      "psnr": 3.63
+      "bytes": 3177,
+      "sha": "733d889936f0",
+      "frames": 25,
+      "green_blocks": 1600,
+      "flat_blocks": 1590,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 3.6
     }
   },
   {
@@ -3120,14 +3088,14 @@
       "psnr": 25.47
     },
     "oracle": {
-      "bytes": 3172,
-      "sha": "17a306c9f7de",
-      "frames": 29,
-      "green_blocks": 1853,
-      "flat_blocks": 1820,
-      "avgU": 0.2,
-      "avgV": 0.2,
-      "psnr": 3.67
+      "bytes": 3177,
+      "sha": "f79321dca33e",
+      "frames": 28,
+      "green_blocks": 1792,
+      "flat_blocks": 1768,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 3.65
     }
   },
   {
@@ -3176,14 +3144,14 @@
       "psnr": 25.46
     },
     "oracle": {
-      "bytes": 3172,
-      "sha": "7453529e84f0",
-      "frames": 25,
-      "green_blocks": 1568,
-      "flat_blocks": 1476,
-      "avgU": 1.2,
-      "avgV": 3.5,
-      "psnr": 3.66
+      "bytes": 3177,
+      "sha": "9322f07b60eb",
+      "frames": 23,
+      "green_blocks": 1472,
+      "flat_blocks": 1426,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 3.59
     }
   },
   {
@@ -3232,14 +3200,14 @@
       "psnr": 32.07
     },
     "oracle": {
-      "bytes": 3172,
-      "sha": "ead4438caf0b",
-      "frames": 26,
-      "green_blocks": 1664,
-      "flat_blocks": 1605,
-      "avgU": 0.0,
-      "avgV": 0.1,
-      "psnr": 3.62
+      "bytes": 3177,
+      "sha": "14fdee2a74f4",
+      "frames": 27,
+      "green_blocks": 1719,
+      "flat_blocks": 1591,
+      "avgU": 0.7,
+      "avgV": 0.7,
+      "psnr": 3.65
     }
   },
   {
@@ -3283,9 +3251,14 @@
       "psnr": 26.99
     },
     "oracle": {
-      "bytes": 3175,
-      "sha": "94fc27753a54",
-      "decode": "FAIL"
+      "bytes": 3180,
+      "sha": "b347644b1cc2",
+      "frames": 27,
+      "green_blocks": 1728,
+      "flat_blocks": 1586,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 3.64
     }
   },
   {
@@ -3334,9 +3307,14 @@
       "psnr": 27.0
     },
     "oracle": {
-      "bytes": 3175,
-      "sha": "1c0fec9848fd",
-      "decode": "FAIL"
+      "bytes": 3180,
+      "sha": "67fd0fc208f4",
+      "frames": 25,
+      "green_blocks": 1600,
+      "flat_blocks": 1495,
+      "avgU": 0.0,
+      "avgV": 4.0,
+      "psnr": 3.64
     }
   }
 ]
