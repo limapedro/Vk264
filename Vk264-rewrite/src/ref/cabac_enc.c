@@ -604,11 +604,20 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                         rmb[(by+y)*16+bx+x]=(uint8_t)(v<0?0:(v>255?255:v));
                     }
                 }
-            } else
+            } else if (!use_i8)
                 compute_i16_full(frame, w, mx*16, my*16, pred, qp,
                                  q, acq, nnz, &cbp_luma, rmb, 0);
+            /* For I8x8 the analysis loop above has already reconstructed all
+             * four 8x8 blocks into rmb[].  Running compute_i16_full() here
+             * (the old `else` branch) overwrote them with an I16
+             * reconstruction while the bitstream still coded I8 residuals,
+             * so the decoded frame diverged from x264 in every I8 MB. */
             int nz = 0;
-            for (int i = 0; i < 16; ++i) if (q[i]) nz = 1;
+            if (use_i8) {
+                cbp_luma = i8cbp;
+                nz = i8cbp ? 1 : 0;
+            } else
+                for (int i = 0; i < 16; ++i) if (q[i]) nz = 1;
             /* chroma neighbours */
             uint8_t tu[8], lu[8], tv[8], lv[8], tlu, tlv;
             for (int i = 0; i < 8; ++i) {
