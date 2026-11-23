@@ -2219,3 +2219,20 @@ gradient -> V).
 This is a step toward RD-based I16/I8/I4 selection, but it is not wired into
 the encoder yet (I4x4 and I8x8 emitters remain opt-in). Gates: CTest 28/28 +
 65/65, CAVLC P 1360/1360, MP4 56/56, stage03 13/16.
+
+### Stage 03: intra-min hypothesis (this turn, reverted)
+
+x264 slicetype.c:762-773 takes min(inter ME, intra DC SAD) per MB for P frames.
+My `vk_lowres_p_cost` omitted it; the far-reference P costs being ~2x x264's
+looked consistent with intra being cheaper there. Implemented the per-MB intra
+DC cost and min with inter. Result: frame1 P(prev) stayed at 478 (intra never
+won for that frame), while other frames' costs dropped and agreement regressed
+13/16 -> 12/16. Reverted.
+
+So the far-reference P gap is NOT explained by the missing intra-min either.
+Across ~40 turns every isolated x264-faithful change (DIA, candidate start,
+hpel models, FPEL, intra min, interior-only scan, caching, BITS_MVD, exact
+lambda) has regressed or been neutral. The 13/16 configuration is an empirical
+fit; closing stage 03 requires a different strategy, not another tweak.
+
+Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56. Tree clean.
