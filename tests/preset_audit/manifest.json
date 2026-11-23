@@ -2947,10 +2947,10 @@
       "sha": "72518a1eae25",
       "frames": 28,
       "green_blocks": 0,
-      "flat_blocks": 64,
+      "flat_blocks": 65,
       "avgU": 123.1,
       "avgV": 133.9,
-      "psnr": 24.78
+      "psnr": 24.79
     }
   },
   {
