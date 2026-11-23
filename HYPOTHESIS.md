@@ -1694,3 +1694,37 @@ j=2 remains the key divergence: oracle cp=1319 cb=1431 (P wins) vs x264
 cp=639 cb=521 (B wins). Both costs are ~2x, B relatively more.
 
 Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56. Best 13/16.
+
+### Stage 03: systematic differential harness (this turn)
+
+Built per-MB differential comparison: `build/mbcost_dump.py` (x264 i_bcost +
+list_used) vs instrumented `vk_lowres_b_cost` (c0/c1/bipred/dmv + MVs), plus
+`build/pathcost_dump.py` for x264 path costs.
+
+**x264 B(1|0,2) interior MBs** (sum 203):
+```
+(2,2)=53 list=1(list0)   (1,2)=45 list=3(bipred)
+(2,1)=16 list=3(bipred)  (1,1)=89 list=3(bipred)
+```
+**Oracle λ=16**: 111/134/68/179 (~2.4x). c0(2,2)=128 vs x264 53 — gap
+exactly ~75 = 5*(16-1), i.e. the inflated `5*LAMBDA` penalty.
+
+**Oracle λ=1**: 36/59/9/104 (sum 208 ≈ x264 203); c0(2,2)=53 matches x264
+EXACTLY. So the per-MB cost model is correct at x264's true λ=1.
+
+**But decisions still fail at λ=1** (11/16): j=1 cp=369 cb=459 (P wins) vs
+x264 527/471 (B wins). Decomposing: my P(2<-1)=155 vs x264 ~299 — my hpel
+search finds far better matches for frame 2 than x264's DIA-from-predictor,
+so the relative P/B cost ordering inverts. λ=4 gives 12/16; no single λ
+satisfies both frames: frame 1 wants λ~1, frame 2 wants λ~8-16.
+
+**Conclusion:** the residual is NOT a cost constant — it's the search
+fidelity. With λ=1 the per-MB costs match x264, but my full-radius spiral +
+hpel refinement finds systematically better MVs than x264's DIA-from-mvp with
+one hpel iteration (frame2 P 155 vs 299). λ=16 masks this by inflating every
+cost, accidentally yielding better frame-type decisions (13/16). Fixing this
+requires emulating x264's DIA-from-neighbour-predictor search exactly (the
+earlier DIA attempt omitted the predictor and hpel interaction).
+
+No net code change; best verified state 13/16. Gates: CTest 27/27 + 65/65,
+CAVLC P 1360/1360, MP4 56/56.
