@@ -17,5 +17,7 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
 
 /* x264_mb_pred_mode4x4_fix: raw modes 9/10/11 map to DC(2) at write time. */
 int vk_i4x4_fix(int mode);
+void vk_predict4(uint8_t out[16],int mode,const uint8_t left[4],
+                 const uint8_t top[4],uint8_t lt,const uint8_t tr[4]);
 
 #endif

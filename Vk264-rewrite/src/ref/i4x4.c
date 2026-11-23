@@ -27,8 +27,8 @@ int vk_i4x4_fix(int m) { return (m >= 0 && m <= 8) ? m : 2; }
 static int F2(int a,int b,int c) { return (a + 2*b + c + 2) >> 2; }
 
 /* predictor for raw mode m into out[4][4] */
-static void predict4(int m, const uint8_t left[4], const uint8_t top[4],
-                     uint8_t lt, const uint8_t tr[4], uint8_t out[16])
+void vk_predict4(uint8_t out[16], int m, const uint8_t left[4], const uint8_t top[4],
+                 uint8_t lt, const uint8_t tr[4])
 {
     int l[8], t[8];
     for (int i=0;i<4;++i) { l[i]=left[i]; t[i]=top[i]; }
@@ -135,7 +135,7 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
         int best=0x7fffffff, bestm=2;
         for(int k=0;k<nc;++k) {
             int m=cands[k];
-            predict4(m,left,top,lt,tr,p);
+            vk_predict4(p,m,left,top,lt,tr);
             int sad=0;
             for(int i=0;i<16;++i) { int d=srcblock[i]-p[i]; sad += d<0?-d:d; }
             int c;
@@ -146,7 +146,7 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
         raw[idx]=bestm; modes_out[idx]=(uint8_t)bestm; total+=best;
 
         /* reconstruction feedback: predict, DCT, quant, dequant, IDCT, add */
-        predict4(bestm,left,top,lt,tr,p);
+        vk_predict4(p,bestm,left,top,lt,tr);
         int d[16]; uint8_t s[16];
         for(int i=0;i<16;++i) s[i]=srcblock[i];
         vk_ref_dct4x4(d, s, p);
