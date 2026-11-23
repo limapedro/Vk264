@@ -158,3 +158,7 @@ Full per-clip per-preset size/NAL tables: `PER_PRESET.md`, `manifest.json`.
   encode — fixing it would turn visually broken streams into merely
   non-byte-exact ones, a large quality win independent of stage 03.
 - SPS/PPS differences (class 1/2) are independent, localized header bugs.
+
+## PR: header parity progress
+
+All 10 presets now produce byte-identical SPS/PPS. Remaining failures are slice-level (stage-03 POC/slice types). Chart updated with 10/10 header parity and 2/10 byte-exact presets.
