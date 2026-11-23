@@ -36,3 +36,33 @@ double vk_rc_crf_constant(int mb_count,int has_bframes,double qcompress,
     return pow(base_cplx, 1.0 - qc)
          / vk_qp2qscale((float)(rf_constant + mbtree_offset));
 }
+
+double vk_rc_get_qscale(double blurred_complexity,double qcompress,
+                        double rate_factor)
+{
+    /* x264 ratecontrol.c:2014,2022: q = pow(cplx, 1-qcompress) / rate_factor.
+     * rcc->qcompress is a float, hence the cast to reproduce its rounding. */
+    float qc = (float)qcompress;
+    return pow(blurred_complexity, 1.0 - qc) / rate_factor;
+}
+
+void vk_rc_state_init(vk_rc_state_t *rc,int mb_count,int bframes,
+                      double qcompress,int mb_tree,double rf_constant)
+{
+    rc->short_term_cplxsum = 0;
+    rc->short_term_cplxcount = 0;
+    rc->qcompress = (float)qcompress;
+    rc->rate_factor_constant =
+        vk_rc_crf_constant(mb_count,bframes,rc->qcompress,mb_tree,rf_constant);
+}
+
+double vk_rc_frame_qscale(vk_rc_state_t *rc,double satd)
+{
+    /* x264 ratecontrol.c:2560-2566. */
+    rc->short_term_cplxsum  *= 0.5;
+    rc->short_term_cplxcount *= 0.5;
+    rc->short_term_cplxsum  += satd;
+    rc->short_term_cplxcount += 1.0;
+    double blurred = rc->short_term_cplxsum / rc->short_term_cplxcount;
+    return vk_rc_get_qscale(blurred,rc->qcompress,rc->rate_factor_constant);
+}

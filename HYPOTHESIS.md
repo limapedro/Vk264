@@ -1964,3 +1964,34 @@ Tried x264's exact interior-only MB scan (edge MVs stay zero) -- regressed
 empirical fit whose residual is not closable by isolated fidelity changes.
 
 Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56. Tree clean.
+
+### Stage 10: CRF qscale + stateful blur ported and wired into the oracle (this turn)
+
+Added to `ratecontrol.c/h`, all with exact x264 oracle fixtures:
+- `vk_rc_get_qscale(cplx,qcompress,rf)` = pow(cplx,1-qcompress)/rf
+  (ratecontrol.c:2014,2022). Fixtures from `build/crf_qscale_dump.py` for
+  CRF 18/23/28 match to <2e-6.
+- `vk_rc_state_t` + `vk_rc_state_init` + `vk_rc_frame_qscale`: x264's
+  1-pass short-term complexity blur (ratecontrol.c:2560-2566):
+  `sum*=0.5; count*=0.5; sum+=satd; count++; blurred=sum/count`.
+  SATD fixtures derived from `build/crf_state_dump.py` (sumnew=0.5*sumprev+satd)
+  and expected qscales from crf_qscale_dump.py all pass.
+
+Wired into `oracle_video_cli.c` behind env var `VK264_CRF` (opt-in, so the
+verified fixed-QP byte-exact paths are untouched). Each frame's complexity is
+its lookahead cost — matching x264's `x264_rc_analyse_slice` which returns
+`i_cost_est[][]` — computed via `vk_lowres_i_cost` (IDR) / `vk_lowres_p_cost`;
+qscale -> QP via `vk_qscale2qp`, clamped to [0,51].
+
+End-to-end evidence (64x64 superfast, 8 frames):
+```
+CRF 18 -> 5253 bytes
+CRF 23 -> 3686 bytes
+CRF 28 -> 2480 bytes
+```
+monotonic as expected. CRF is NOT yet byte-exact against x264 (the per-frame
+QP offsets for I/B and mb-tree are still missing), but it is a real wired
+rate-control mode rather than a standalone primitive.
+
+Gates unchanged: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56,
+compare_slicetype 13/16.

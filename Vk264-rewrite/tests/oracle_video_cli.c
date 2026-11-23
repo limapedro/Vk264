@@ -19,6 +19,8 @@
 #include "i8x8enc.h"
 #include "bslice.h"
 #include "slicetype.h"
+#include "lowres.h"
+#include "ratecontrol.h"
 #include "encoder.h"
 #include "cabac.h"
 #include "cabac_enc.h"
@@ -142,6 +144,20 @@ int main(int argc, char **argv)
     int entropy = atoi(argv[6]), keyint = atoi(argv[7]), nframes = atoi(argv[8]);
     if (w % 16 || h % 16 || nframes < 1 || keyint < 1) return 2;
     int mw = w/16, mh = h/16;
+    /* Optional CRF: x264 derives each frame's complexity from its lookahead
+     * cost (x264_rc_analyse_slice -> i_cost_est) and feeds it through the
+     * ratecontrol state to pick a QP. Off by default: fixed-QP paths stay
+     * byte-exact. */
+    const char *crf_env = getenv("VK264_CRF");
+    double crf = crf_env ? atof(crf_env) : -1.0;
+    vk_rc_state_t rc;
+    int dw = w/2, dh = h/2;
+    uint8_t *lo_cur = NULL, *lo_ref = NULL;
+    if (crf >= 0) {
+        vk_rc_state_init(&rc, mw*mh, strstr(preset,"ultrafast") ? 0 : 1, 0.6, 0, crf);
+        lo_cur = malloc((size_t)dw*dh*VK_LOWRES_PLANES);
+        lo_ref = malloc((size_t)dw*dh*VK_LOWRES_PLANES);
+    }
     size_t fs = (size_t)w*h*3/2;
     uint8_t *frames = malloc(fs);
     FILE *fi = fopen(argv[1], "rb");
@@ -214,6 +230,16 @@ int main(int argc, char **argv)
         if (allframes) memcpy(frames, allframes+(size_t)f*fs, fs);
         else if (fread(frames, 1, fs, fi) != fs) { fprintf(stderr, "short input at frame %d\n", f); break; }
         int is_idr = stypes ? (stypes[f].type == VK_FRAME_IDR) : (f % keyint == 0);
+        if (crf >= 0) {
+            vk_lowres_luma(frames, w, h, lo_cur, dw, dh);
+            double cost = is_idr ? vk_lowres_i_cost(lo_cur, dw, dh)
+                                 : vk_lowres_p_cost(lo_cur, lo_ref, dw, dh, NULL);
+            double q = vk_rc_frame_qscale(&rc, cost);
+            int crf_qp = (int)(vk_qscale2qp((float)q) + 0.5f);
+            if (crf_qp < 0) crf_qp = 0; if (crf_qp > 51) crf_qp = 51;
+            qp_i = qp_p = crf_qp;
+            memcpy(lo_ref, lo_cur, (size_t)dw*dh*VK_LOWRES_PLANES);
+        }
         memset(buf, 0, sizeof(buf)); vk_bs_init(&bs, buf, sizeof(buf));
         if (is_idr) {
             int idr_pic_id = idr_count & 1;

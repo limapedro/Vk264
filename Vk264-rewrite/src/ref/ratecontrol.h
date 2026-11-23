@@ -25,4 +25,21 @@ double vk_qscale2bits(double tex_bits, double qscale, double rce_qscale);
 double vk_rc_crf_constant(int mb_count,int has_bframes,double qcompress,
                           int mb_tree,double rf_constant);
 
+/* x264 encoder/ratecontrol.c:2014-2023 get_qscale: CRF qscale from the
+ * frame's blurred complexity: pow(cplx, 1-qcompress) / rate_factor. */
+double vk_rc_get_qscale(double blurred_complexity,double qcompress,
+                        double rate_factor);
+
+/* x264 single-pass CRF state: short_term_cplxsum/count (ratecontrol.c:2560-
+ * 2566). Call vk_rc_frame_qscale once per coded frame with its SATD. */
+typedef struct {
+    double short_term_cplxsum, short_term_cplxcount;
+    double rate_factor_constant;
+    float qcompress;
+} vk_rc_state_t;
+
+void vk_rc_state_init(vk_rc_state_t *rc,int mb_count,int bframes,
+                      double qcompress,int mb_tree,double rf_constant);
+double vk_rc_frame_qscale(vk_rc_state_t *rc,double satd);
+
 #endif
