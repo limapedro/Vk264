@@ -1576,3 +1576,43 @@ n_mbs=0 so the dmv candidate was always disabled, masking its behaviour).
 B/P gap is in the per-MB bipred ME fidelity (x264's neighbour-MV prediction
 and dmv candidate), NOT the cost primitive constants, ME skip, or lambda.
 Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03: neighbour-MV bipred port + exhaustive negative results (this turn)
+
+**Implemented** x264's per-MB bipred ME fidelity in `vk_lowres_b_cost`
+(lowres.c): reverse-order MB scan (high x/y first), neighbour MV prediction
+from right/bottom/bottom-left/bottom-right with median3, DIA search starting
+at the predictor (`me_search_pred`), near-zero skip, and the four x264
+candidates at their correct penalties (zero-MV bipred 0, dmv-from-future-ref
+0, list0/list1 single 5*lambda, searched bipred 5*lambda). Removed the two
+now-unused legacy helpers. Result: **12/16 unchanged** — more x264-faithful,
+no regression, kept as the basis for future dmv-cache work.
+
+**Verified byte-exact lowres downsample.** `build/lowres_dump.py` dumped x264's
+frame0 `lowres[0]` (32x32) and compared to my FILTER output: **0 differing
+bytes** out of 1024. The downsample is not the cost gap.
+
+**Verified constants.** `encoder.c:1411` mbcmp=SAD for i_subpel_refine<=1
+(superfast=1, and lowres_context_init only overrides h->mb.i_subpel_refine,
+not pixf.mbcmp). `x264_lambda_tab[X264_LOOKAHEAD_QP=12]=1`. My `mv_cost`
+formula `log2(i+1)*2+1.718` matches x264 `analyse.c:186-188` exactly.
+
+**Negative results (all reverted):**
+- ME skip (SAD0<64): 12/16 -> 9/16.
+- LAMBDA=1 (x264-correct) with original search: 12/16 -> 8/16; with full-radius
+  search: 10/16. LAMBDA=16 empirically compensates for other model errors.
+- Removing the spiral early break (rad>4): 12/16 -> 11/16, though it flips j=1
+  to the CORRECT B decision (cp=904 cb=886 vs x264 527/471) but then breaks j=2.
+- Search radius 24: 11/16. Radius 4 for bipred: no change.
+
+**Root-cause evidence.** Direct zero-MV SAD on byte-exact lowres frames:
+```
+MB(1,1)=1693  MB(2,1)=111  MB(1,2)=406  MB(2,2)=1386
+```
+x264's per-MB P costs for these MBs are 53/68/17/111 — its DIA ME from the
+neighbour predictor finds far better matches than my spiral. The remaining
+gap is the exact `x264_me_search` macro interaction (COST_MV with BITS_MVD
+during search, hpel planes, exact DIA stepping), now localized conclusively.
+
+Best verified state: 12/16, neighbour-MV bipred port retained. Gates:
+CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.

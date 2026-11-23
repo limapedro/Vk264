@@ -97,83 +97,110 @@ int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
     return total;
 }
 
-/* Zero-MV bidirectional: x264 TRY_BIDIR(dmv=0, penalty=0), which is often
- * the cheapest candidate for similar frames. */
-static int mb_b_cost_zero(const uint8_t *cur,int dw,int bx,int by,
-                          const uint8_t *r0,const uint8_t *r1)
+static int median3(int a,int b,int c)
 {
-    uint8_t avg[64];
-    for(int y=0;y<8;++y) for(int x=0;x<8;++x)
-        avg[y*8+x]=(uint8_t)((r0[(by+y)*dw+bx+x]+r1[(by+y)*dw+bx+x]+1)>>1);
-    return satd8(cur,dw,bx,by,avg,8,0,0) + LOWRES_PENALTY;
+    int t;
+    if(a>b){t=a;a=b;b=t;}
+    if(b>c){t=b;b=c;c=t;}
+    if(a>b){t=a;a=b;b=t;}
+    return b;
 }
 
-/* Bidirectional cost with per-list MV search, then average at found MVs. */
-static int mb_b_cost(const uint8_t *cur,int dw,int dh,int bx,int by,
-                     const uint8_t *r0,const uint8_t *r1)
+/* x264 me.c:322 X264_ME_DIA - radius-1 diamond stepping from the predictor. */
+static int me_search_pred(const uint8_t *cur,int dw,int bx,int by,
+                          const uint8_t *ref,int rh,int mvpx,int mvpy,
+                          int *bmx,int *bmy)
 {
-    /* find best integer MV for each list independently (small diamond) */
-    int m0x=0,m0y=0,m1x=0,m1y=0;
-    int b0=satd8(cur,dw,bx,by,r0,dw,bx,by);
-    int b1=satd8(cur,dw,bx,by,r1,dw,bx,by);
-    static const int dir[4][2]={{1,0},{-1,0},{0,1},{0,-1}};
-    for(int rad=1;rad<=8;++rad){
-        int imp0=0,imp1=0;
+    int maxx=dw-8-bx, maxy=rh-8-by;
+    int cx = mvpx<-bx ? -bx : (mvpx>maxx?maxx:mvpx);
+    int cy = mvpy<-by ? -by : (mvpy>maxy?maxy:mvpy);
+    int best=satd8(cur,dw,bx,by,ref,dw,bx+cx,by+cy);
+    static const int dd[4][2]={{0,-1},{0,1},{-1,0},{1,0}};
+    for(int it=0;it<24;++it){
+        int bi=-1,bv=best;
         for(int k=0;k<4;++k){
-            int dx=dir[k][0]*rad,dy=dir[k][1]*rad;
-            int sx=bx+dx,sy=by+dy;
-            if(sx<0||sy<0||sx+8>dw||sy+8>dh) continue;
-            int c0=satd8(cur,dw,bx,by,r0,dw,sx,sy)+(dx||dy?0:2*mv_cost(0));
-            int c1=satd8(cur,dw,bx,by,r1,dw,sx,sy)+(dx||dy?0:2*mv_cost(0));
-            if(c0<b0){b0=c0;m0x=dx;m0y=dy;imp0=1;}
-            if(c1<b1){b1=c1;m1x=dx;m1y=dy;imp1=1;}
+            int sx=cx+dd[k][0], sy=cy+dd[k][1];
+            if(bx+sx<0||by+sy<0||bx+sx>dw-8||by+sy>rh-8) continue;
+            int c=satd8(cur,dw,bx,by,ref,dw,bx+sx,by+sy);
+            if(c<bv){bv=c;bi=k;}
         }
-        if(!imp0&&!imp1&&rad>2) break;
+        if(bi<0) break;
+        cx+=dd[bi][0]; cy+=dd[bi][1]; best=bv;
     }
-    uint8_t avg[64];
-    for(int y=0;y<8;++y) for(int x=0;x<8;++x)
-        avg[y*8+x]=(uint8_t)((r0[(by+m0y+y)*dw+bx+m0x+x]+
-                              r1[(by+m1y+y)*dw+bx+m1x+x]+1)>>1);
-    int satd=satd8(cur,dw,bx,by,avg,8,0,0);
-    int penalty = (m0x||m0y||m1x||m1y) ? 5*LAMBDA : 0;
-    return satd + penalty + LOWRES_PENALTY;
+    *bmx=cx; *bmy=cy;
+    return best;
 }
 
-/* B frame cost: min of list0 P, list1 P, zero-MV bidir and dmv-predicted bidir. */
+/* B frame cost with x264's reverse-order per-MB ME and neighbour MV prediction
+ * (slicetype.c:654-709), penalty-0 dmv/zero-MV bipred candidates, and
+ * penalty-5*lambda searched bipred. */
 int vk_lowres_b_cost(const uint8_t *cur,const uint8_t *r0,const uint8_t *r1,
                      int dw,int dh,const vk_lowres_mv_t *st_p0,
                      const vk_lowres_mv_t *st_p1,int p0,int p1,int b)
 {
-    int total=0, mb=0;
-    /* x264 dist_scale_factor; dmv is per-MB from fref1's lowres MV. */
-    int dsf = (p1!=p0) ? (((b-p0)<<8) + ((p1-p0)>>1))/(p1-p0) : 128;
-    int dmx=0,dmy=0;
-    for(int by=0;by+8<=dh;by+=8) for(int bx=0;bx+8<=dw;bx+=8){
-        int c0=mb_p_cost(cur,dw,bx,by,r0,bx,by)-mv_cost(0)+LOWRES_PENALTY;
-        int c1=mb_p_cost(cur,dw,bx,by,r1,bx,by)-mv_cost(0)+LOWRES_PENALTY;
-        int cb=mb_b_cost(cur,dw,dh,bx,by,r0,r1);
-        int cz=mb_b_cost_zero(cur,dw,bx,by,r0,r1);
-        /* x264 dmv: scale the FUTURE ref's per-MB MV by dist_scale_factor. */
-        int cd=0x7fffffff;
+    int nbx=dw/8, nby=dh/8, total=0;
+    int dsf=(p1!=p0)?(((b-p0)<<8)+((p1-p0)>>1))/(p1-p0):128;
+    int16_t mv[2][VK_LOWRES_MAX_MBS][2];
+    memset(mv,0,sizeof(mv));
+    /* reverse scan: high x/y first so right/bottom neighbours are available */
+    for(int my=nby-1;my>=0;--my) for(int mx=nbx-1;mx>=0;--mx){
+        int mb=my*nbx+mx, bx=mx*8, by=my*8;
+        for(int l=0;l<2;++l){
+            int mc[4][2],n=0;
+            if(mx<nbx-1){mc[n][0]=mv[l][mb+1][0];mc[n][1]=mv[l][mb+1][1];n++;}
+            if(my<nby-1){
+                mc[n][0]=mv[l][mb+nbx][0];mc[n][1]=mv[l][mb+nbx][1];n++;
+                if(mx>0){mc[n][0]=mv[l][mb+nbx-1][0];mc[n][1]=mv[l][mb+nbx-1][1];n++;}
+                if(mx<nbx-1){mc[n][0]=mv[l][mb+nbx+1][0];mc[n][1]=mv[l][mb+nbx+1][1];n++;}
+            }
+            int px=0,py=0;
+            if(n==1){px=mc[0][0];py=mc[0][1];}
+            else if(n>=2){px=median3(mc[0][0],mc[1][0],mc[2][0]);py=median3(mc[0][1],mc[1][1],mc[2][1]);}
+            const uint8_t *ref=l?r1:r0;
+            int mxv=0,myv=0;
+            if(px==0&&py==0&&satd8(cur,dw,bx,by,ref,dw,bx,by)<64)
+                ; /* x264 skip: mv=0, cost=SAD0 */
+            else
+                me_search_pred(cur,dw,bx,by,ref,dh,px,py,&mxv,&myv);
+            mv[l][mb][0]=mxv; mv[l][mb][1]=myv;
+        }
+        /* list0 / list1 single-prediction costs */
+        int c0=satd8(cur,dw,bx,by,r0,dw,bx+mv[0][mb][0],by+mv[0][mb][1])+LOWRES_PENALTY;
+        int c1=satd8(cur,dw,bx,by,r1,dw,bx+mv[1][mb][0],by+mv[1][mb][1])+LOWRES_PENALTY;
+        if(mv[0][mb][0]||mv[0][mb][1]) c0+=5*LAMBDA;
+        if(mv[1][mb][0]||mv[1][mb][1]) c1+=5*LAMBDA;
+        /* zero-MV bipred (penalty 0) */
+        uint8_t avg[64];
+        for(int y=0;y<8;++y) for(int x=0;x<8;++x)
+            avg[y*8+x]=(uint8_t)((r0[(by+y)*dw+bx+x]+r1[(by+y)*dw+bx+x]+1)>>1);
+        int m=satd8(cur,dw,bx,by,avg,8,0,0)+LOWRES_PENALTY;
+        if(c0<m)m=c0; if(c1<m)m=c1;
+        /* dmv-predicted bipred from future ref (penalty 0) */
         if(st_p1 && mb<st_p1->n_mbs){
-            int dmx=(st_p1->mv[mb][0]*dsf + 128)>>8;
-            int dmy=(st_p1->mv[mb][1]*dsf + 128)>>8;
+            int dmx=(st_p1->mv[mb][0]*dsf+128)>>8;
+            int dmy=(st_p1->mv[mb][1]*dsf+128)>>8;
             int dmx2=dmx-st_p1->mv[mb][0], dmy2=dmy-st_p1->mv[mb][1];
-            uint8_t avg[64]; int ok=1;
+            int ok=1;
             for(int y=0;y<8;++y) for(int x=0;x<8;++x){
                 int sx=bx+dmx+x, sy=by+dmy+y;
                 int sx2=bx+dmx2+x, sy2=by+dmy2+y;
-                if(sx<0||sy<0||sx+8>dw||sy+8>dh||
-                   sx2<0||sy2<0||sx2+8>dw||sy2+8>dh){ok=0;break;}
+                if(sx<0||sy<0||sx+8>dw||sy+8>dh||sx2<0||sy2<0||sx2+8>dw||sy2+8>dh){ok=0;break;}
                 avg[y*8+x]=(uint8_t)((r0[sy*dw+sx]+r1[sy2*dw+sx2]+1)>>1);
             }
-            if(ok) cd=satd8(cur,dw,bx,by,avg,8,0,0)+LOWRES_PENALTY;
+            if(ok){int cd=satd8(cur,dw,bx,by,avg,8,0,0)+LOWRES_PENALTY; if(cd<m)m=cd;}
         }
-        int m=c0<c1?c0:c1; if(cb<m) m=cb; if(cz<m) m=cz; if(cd<m) m=cd;
-        int nbx=(dw/8), nby=(dh/8), mx=(bx/8), my=(by/8);
-        if(nbx<=2 || nby<=2 || (mx>0 && mx<nbx-1 && my>0 && my<nby-1))
-            total+=m;
-        mb++;
+        /* searched bipred (penalty 5*lambda) */
+        if(mv[0][mb][0]||mv[0][mb][1]||mv[1][mb][0]||mv[1][mb][1]){
+            int ok=1;
+            for(int y=0;y<8;++y) for(int x=0;x<8;++x){
+                int sx=bx+mv[0][mb][0]+x, sy=by+mv[0][mb][1]+y;
+                int sx2=bx+mv[1][mb][0]+x, sy2=by+mv[1][mb][1]+y;
+                if(sx<0||sy<0||sx+8>dw||sy+8>dh||sx2<0||sy2<0||sx2+8>dw||sy2+8>dh){ok=0;break;}
+                avg[y*8+x]=(uint8_t)((r0[sy*dw+sx]+r1[sy2*dw+sx2]+1)>>1);
+            }
+            if(ok){int cs=satd8(cur,dw,bx,by,avg,8,0,0)+5*LAMBDA+LOWRES_PENALTY; if(cs<m)m=cs;}
+        }
+        if(nbx<=2||nby<=2||(mx>0&&mx<nbx-1&&my>0&&my<nby-1)) total+=m;
     }
     return total;
 }
