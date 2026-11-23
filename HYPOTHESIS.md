@@ -1482,3 +1482,17 @@ VK_FRAME types (2=P,4=B,0=IDR). Corrected result: **7/16 frame types agree**
 where oracle picks P; oracle picks B for 2,10,12,14 where x264 picks P/B.
 
 Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03 DIA-search experiment (this turn, reverted)
+Ported x264 me.c:322 X264_ME_DIA (radius-1 diamond stepping until no
+improvement) in place of the spiral search. Result REGRESSED frame-type
+agreement from 7/16 to 4/16 (and introduced spurious IDR decisions), so the
+change was reverted. The spiral search, though not textually identical to
+x264's DIA, finds better MVs and yields costs/agreement closer to x264.
+
+This confirms that the remaining B/P decision gap is NOT the ME search
+pattern — it is elsewhere (likely AQ weighting / row-SATD / the exact
+`x264_me_search` cost predicate interaction). Best verified state remains
+7/16 with costs ~2x x264's. Tree clean at 2f63298.
+
+Gates unchanged: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
