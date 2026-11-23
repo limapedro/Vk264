@@ -1496,3 +1496,20 @@ pattern — it is elsewhere (likely AQ weighting / row-SATD / the exact
 7/16 with costs ~2x x264's. Tree clean at 2f63298.
 
 Gates unchanged: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03 exact lowres downsample filter (this turn)
+Replaced the 2x2 box downsample with x264 common/mc.c:494's exact
+`FILTER(a,b,c,d) = (((a+b+1)>>1)+((c+d+1)>>1)+1)>>1` (matches x264's asm).
+Costs shifted slightly closer: frame1 P 503->495, frame2 P 440->424.
+Frame-type agreement remains 7/16 — the filter was not the blocker.
+
+The lowres cost model is now structurally faithful (SAD for subme<=1,
+interior-MB gating, exact MV-cost table, exact downsample filter, per-MB
+dmv with dist_scale_factor, path-- indexing, B scale 100/120) but numeric
+parity is not achieved: costs ~2x x264's. Remaining gap is in x264's
+`x264_me_search` cost-predicate interaction / row-SATD accumulation.
+
+Note: VK_SLICETYPE_CLI gating is intentionally kept — removing it while
+frame types disagree would break the verified 56/56 byte-exact streams.
+
+Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.

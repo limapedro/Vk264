@@ -22,10 +22,14 @@ static uint16_t mv_cost(int mv)
 
 void vk_lowres_luma(const uint8_t *src,int sw,int sh,uint8_t *dst,int dw,int dh)
 {
+    /* x264 common/mc.c frame_init_lowres_core:494 FILTER macro (matches asm).
+     * FILTER(a,b,c,d) = (((a+b+1)>>1)+((c+d+1)>>1)+1)>>1 */
+#define LF(a,b,c,d) ((((a)+(b)+1)>>1)+(((c)+(d)+1)>>1)+1)>>1
     for(int y=0;y<dh;++y) for(int x=0;x<dw;++x){
         const uint8_t *p=src+(2*y)*sw+2*x;
-        dst[y*dw+x]=(uint8_t)((p[0]+p[1]+p[sw]+p[sw+1]+2)>>2);
+        dst[y*dw+x]=(uint8_t)(LF(p[0],p[sw],p[1],p[sw+1]));
     }
+#undef LF
 }
 
 void vk_lowres_mv_init(vk_lowres_mv_t *st,int dw,int dh)
