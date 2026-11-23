@@ -94,6 +94,39 @@ visually broken streams directly to the stage-03 gap.
 (`psnr=-1`). The streams are malformed for short clips too, independently of
 the length-driven NAL-count issue.
 
+## Per-preset first-difference map (8f, CABAC, 3 clips)
+
+`build/per_preset_report.py` compares the concatenated NAL payloads (the
+meaningful "byte-exact" unit — raw `.h264`/MP4 files differ only by x264's
+trailing padding and container metadata; e.g. exp001 x264 840 raw bytes vs
+oracle 297, but all 4 NAL payloads total 281 bytes and are identical).
+
+| preset | first diverging NAL | meaning |
+|---|---|---|
+| ultrafast | — | **byte-exact** on all 3 clips |
+| superfast | NAL2 (IDR slice) len 130/204; sometimes NAL count 12/10 | slice data / extra I-slices |
+| veryfast, faster | NAL2 (IDR slice) len 128–150 / 172–204; sometimes NAL count | slice data |
+| fast, medium, slow | **NAL1 (PPS) len 6/5** | PPS encoding differs |
+| slower | **NAL0 (SPS) len 23/24** | SPS has one extra byte |
+| veryslow, placebo | **NAL0 byte5 0x72 / 0x34** | SPS field differs (`max_num_ref_frames` etc.) |
+
+Note the SPS `max_num_ref_frames` parsed by `build/deep_preset_analysis.py`
+actually matches between x264 and oracle (4/4, 16/16 etc.) — so the byte-5
+difference is a different packed SPS field, needing a bit-level diff.
+
+## Bitrate / size is genuinely different (not just padding)
+
+Aggregate NAL bytes across the audit show the oracle produces far fewer coded
+bytes for most presets: e.g. 8f fast CABAC x264 5313 vs oracle 3819 (ratio
+0.72); 2f fast CABAC x264 2724 vs oracle 1078 (ratio 0.40). This is not a
+container artifact — the coded slice data itself is smaller/different because
+the oracle lacks the analyser decisions (subpel ME, trellis, RD, adaptive
+quant, B-frame决策). **Byte-exact parity requires these encoders to make
+identical decisions**, so matching bitrate is a symptom of the same underlying
+gap, not a separate cosmetic issue.
+
+Full per-clip per-preset size/NAL tables: `PER_PRESET.md`, `manifest.json`.
+
 ## What this changes about the roadmap
 
 - Stage 03 (slicetype) explains failure class 3 (NAL count) and is still
