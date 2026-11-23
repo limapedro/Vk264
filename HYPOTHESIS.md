@@ -1513,3 +1513,21 @@ Note: VK_SLICETYPE_CLI gating is intentionally kept — removing it while
 frame types disagree would break the verified 56/56 byte-exact streams.
 
 Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03 BITS_MVD experiment (this turn, reverted)
+x264 me.c:60/65 `COST_MV` adds `BITS_MVD(mx,my)=p_cost_mv[mx]+p_cost_mv[my]`
+DURING search. Added the same to `mb_p_cost`. Result REGRESSED agreement
+7/16 -> 3/16 and inflated costs (frame1 P 495->980). Reverted.
+
+Combined with the earlier DIA-search regression, this indicates the lowres
+ME/cost model is NOT the source of the remaining B/P decision gap: two
+"more faithful" changes both regress. The best-verified model (spiral
+search, MV cost only for zero-MV candidate, interior-MB gating, exact
+downsample filter, SAD, per-MB dmv, B scale 100/120) gives 7/16 agreement
+with costs ~2x x264's. The remaining gap likely lies in x264's AQ-weighted
+cost path (i_inv_qscale_factor) or the exact frame-cost caching across
+multiple slicetype passes, not the per-MB cost primitive.
+
+Tree clean at c69aa91 (docs snapshot may be one commit ahead).
+
+Gates unchanged: CTest 27/27 + 65/65, MP4 56/56.
