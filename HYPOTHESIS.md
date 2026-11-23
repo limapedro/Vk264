@@ -2259,3 +2259,15 @@ types. Any further progress needs a component-by-component bit-exact port of
 x264's entire lookahead state machine validated against those dumps.
 
 Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56. Tree clean.
+
+### Stage 03: scenecut pre-analysis pass (this turn, no effect)
+
+x264 `x264_slicetype_analyse` runs `scenecut(frames,0,1)` before the b-adapt
+loop, which computes P(1<-0) (the `FC 0 1 1 score=246` seen first in
+fcache_dump.py). Added an equivalent pre-pass in `vk_slicetype_decide` to seed
+the lowres MV state before the path loop. Result: no change (13/16) — the
+path evaluation recomputes P costs and the seeded MVs do not alter decisions.
+
+Reverted; tree clean. Stage 03 remains conclusively blocked under incremental
+changes; all differential artifacts preserved in build/.
+Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56.
