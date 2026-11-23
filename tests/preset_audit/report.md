@@ -7,7 +7,7 @@
 | 001 | warzone2020 | 2 | ultrafast | cavlc | BYTE-EXACT | 45.61 | 45.61 | 0 |
 | 002 | warzone2020 | 2 | ultrafast | cabac | BYTE-EXACT | 45.61 | 45.61 | 0 |
 | 003 | warzone2020 | 2 | superfast | cavlc | NAL2 byte4 | -1 | -1 | -1 |
-| 004 | warzone2020 | 2 | superfast | cabac | NAL2 byte67 | -1 | -1 | -1 |
+| 004 | warzone2020 | 2 | superfast | cabac | NAL2 byte80 | -1 | -1 | -1 |
 | 005 | warzone2020 | 2 | veryfast | cavlc | NAL2 byte4 | -1 | -1 | -1 |
 | 006 | warzone2020 | 2 | veryfast | cabac | NAL2 byte16 | -1 | -1 | -1 |
 | 007 | warzone2020 | 2 | faster | cavlc | NAL2 byte4 | -1 | -1 | -1 |
@@ -27,7 +27,7 @@
 | 021 | warzone2020 | 8 | ultrafast | cavlc | BYTE-EXACT | 40.15 | 40.15 | 0 |
 | 022 | warzone2020 | 8 | ultrafast | cabac | BYTE-EXACT | 40.15 | 40.15 | 0 |
 | 023 | warzone2020 | 8 | superfast | cavlc | NAL2 byte4 | 24.49 | 21.86 | 0 |
-| 024 | warzone2020 | 8 | superfast | cabac | NAL2 byte67 | 24.49 | 9.52 | 192 |
+| 024 | warzone2020 | 8 | superfast | cabac | NAL2 byte80 | 24.49 | 9.52 | 192 |
 | 025 | warzone2020 | 8 | veryfast | cavlc | NAL2 byte4 | 24.51 | 21.86 | 0 |
 | 026 | warzone2020 | 8 | veryfast | cabac | NAL2 byte16 | 24.52 | 9.52 | 192 |
 | 027 | warzone2020 | 8 | faster | cavlc | NAL2 byte4 | 24.5 | 22.16 | 0 |
@@ -37,9 +37,9 @@
 | 031 | warzone2020 | 8 | medium | cavlc | NAL2 byte10 | 24.46 | 22.2 | 0 |
 | 032 | warzone2020 | 8 | medium | cabac | NAL2 byte5 | 24.43 | 9.41 | 384 |
 | 033 | warzone2020 | 8 | slow | cavlc | NAL2 byte10 | 24.4 | 22.2 | 0 |
-| 034 | warzone2020 | 8 | slow | cabac | NAL2 byte5 | 24.43 | 9.47 | 315 |
+| 034 | warzone2020 | 8 | slow | cabac | NAL2 byte5 | 24.43 | 9.5 | 315 |
 | 035 | warzone2020 | 8 | slower | cavlc | NAL2 byte10 | 24.69 | 22.2 | 0 |
-| 036 | warzone2020 | 8 | slower | cabac | NAL2 byte5 | 24.7 | 9.48 | 374 |
+| 036 | warzone2020 | 8 | slower | cabac | NAL2 byte5 | 24.7 | 9.53 | 374 |
 | 037 | warzone2020 | 8 | veryslow | cavlc | NAL2 byte10 | 28.74 | - | - |
 | 038 | warzone2020 | 8 | veryslow | cabac | NAL2 byte6 | 28.83 | - | - |
 | 039 | warzone2020 | 8 | placebo | cavlc | NAL2 byte10 | 24.24 | - | - |
@@ -51,19 +51,19 @@
 | 045 | warzone2020 | 30 | veryfast | cavlc | NAL COUNT 36/32 | 28.06 | 21.09 | 0 |
 | 046 | warzone2020 | 30 | veryfast | cabac | NAL COUNT 36/32 | 28.06 | 9.47 | 1792 |
 | 047 | warzone2020 | 30 | faster | cavlc | NAL COUNT 36/32 | 28.06 | 20.6 | 0 |
-| 048 | warzone2020 | 30 | faster | cabac | NAL COUNT 36/32 | 28.06 | 9.45 | 1728 |
+| 048 | warzone2020 | 30 | faster | cabac | NAL COUNT 36/32 | 28.06 | 9.45 | 1600 |
 | 049 | warzone2020 | 30 | fast | cavlc | NAL COUNT 36/32 | 28.08 | 20.6 | 0 |
-| 050 | warzone2020 | 30 | fast | cabac | NAL COUNT 36/32 | 28.04 | 9.45 | 1728 |
+| 050 | warzone2020 | 30 | fast | cabac | NAL COUNT 36/32 | 28.04 | 9.45 | 1600 |
 | 051 | warzone2020 | 30 | medium | cavlc | NAL COUNT 36/32 | 28.06 | 20.78 | 0 |
-| 052 | warzone2020 | 30 | medium | cabac | NAL COUNT 36/32 | 28.03 | 9.47 | 1920 |
+| 052 | warzone2020 | 30 | medium | cabac | NAL COUNT 36/32 | 28.03 | 9.44 | 1664 |
 | 053 | warzone2020 | 30 | slow | cavlc | NAL COUNT 36/32 | 28.02 | 20.78 | 0 |
-| 054 | warzone2020 | 30 | slow | cabac | NAL COUNT 36/32 | 28.04 | 9.48 | 1787 |
+| 054 | warzone2020 | 30 | slow | cabac | NAL COUNT 36/32 | 28.04 | 9.47 | 1595 |
 | 055 | warzone2020 | 30 | slower | cavlc | NAL2 byte10 | 29.13 | 20.78 | 0 |
-| 056 | warzone2020 | 30 | slower | cabac | NAL2 byte5 | 29.14 | 9.51 | 1782 |
+| 056 | warzone2020 | 30 | slower | cabac | NAL2 byte5 | 29.14 | 9.51 | 1846 |
 | 057 | warzone2020 | 30 | veryslow | cavlc | NAL2 byte10 | 35.92 | - | - |
 | 058 | warzone2020 | 30 | veryslow | cabac | NAL2 byte6 | 35.89 | - | - |
 | 059 | warzone2020 | 30 | placebo | cavlc | NAL2 byte10 | 22.84 | - | - |
-| 060 | warzone2020 | 30 | placebo | cabac | NAL2 byte6 | 22.85 | - | - |
+| 060 | warzone2020 | 30 | placebo | cabac | NAL2 byte6 | 22.85 | 9.7 | 1024 |
 | 061 | forza | 2 | ultrafast | cavlc | BYTE-EXACT | 43.05 | 43.05 | 0 |
 | 062 | forza | 2 | ultrafast | cabac | BYTE-EXACT | 43.05 | 43.05 | 0 |
 | 063 | forza | 2 | superfast | cavlc | NAL2 byte4 | -1 | -1 | -1 |
@@ -87,40 +87,40 @@
 | 081 | forza | 8 | ultrafast | cavlc | BYTE-EXACT | 41.55 | 41.55 | 0 |
 | 082 | forza | 8 | ultrafast | cabac | BYTE-EXACT | 41.55 | 41.55 | 0 |
 | 083 | forza | 8 | superfast | cavlc | NAL COUNT 12/10 | 25.37 | 27.17 | 0 |
-| 084 | forza | 8 | superfast | cabac | NAL COUNT 12/10 | 25.37 | 3.71 | 384 |
+| 084 | forza | 8 | superfast | cabac | NAL COUNT 12/10 | 25.37 | 3.72 | 384 |
 | 085 | forza | 8 | veryfast | cavlc | NAL2 byte4 | 24.36 | 27.17 | 0 |
-| 086 | forza | 8 | veryfast | cabac | NAL2 byte6 | 24.36 | 3.71 | 384 |
+| 086 | forza | 8 | veryfast | cabac | NAL2 byte6 | 24.36 | 3.72 | 384 |
 | 087 | forza | 8 | faster | cavlc | NAL2 byte4 | 24.34 | 26.88 | 0 |
 | 088 | forza | 8 | faster | cabac | NAL2 byte6 | 24.33 | 3.69 | 192 |
 | 089 | forza | 8 | fast | cavlc | NAL2 byte4 | 24.33 | 27.09 | 0 |
 | 090 | forza | 8 | fast | cabac | NAL2 byte5 | 24.32 | 3.69 | 192 |
 | 091 | forza | 8 | medium | cavlc | NAL2 byte4 | 24.32 | 27.16 | 0 |
-| 092 | forza | 8 | medium | cabac | NAL2 byte5 | 24.32 | 3.73 | 253 |
+| 092 | forza | 8 | medium | cabac | NAL2 byte5 | 24.32 | 3.71 | 254 |
 | 093 | forza | 8 | slow | cavlc | NAL2 byte4 | 24.33 | 27.16 | 0 |
-| 094 | forza | 8 | slow | cabac | NAL2 byte5 | 24.32 | 3.97 | 348 |
+| 094 | forza | 8 | slow | cabac | NAL2 byte5 | 24.32 | 3.87 | 359 |
 | 095 | forza | 8 | slower | cavlc | NAL2 byte4 | 24.99 | 27.16 | 0 |
 | 096 | forza | 8 | slower | cabac | NAL2 byte5 | 25.02 | - | - |
 | 097 | forza | 8 | veryslow | cavlc | NAL2 byte5 | 24.88 | - | - |
-| 098 | forza | 8 | veryslow | cabac | NAL2 byte6 | 24.86 | 3.71 | 384 |
+| 098 | forza | 8 | veryslow | cabac | NAL2 byte6 | 24.86 | 3.73 | 372 |
 | 099 | forza | 8 | placebo | cavlc | NAL2 byte5 | 24.87 | 4.53 | 320 |
 | 100 | forza | 8 | placebo | cabac | NAL2 byte6 | 24.84 | - | - |
 | 101 | forza | 30 | ultrafast | cavlc | BYTE-EXACT | 42.07 | 42.07 | 0 |
 | 102 | forza | 30 | ultrafast | cabac | BYTE-EXACT | 42.07 | 42.07 | 0 |
 | 103 | forza | 30 | superfast | cavlc | NAL COUNT 40/32 | 31.08 | 21.45 | 0 |
 | 104 | forza | 30 | superfast | cabac | NAL COUNT 40/32 | 31.08 | 3.64 | 1728 |
-| 105 | forza | 30 | veryfast | cavlc | NAL COUNT 34/32 | 25.5 | 23.26 | 0 |
+| 105 | forza | 30 | veryfast | cavlc | NAL COUNT 34/32 | 25.5 | 23.24 | 0 |
 | 106 | forza | 30 | veryfast | cabac | NAL COUNT 34/32 | 25.49 | 3.64 | 1728 |
-| 107 | forza | 30 | faster | cavlc | NAL COUNT 34/32 | 25.48 | 24.78 | 0 |
-| 108 | forza | 30 | faster | cabac | NAL COUNT 34/32 | 25.46 | 3.63 | 1728 |
+| 107 | forza | 30 | faster | cavlc | NAL COUNT 34/32 | 25.48 | 24.79 | 0 |
+| 108 | forza | 30 | faster | cabac | NAL COUNT 34/32 | 25.46 | 3.59 | 1536 |
 | 109 | forza | 30 | fast | cavlc | NAL COUNT 34/32 | 25.48 | 24.88 | 0 |
-| 110 | forza | 30 | fast | cabac | NAL COUNT 34/32 | 25.48 | 3.63 | 1728 |
+| 110 | forza | 30 | fast | cabac | NAL COUNT 34/32 | 25.48 | 3.6 | 1536 |
 | 111 | forza | 30 | medium | cavlc | NAL COUNT 34/32 | 25.48 | 24.87 | 0 |
-| 112 | forza | 30 | medium | cabac | NAL COUNT 34/32 | 25.47 | 3.6 | 1533 |
+| 112 | forza | 30 | medium | cabac | NAL COUNT 34/32 | 25.47 | 3.62 | 1662 |
 | 113 | forza | 30 | slow | cavlc | NAL COUNT 34/32 | 25.47 | 24.87 | 0 |
-| 114 | forza | 30 | slow | cabac | NAL COUNT 34/32 | 25.46 | 3.72 | 1820 |
+| 114 | forza | 30 | slow | cabac | NAL COUNT 34/32 | 25.46 | 3.7 | 1831 |
 | 115 | forza | 30 | slower | cavlc | NAL2 byte4 | 32.03 | 24.87 | 0 |
-| 116 | forza | 30 | slower | cabac | NAL2 byte5 | 32.07 | 3.7 | 1514 |
+| 116 | forza | 30 | slower | cabac | NAL2 byte5 | 32.07 | - | - |
 | 117 | forza | 30 | veryslow | cavlc | NAL2 byte5 | 27.0 | - | - |
-| 118 | forza | 30 | veryslow | cabac | NAL2 byte6 | 26.99 | 3.62 | 1664 |
+| 118 | forza | 30 | veryslow | cabac | NAL2 byte6 | 26.99 | 3.66 | 1780 |
 | 119 | forza | 30 | placebo | cavlc | NAL2 byte5 | 27.02 | 4.06 | 1600 |
-| 120 | forza | 30 | placebo | cabac | NAL2 byte6 | 27.0 | 3.65 | 1664 |
+| 120 | forza | 30 | placebo | cabac | NAL2 byte6 | 27.0 | - | - |
