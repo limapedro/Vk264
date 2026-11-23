@@ -28,6 +28,11 @@ typedef struct {
     int i_vidformat, b_fullrange, i_colorprim, i_transfer, i_colmatrix;
 } vk_param_t;
 
+/* Current preset's chroma QP offset (set by vk_param_apply_preset). x264
+ * quantizes chroma with qp + this value, while the PPS also carries it.
+ * Kept as a process global because the encode primitives take only `qp`. */
+extern int vk_chroma_qp_offset;
+
 void vk_param_default(vk_param_t *p);
 /* Apply the SPS/PPS-relevant subset of an x264 preset. Returns -1 if unknown. */
 int vk_param_apply_preset(vk_param_t *p, const char *preset);

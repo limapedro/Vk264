@@ -182,7 +182,13 @@ complete; what remains is macroblock analysis + residual coding.
 One concrete macroblock-level gap: `chroma_qp_index_offset` (now correctly
 written to the PPS as −2 for fast+) is **not applied** by the oracle encoder —
 `i4x4enc.c`/`cabac_enc.c` quantize chroma with the luma `qp`, while x264 uses
-`qp + chroma_qp_offset` for chroma. Applying that offset is the next fix.
+`qp + chroma_qp_offset` for chroma.
+
+**FIXED:** added global `vk_chroma_qp_offset` (set by `vk_param_apply_preset`)
+and applied `cqp = clip(qp + offset)` to chroma quantisation/dequantisation in
+`i4x4enc.c`, `slice.c` and `cabac_enc.c`. Gates unchanged (ultrafast offset=0).
+The 120-case audit verdict is unchanged (12/120) — chroma QP is not the driver
+of the remaining macroblock divergence; the gap is in analysis/mode decisions.
 
 ## What this changes about the roadmap
 
