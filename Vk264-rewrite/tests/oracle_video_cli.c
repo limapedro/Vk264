@@ -159,6 +159,7 @@ int main(int argc, char **argv)
     int n_mbs = (dw/8)*(dh/8);
     uint16_t *mb_intra = NULL, *mb_prop = NULL, *mb_cost = NULL, *mb_invq = NULL;
     int16_t (*mb_mv[2])[2] = {NULL,NULL};
+    vk_lowres_mv_t *mvst = NULL;
     if (crf >= 0) {
         vk_rc_state_init(&rc, mw*mh, strstr(preset,"ultrafast") ? 0 : 1, 0.6, 0, crf);
         lo_cur = malloc((size_t)dw*dh*VK_LOWRES_PLANES);
@@ -170,6 +171,8 @@ int main(int argc, char **argv)
         for(int q=0;q<nframes*n_mbs;++q) mb_invq[q]=256;  /* Q8.8 1.0 */
         mb_mv[0] = calloc((size_t)nframes*n_mbs,sizeof(int16_t)*2);
         mb_mv[1] = calloc((size_t)nframes*n_mbs,sizeof(int16_t)*2);
+        mvst = calloc(nframes,sizeof(*mvst));
+        for(int q=0;q<nframes;++q) vk_lowres_mv_init(&mvst[q],dw,dh);
     }
     size_t fs = (size_t)w*h*3/2;
     uint8_t *frames = malloc(fs);
@@ -245,13 +248,21 @@ int main(int argc, char **argv)
         int is_idr = stypes ? (stypes[f].type == VK_FRAME_IDR) : (f % keyint == 0);
         if (crf >= 0) {
             vk_lowres_luma(frames, w, h, lo_cur, dw, dh);
-            double cost = is_idr ? vk_lowres_i_cost(lo_cur, dw, dh)
-                                 : vk_lowres_p_cost(lo_cur, lo_ref, dw, dh, NULL);
-            /* mb-tree: per-MB intra cost, lowres cost with list0 bit, zero MVs. */
             uint16_t *ic = mb_intra + (size_t)f*n_mbs;
             uint16_t *lc = mb_cost  + (size_t)f*n_mbs;
+            double cost;
+            if (is_idr) {
+                cost = vk_lowres_i_cost(lo_cur, dw, dh);
+                for(int q=0;q<n_mbs;++q) lc[q]=(uint16_t)(1<<VK_LOWRES_COST_SHIFT);
+            } else {
+                cost = vk_lowres_p_cost_mb(lo_cur, lo_ref, dw, dh, &mvst[f], lc);
+                /* my halfpel units -> x264 spel (<<5 relative to MB). */
+                for(int q=0;q<n_mbs;++q){
+                    mb_mv[0][(size_t)f*n_mbs+q][0]=(int16_t)(mvst[f].mv[q][0]*2);
+                    mb_mv[0][(size_t)f*n_mbs+q][1]=(int16_t)(mvst[f].mv[q][1]*2);
+                }
+            }
             vk_lowres_intra_costs(lo_cur,dw,dh,ic);
-            for(int q=0;q<n_mbs;++q) lc[q]=(uint16_t)(1<<VK_LOWRES_COST_SHIFT);
             /* Propagate this frame's cost back onto the previous frame when a
              * reference exists (x264 macroblock_tree_propagate). */
             if (f>0 && !is_idr) {

@@ -6,6 +6,7 @@
  *  - slicetype_slice_cost: accumulation of per-MB costs.
  */
 #include "lowres.h"
+#include "mbtree.h"
 #include <math.h>
 #include <string.h>
 
@@ -159,6 +160,12 @@ static int median3(int a,int b,int c)
 int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
                      vk_lowres_mv_t *st)
 {
+    return vk_lowres_p_cost_mb(cur,ref,dw,dh,st,NULL);
+}
+
+int vk_lowres_p_cost_mb(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
+                        vk_lowres_mv_t *st,uint16_t *costs_out)
+{
     int nbx=dw/8, nby=dh/8, total=0;
     int16_t mvs[VK_LOWRES_MAX_MBS][2];
     memset(mvs,0,sizeof(mvs));
@@ -193,6 +200,11 @@ int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
         mvs[mb][0]=mxv; mvs[mb][1]=myv;
         if(nbx>2&&nby>2&&mx>0&&mx<nbx-1&&my>0&&my<nby-1)
             total += hbest + LOWRES_PENALTY;
+        if(costs_out && mb<VK_LOWRES_MAX_MBS){
+            int c=hbest+LOWRES_PENALTY;
+            costs_out[mb]=(uint16_t)((1<<VK_LOWRES_COST_SHIFT)|
+                                     (c&VK_LOWRES_COST_MASK));
+        }
     }
     return total;
 }

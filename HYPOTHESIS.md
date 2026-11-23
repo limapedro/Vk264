@@ -2131,3 +2131,23 @@ propagate target is only the immediately previous frame, and f_qp_offset is
 applied as a mean rather than per-MB to the lookahead cost — so CRF is still
 not byte-exact against x264. Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360,
 MP4 56/56, stage03 13/16.
+
+### Stage 10: real lowres MVs/costs retained for mb-tree (this turn)
+
+Added `vk_lowres_p_cost_mb` (lowres.c) which, in addition to the frame cost,
+writes per-MB lowres costs with the list0 bit set (x264 frame_t.lowres_costs)
+and keeps the best MVs in `vk_lowres_mv_t`. The CLI now allocates one MV state
+per frame, feeds it into the P-cost computation, and converts the stored
+halfpel-unit MVs to x264 spel (`mv*2`, relative to MB) for mb_mv[0].
+
+mb-tree propagation now uses actual per-MB lowres costs and MVs instead of
+zeros. Evidence — CRF output sizes changed again (64x64 superfast, 8 frames):
+```
+CRF 18: 3981 -> 4396 bytes
+CRF 23: 2696 -> 3016 bytes
+CRF 28: 1701 -> 1930 bytes
+```
+still monotonic. Remaining non-byte-exact gaps: propagation targets only the
+immediately previous frame (not the true p0/p1 refs), f_qp_offset is applied as
+a mean rather than per-MB, and inv_qscale is a flat 256 (no AQ). Gates:
+CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56, stage03 13/16.

@@ -21,6 +21,9 @@ void vk_lowres_luma(const uint8_t *src,int sw,int sh,uint8_t *dst,int dw,int dh)
 #define LR_PLANE(base,dw,dh,idx) ((base)+(size_t)(idx)*(dw)*(dh))
 int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
                      vk_lowres_mv_t *st);
+/* Same P cost, also writes per-MB costs (with list0 bit) for mb-tree. */
+int vk_lowres_p_cost_mb(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
+                        vk_lowres_mv_t *st,uint16_t *costs_out);
 int vk_lowres_i_cost(const uint8_t *cur,int dw,int dh);
 /* Per-MB intra costs (x264 frame_t.i_intra_cost) for mb-tree. */
 void vk_lowres_intra_costs(const uint8_t *cur,int dw,int dh,uint16_t *out);
