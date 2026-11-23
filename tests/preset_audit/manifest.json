@@ -2857,7 +2857,7 @@
       "flat_blocks": 86,
       "avgU": 123.1,
       "avgV": 134.2,
-      "psnr": 23.24
+      "psnr": 23.23
     }
   },
   {
@@ -2913,7 +2913,7 @@
       "flat_blocks": 86,
       "avgU": 123.1,
       "avgV": 134.2,
-      "psnr": 23.23
+      "psnr": 23.24
     }
   },
   {
@@ -2966,10 +2966,10 @@
       "sha": "72518a1eae25",
       "frames": 28,
       "green_blocks": 0,
-      "flat_blocks": 65,
+      "flat_blocks": 64,
       "avgU": 123.1,
       "avgV": 133.9,
-      "psnr": 24.79
+      "psnr": 24.78
     }
   },
   {
@@ -3022,10 +3022,10 @@
       "sha": "dfbf40523caf",
       "frames": 28,
       "green_blocks": 0,
-      "flat_blocks": 95,
+      "flat_blocks": 96,
       "avgU": 123.6,
       "avgV": 134.0,
-      "psnr": 24.87
+      "psnr": 24.88
     }
   },
   {
