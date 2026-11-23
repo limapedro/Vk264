@@ -1531,3 +1531,48 @@ multiple slicetype passes, not the per-MB cost primitive.
 Tree clean at c69aa91 (docs snapshot may be one commit ahead).
 
 Gates unchanged: CTest 27/27 + 65/65, MP4 56/56.
+
+### Stage 03: measurement-harness bug + negative results (this turn)
+
+**Major harness bug found.** `build/compare_slicetype.py` applied the x264->oracle
+type map `X2O={0:2,1:4,2:0}` to ORACLE types (line 39), mangling them
+(oracle IDR 0 -> 2, oracle P 2 -> 0). Fixed to normalize both sides to
+canonical P/B/I (`X2C` for x264, `O2C` for oracle). This means all prior
+"7/16" reports were WRONG: the honest baseline is **12/16 frame types agree**
+(display order). Remaining 4 diffs are all x264=B, oracle=P at displays
+1,6,8,9.
+
+**Direct path-cost comparison** (build/pathcost_dump.py vs instrumented oracle):
+```
+x264:   j=1 cp=527 cb=471 (B wins)   j=2 nb=1 cp=639 cb=521   j=3 nb=2 cp=1530 cb=1568 (P wins)
+oracle: j=1 cp=919 cb=960 (P wins)   j=2 nb=0 cp=876 cb=833   j=3 nb=1 cp=2194 cb=2423
+```
+The FIRST decision (j=1) flips, cascading into wrong `nb` (B-run length) for
+all later frames. My B path is relatively too expensive (cb/cp=1.045 vs
+x264's 0.894).
+
+**Negative result 1 - ME skip.** x264 slicetype.c:684-691 skips ME when
+zero-MV SAD<64, keeping MV=0 and avoiding 5*lambda. Implemented in P cost:
+agreement REGRESSED 12/16 -> 9/16 (skip makes P cheaper, favouring P).
+Reverted.
+
+**Negative result 2 - lookahead lambda.** Found X264_LOOKAHEAD_QP=12 (not 32),
+so x264_lambda_tab[12]=1 (my LAMBDA was 16, 16x too large). Setting LAMBDA=1
+regressed 12/16 -> 8/16 and dropped costs (j=1 cp=399 cb=522). Reverted.
+
+**Per-MB cost diagnosis** (build/mbcost_dump.py vs instrumented oracle):
+```
+x264  frame1-B interior MB costs: (1,1)=89 (2,1)=16 (1,2)=45 (2,2)=53  sum=203
+oracle frame1-B interior MB costs: (1,1)=192 (2,1)=68 (1,2)=152 (2,2)=116 sum=528
+```
+~2.6x gap, dominated by `mb_b_cost` (searched bipred) finding large MVs with
+high SAD. x264's per-MB B costs use dmv/zero-MV bipred (penalty 0) with
+neighbour-MV-predicted searches. Also limited radar 8->4: no change.
+
+Also fixed `tests/test_lowrescost.c` to call `vk_lowres_mv_init` (the test had
+n_mbs=0 so the dmv candidate was always disabled, masking its behaviour).
+
+**Conclusion:** the corrected baseline is 12/16 (not 7/16). The remaining
+B/P gap is in the per-MB bipred ME fidelity (x264's neighbour-MV prediction
+and dmv candidate), NOT the cost primitive constants, ME skip, or lambda.
+Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.

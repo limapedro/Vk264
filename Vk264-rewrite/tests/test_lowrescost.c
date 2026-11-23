@@ -12,6 +12,7 @@ int main(int argc,char**argv){
     for(int i=0;i<n;++i){lo[i]=malloc(dw*dh);
         vk_lowres_luma(raw+i*fs,w,h,lo[i],dw,dh);}
     vk_lowres_mv_t st[6]; memset(st,0,sizeof(st));
+    for(int i=0;i<n;++i) vk_lowres_mv_init(&st[i],dw,dh);
     for(int i=1;i<n-1;++i){
         int p0=vk_lowres_p_cost(lo[i],lo[i-1],dw,dh,&st[i]);
         int p2=vk_lowres_p_cost(lo[i],lo[i+1],dw,dh,&st[i]);
