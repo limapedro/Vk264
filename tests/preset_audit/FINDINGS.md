@@ -450,3 +450,30 @@ byte 5 to **byte 17**. Next divergence is chroma CBP (`d 77 1` vs `d 77 0`).
 
 Gates: CTest 29/29 + 65/65, CAVLC 1360/1360, MP4 56/56, slicetype 13/16.
 Audit remains 12/120 — full preset parity still not achieved.
+
+## Chroma CBP, zigzag, nnz borders and MB types (this turn)
+
+Continued the CABAC differential past MB1. Fixes landed:
+
+1. **I4 chroma CBP** — the I4 path hardcoded `decision(77,0)`; ported
+   x264's `cabac_cbp_chroma` (77+ctx, then 81+ctx2 for cbp_chroma>>1) and
+   store chroma CBP in `mbcbp` bits 4-5 as x264 does.
+2. **nnz cache borders** — MB-edge neighbours in the I4 CBF cache now come
+   from the neighbouring MB's nnz instead of a blanket 0x80.
+3. **Zigzag scan** — I4 residual coefficients were passed in natural DCT
+   order; x264 writes them in `ZIGZAG4_FRAME` order (0,4,1,2,5,8,12,...).
+4. **Top-left corner in the CABAC loop** — `lt4` still used 128 for edge
+   blocks; now reads the existing left/top neighbour like `vk_i4x4_decide`.
+5. **MB type contexts** — replaced the CBP proxy with a real `mbtype_i4[]`
+   array for both I4 and I16 mb_type context derivation.
+
+**Measured progress (superfast, c004.yuv):**
+- CABAC decision-stream first divergence: #138 -> **#297**
+- NAL2 first byte diff: byte 17 -> **byte 43** (2.7 MBs now byte-exact)
+
+Remaining: x264 uses I8x8 (`transform_size=1`) at decision #297; the
+oracle's I4 path always emits 0. Full I8x8 support (4 pred modes + 8x8
+transform residual) is the next subsystem.
+
+Gates: CTest 29/29 + 65/65, CAVLC 1360/1360, MP4 56/56,
+compare_slicetype 13/16. Audit still 12/120.
