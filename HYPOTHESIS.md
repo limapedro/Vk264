@@ -2051,3 +2051,24 @@ has only one I-frame; the new state matters for multi-keyint encodes.
 Still not byte-exact vs x264: mb-tree is unported, and the CLI does not emit
 B-frames by default (VK_SLICETYPE_CLI / ORACLE_BSLICE_TEST are opt-in).
 Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56, stage03 13/16.
+
+### Stage 10: mb-tree primitives ported (this turn)
+
+Added `Vk264-rewrite/src/ref/mbtree.c/h` with x264's two core mb-tree DSP
+primitives:
+- `vk_mbtree_propagate_cost` (mc.c:511-525): intra/inter cost propagation with
+  Q8.8 inv_qscales and int16 clamp to 32767. Note x264 passes inv_qscales
+  directly and carries the compensating 1/256 in fps_factor (slicetype.c:1063).
+- `vk_mbtree_propagate_list` (mc.c:527-598): spreads propagated cost to 4
+  reference MBs with bilinear MV weights, list-used bits and bipred weighting.
+
+`test_mbtree.c` fixtures are computed from x264's exact source semantics
+(a live x264 dump via `build/mbtree_dump.py` produced no output because mb-tree
+pruning is not triggered on the small 64x64 test clip). Tests pass, including
+the int16 clamp and zero-MV shortcut. New CTest `rewrite_mbtree_primitives`
+(rewrite suite now 28/28).
+
+These are standalone primitives: mb-tree is NOT yet wired into the CLI (that
+needs the full propagate/propagate-cost loop and f_qp_offset application to
+lookahead costs). Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56,
+stage03 13/16.

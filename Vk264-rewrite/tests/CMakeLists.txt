@@ -58,6 +58,10 @@ add_executable(vk264_ratecontrol_test test_ratecontrol.c)
 target_link_libraries(vk264_ratecontrol_test PRIVATE vk264_rewrite_ref)
 add_test(NAME rewrite_ratecontrol_primitives COMMAND vk264_ratecontrol_test)
 
+add_executable(vk264_mbtree_test test_mbtree.c)
+target_link_libraries(vk264_mbtree_test PRIVATE vk264_rewrite_ref)
+add_test(NAME rewrite_mbtree_primitives COMMAND vk264_mbtree_test)
+
 add_executable(vk264_slicetype_test test_slicetype.c)
 target_link_libraries(vk264_slicetype_test PRIVATE vk264_rewrite_ref)
 add_test(NAME rewrite_slicetype_decide COMMAND vk264_slicetype_test)
