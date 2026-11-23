@@ -505,7 +505,11 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                              :(top?rbase[(my*16-1)*rs+mx*16+bx+8+k]:128);
                     }
                     int bc=0;
-                    int m=vk_i8x8_decide(src8,l8,t8,tr8,hl,ht,lambda,&bc,0);
+                    int lt8=(bx>0)?((by>0)?rmb[(by-1)*16+bx-1]
+                                    :(top?rbase[(my*16-1)*rs+mx*16+bx-1]:128))
+                             :(by>0)?(left?rbase[(my*16+by-1)*rs+mx*16-1]:128)
+                             :(top?(left?rbase[(my*16-1)*rs+mx*16-1]:t8[0]):(left?l8[0]:128));
+                    int m=vk_i8x8_decide(src8,l8,t8,tr8,lt8,hl,ht,lambda,&bc,0,mx>0&&my>0);
                     modes8[idx]=(uint8_t)m;
                     i8cost += bc + 3*lambda;
                     vk_predict8(p8,m,l8,t8,tr8);
