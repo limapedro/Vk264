@@ -184,6 +184,30 @@ written to the PPS as −2 for fast+) is **not applied** by the oracle encoder �
 `i4x4enc.c`/`cabac_enc.c` quantize chroma with the luma `qp`, while x264 uses
 `qp + chroma_qp_offset` for chroma.
 
+## ROOT CAUSE of the macroblock divergence (this session)
+
+Instrumented x264's `macroblock_write_cabac_internal` (`build/mb_decisions_dump.py`)
+and inspected the oracle's CABAC IDR encoder:
+
+```
+x264 exp024 (superfast, CABAC) first MBs:
+XMB xy=0 type=0 (I_4x4) cbp=1  predmode=0
+XMB xy=1 type=0 (I_4x4) cbp=47 predmode=0
+XMB xy=2 type=2 (I_16x16) cbp=16 predmode=4
+XMB xy=3 type=1 (I_16x16 chroma) cbp=17 predmode=4
+```
+
+The oracle's CABAC IDR path (`cabac_enc.c:497`) **always calls
+`cabac_mb_type_i16`** — there is no I4x4 decision or encoder in that path
+(`vk_encode_i4x4_mb` is only used by the CAVLC path). So the very first MB is
+coded with the wrong type, which explains both the NAL2 payload divergence
+and, via the resulting context desynchronization, the green blocks.
+
+This is a substantial missing feature: full I4x4 support in the CABAC IDR path
+needs the per-4x4 mode decision, 16 sub-block residual quantisation/CBP, and
+the corresponding CABAC context coding (`cabac_mb_header_i` I4 branch). It is
+the concrete blocker for superfast..placebo byte-exactness.
+
 **FIXED:** added global `vk_chroma_qp_offset` (set by `vk_param_apply_preset`)
 and applied `cqp = clip(qp + offset)` to chroma quantisation/dequantisation in
 `i4x4enc.c`, `slice.c` and `cabac_enc.c`. Gates unchanged (ultrafast offset=0).
