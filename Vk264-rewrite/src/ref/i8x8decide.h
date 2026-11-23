@@ -15,7 +15,7 @@ void vk_predict8(uint8_t out[64], int m, const uint8_t left[8],
  * neighbour availability, lambda is x264's MB lambda, qp the slice QP. */
 int vk_i8x8_decide(const uint8_t src[64], const uint8_t left[8],
                    const uint8_t top[8], const uint8_t tr[8],
-                   int have_l, int have_t, int lambda);
+                   int have_l, int have_t, int lambda, int *cost_out, int use_satd);
 
 /* SATD of two 8x8 blocks (Hadamard, x264 pixel_satd_8x8). */
 int vk_satd8(const uint8_t a[64], const uint8_t b[64]);

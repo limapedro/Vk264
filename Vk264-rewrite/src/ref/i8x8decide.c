@@ -141,7 +141,7 @@ int vk_i16x16_decide(const uint8_t src[256],const uint8_t top[16],
 
 int vk_i8x8_decide(const uint8_t src[64], const uint8_t l[8],
                    const uint8_t t[8], const uint8_t tr[8],
-                   int have_l, int have_t, int lambda)
+                   int have_l, int have_t, int lambda, int *cost_out, int use_satd)
 {
     uint8_t pred[64];
     int best_mode = (have_l && have_t) ? 2 : (have_l ? 9 : (have_t ? 10 : 11));
@@ -160,8 +160,12 @@ int vk_i8x8_decide(const uint8_t src[64], const uint8_t l[8],
          * DISCOUNT for the predicted mode (typically DC when both neighbours
          * exist), not a positive per-mode bit penalty. */
         int pred_mode = (have_l && have_t) ? 2 : (have_l ? 9 : (have_t ? 10 : 11));
-        int cost = vk_satd8(src,pred) - (m==pred_mode ? 3*lambda : 0);
+        int cost;
+        if(use_satd) cost=vk_satd8(src,pred);
+        else { cost=0; for(int i=0;i<64;++i){int d=src[i]-pred[i];cost+=d<0?-d:d;} }
+        cost -= (m==pred_mode ? 3*lambda : 0);
         if (cost < best) { best=cost; best_mode=m; }
     }
+    if(cost_out) *cost_out=best;
     return best_mode;
 }

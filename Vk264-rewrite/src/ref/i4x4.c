@@ -174,15 +174,6 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
         for(int y=0;y<4;++y) for(int x=0;x<4;++x)
             srcblock[y*4+x]=src_y[(by+y)*16 + bx+x];
 
-        if(getenv("VK_I4_DEBUG") && px==16 && py==0 && idx==2){
-            fprintf(stderr,"O3IN fenc=");
-            for(int z=0;z<16;++z) fprintf(stderr,"%d,",srcblock[z]);
-            fprintf(stderr," top=");
-            for(int z=0;z<4;++z) fprintf(stderr,"%d,",top[z]);
-            fprintf(stderr," left=");
-            for(int z=0;z<4;++z) fprintf(stderr,"%d,",left[z]);
-            fprintf(stderr,"\n");
-        }
         int best=0x7fffffff, bestm=2;
         /* x264 superfast has subme=1 -> mbcmp=SAD, mbrd=0, b_fast_intra=0,
          * no x9 SIMD: analyse.c:903-950 uses intra_sad_x3 (DC,H,V) followed

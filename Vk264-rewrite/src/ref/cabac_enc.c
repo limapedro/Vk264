@@ -5,6 +5,8 @@
 #include "cabac_tables.h"
 #include "intra16.h"
 #include "i4x4.h"
+#include "i8x8decide.h"
+#include "i8x8.h"
 #include "motion.h"
 #include "slice.h"
 #include <stdio.h>
@@ -437,7 +439,8 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
     uint8_t *recon = malloc(ysz + 2*csz);
     memset(recon, 128, ysz + 2*csz);
     uint8_t *rcu = recon + ysz, *rcv = rcu + csz;
-    uint8_t *mbtype_i4 = calloc((size_t)mw*mh, 1);  /* 1 = I4, 0 = I16 */
+    uint8_t *mbtype_i4 = calloc((size_t)mw*mh, 1);  /* 1 = I4/I8, 0 = I16 */
+    uint8_t *mbts8 = calloc((size_t)mw*mh, 1);      /* 1 = 8x8 transform */
     int *mbcbp = calloc((size_t)mw*mh, sizeof(int));
     uint8_t (*nnzc)[16] = calloc((size_t)mw*mh, 16);
     uint8_t (*cnnzc)[2][4] = calloc((size_t)mw*mh, 8);
@@ -478,16 +481,60 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 if (c < best) { best = c; bestmode = m; }
             }
             /* x264: I4x4 analysis only when subme>=1 */
-            int use_i4=0, i4cbp=0;
+            int use_i4=0, i4cbp=0, c4=0x7fffffff;
             uint8_t modes4[16], nnz4[16]={0};
             int i4q[16][16]; memset(i4q,0,sizeof(i4q));
             if(vk_i4_analysis_enabled){
                 uint8_t src16[256];
                 for(int yy=0;yy<16;++yy)for(int xx=0;xx<16;++xx)
                     src16[yy*16+xx]=frame[(my*16+yy)*w+mx*16+xx];
-                int c4=vk_i4x4_decide(src16,recon+ro,rs,mx*16,my*16,qp,
-                                      left,top,0,0,modes4);
+                c4=vk_i4x4_decide(src16,recon+ro,rs,mx*16,my*16,qp,
+                                  left,top,0,0,modes4);
                 if(c4<best) use_i4=1;
+            }
+            /* x264 analyse.c:745-835: I8x8 analysis (4 8x8 blocks). */
+            int use_i8=0, i8cbp=0;
+            uint8_t modes8[4]={2,2,2,2};
+            int i8q[4][64]; memset(i8q,0,sizeof(i8q));
+            uint8_t i8nnz[4]={0};
+            if(vk_i8_analysis_enabled){
+                int i8cost = lambda*4;
+                int mf8[64],bias8[64],deq8[64];
+                vk_ref_quant_tables8(qp,mf8,bias8,deq8);
+                for(int idx=0;idx<4;++idx){
+                    int bx=(idx&1)*8, by=(idx>>1)*8;
+                    uint8_t src8[64],l8[8],t8[8],tr8[8],p8[64];
+                    for(int y=0;y<8;++y)for(int x=0;x<8;++x)
+                        src8[y*8+x]=frame[(my*16+by+y)*w+mx*16+bx+x];
+                    int hl=(mx>0)||(bx>0), ht=(my>0)||(by>0);
+                    for(int k=0;k<8;++k){
+                        l8[k]=(bx>0)?rmb[(by+k)*16+bx-1]
+                             :(left?rbase[(my*16+by+k)*rs+mx*16-1]:128);
+                        t8[k]=(by>0)?rmb[(by-1)*16+bx+k]
+                             :(top?rbase[(my*16+by-1)*rs+mx*16+k]:128);
+                        tr8[k]=(by>0)?((bx+8<16)?rmb[(by-1)*16+bx+8+k]
+                                    :rbase[(my*16+by-1)*rs+mx*16+bx+8+k]):128;
+                    }
+                    int bc=0;
+                    int m=vk_i8x8_decide(src8,l8,t8,tr8,hl,ht,lambda,&bc,0);
+                    modes8[idx]=(uint8_t)m;
+                    i8cost += bc + 3*lambda;
+                    vk_predict8(p8,m,l8,t8,tr8);
+                    int d8[64];vk_ref_dct8x8(d8,src8,p8);
+                    int nz=vk_ref_quant8(d8,mf8,bias8);
+                    i8nnz[idx]=(uint8_t)nz;
+                    if(nz)i8cbp|=1<<idx;
+                    for(int k=0;k<64;++k) i8q[idx][k]=d8[k];
+                    uint8_t rec8[64];
+                    for(int y=0;y<8;++y)for(int x=0;x<8;++x) rec8[y*8+x]=p8[y*8+x];
+                    if(nz){
+                        int dd[64];for(int k=0;k<64;++k)dd[k]=d8[k];
+                        vk_ref_dequant8_idct_add(rec8,dd,deq8,qp);
+                    }
+                    for(int y=0;y<8;++y)for(int x=0;x<8;++x)
+                        rmb[(by+y)*16+bx+x]=rec8[y*8+x];
+                }
+                if(i8cost<best && (!use_i4 || i8cost<c4)) use_i8=1;
             }
             int imode = bestmode;
             vk_predict16(pred, t, l, tl, imode);
@@ -602,7 +649,40 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
             int nza = (lc >> 8) & 1, nzb = (tc >> 8) & 1;
             int cmode_ctx = (left && cmode_fix[my*mw+mx-1] != 0)
                           + (top  && cmode_fix[(my-1)*mw+mx] != 0);
-            if(use_i4){
+            if(use_i8){
+                /* I8x8: mb_type is signalled like I4, followed by a
+                 * transform_size=1 bin and only 4 intra8x8 pred modes. */
+                int ic8=0;
+                if(left && !mbtype_i4[my*mw+mx-1])ic8++;
+                if(top && !mbtype_i4[(my-1)*mw+mx])ic8++;
+                vk_cabac_decision_noup(cb,3+ic8,0);
+                int tctx=(left&&mbts8[my*mw+mx-1])+(top&&mbts8[(my-1)*mw+mx]);
+                vk_cabac_decision_noup(cb,399+tctx,1);  /* 8x8 transform */
+                uint8_t f8[4];
+                for(int k=0;k<4;++k) f8[k]=(uint8_t)vk_i4x4_fix(modes8[k]);
+                /* x264_mb_predict_intra4x4_mode(h, 4*idx): neighbours are
+                 * the adjacent 8x8 blocks (cache filled with the 8x8 mode). */
+                static const int I8Lidx[4]={-1,0,-1,2}, I8Tidx[4]={-1,-1,0,1};
+                for(int k=0;k<4;++k){
+                    int a=2,b=2;
+                    if(I8Lidx[k]>=0) a=vk_i4x4_fix(f8[I8Lidx[k]]);
+                    if(I8Tidx[k]>=0) b=vk_i4x4_fix(f8[I8Tidx[k]]);
+                    int pr=(a<b)?a:b;
+                    cb_pred4(cb,pr,f8[k]);
+                }
+                cabac_chroma_mode(cb,cmode,cmode_ctx);
+                cmode_fix[my*mw+mx]=(uint8_t)(cmode<=3?cmode:0);
+                cb_cbp_i4(cb,i8cbp,left?mbcbp[my*mw+mx-1]:-1,
+                          top?mbcbp[(my-1)*mw+mx]:-1);
+                cb_cbp_chroma(cb,cbp_chroma,left?mbcbp[my*mw+mx-1]:-1,
+                              top?mbcbp[(my-1)*mw+mx]:-1);
+                cabac_qp_delta0(cb);
+                for(int k=0;k<4;++k) if(i8cbp&(1<<k)){
+                    int zq[64];vk_ref_zigzag8(zq,i8q[k]);
+                    cabac_coeffs(cb,zq,5);  /* DCT_LUMA_8x8 */
+                }
+            }
+            else if(use_i4){
                 /* I4x4 header: mb_type, pred modes, chroma mode (x264 order) */
                 int ic=0;
                 /* x264 cabac_mb_header_i: ctx counts neighbours whose MB
@@ -611,7 +691,8 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 if(top && !mbtype_i4[(my-1)*mw+mx])ic++;
                 vk_cabac_decision_noup(cb,3+ic,0);
                 /* x264 cabac_transform_size: decision(399+ctx, 0=4x4) */
-                vk_cabac_decision_noup(cb,399,0);
+                int tctx4=(left&&mbts8[my*mw+mx-1])+(top&&mbts8[(my-1)*mw+mx]);
+                vk_cabac_decision_noup(cb,399+tctx4,0);
                 uint8_t fixed4[16];
                 for(int i=0;i<16;++i) fixed4[i]=(uint8_t)vk_i4x4_fix(modes4[i]);
                 for(int i=0;i<16;++i)
@@ -730,7 +811,8 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
             }
             int nu_dc = 0, nv_dc = 0;
             for (int i = 0; i < 4; ++i) { nu_dc |= qu[i] != 0; nv_dc |= qv[i] != 0; }
-            mbtype_i4[my*mw+mx] = (uint8_t)use_i4;
+            mbtype_i4[my*mw+mx] = (uint8_t)(use_i4||use_i8);
+            mbts8[my*mw+mx] = (uint8_t)use_i8;
             /* x264 packs chroma CBP in bits 4-5 (i_cbp_chroma << 4). */
             mbcbp[my*mw+mx] = cbp_luma | (cbp_chroma << 4)
                             | (nz ? 0x100 : 0)
@@ -1148,7 +1230,8 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
     for (int i = 0; i < mw*mh; ++i) cbp_c[i] = 0;
     int intra_count = 0;  /* x264 h->stat.frame.i_mb_count[I_*] so far */
     /* intra-in-P neighbour caches (mirrors the I-slice path) */
-    uint8_t *mbtype_i4 = calloc((size_t)mw*mh, 1);  /* 1 = I4, 0 = I16 */
+    uint8_t *mbtype_i4 = calloc((size_t)mw*mh, 1);  /* 1 = I4/I8, 0 = I16 */
+    uint8_t *mbts8 = calloc((size_t)mw*mh, 1);      /* 1 = 8x8 transform */
     int *mbcbp = calloc((size_t)mw*mh, sizeof(int));
     uint8_t (*nnzc)[16] = calloc((size_t)mw*mh, 16);
     uint8_t (*cnnzc)[2][4] = calloc((size_t)mw*mh, 8);

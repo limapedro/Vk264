@@ -19,6 +19,7 @@
 
 int vk_chroma_qp_offset = 0;
 int vk_i4_analysis_enabled = 0;
+int vk_i8_analysis_enabled = 0;
 
 void vk_param_default(vk_param_t *p)
 {
@@ -104,6 +105,7 @@ int vk_param_apply_preset(vk_param_t *p, const char *preset)
     p->i_chroma_qp_offset = (p->i_subme >= 6) ? -2 : 0;
     vk_chroma_qp_offset = p->i_chroma_qp_offset;
     vk_i4_analysis_enabled = (p->i_subme >= 1) ? 1 : 0;
+    vk_i8_analysis_enabled = p->b_transform_8x8 ? 1 : 0;
     return 0;
 }
 

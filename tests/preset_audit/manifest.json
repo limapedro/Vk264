@@ -91,7 +91,7 @@
     "frames": 2,
     "preset": "superfast",
     "entropy": "cabac",
-    "verdict": "NAL2 byte43",
+    "verdict": "NAL2 byte49",
     "x264": {
       "bytes": 857,
       "sha": "fcd2442df2ae",
@@ -104,8 +104,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 247,
-      "sha": "a1eba8ab0ea7",
+      "bytes": 248,
+      "sha": "f8b07f122fbf",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -164,8 +164,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 247,
-      "sha": "a1eba8ab0ea7",
+      "bytes": 248,
+      "sha": "f8b07f122fbf",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -224,8 +224,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 248,
-      "sha": "fef39c8e82d9",
+      "bytes": 249,
+      "sha": "ebb55470f8b3",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -284,8 +284,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 255,
-      "sha": "6189e16f6b8a",
+      "bytes": 256,
+      "sha": "ec1c5e3d5cc9",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -344,8 +344,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 255,
-      "sha": "17ce38083277",
+      "bytes": 256,
+      "sha": "00128aeff410",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -404,8 +404,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 255,
-      "sha": "98f336a020f7",
+      "bytes": 256,
+      "sha": "b39f1566b82a",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -464,8 +464,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 255,
-      "sha": "9d02856ce2ea",
+      "bytes": 256,
+      "sha": "4a153806d08f",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -518,8 +518,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 258,
-      "sha": "9fc441e6f602",
+      "bytes": 259,
+      "sha": "a7e75ff6bb8e",
       "decode": "FAIL"
     }
   },
@@ -566,8 +566,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 258,
-      "sha": "5fc8e36860c0",
+      "bytes": 259,
+      "sha": "e0b6b4496df6",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -667,7 +667,7 @@
     "frames": 8,
     "preset": "superfast",
     "entropy": "cabac",
-    "verdict": "NAL2 byte43",
+    "verdict": "NAL2 byte49",
     "x264": {
       "bytes": 2103,
       "sha": "3d474e7f995d",
@@ -679,8 +679,8 @@
       "psnr": 24.49
     },
     "oracle": {
-      "bytes": 1647,
-      "sha": "bbdd0a80c9f4",
+      "bytes": 1648,
+      "sha": "811ffb003a8e",
       "frames": 3,
       "green_blocks": 192,
       "flat_blocks": 192,
@@ -735,8 +735,8 @@
       "psnr": 24.52
     },
     "oracle": {
-      "bytes": 1647,
-      "sha": "bbdd0a80c9f4",
+      "bytes": 1648,
+      "sha": "811ffb003a8e",
       "frames": 3,
       "green_blocks": 192,
       "flat_blocks": 192,
@@ -791,8 +791,8 @@
       "psnr": 24.48
     },
     "oracle": {
-      "bytes": 1648,
-      "sha": "01ad0fb45b87",
+      "bytes": 1649,
+      "sha": "9c2d314ec350",
       "frames": 5,
       "green_blocks": 320,
       "flat_blocks": 320,
@@ -847,8 +847,8 @@
       "psnr": 24.42
     },
     "oracle": {
-      "bytes": 1667,
-      "sha": "a14f87f88a04",
+      "bytes": 1668,
+      "sha": "d3ab35d95b84",
       "frames": 5,
       "green_blocks": 320,
       "flat_blocks": 313,
@@ -903,8 +903,8 @@
       "psnr": 24.43
     },
     "oracle": {
-      "bytes": 1667,
-      "sha": "05a06da70b99",
+      "bytes": 1668,
+      "sha": "abfb8c87fc02",
       "frames": 6,
       "green_blocks": 384,
       "flat_blocks": 384,
@@ -959,8 +959,8 @@
       "psnr": 24.43
     },
     "oracle": {
-      "bytes": 1667,
-      "sha": "6b68328226a7",
+      "bytes": 1668,
+      "sha": "74a31fc7c6cd",
       "frames": 5,
       "green_blocks": 315,
       "flat_blocks": 318,
@@ -1015,8 +1015,8 @@
       "psnr": 24.7
     },
     "oracle": {
-      "bytes": 1667,
-      "sha": "702acc5871e3",
+      "bytes": 1668,
+      "sha": "8732a7e695a2",
       "frames": 6,
       "green_blocks": 374,
       "flat_blocks": 316,
@@ -1066,8 +1066,8 @@
       "psnr": 28.83
     },
     "oracle": {
-      "bytes": 1670,
-      "sha": "64311dff5ee2",
+      "bytes": 1671,
+      "sha": "f3b2eab4e506",
       "decode": "FAIL"
     }
   },
@@ -1112,8 +1112,8 @@
       "psnr": 24.24
     },
     "oracle": {
-      "bytes": 1670,
-      "sha": "585b275fc2da",
+      "bytes": 1671,
+      "sha": "4b5712d84d17",
       "decode": "FAIL"
     }
   },
@@ -1219,8 +1219,8 @@
       "psnr": 28.17
     },
     "oracle": {
-      "bytes": 6424,
-      "sha": "2c90884007f8",
+      "bytes": 6425,
+      "sha": "772952b980e4",
       "frames": 28,
       "green_blocks": 1792,
       "flat_blocks": 1607,
@@ -1275,8 +1275,8 @@
       "psnr": 28.06
     },
     "oracle": {
-      "bytes": 6424,
-      "sha": "2c90884007f8",
+      "bytes": 6425,
+      "sha": "772952b980e4",
       "frames": 28,
       "green_blocks": 1792,
       "flat_blocks": 1607,
@@ -1331,8 +1331,8 @@
       "psnr": 28.06
     },
     "oracle": {
-      "bytes": 6425,
-      "sha": "9fd94949a587",
+      "bytes": 6426,
+      "sha": "31eb2769ed61",
       "frames": 27,
       "green_blocks": 1728,
       "flat_blocks": 1728,
@@ -1387,8 +1387,8 @@
       "psnr": 28.04
     },
     "oracle": {
-      "bytes": 6567,
-      "sha": "e73458e792ca",
+      "bytes": 6568,
+      "sha": "82b24e07175c",
       "frames": 27,
       "green_blocks": 1728,
       "flat_blocks": 1703,
@@ -1443,8 +1443,8 @@
       "psnr": 28.03
     },
     "oracle": {
-      "bytes": 6567,
-      "sha": "b9649d1c808e",
+      "bytes": 6568,
+      "sha": "75a91a3301c4",
       "frames": 30,
       "green_blocks": 1920,
       "flat_blocks": 1797,
@@ -1499,8 +1499,8 @@
       "psnr": 28.04
     },
     "oracle": {
-      "bytes": 6567,
-      "sha": "802db3b9453c",
+      "bytes": 6568,
+      "sha": "3734f447355e",
       "frames": 27,
       "green_blocks": 1723,
       "flat_blocks": 1484,
@@ -1555,8 +1555,8 @@
       "psnr": 29.14
     },
     "oracle": {
-      "bytes": 6567,
-      "sha": "1a9f62474003",
+      "bytes": 6568,
+      "sha": "ceed7bc19741",
       "frames": 28,
       "green_blocks": 1782,
       "flat_blocks": 1545,
@@ -1606,8 +1606,8 @@
       "psnr": 35.89
     },
     "oracle": {
-      "bytes": 6570,
-      "sha": "d04b8277cd45",
+      "bytes": 6571,
+      "sha": "03e51643308f",
       "frames": 22,
       "green_blocks": 1406,
       "flat_blocks": 1023,
@@ -1657,8 +1657,8 @@
       "psnr": 22.85
     },
     "oracle": {
-      "bytes": 6570,
-      "sha": "b17d998ee26b",
+      "bytes": 6571,
+      "sha": "5e9300339dae",
       "decode": "FAIL"
     }
   },
@@ -1767,8 +1767,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 339,
-      "sha": "69bb8bd0fa52",
+      "bytes": 340,
+      "sha": "093f01453a48",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -1827,8 +1827,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 339,
-      "sha": "69bb8bd0fa52",
+      "bytes": 340,
+      "sha": "093f01453a48",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -1887,8 +1887,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 340,
-      "sha": "6878bee3ab5d",
+      "bytes": 341,
+      "sha": "79b5be7fa932",
       "decode": "FAIL"
     }
   },
@@ -1941,8 +1941,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 346,
-      "sha": "9489b4254691",
+      "bytes": 348,
+      "sha": "4a6dd08dc12d",
       "decode": "FAIL"
     }
   },
@@ -1995,8 +1995,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 346,
-      "sha": "031a4e70cabb",
+      "bytes": 348,
+      "sha": "7aa7ac5ec0c4",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -2055,8 +2055,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 346,
-      "sha": "b153a1f04af6",
+      "bytes": 348,
+      "sha": "cab6dde5bf6d",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -2115,8 +2115,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 346,
-      "sha": "78f5b430476f",
+      "bytes": 348,
+      "sha": "ebd9542e65f7",
       "decode": "FAIL"
     }
   },
@@ -2163,8 +2163,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 349,
-      "sha": "970347cec20a",
+      "bytes": 351,
+      "sha": "986fc4bedc5b",
       "decode": "EMPTY",
       "frames": 0,
       "green_blocks": -1,
@@ -2217,8 +2217,8 @@
       "psnr": -1
     },
     "oracle": {
-      "bytes": 349,
-      "sha": "397986ab8fe1",
+      "bytes": 351,
+      "sha": "8adb1e74fa98",
       "decode": "FAIL"
     }
   },
@@ -2324,8 +2324,8 @@
       "psnr": 25.37
     },
     "oracle": {
-      "bytes": 1166,
-      "sha": "f3ffa9bc16cb",
+      "bytes": 1167,
+      "sha": "d540ab4508f4",
       "frames": 3,
       "green_blocks": 192,
       "flat_blocks": 186,
@@ -2380,8 +2380,8 @@
       "psnr": 24.36
     },
     "oracle": {
-      "bytes": 1166,
-      "sha": "f3ffa9bc16cb",
+      "bytes": 1167,
+      "sha": "d540ab4508f4",
       "frames": 3,
       "green_blocks": 192,
       "flat_blocks": 186,
@@ -2436,8 +2436,8 @@
       "psnr": 24.33
     },
     "oracle": {
-      "bytes": 1167,
-      "sha": "b13808605454",
+      "bytes": 1168,
+      "sha": "2a47eff76aaf",
       "decode": "FAIL"
     }
   },
@@ -2487,8 +2487,8 @@
       "psnr": 24.32
     },
     "oracle": {
-      "bytes": 1182,
-      "sha": "b4ce1f8daa22",
+      "bytes": 1184,
+      "sha": "d5bbe2be5075",
       "decode": "FAIL"
     }
   },
@@ -2538,8 +2538,8 @@
       "psnr": 24.32
     },
     "oracle": {
-      "bytes": 1182,
-      "sha": "c85233abab73",
+      "bytes": 1184,
+      "sha": "593441e4c006",
       "frames": 5,
       "green_blocks": 320,
       "flat_blocks": 305,
@@ -2594,8 +2594,8 @@
       "psnr": 24.32
     },
     "oracle": {
-      "bytes": 1182,
-      "sha": "c237d9a9670d",
+      "bytes": 1184,
+      "sha": "1988c6ae9b9f",
       "frames": 6,
       "green_blocks": 383,
       "flat_blocks": 328,
@@ -2650,8 +2650,8 @@
       "psnr": 25.02
     },
     "oracle": {
-      "bytes": 1182,
-      "sha": "e4d6a19e1b19",
+      "bytes": 1184,
+      "sha": "c515343db20a",
       "decode": "FAIL"
     }
   },
@@ -2696,8 +2696,8 @@
       "psnr": 24.86
     },
     "oracle": {
-      "bytes": 1185,
-      "sha": "879b7550dc03",
+      "bytes": 1187,
+      "sha": "576a99bcca2f",
       "frames": 4,
       "green_blocks": 256,
       "flat_blocks": 248,
@@ -2752,8 +2752,8 @@
       "psnr": 24.84
     },
     "oracle": {
-      "bytes": 1185,
-      "sha": "7239201d790c",
+      "bytes": 1187,
+      "sha": "9ab8c882c842",
       "decode": "FAIL"
     }
   },
@@ -2859,8 +2859,8 @@
       "psnr": 31.08
     },
     "oracle": {
-      "bytes": 3163,
-      "sha": "8f51f4663bba",
+      "bytes": 3164,
+      "sha": "1c5476702d3a",
       "frames": 27,
       "green_blocks": 1728,
       "flat_blocks": 1661,
@@ -2915,8 +2915,8 @@
       "psnr": 25.49
     },
     "oracle": {
-      "bytes": 3163,
-      "sha": "8f51f4663bba",
+      "bytes": 3164,
+      "sha": "1c5476702d3a",
       "frames": 27,
       "green_blocks": 1728,
       "flat_blocks": 1661,
@@ -2971,8 +2971,8 @@
       "psnr": 25.46
     },
     "oracle": {
-      "bytes": 3164,
-      "sha": "e17a8e0a393d",
+      "bytes": 3165,
+      "sha": "a98cf611cef2",
       "frames": 25,
       "green_blocks": 1600,
       "flat_blocks": 1558,
@@ -3003,10 +3003,10 @@
       "sha": "dfbf40523caf",
       "frames": 28,
       "green_blocks": 0,
-      "flat_blocks": 92,
+      "flat_blocks": 96,
       "avgU": 123.6,
       "avgV": 134.0,
-      "psnr": 24.86
+      "psnr": 24.88
     }
   },
   {
@@ -3027,8 +3027,8 @@
       "psnr": 25.48
     },
     "oracle": {
-      "bytes": 3185,
-      "sha": "cfe7a3fe840d",
+      "bytes": 3187,
+      "sha": "3693c99bd88e",
       "frames": 25,
       "green_blocks": 1600,
       "flat_blocks": 1600,
@@ -3083,8 +3083,8 @@
       "psnr": 25.47
     },
     "oracle": {
-      "bytes": 3185,
-      "sha": "3877b2904ee4",
+      "bytes": 3187,
+      "sha": "bc36a6dd9e47",
       "frames": 28,
       "green_blocks": 1792,
       "flat_blocks": 1736,
@@ -3139,8 +3139,8 @@
       "psnr": 25.46
     },
     "oracle": {
-      "bytes": 3185,
-      "sha": "18568022e41f",
+      "bytes": 3187,
+      "sha": "ed50e9a389db",
       "frames": 25,
       "green_blocks": 1599,
       "flat_blocks": 1483,
@@ -3195,8 +3195,8 @@
       "psnr": 32.07
     },
     "oracle": {
-      "bytes": 3185,
-      "sha": "d480aab9e96e",
+      "bytes": 3187,
+      "sha": "b151d5affe15",
       "frames": 27,
       "green_blocks": 1639,
       "flat_blocks": 1503,
@@ -3246,8 +3246,8 @@
       "psnr": 26.99
     },
     "oracle": {
-      "bytes": 3188,
-      "sha": "c3c70511c11a",
+      "bytes": 3190,
+      "sha": "734537a68cdc",
       "frames": 26,
       "green_blocks": 1664,
       "flat_blocks": 1656,
@@ -3302,8 +3302,8 @@
       "psnr": 27.0
     },
     "oracle": {
-      "bytes": 3188,
-      "sha": "58abf7e8ef7e",
+      "bytes": 3190,
+      "sha": "c6923522afe4",
       "frames": 25,
       "green_blocks": 1521,
       "flat_blocks": 1549,

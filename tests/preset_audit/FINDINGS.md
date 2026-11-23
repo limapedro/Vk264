@@ -477,3 +477,27 @@ transform residual) is the next subsystem.
 
 Gates: CTest 29/29 + 65/65, CAVLC 1360/1360, MP4 56/56,
 compare_slicetype 13/16. Audit still 12/120.
+
+## I8x8 macroblock path (this turn)
+
+Ported the I8x8 path into the CABAC IDR encoder, gated by PPS
+`transform_8x8_mode` (superfast/faster+ enable it; ultrafast does not):
+
+- x264's I8x8 analysis in the same pass as I4/I16, using SAD (superfast
+  subme=1) via `vk_i8x8_decide(..., use_satd=0)`.
+- 8x8 DCT/quant/dequant/IDCT (`i8x8.h` primitives) with reconstruction
+  fed back into `rmb[]` for subsequent blocks.
+- CABAC: I4-style mb_type, `transform_size` bin at ctx 399+neighbour
+  8x8-transform count, 4 intra8x8 pred modes with predictor from
+  neighbouring 8x8 blocks, CBP luma/chroma, qp_delta, and 8x8 residual
+  coefficients (DCT_LUMA_8x8 category, no CBF bin — x264 emits only
+  sig/last/level for 8x8 intra).
+- Real MB-type and transform-size neighbour arrays for contexts.
+
+**Measured (superfast, c004.yuv):**
+- MB2/MB3 types now match x264 (I16, I8)
+- CABAC first divergence: #297 -> #343 (past I8x8 MB3)
+- NAL2 first byte diff: 43 -> **49**
+
+Gates: CTest 29/29 + 65/65, CAVLC 1360/1360, MP4 56/56,
+compare_slicetype 13/16. Audit still 12/120.
