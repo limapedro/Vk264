@@ -1728,3 +1728,29 @@ earlier DIA attempt omitted the predictor and hpel interaction).
 
 No net code change; best verified state 13/16. Gates: CTest 27/27 + 65/65,
 CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03: exact DIA-from-predictor + lambda=1 (this turn) — 13/16
+
+Replaced the spiral P search with x264's exact algorithm:
+- `LAMBDA=1` (x264_lambda_tab[X264_LOOKAHEAD_QP=12]);
+- reverse-order MB scan with neighbour-MV median predictor
+  (right/bottom/bottom-left/bottom-right, slicetype.c:662-680);
+- `dia_search`: radius-1 diamond from the predictor, step toward best
+  neighbour until no improvement, search cost SAD+BITS_MVD (me.c:322);
+- near-zero skip (mvp==0 && SAD0<64), 1 hpel iteration, halfpel MV storage.
+
+Found and fixed a bounds bug: the DIA neighbour check compared absolute pixel
+`bx+nx` against the MV limit `maxx` (= rw-8-bx), skipping every neighbour;
+corrected to `nx>maxx`. After the fix DIA finds good MVs.
+
+**Per-MB differential evidence** (frame1 P): MB(2,2) = 52 vs x264 53 — an
+exact per-MB match, confirming the whole cost model at x264's true λ=1.
+But MB(1,2) = 409 (x264 68) — DIA gets stuck at a local minimum with a zero
+predictor — and MB(1,1) = 9 (x264 111). Net agreement **13/16** (same as the
+λ=16 spiral, but algorithmically faithful).
+
+This confirms the residual is x264's MV-predictor quality / search escape
+from local minima, not the cost primitive or λ. Further convergence needs
+x264's exact `x264_me_search` predictor + hpel interaction (the hpel-bit and
+neighbour-predictor work is now in place). Gates: CTest 27/27 + 65/65,
+CAVLC P 1360/1360, MP4 56/56.

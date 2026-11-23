@@ -9,7 +9,7 @@
 #include <math.h>
 #include <string.h>
 
-#define LAMBDA 16          /* x264_lambda_tab[X264_LOOKAHEAD_QP=32] */
+#define LAMBDA 1           /* x264_lambda_tab[X264_LOOKAHEAD_QP=12] = 1 */
 #define LOWRES_PENALTY 4
 
 /* x264 encoder/analyse.c:186 - cost_mv = lambda * logs[|mv|], rounded. */
@@ -114,57 +114,35 @@ static int satd8(const uint8_t *a,int aw,int ax,int ay,
     return s;
 }
 
-/* x264 me.c:779-783 (subpel_refine<3): m->cost = bcost (pure SAD); the MV
- * cost is added only when the chosen MV equals the predictor (bmv==pmv).
- * In lowres with mvp=0, this means only the zero-MV candidate pays mv_cost. */
-static int mb_p_cost(const uint8_t *cur,int dw,int bx,int by,
-                     const uint8_t *ref,int rx,int ry)
+/* x264 me.c:322 X264_ME_DIA: radius-1 diamond, step toward the best neighbour
+ * until no improvement. Search cost is SAD + BITS_MVD (mv_cost). Seeded by the
+ * neighbour predictor (x264 me.c:313 bmx=m->mvp). */
+static void dia_search(const uint8_t *cur,int dw,int bx,int by,
+                       const uint8_t *ref,int rw,int rh,int *pmx,int *pmy)
 {
-    int sad=satd8(cur,dw,bx,by,ref,dw,rx,ry);
-    if(rx==bx && ry==by) sad += 2*mv_cost(0);  /* bmv==pmv(0) case */
-    return sad;
-}
-
-/* Full P frame cost against a reference (diamond ME radius 16). */
-int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
-                     vk_lowres_mv_t *st)
-{
-    int total=0, mb=0;
-    static const int dir[8][2]={{1,0},{-1,0},{0,1},{0,-1},
-                                {1,1},{1,-1},{-1,1},{-1,-1}};
-    for(int by=0;by+8<=dh;by+=8) for(int bx=0;bx+8<=dw;bx+=8){
-        int best=satd8(cur,dw,bx,by,ref,dw,bx,by);
-        int bmx=0,bmy=0;
-        /* coarse spiral search radius 1..16, then refine */
-        for(int rad=1;rad<=16;rad+=1){
-            int improved=0;
-            for(int dy=-rad;dy<=rad;++dy) for(int dx=-rad;dx<=rad;++dx){
-                if(abs(dx)!=rad && abs(dy)!=rad && rad>2) continue;
-                int sx=bx+dx,sy=by+dy;
-                if(sx<0||sy<0||sx+8>dw||sy+8>dh) continue;
-                int c=mb_p_cost(cur,dw,bx,by,ref,sx,sy);
-                if(c<best){best=c;bmx=dx;bmy=dy;improved=1;}
-            }
-            if(!improved && rad>4) break;
-        }
-        /* x264 lowres i_subpel_refine=2 does 1 hpel iteration around the
-         * fullpel MV using the 4 shifted lowres planes (me.c:792-796). */
-        int hx=0,hy=0;
-        int hbest=hpel_best_offset(cur,dw,bx,by,ref,dw,dh,bmx,bmy,&hx,&hy);
-        if(hbest<0x7fffffff) best=hbest;
-        /* x264: cost -= p_cost_mv[0]; if MV!=0 cost += 5*lambda */
-        best -= mv_cost(0);
-        if(bmx||bmy) best += 5*LAMBDA;
-        if(st && mb<VK_LOWRES_MAX_MBS){
-            st->mv[mb][0]=2*bmx+hx; st->mv[mb][1]=2*bmy+hy;  /* halfpel units */
-        }
-        /* x264 slicetype.c:532/782 - COST_EST counts only interior MBs. */
-        int nbx=(dw/8), nby=(dh/8), mx=(bx/8), my=(by/8);
-        if(nbx>2 && nby>2 && mx>0 && mx<nbx-1 && my>0 && my<nby-1)
-            total += best + LOWRES_PENALTY;
-        mb++;
+    int bmx=*pmx, bmy=*pmy;
+    int maxx=rw-8-bx, maxy=rh-8-by;
+    if(bmx<-bx)bmx=-bx; if(bmx>maxx)bmx=maxx;
+    if(bmy<-by)bmy=-by; if(bmy>maxy)bmy=maxy;
+    int bcost=satd8(cur,dw,bx,by,ref,dw,bx+bmx,by+bmy)+mv_cost(bmx)+mv_cost(bmy);
+    /* x264 me.c:316-317: if(pmv) COST_MV(0,0) */
+    if(bmx||bmy){
+        int c=satd8(cur,dw,bx,by,ref,dw,bx,by)+2*mv_cost(0);
+        if(c<bcost){bcost=c;bmx=0;bmy=0;}
     }
-    return total;
+    static const int dd[4][2]={{0,-1},{0,1},{-1,0},{1,0}};
+    for(int it=0;it<64;++it){
+        int bestk=-1;
+        for(int k=0;k<4;++k){
+            int nx=bmx+dd[k][0], ny=bmy+dd[k][1];
+            if(nx<-bx||ny<-by||nx>maxx||ny>maxy) continue;
+            int c=satd8(cur,dw,bx,by,ref,dw,bx+nx,by+ny)+mv_cost(nx)+mv_cost(ny);
+            if(c<bcost){bcost=c;bestk=k;}
+        }
+        if(bestk<0) break;
+        bmx+=dd[bestk][0]; bmy+=dd[bestk][1];
+    }
+    *pmx=bmx; *pmy=bmy;
 }
 
 static int median3(int a,int b,int c)
@@ -174,6 +152,49 @@ static int median3(int a,int b,int c)
     if(b>c){t=b;b=c;c=t;}
     if(a>b){t=a;a=b;b=t;}
     return b;
+}
+
+/* Full P frame cost: x264 reverse-order per-MB ME with neighbour-mv predictor,
+ * DIA search, 1 hpel iteration, and interior-MB gating. */
+int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
+                     vk_lowres_mv_t *st)
+{
+    int nbx=dw/8, nby=dh/8, total=0;
+    int16_t mvs[VK_LOWRES_MAX_MBS][2];
+    memset(mvs,0,sizeof(mvs));
+    for(int my=nby-1;my>=0;--my) for(int mx=nbx-1;mx>=0;--mx){
+        int mb=my*nbx+mx, bx=mx*8, by=my*8;
+        /* reverse-order neighbour MV prediction (x264 slicetype.c:662-680) */
+        int mc[4][2],n=0;
+        if(mx<nbx-1){mc[n][0]=mvs[mb+1][0];mc[n][1]=mvs[mb+1][1];n++;}
+        if(my<nby-1){
+            mc[n][0]=mvs[mb+nbx][0];mc[n][1]=mvs[mb+nbx][1];n++;
+            if(mx>0){mc[n][0]=mvs[mb+nbx-1][0];mc[n][1]=mvs[mb+nbx-1][1];n++;}
+            if(mx<nbx-1){mc[n][0]=mvs[mb+nbx+1][0];mc[n][1]=mvs[mb+nbx+1][1];n++;}
+        }
+        int px=0,py=0;
+        if(n==1){px=mc[0][0];py=mc[0][1];}
+        else if(n>=2){px=median3(mc[0][0],mc[1][0],mc[2][0]);py=median3(mc[0][1],mc[1][1],mc[2][1]);}
+        int mxv=0,myv=0;
+        if(px==0&&py==0&&satd8(cur,dw,bx,by,ref,dw,bx,by)<64)
+            ; /* x264 skip: mv=0, cost=SAD0 */
+        else{
+            mxv=px; myv=py;
+            dia_search(cur,dw,bx,by,ref,dw,dh,&mxv,&myv);
+        }
+        int hx=0,hy=0;
+        int hbest=hpel_best_offset(cur,dw,bx,by,ref,dw,dh,mxv,myv,&hx,&hy);
+        if(hbest>=0x7fffffff) hbest=satd8(cur,dw,bx,by,ref,dw,bx+mxv,by+myv);
+        hbest -= mv_cost(0);
+        if(mxv||myv) hbest += 5*LAMBDA;
+        if(st && mb<VK_LOWRES_MAX_MBS){
+            st->mv[mb][0]=2*mxv+hx; st->mv[mb][1]=2*myv+hy;
+        }
+        mvs[mb][0]=mxv; mvs[mb][1]=myv;
+        if(nbx>2&&nby>2&&mx>0&&mx<nbx-1&&my>0&&my<nby-1)
+            total += hbest + LOWRES_PENALTY;
+    }
+    return total;
 }
 
 /* x264 me.c:322 X264_ME_DIA - radius-1 diamond stepping from the predictor. */
