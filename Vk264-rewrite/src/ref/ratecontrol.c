@@ -52,6 +52,7 @@ void vk_rc_state_init(vk_rc_state_t *rc,int mb_count,int bframes,
     rc->short_term_cplxsum = 0;
     rc->short_term_cplxcount = 0;
     rc->qcompress = (float)qcompress;
+    rc->rf_constant = rf_constant;
     rc->rate_factor_constant =
         vk_rc_crf_constant(mb_count,bframes,rc->qcompress,mb_tree,rf_constant);
 }
@@ -65,4 +66,17 @@ double vk_rc_frame_qscale(vk_rc_state_t *rc,double satd)
     rc->short_term_cplxcount += 1.0;
     double blurred = rc->short_term_cplxsum / rc->short_term_cplxcount;
     return vk_rc_get_qscale(blurred,rc->qcompress,rc->rate_factor_constant);
+}
+
+double vk_rc_frame_qp(vk_rc_state_t *rc,double satd,int is_idr,int frame_index,
+                      float ip_factor)
+{
+    if (is_idr && frame_index == 0) {
+        /* x264 ratecontrol.c:2625-2628: ABR_INIT_QP = rf_constant for CRF,
+         * q = qp2qscale(ABR_INIT_QP) / ip_factor. Verified: CRF23/1.4 -> q=2.1636. */
+        float q = vk_qp2qscale((float)rc->rf_constant) / ip_factor;
+        return vk_qscale2qp(q);
+    }
+    double q = vk_rc_frame_qscale(rc,satd);
+    return vk_qscale2qp((float)q);
 }

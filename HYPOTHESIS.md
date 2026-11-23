@@ -1995,3 +1995,32 @@ rate-control mode rather than a standalone primitive.
 
 Gates unchanged: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56,
 compare_slicetype 13/16.
+
+### Stage 10: single-pass CRF I-QP offset (this turn)
+
+x264's single-pass CRF does NOT use `get_diff_limited_q` (that is 2-pass only;
+`build/qp_offset_dump.py` produced no output). The real path is
+`ratecontrol.c:2602-2628`. `build/crf_qp_dump.py` dumps it:
+```
+frame0 type=I  q=2.163611412  accum_p_qp=0.23  accum_p_norm=0.01  ip_factor=1.4
+frame3 type=P  q=2.694393396  (= get_qscale: 18.300971513 / 6.792241744)
+frame4 type=P  q=3.051219225  (= 20.724617947 / 6.792241744)
+```
+Frame 0 uses `ABR_INIT_QP = rf_constant` for CRF:
+`q = qp2qscale(rf)/ip_factor` -> qp2qscale(23)/1.4 = 2.1636 (exact match).
+
+Added `vk_rc_frame_qp(rc,satd,is_idr,frame_index,ip_factor)` implementing this
+frame-0 special case (plus get_qscale for other frames), stored `rf_constant`
+in `vk_rc_state_t`, and wired it into the CLI replacing the raw qscale->QP
+conversion. All ratecontrol fixtures pass including the new frame-0 QP case.
+
+End-to-end CRF still monotonic (64x64 superfast, 8 frames):
+```
+CRF 18 -> 5918 bytes (was 5253 before the I-offset)
+CRF 23 -> 4029 bytes (was 3686)
+CRF 28 -> 2742 bytes (was 2480)
+```
+The I-offset raises IDR QP as x264 does. Still not byte-exact: subsequent
+I-frames use `accum_p_qp/accum_p_norm` (ratecontrol_end state) which is not yet
+ported. Gates unchanged: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56,
+compare_slicetype 13/16.

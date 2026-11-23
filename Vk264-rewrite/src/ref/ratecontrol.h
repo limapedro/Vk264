@@ -35,11 +35,18 @@ double vk_rc_get_qscale(double blurred_complexity,double qcompress,
 typedef struct {
     double short_term_cplxsum, short_term_cplxcount;
     double rate_factor_constant;
+    double rf_constant;
     float qcompress;
 } vk_rc_state_t;
 
 void vk_rc_state_init(vk_rc_state_t *rc,int mb_count,int bframes,
                       double qcompress,int mb_tree,double rf_constant);
 double vk_rc_frame_qscale(vk_rc_state_t *rc,double satd);
+
+/* x264 single-pass CRF QP selection (ratecontrol.c:2602-2629):
+ * frame 0 uses qp2qscale(rf)/ip_factor; later frames use get_qscale.
+ * ip_factor for superfast is 1.4. */
+double vk_rc_frame_qp(vk_rc_state_t *rc,double satd,int is_idr,int frame_index,
+                      float ip_factor);
 
 #endif

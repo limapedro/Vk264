@@ -234,8 +234,8 @@ int main(int argc, char **argv)
             vk_lowres_luma(frames, w, h, lo_cur, dw, dh);
             double cost = is_idr ? vk_lowres_i_cost(lo_cur, dw, dh)
                                  : vk_lowres_p_cost(lo_cur, lo_ref, dw, dh, NULL);
-            double q = vk_rc_frame_qscale(&rc, cost);
-            int crf_qp = (int)(vk_qscale2qp((float)q) + 0.5f);
+            double qp = vk_rc_frame_qp(&rc, cost, is_idr, f, 1.4f);
+            int crf_qp = (int)(qp + 0.5f);
             if (crf_qp < 0) crf_qp = 0; if (crf_qp > 51) crf_qp = 51;
             qp_i = qp_p = crf_qp;
             memcpy(lo_ref, lo_cur, (size_t)dw*dh*VK_LOWRES_PLANES);

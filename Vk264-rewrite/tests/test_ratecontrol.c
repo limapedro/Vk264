@@ -79,6 +79,16 @@ int main(void)
             return 1;
         }
     }
-    printf("ratecontrol PASS: primitives + CRF const/qscale + stateful blur\n");
+    /* x264 single-pass CRF frame-0 I QP (build/crf_qp_dump.py):
+     * CRF23, ip_factor=1.4 -> q = qp2qscale(23)/1.4 = 2.163611412. */
+    vk_rc_state_t rc0;
+    vk_rc_state_init(&rc0,16,1,0.6,0,23.0);
+    double qp0=vk_rc_frame_qp(&rc0,2844.0,1,0,1.4f);
+    double want0=vk_qscale2qp(vk_qp2qscale(23.0f)/1.4f);
+    if (fabs(qp0-want0)>1e-4) {
+        fprintf(stderr,"CRF frame0 QP FAIL got=%.6f want=%.6f\n",qp0,want0);
+        return 1;
+    }
+    printf("ratecontrol PASS: primitives + CRF const/qscale + stateful blur + frame0 QP\n");
     return 0;
 }
