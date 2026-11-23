@@ -7,7 +7,7 @@
 | 001 | warzone2020 | 2 | ultrafast | cavlc | BYTE-EXACT | 45.61 | 45.61 | 0 |
 | 002 | warzone2020 | 2 | ultrafast | cabac | BYTE-EXACT | 45.61 | 45.61 | 0 |
 | 003 | warzone2020 | 2 | superfast | cavlc | NAL2 byte4 | -1 | -1 | -1 |
-| 004 | warzone2020 | 2 | superfast | cabac | NAL2 byte50 | -1 | -1 | -1 |
+| 004 | warzone2020 | 2 | superfast | cabac | NAL2 byte67 | -1 | -1 | -1 |
 | 005 | warzone2020 | 2 | veryfast | cavlc | NAL2 byte4 | -1 | -1 | -1 |
 | 006 | warzone2020 | 2 | veryfast | cabac | NAL2 byte16 | -1 | -1 | -1 |
 | 007 | warzone2020 | 2 | faster | cavlc | NAL2 byte4 | -1 | -1 | -1 |
@@ -27,7 +27,7 @@
 | 021 | warzone2020 | 8 | ultrafast | cavlc | BYTE-EXACT | 40.15 | 40.15 | 0 |
 | 022 | warzone2020 | 8 | ultrafast | cabac | BYTE-EXACT | 40.15 | 40.15 | 0 |
 | 023 | warzone2020 | 8 | superfast | cavlc | NAL2 byte4 | 24.49 | 21.86 | 0 |
-| 024 | warzone2020 | 8 | superfast | cabac | NAL2 byte50 | 24.49 | 9.52 | 192 |
+| 024 | warzone2020 | 8 | superfast | cabac | NAL2 byte67 | 24.49 | 9.52 | 192 |
 | 025 | warzone2020 | 8 | veryfast | cavlc | NAL2 byte4 | 24.51 | 21.86 | 0 |
 | 026 | warzone2020 | 8 | veryfast | cabac | NAL2 byte16 | 24.52 | 9.52 | 192 |
 | 027 | warzone2020 | 8 | faster | cavlc | NAL2 byte4 | 24.5 | 22.16 | 0 |
@@ -106,11 +106,11 @@
 | 100 | forza | 8 | placebo | cabac | NAL2 byte6 | 24.84 | - | - |
 | 101 | forza | 30 | ultrafast | cavlc | BYTE-EXACT | 42.07 | 42.07 | 0 |
 | 102 | forza | 30 | ultrafast | cabac | BYTE-EXACT | 42.07 | 42.07 | 0 |
-| 103 | forza | 30 | superfast | cavlc | NAL COUNT 40/32 | 31.08 | 23.24 | 0 |
+| 103 | forza | 30 | superfast | cavlc | NAL COUNT 40/32 | 31.08 | 21.45 | 0 |
 | 104 | forza | 30 | superfast | cabac | NAL COUNT 40/32 | 31.08 | 3.64 | 1728 |
-| 105 | forza | 30 | veryfast | cavlc | NAL COUNT 34/32 | 25.5 | 23.24 | 0 |
+| 105 | forza | 30 | veryfast | cavlc | NAL COUNT 34/32 | 25.5 | 23.26 | 0 |
 | 106 | forza | 30 | veryfast | cabac | NAL COUNT 34/32 | 25.49 | 3.64 | 1728 |
-| 107 | forza | 30 | faster | cavlc | NAL COUNT 34/32 | 25.48 | 24.79 | 0 |
+| 107 | forza | 30 | faster | cavlc | NAL COUNT 34/32 | 25.48 | 24.78 | 0 |
 | 108 | forza | 30 | faster | cabac | NAL COUNT 34/32 | 25.46 | 3.63 | 1728 |
 | 109 | forza | 30 | fast | cavlc | NAL COUNT 34/32 | 25.48 | 24.88 | 0 |
 | 110 | forza | 30 | fast | cabac | NAL COUNT 34/32 | 25.48 | 3.63 | 1728 |

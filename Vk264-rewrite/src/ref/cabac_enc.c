@@ -50,6 +50,9 @@ static void cabac_coeffs(vk_cabac_t *cb, const int *l, int cat)
     static const uint8_t levgt1[8] = {5,5,5,5,6,7,8,9};
     static const uint8_t trans[2][8] = {{1,2,3,3,4,5,6,7},{4,4,4,4,5,6,7,7}};
     int count_m1 = vk_count_cat_m1[cat];
+    /* x264's 8x8DCT residual uses dedicated sig/last context-index tables;
+     * all other categories index contexts by the coefficient position. */
+    int b8 = (cat == 5); /* DCT_LUMA_8x8 */
     int coeffs[64], nc = 0, last = -1;
     for (int i = count_m1; i >= 0; --i)
         if (l[i]) { last = i; break; }
@@ -57,13 +60,15 @@ static void cabac_coeffs(vk_cabac_t *cb, const int *l, int cat)
      * significance/last flags (reached via ++i == count_m1). */
     int i = 0;
     while (1) {
+        int cs = ctx_sig + (b8 ? vk_significant_coeff_flag_offset_8x8[0][i] : i);
+        int cl = ctx_last + (b8 ? vk_last_coeff_flag_offset_8x8[i] : i);
         if (l[i]) {
             coeffs[nc++] = l[i];
-            vk_cabac_decision(cb, ctx_sig+i, 1);
-            if (i == last) { vk_cabac_decision(cb, ctx_last+i, 1); break; }
-            vk_cabac_decision(cb, ctx_last+i, 0);
+            vk_cabac_decision(cb, cs, 1);
+            if (i == last) { vk_cabac_decision(cb, cl, 1); break; }
+            vk_cabac_decision(cb, cl, 0);
         } else
-            vk_cabac_decision(cb, ctx_sig+i, 0);
+            vk_cabac_decision(cb, cs, 0);
         if (++i == count_m1) { coeffs[nc++] = l[i]; break; }
     }
     int node = 0;
@@ -615,7 +620,13 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
             int nz = 0;
             if (use_i8) {
                 cbp_luma = i8cbp;
-                nz = i8cbp ? 1 : 0;
+                nz = 0;  /* TEST: x264 cbp bit8 (luma DC cbf) for I8 */
+            } else if (use_i4) {
+                /* x264 caches i_cbp_luma = i4cbp for I4x4 MBs; leaving the
+                 * I16-derived cbp_luma (often 0) here corrupts the CBP
+                 * context derivation of all following MBs. */
+                cbp_luma = i4cbp;
+                nz = 0;  /* TEST: x264 cbp bit8 (luma DC cbf) for I4 */
             } else
                 for (int i = 0; i < 16; ++i) if (q[i]) nz = 1;
             /* chroma neighbours */
