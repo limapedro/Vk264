@@ -520,8 +520,15 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                     int have_tr8 = (idx==0) ? top
                                  : (idx==1) ? (top && mx+1<mw)
                                  : (idx==2) ? 1 : 0;
+                    /* x264_mb_predict_intra4x4_mode for 8x8 blocks: the
+                     * adjacent 8x8 modes come from the scan8 cache. */
+                    static const int I8L[4]={-1,0,-1,2}, I8T[4]={-1,-1,0,1};
+                    int pa=2, pb=2;
+                    if(I8L[idx]>=0) pa=vk_i4x4_fix(modes8[I8L[idx]]);
+                    if(I8T[idx]>=0) pb=vk_i4x4_fix(modes8[I8T[idx]]);
+                    int pred8 = (pa<pb)?pa:pb;
                     int m=vk_i8x8_decide_ex(src8,l8,t8,tr8,lt8,hl,ht,lambda,
-                                            &bc,0,mx>0&&my>0,have_tr8);
+                                            &bc,0,mx>0&&my>0,have_tr8,pred8);
                     modes8[idx]=(uint8_t)m;
                     i8cost += bc + 3*lambda;
                     if(mx>0 && my>0){

@@ -233,15 +233,25 @@ static void i8_pred_edge(uint8_t out[64], int m, const uint8_t e[36])
             out[y*8+x]=(uint8_t)v;
         }
         break;
-    case 6:
-        for(int y=0;y<8;++y) for(int x=0;x<8;++x){
-            int d=2*y-x,v;
-            if(d>=0&&d<8) v=i8_F2(EL(d),(d+1<8)?EL(d+1):ELT,(d+2<8)?EL(d+2):ET(0));
-            else if(d<0) v=i8_F2(ET(-d),ET(-d+1),ET(-d+2));
-            else v=128;
-            out[y*8+x]=(uint8_t)v;
-        }
+    case 6: {
+        /* x264 predict_8x8_hd_c: pack_pixel_1to2 pairs, with the row
+         * mapping out[y*8+x] = pair[14-2*y+x]. */
+        int q[22];
+        q[ 0]=i8_F1(EL(6),EL(7));       q[ 1]=i8_F2(EL(5),EL(6),EL(7));
+        q[ 2]=i8_F1(EL(5),EL(6));       q[ 3]=i8_F2(EL(4),EL(5),EL(6));
+        q[ 4]=i8_F1(EL(4),EL(5));       q[ 5]=i8_F2(EL(3),EL(4),EL(5));
+        q[ 6]=i8_F1(EL(3),EL(4));       q[ 7]=i8_F2(EL(2),EL(3),EL(4));
+        q[ 8]=i8_F1(EL(2),EL(3));       q[ 9]=i8_F2(EL(1),EL(2),EL(3));
+        q[10]=i8_F1(EL(1),EL(2));       q[11]=i8_F2(EL(0),EL(1),EL(2));
+        q[12]=i8_F1(EL(0),EL(1));       q[13]=i8_F2(ELT,EL(0),EL(1));
+        q[14]=i8_F1(ELT,EL(0));         q[15]=i8_F2(EL(0),ELT,ET(0));
+        q[16]=i8_F2(ET(1),ET(0),ELT);   q[17]=i8_F2(ET(2),ET(1),ET(0));
+        q[18]=i8_F2(ET(3),ET(2),ET(1)); q[19]=i8_F2(ET(4),ET(3),ET(2));
+        q[20]=i8_F2(ET(5),ET(4),ET(3)); q[21]=i8_F2(ET(6),ET(5),ET(4));
+        for(int y=0;y<8;++y) for(int x=0;x<8;++x)
+            out[y*8+x]=(uint8_t)q[14-2*y+x];
         break;
+    }
     case 7:
         for(int y=0;y<8;++y) for(int x=0;x<8;++x){
             int d=x+(y>>1); out[y*8+x]=(uint8_t)i8_F2(ET(d),ET(d+1),ET(d+2));
@@ -275,7 +285,7 @@ static const int8_t I8_SC[2][2][5] = {
 int vk_i8x8_decide_ex(const uint8_t src[64], const uint8_t l[8],
                    const uint8_t t[8], const uint8_t tr[8], int lt_in,
                    int have_l, int have_t, int lambda, int *cost_out,
-                   int use_satd, int mb_gate, int have_tr)
+                   int use_satd, int mb_gate, int have_tr, int pred8)
 {
     (void)use_satd;
     /* Exact x264 filtered-edge x3 + shortcut, only for MBs with all
@@ -286,7 +296,7 @@ int vk_i8x8_decide_ex(const uint8_t src[64], const uint8_t l[8],
         for(int i=0;i<8;++i) t16[i]=t[i];
         for(int i=0;i<8;++i) t16[8+i]=tr[i];
         i8_build_edge(e,l,t16,lt_in,have_tr);
-        int pred_mode=2, satd[3];
+        int pred_mode=pred8, satd[3];
         for(int m=0;m<3;++m){ i8_pred_edge(pred,m,e); satd[m]=i8_sad(src,pred); }
         int favor=satd[1]>satd[0];
         if(pred_mode<3) satd[pred_mode]-=3*lambda;
@@ -341,5 +351,5 @@ int vk_i8x8_decide(const uint8_t src[64], const uint8_t l[8],
                    int use_satd, int mb_gate)
 {
     return vk_i8x8_decide_ex(src,l,t,tr,lt_in,have_l,have_t,lambda,cost_out,
-                             use_satd,mb_gate,1);
+                             use_satd,mb_gate,1,2);
 }
