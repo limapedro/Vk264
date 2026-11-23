@@ -1309,8 +1309,8 @@
       "green_blocks": 0,
       "flat_blocks": 684,
       "avgU": 125.0,
-      "avgV": 132.4,
-      "psnr": 20.68
+      "avgV": 132.3,
+      "psnr": 20.6
     }
   },
   {
@@ -2838,7 +2838,7 @@
       "flat_blocks": 86,
       "avgU": 123.1,
       "avgV": 134.2,
-      "psnr": 23.26
+      "psnr": 23.24
     }
   },
   {
@@ -2894,7 +2894,7 @@
       "flat_blocks": 86,
       "avgU": 123.1,
       "avgV": 134.2,
-      "psnr": 21.45
+      "psnr": 23.24
     }
   },
   {
