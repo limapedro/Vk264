@@ -501,7 +501,8 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                         t8[k]=(by>0)?rmb[(by-1)*16+bx+k]
                              :(top?rbase[(my*16+by-1)*rs+mx*16+bx+k]:128);
                         tr8[k]=(by>0)?((bx+8<16)?rmb[(by-1)*16+bx+8+k]
-                                    :rbase[(my*16+by-1)*rs+mx*16+bx+8+k]):128;
+                                    :rbase[(my*16+by-1)*rs+mx*16+bx+8+k])
+                             :(top?rbase[(my*16-1)*rs+mx*16+bx+8+k]:128);
                     }
                     int bc=0;
                     int m=vk_i8x8_decide(src8,l8,t8,tr8,hl,ht,lambda,&bc,0);
