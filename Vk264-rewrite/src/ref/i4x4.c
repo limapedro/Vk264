@@ -39,6 +39,7 @@ static int i4_neighbour_class(int idx,int have_l,int have_t,int have_tl)
 int vk_i4x4_fix(int m) { return (m >= 0 && m <= 8) ? m : 2; }
 
 static int F2(int a,int b,int c) { return (a + 2*b + c + 2) >> 2; }
+static int F1(int a,int b) { return (a + b + 1) >> 1; }
 
 /* predictor for raw mode m into out[4][4] */
 void vk_predict4(uint8_t out[16], int m, const uint8_t left[4], const uint8_t top[4],
@@ -64,38 +65,59 @@ void vk_predict4(uint8_t out[16], int m, const uint8_t left[4], const uint8_t to
             out[y*4+x]=(uint8_t)F2(t[i],t[i+1],t[i+2<8?i+2:7]);
         }
         break;
-    case 4: /* DDR */
-        for(int y=0;y<4;++y) for(int x=0;x<4;++x) {
-            int i=3-y+x;
-            out[y*4+x]=(uint8_t)F2(t[i],t[i+1],t[i+2]);
-        }
+    case 4: /* DDR — x264 predict_4x4_ddr_c (predict.c:546) */
+        out[3]=F2(t[3],t[2],t[1]);
+        out[2]=out[7]=F2(t[2],t[1],t[0]);
+        out[1]=out[6]=out[11]=F2(t[1],t[0],lt);
+        out[0]=out[5]=out[10]=out[15]=F2(t[0],lt,l[0]);
+        out[4]=out[9]=out[14]=F2(lt,l[0],l[1]);
+        out[8]=out[13]=F2(l[0],l[1],l[2]);
+        out[12]=F2(l[1],l[2],l[3]);
         break;
-    case 5: /* VR */
-        for(int y=0;y<4;++y) for(int x=0;x<4;++x) {
-            int i=3-x+y;
-            out[y*4+x]=(uint8_t)(i>=0 && i+2<8 ? F2(t[i],t[i+1],t[i+2]) : 128);
-        }
+    case 5: /* VR — x264 predict_4x4_vr_c (predict.c:560) */
+        out[12]=F2(l[2],l[1],l[0]);
+        out[8]=F2(l[1],l[0],lt);
+        out[4]=out[13]=F2(l[0],lt,t[0]);
+        out[0]=out[9]=F1(lt,t[0]);
+        out[5]=out[14]=F2(lt,t[0],t[1]);
+        out[1]=out[10]=F1(t[0],t[1]);
+        out[6]=out[15]=F2(t[0],t[1],t[2]);
+        out[2]=out[11]=F1(t[1],t[2]);
+        out[7]=F2(t[1],t[2],t[3]);
+        out[3]=F1(t[2],t[3]);
         break;
-    case 6: /* HD */
-        for(int y=0;y<4;++y) for(int x=0;x<4;++x) {
-            int i=3-y+x;
-            out[y*4+x]=(uint8_t)(i>=0 && i+2<8 ? F2(l[i],l[i+1],l[i+2]) : 128);
-        }
+    case 6: /* HD — x264 predict_4x4_hd_c (predict.c:577) */
+        out[12]=F1(l[2],l[3]);
+        out[13]=F2(l[1],l[2],l[3]);
+        out[8]=out[14]=F1(l[1],l[2]);
+        out[9]=out[15]=F2(l[0],l[1],l[2]);
+        out[4]=out[10]=F1(l[0],l[1]);
+        out[5]=out[11]=F2(lt,l[0],l[1]);
+        out[0]=out[6]=F1(lt,l[0]);
+        out[1]=out[7]=F2(t[0],lt,l[0]);
+        out[2]=F2(t[1],t[0],lt);
+        out[3]=F2(t[2],t[1],t[0]);
         break;
-    case 7: /* VL */
-        for(int y=0;y<4;++y) for(int x=0;x<4;++x) {
-            int i=x+2*y;
-            if (i<3) out[y*4+x]=(uint8_t)F2(t[i],t[i+1],t[i+2]);
-            else if (i==3) out[y*4+x]=(uint8_t)F2(t[3],lt,lt);
-            else if (i==4) out[y*4+x]=(uint8_t)F2(lt,lt,lt);
-            else out[y*4+x]=128;
-        }
+    case 7: /* VL — x264 predict_4x4_vl_c (predict.c:594) */
+        out[0]=F1(t[0],t[1]);
+        out[4]=F2(t[0],t[1],t[2]);
+        out[1]=out[8]=F1(t[1],t[2]);
+        out[5]=out[12]=F2(t[1],t[2],t[3]);
+        out[2]=out[9]=F1(t[2],t[3]);
+        out[6]=out[13]=F2(t[2],t[3],t[4]);
+        out[3]=out[10]=F1(t[3],t[4]);
+        out[7]=out[14]=F2(t[3],t[4],t[5]);
+        out[11]=F1(t[4],t[5]);
+        out[15]=F2(t[4],t[5],t[6]);
         break;
-    case 8: /* HU */
-        for(int y=0;y<4;++y) for(int x=0;x<4;++x) {
-            int i=x+2*y;
-            out[y*4+x]=(uint8_t)(i+2<8 ? F2(l[i],l[i+1],l[i+2]) : 128);
-        }
+    case 8: /* HU — x264 predict_4x4_hu_c (predict.c:610) */
+        out[0]=F1(l[0],l[1]);
+        out[1]=F2(l[0],l[1],l[2]);
+        out[4]=out[2]=F1(l[1],l[2]);
+        out[5]=out[3]=F2(l[1],l[2],l[3]);
+        out[8]=out[6]=F1(l[2],l[3]);
+        out[9]=out[7]=F2(l[2],l[3],l[3]);
+        out[10]=out[11]=out[12]=out[13]=out[14]=out[15]=l[3];
         break;
     }
 }
@@ -127,8 +149,14 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
             top[i]  = (by>0) ? recon_y[(py+by-1)*rs + px+bx+i] : (have_t?recon_y[(py-1)*rs+px+bx+i]:128);
             tr[i]   = (by>0) ? recon_y[(py+by-1)*rs + px+bx+4+i] : (have_tr?recon_y[(py-1)*rs+px+bx+4+i]:128);
         }
+        /* Top-left corner: with bx==0/by>0 it is the LEFT MB's bottom pixel;
+         * with by==0/bx>0 it is the TOP MB's rightmost pixel. Both are
+         * available whenever that side neighbour exists (x264's FDEC has
+         * these samples in its padding). */
         lt = (bx>0&&by>0) ? recon_y[(py+by-1)*rs+px+bx-1]
-           : ((have_tl || (have_l&&have_t)) ? recon_y[(py-1)*rs+px-1] : 128);
+           : (by>0) ? (have_l ? recon_y[(py+by-1)*rs+px-1] : 128)
+           : (bx>0) ? (have_t ? recon_y[(py-1)*rs+px+bx-1] : 128)
+           : (have_tl ? recon_y[(py-1)*rs+px-1] : 128);
         /* predicted mode from fixed modes of cache left/top neighbours */
         int li = cache_idx[SCAN8[idx]-1], ti = cache_idx[SCAN8[idx]-8];
         int ma = (li>=0) ? vk_i4x4_fix(raw[li]) : -1;
@@ -146,6 +174,15 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
         for(int y=0;y<4;++y) for(int x=0;x<4;++x)
             srcblock[y*4+x]=src_y[(by+y)*16 + bx+x];
 
+        if(getenv("VK_I4_DEBUG") && px==16 && py==0 && idx==2){
+            fprintf(stderr,"O3IN fenc=");
+            for(int z=0;z<16;++z) fprintf(stderr,"%d,",srcblock[z]);
+            fprintf(stderr," top=");
+            for(int z=0;z<4;++z) fprintf(stderr,"%d,",top[z]);
+            fprintf(stderr," left=");
+            for(int z=0;z<4;++z) fprintf(stderr,"%d,",left[z]);
+            fprintf(stderr,"\n");
+        }
         int best=0x7fffffff, bestm=2;
         /* x264 superfast has subme=1 -> mbcmp=SAD, mbrd=0, b_fast_intra=0,
          * no x9 SIMD: analyse.c:903-950 uses intra_sad_x3 (DC,H,V) followed

@@ -426,3 +426,27 @@ Gates remain green (29/29, 65/65, 1360/1360, 56/56, slicetype 13/16),
 audit still 12/120. MB1's mode choice still differs: oracle x3 SADs
 (V/H/DC = 290/82/146) differ from x264's (992/548/892), indicating a
 remaining input/prediction discrepancy in MB1 analysis, not a syntax issue.
+
+## Exact x264 4x4 predictors + pass-aligned differential (this turn)
+
+Pass-aligned instrumentation (unique 4x4-loop anchor) confirmed that the
+oracle's x3 SADs were correct all along: x264 frame0 IDR MB1 idx2 gives
+V/H/DC = 290/82 (DC 134 after the -3*lambda bias), matching the oracle
+exactly. The earlier 992/548/892 readings came from the 8x8 analysis loop
+because the instrumentation anchor was ambiguous.
+
+Real bugs found and fixed in `vk_predict4` (`i4x4.c`):
+1. Modes 4/5/6/7/8 (DDR/VR/HD/VL/HU) used a simplified top-only F2 formula;
+   x264 mixes left, top-left and top samples with F1/F2. Ported the exact
+   C predictors from `common/predict.c:534-621`.
+2. VR and VL had wrong `out[]` index mappings in the first port; corrected.
+3. The top-left corner for blocks with bx==0/by>0 (or by==0/bx>0) was
+   forced to 128; x264 reads it from the existing left/top neighbour MB.
+
+**Result:** MB1's 16 raw modes now match x264 exactly
+(`9,9,4,5,9,9,2,2,2,5,2,4,2,2,5,0`). The decision-stream first divergence
+moved from #53 to **#88**, and the superfast NAL2 first byte diff moved from
+byte 5 to **byte 17**. Next divergence is chroma CBP (`d 77 1` vs `d 77 0`).
+
+Gates: CTest 29/29 + 65/65, CAVLC 1360/1360, MP4 56/56, slicetype 13/16.
+Audit remains 12/120 — full preset parity still not achieved.
