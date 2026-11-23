@@ -95,6 +95,10 @@ int vk_param_apply_preset(vk_param_t *p, const char *preset)
     } else {
         return -1;
     }
+    /* x264 encoder.c:1218-1231: psy-RD is active when i_subpel_refine >= 6,
+     * lowering chroma QP offset by 2 (default f_psy_rd = 1.0). Applies to
+     * fast and above; ultrafast..faster keep 0. */
+    p->i_chroma_qp_offset = (p->i_subme >= 6) ? -2 : 0;
     return 0;
 }
 
@@ -168,7 +172,9 @@ void vk_sps_init(vk_sps_t *s, int id, const vk_param_t *p)
         s->vui.i_max_dec_frame_buffering = 0;
     }
 
-    int max_frame_num = s->vui.i_max_dec_frame_buffering + 1;
+    /* x264 set.c:161: with B-pyramid enabled the DPB holds two frame_num
+     * generations, so max_frame_num = max_dec_frame_buffering*2 + 1. */
+    int max_frame_num = s->vui.i_max_dec_frame_buffering * (p->i_bframe > 0 ? 2 : 1) + 1;
     s->i_log2_max_frame_num = 4;
     while ((1 << s->i_log2_max_frame_num) <= max_frame_num) ++s->i_log2_max_frame_num;
 

@@ -94,7 +94,29 @@ visually broken streams directly to the stage-03 gap.
 (`psnr=-1`). The streams are malformed for short clips too, independently of
 the length-driven NAL-count issue.
 
-## Per-preset first-difference map (8f, CABAC, 3 clips)
+## FIXED this session (header parity)
+
+Two header bugs were found and fixed in `Vk264-rewrite/src/ref/nal.c`:
+
+1. **PPS `chroma_qp_offset`** — x264's psy-RD (`encoder.c:1218-1231`) lowers
+   it by 2 when `i_subpel_refine >= 6` (presets fast and above). The oracle
+   always used 0. Fixed by setting `i_chroma_qp_offset = (i_subme>=6)?-2:0`
+   at the end of `vk_param_apply_preset`. Verified: PPS bytes now identical
+   for fast/medium/slow/veryslow/placebo.
+2. **SPS `log2_max_frame_num_minus4`** — x264 (`set.c:161`) computes
+   `max_frame_num = max_dec_frame_buffering * (b_pyramid?2:1) + 1`; the
+   oracle omitted the ×2. Fixed. Verified: SPS bytes now identical for
+   slower/veryslow/placebo.
+
+Also fixed a harness bug: x264 "cavlc" cases lacked `--no-cabac` (x264
+defaults to CABAC for non-ultrafast presets).
+
+**Result:** after a fresh 120-case audit, NAL0/NAL1 mismatches are gone for
+*every* preset. All remaining non-ultrafast failures now first diverge at
+**NAL2 (the first slice)** — i.e. slice header/POC/slice-data, the stage-03
+gap. The green blocks persist because POC still diverges.
+
+## Per-preset first-difference map (8f, CABAC, 3 clips) — superseded by the above; retained for history
 
 `build/per_preset_report.py` compares the concatenated NAL payloads (the
 meaningful "byte-exact" unit — raw `.h264`/MP4 files differ only by x264's
