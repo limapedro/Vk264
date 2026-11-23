@@ -25,3 +25,14 @@ double vk_qscale2bits(double tex_bits, double qscale, double rce_qscale)
     if (qscale < 0.1) qscale = 0.1;
     return (tex_bits + 0.1) * pow(rce_qscale / qscale, 1.1);
 }
+
+double vk_rc_crf_constant(int mb_count,int has_bframes,double qcompress,
+                          int mb_tree,double rf_constant)
+{
+    /* x264 encoder/ratecontrol.c:642-645 (8-bit, QP_BD_OFFSET=0). */
+    double base_cplx = (double)mb_count * (has_bframes ? 120 : 80);
+    float qc = (float)qcompress;   /* x264 rc.qcompress is float */
+    double mbtree_offset = mb_tree ? (1.0 - qc) * 13.5 : 0.0;
+    return pow(base_cplx, 1.0 - qc)
+         / vk_qp2qscale((float)(rf_constant + mbtree_offset));
+}

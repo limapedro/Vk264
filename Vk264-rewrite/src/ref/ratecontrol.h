@@ -18,4 +18,11 @@ uint16_t vk_rc_lambda(int qp);
 /* qscale -> bits model (x264 qscale2bits, power 1.1). */
 double vk_qscale2bits(double tex_bits, double qscale, double rce_qscale);
 
+/* x264 encoder/ratecontrol.c:638-646: CRF rate_factor_constant.
+ * base_cplx = mb_count * (bframes ? 120 : 80);
+ * mbtree_offset = mb_tree ? (1-qcompress)*13.5 : 0;
+ * constant = base_cplx^(1-qcompress) / qp2qscale(rf + mbtree_offset). */
+double vk_rc_crf_constant(int mb_count,int has_bframes,double qcompress,
+                          int mb_tree,double rf_constant);
+
 #endif

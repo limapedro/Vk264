@@ -25,6 +25,19 @@ int main(void)
             fprintf(stderr,"lambda FAIL qp=%d got=%d want=%d\n",qp,vk_rc_lambda(qp),tab[qp]);
             return 1;
         }
-    printf("ratecontrol fixture PASS: qp2qscale/qscale2qp/lambda QP 0..51\n");
+    /* CRF constant: oracle values dumped from x264 ratecontrol.c:644.
+     * 64x64 => 16 MBs; superfast => bframes=3, qcompress=0.6, mbtree=0. */
+    struct { double rf, want; } crf[] = {
+        {18.0, 12.102399354}, {23.0, 6.792241744}, {28.0, 3.812016826}
+    };
+    for (unsigned i=0; i<sizeof(crf)/sizeof(crf[0]); ++i) {
+        double got=vk_rc_crf_constant(16,1,0.6,0,crf[i].rf);
+        if (fabs(got-crf[i].want) > 1e-6) {
+            fprintf(stderr,"CRF FAIL rf=%.1f got=%.9f want=%.9f\n",
+                    crf[i].rf,got,crf[i].want);
+            return 1;
+        }
+    }
+    printf("ratecontrol fixture PASS: qp2qscale/qscale2qp/lambda + CRF constant\n");
     return 0;
 }

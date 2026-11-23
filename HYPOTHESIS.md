@@ -1754,3 +1754,36 @@ from local minima, not the cost primitive or λ. Further convergence needs
 x264's exact `x264_me_search` predictor + hpel interaction (the hpel-bit and
 neighbour-predictor work is now in place). Gates: CTest 27/27 + 65/65,
 CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03 best-of-candidates experiment (this turn, reverted)
+x264 me.c:293-313 evaluates ALL predictor candidates and starts DIA from the
+cheapest, not just the median. Implemented that in `dia_search` (candidate
+array + rounded median + zero-MV). Result REGRESSED 13/16 -> 12/16 (frame-1 P
+cost 478 -> 311 but other frames flipped). Reverted to median-only. Root cause
+of the remaining 3 frame diffs remains unresolved: in the per-MB dump one MB
+matches x264 exactly (52 vs 53) while another stays stuck at a local minimum
+(409 vs 68) with a zero predictor. Stage 03 stays at 13/16.
+
+### Stage 10: CRF constant primitive (this turn)
+Ported x264 encoder/ratecontrol.c:638-646 `rate_factor_constant` exactly:
+```
+base_cplx = mb_count * (bframes ? 120 : 80)
+mbtree_offset = mb_tree ? (1-qcompress)*13.5 : 0
+constant = base_cplx^(1-qcompress) / qp2qscale(rf + mbtree_offset)
+```
+Critical detail: `qcompress` is a **float** in x264 (0.6 -> 0.60000002);
+casting to float before the exponent reproduces x264's value exactly.
+
+Oracle fixtures from instrumented x264 (`build/crf_dump.py`), 64x64,
+superfast (16 MBs, bframes=3, qcompress=0.6, mbtree=0):
+```
+rf=18 -> 12.102399354
+rf=23 ->  6.792241744
+rf=28 ->  3.812016826
+```
+`Vk264-rewrite/tests/test_ratecontrol.c` now checks these; passes.
+
+This is the first stage-10 piece beyond fixed-QP primitives. CRF/ABR rate
+control is still NOT wired into the encoder pipeline; full CRF/VBV/mb-tree
+remains open. Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56,
+compare_slicetype 13/16.
