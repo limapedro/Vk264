@@ -301,3 +301,16 @@ int vk_lowres_i_cost(const uint8_t *cur,int dw,int dh)
     }
     return cost;
 }
+
+void vk_lowres_intra_costs(const uint8_t *cur,int dw,int dh,uint16_t *out)
+{
+    int mb=0;
+    for(int by=0;by+8<=dh;by+=8) for(int bx=0;bx+8<=dw;bx+=8){
+        int s=0;
+        for(int y=0;y<8;++y) for(int x=0;x<8;++x) s+=cur[(by+y)*dw+bx+x];
+        uint8_t dc=(uint8_t)((s+32)>>6), pred[64];
+        memset(pred,dc,64);
+        int c=satd8(cur,dw,bx,by,pred,8,0,0)+5*LAMBDA+LOWRES_PENALTY;
+        out[mb++]=(uint16_t)(c<65535?c:65535);
+    }
+}

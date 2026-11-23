@@ -22,6 +22,8 @@ void vk_lowres_luma(const uint8_t *src,int sw,int sh,uint8_t *dst,int dw,int dh)
 int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
                      vk_lowres_mv_t *st);
 int vk_lowres_i_cost(const uint8_t *cur,int dw,int dh);
+/* Per-MB intra costs (x264 frame_t.i_intra_cost) for mb-tree. */
+void vk_lowres_intra_costs(const uint8_t *cur,int dw,int dh,uint16_t *out);
 int vk_lowres_b_cost(const uint8_t *cur,const uint8_t *r0,const uint8_t *r1,
                      int dw,int dh,const vk_lowres_mv_t *st_p0,
                      const vk_lowres_mv_t *st_p1,int p0,int p1,int b);

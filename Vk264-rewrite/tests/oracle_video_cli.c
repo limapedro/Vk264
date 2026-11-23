@@ -21,12 +21,14 @@
 #include "slicetype.h"
 #include "lowres.h"
 #include "ratecontrol.h"
+#include "mbtree.h"
 #include "encoder.h"
 #include "cabac.h"
 #include "cabac_enc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 static void encode_idr_cavlc(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                              const uint8_t *frame, int w, int h, int qp,
@@ -153,10 +155,21 @@ int main(int argc, char **argv)
     vk_rc_state_t rc;
     int dw = w/2, dh = h/2;
     uint8_t *lo_cur = NULL, *lo_ref = NULL;
+    /* mb-tree per-frame state (x264 frame_t.i_intra_cost / i_propagate_cost). */
+    int n_mbs = (dw/8)*(dh/8);
+    uint16_t *mb_intra = NULL, *mb_prop = NULL, *mb_cost = NULL, *mb_invq = NULL;
+    int16_t (*mb_mv[2])[2] = {NULL,NULL};
     if (crf >= 0) {
         vk_rc_state_init(&rc, mw*mh, strstr(preset,"ultrafast") ? 0 : 1, 0.6, 0, crf);
         lo_cur = malloc((size_t)dw*dh*VK_LOWRES_PLANES);
         lo_ref = malloc((size_t)dw*dh*VK_LOWRES_PLANES);
+        mb_intra = calloc((size_t)nframes*n_mbs,sizeof(uint16_t));
+        mb_prop  = calloc((size_t)nframes*n_mbs,sizeof(uint16_t));
+        mb_cost  = calloc((size_t)nframes*n_mbs,sizeof(uint16_t));
+        mb_invq  = calloc((size_t)nframes*n_mbs,sizeof(uint16_t));
+        for(int q=0;q<nframes*n_mbs;++q) mb_invq[q]=256;  /* Q8.8 1.0 */
+        mb_mv[0] = calloc((size_t)nframes*n_mbs,sizeof(int16_t)*2);
+        mb_mv[1] = calloc((size_t)nframes*n_mbs,sizeof(int16_t)*2);
     }
     size_t fs = (size_t)w*h*3/2;
     uint8_t *frames = malloc(fs);
@@ -234,6 +247,26 @@ int main(int argc, char **argv)
             vk_lowres_luma(frames, w, h, lo_cur, dw, dh);
             double cost = is_idr ? vk_lowres_i_cost(lo_cur, dw, dh)
                                  : vk_lowres_p_cost(lo_cur, lo_ref, dw, dh, NULL);
+            /* mb-tree: per-MB intra cost, lowres cost with list0 bit, zero MVs. */
+            uint16_t *ic = mb_intra + (size_t)f*n_mbs;
+            uint16_t *lc = mb_cost  + (size_t)f*n_mbs;
+            vk_lowres_intra_costs(lo_cur,dw,dh,ic);
+            for(int q=0;q<n_mbs;++q) lc[q]=(uint16_t)(1<<VK_LOWRES_COST_SHIFT);
+            /* Propagate this frame's cost back onto the previous frame when a
+             * reference exists (x264 macroblock_tree_propagate). */
+            if (f>0 && !is_idr) {
+                uint16_t *prev = mb_prop + (size_t)(f-1)*n_mbs;
+                vk_mbtree_propagate_frame(prev,NULL,mb_mv[0]+(size_t)f*n_mbs,NULL,
+                    NULL,ic,mb_invq+(size_t)f*n_mbs,lc,
+                    0,1,128,256.0f,dw/8,dh/8,dw/8);
+                /* Derive per-MB QP offsets and use their mean to scale cost. */
+                float aqzero[VK_LOWRES_MAX_MBS], off[VK_LOWRES_MAX_MBS];
+                for(int q=0;q<n_mbs;++q) aqzero[q]=0.0f;
+                vk_mbtree_finish(off,ic,mb_invq+(size_t)f*n_mbs,prev,aqzero,
+                                 256,0.6f,n_mbs);
+                float mean=0.0f; for(int q=0;q<n_mbs;++q) mean+=off[q];
+                cost *= pow(2.0, -mean/n_mbs/6.0);
+            }
             double qp = vk_rc_frame_qp(&rc, cost, is_idr, f, 1.4f);
             int crf_qp = (int)(qp + 0.5f);
             if (crf_qp < 0) crf_qp = 0; if (crf_qp > 51) crf_qp = 51;

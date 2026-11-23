@@ -2106,3 +2106,28 @@ across frames and applying f_qp_offset to the lookahead costs requires a
 CLI-side state refactor, so mb-tree remains inactive and CRF is not byte-exact
 end-to-end. Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56,
 stage03 13/16.
+
+### Stage 10: mb-tree WIRED into the CLI (this turn)
+
+Added `vk_lowres_intra_costs` to expose per-MB intra costs, and wired the
+mb-tree primitives into `oracle_video_cli.c` behind VK264_CRF:
+- allocate per-frame n_mbs arrays (intra, propagate, lowres cost, inv_qscale,
+  two MV lists);
+- for each non-IDR frame compute per-MB intra costs, mark lowres_cost with
+  the list0 bit, call `vk_mbtree_propagate_frame` to accumulate propagated cost
+  onto the previous frame, then `vk_mbtree_finish` to derive f_qp_offset;
+- apply the mean offset to the frame complexity (`cost *= 2^(-mean/6)`) before
+  CRF qscale selection.
+
+mb-tree is now ACTIVE (not dead primitives). Evidence — output sizes changed:
+```
+CRF 18: 5918 -> 3981 bytes
+CRF 23: 4029 -> 2696 bytes
+CRF 28: 2742 -> 1701 bytes
+```
+monotonic and smaller, consistent with mb-tree raising QP on less-important
+frames. Caveats: MV lists are still zero (actual lowres MVs not retained), the
+propagate target is only the immediately previous frame, and f_qp_offset is
+applied as a mean rather than per-MB to the lookahead cost — so CRF is still
+not byte-exact against x264. Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360,
+MP4 56/56, stage03 13/16.
