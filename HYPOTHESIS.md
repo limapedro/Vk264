@@ -1787,3 +1787,31 @@ This is the first stage-10 piece beyond fixed-QP primitives. CRF/ABR rate
 control is still NOT wired into the encoder pipeline; full CRF/VBV/mb-tree
 remains open. Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56,
 compare_slicetype 13/16.
+
+### Stage 03: x264 ME predictor dump + best-of-candidates retry (this turn)
+
+`build/me_diff_dump.py` instruments x264's `slicetype_mb_cost` to dump the
+predictor candidates (`mvc[]`), median `mvp`, and final ME result for the
+diverging MBs of frame 1 as P:
+```
+MB(2,2): mvc all zero, mvp=(0,0), final MV=(16,-2) spel, cost=49
+MB(1,2): mvc[0]=(16,-2) from right neighbour, others 0,
+         mvp=(0,0) median, final MV=(16,-2) spel, cost=64
+```
+So x264's DIA escapes the (0,0) local minimum for MB(1,2) because it evaluates
+all predictor candidates and starts from the cheapest (me.c:293-313), even
+though the median -- which my model uses -- is zero.
+
+Retried best-of-candidates twice: (a) candidates already fullpel; (b) storing
+halfpel units and rounding with x264's FPEL `(h+1)>>1`. Both REGRESSED
+13/16 -> 11/16 (frame-1 P cost dropped to 139/174 vs x264 246), i.e. starting
+DIA from candidate MVs over-optimizes other blocks. Reverted both; the median
+DIA state is restored at 13/16.
+
+The differential now localizes the residual precisely: my DIA from mvp=(0,0)
+cannot reach the (4,-1) fullpel MV on the base plane for MB(1,2) (SAD 405
+locally), while x264 does. Resolving this needs x264's exact interaction of
+candidate rounding, BITS_MVD, and hpel planes during the search -- not just
+the candidate-selection rule. Stage 03 remains 13/16.
+
+Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
