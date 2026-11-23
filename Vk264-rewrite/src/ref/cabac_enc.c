@@ -4,6 +4,7 @@
 #include "cabac_enc.h"
 #include "cabac_tables.h"
 #include "intra16.h"
+#include "i4x4.h"
 #include "motion.h"
 #include "slice.h"
 #include <stdio.h>
@@ -103,6 +104,30 @@ static void cabac_mb_type_i16(vk_cabac_t *cb, int ctx_left, int ctx_top,
     int pred = mode <= 3 ? mode : 2;
     vk_cabac_decision(cb, 3+6, pred >> 1);
     vk_cabac_decision_noup(cb, 3+7, pred & 1);
+}
+
+/* ---- I4x4 CABAC helpers ---- */
+static const uint8_t S8I[16]={12,13,20,21,14,15,22,23,28,29,36,37,30,31,38,39};
+static int i4_pred(const uint8_t m[16],int i,int l,int t){
+    int a=(i%4)?m[i-1]:(l?2:-1), b=(i>=4)?m[i-4]:(t?2:-1);
+    int p=(a<b)?a:b; return p<0?2:p;
+}
+static void cb_pred4(vk_cabac_t *cb,int pred,int mode){
+    if(pred==mode){vk_cabac_decision(cb,68,1);return;}
+    vk_cabac_decision(cb,68,0);
+    int m=mode;if(m>pred)m--;
+    vk_cabac_decision(cb,69,m&1);
+    vk_cabac_decision(cb,69,(m>>1)&1);
+    vk_cabac_decision(cb,69,(m>>2)!=0);
+}
+static void cb_cbp_i4(vk_cabac_t *cb,int cbp,int cl,int ct){
+    vk_cabac_decision(cb,76-((cl>>1)&1)-((ct>>1)&2),(cbp>>0)&1);
+    vk_cabac_decision(cb,76-((cbp>>0)&1)-((ct>>2)&2),(cbp>>1)&1);
+    vk_cabac_decision(cb,76-((cl>>3)&1)-((cbp<<1)&2),(cbp>>2)&1);
+    vk_cabac_decision_noup(cb,76-((cbp>>2)&1)-((cbp>>0)&2),(cbp>>3)&1);
+}
+static int cbf_i4(const uint8_t nnz[48],int i){
+    int p=S8I[i];return 85+2*!!nnz[p-8]+!!nnz[p-1];
 }
 
 /* x264 cabac_intra_chroma_pred_mode */
@@ -432,11 +457,54 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 int c = sad + lambda*vk_mode_bits(m);
                 if (c < best) { best = c; bestmode = m; }
             }
+            /* x264: I4x4 analysis only when subme>=1 */
+            int use_i4=0, i4cbp=0;
+            uint8_t modes4[16], nnz4[16]={0};
+            int i4q[16][16]; memset(i4q,0,sizeof(i4q));
+            if(vk_i4_analysis_enabled){
+                uint8_t src16[256];
+                for(int yy=0;yy<16;++yy)for(int xx=0;xx<16;++xx)
+                    src16[yy*16+xx]=frame[(my*16+yy)*w+mx*16+xx];
+                int c4=vk_i4x4_decide(src16,recon+ro,rs,mx*16,my*16,qp,
+                                      left,top,0,0,modes4);
+                if(c4<best) use_i4=1;
+            }
             int imode = bestmode;
             vk_predict16(pred, t, l, tl, imode);
             int q[16] = {0}, acq[16][15], nnz[16], cbp_luma = 0;
-            compute_i16_full(frame, w, mx*16, my*16, pred, qp,
-                             q, acq, nnz, &cbp_luma, rmb, 0);
+            if(use_i4){
+                int mf4[16],bi4[16],dq4[16];
+                vk_ref_quant_tables(qp,0,mf4,bi4,dq4);
+                for(int i=0;i<16;++i){
+                    int bx=(i%4)*4,by=(i/4)*4;
+                    uint8_t l4[4],t4[4],tr4[4],p4[16],s4[16];
+                    for(int k=0;k<4;++k){
+                        l4[k]=(bx>0)?rmb[(by+k)*16+bx-1]:(left?rmb[(by+k)*16-1]:128);
+                        t4[k]=(by>0)?rmb[(by-1)*16+bx+k]:(top?rmb[-16+bx+k]:128);
+                        tr4[k]=(by>0)?rmb[(by-1)*16+bx+4+k]:128;
+                    }
+                    uint8_t lt4=(bx>0&&by>0)?rmb[(by-1)*16+bx-1]:128;
+                    vk_predict4(p4,modes4[i],l4,t4,lt4,tr4);
+                    for(int y=0;y<4;++y)for(int x=0;x<4;++x)
+                        s4[y*4+x]=frame[(my*16+by+y)*w+mx*16+bx+x];
+                    int d4[16];vk_ref_dct4x4(d4,s4,p4);
+                    int nz4=0;
+                    for(int k=0;k<16;++k){
+                        i4q[i][k]=vk_ref_quant_one(d4[k],mf4[k],bi4[k]);
+                        if(i4q[i][k])nz4=1;
+                    }
+                    nnz4[i]=(uint8_t)(nz4?0x81:0x80);
+                    if(nz4)i4cbp|=1<<(i/4);
+                    for(int k=0;k<16;++k)d4[k]=i4q[i][k];
+                    vk_ref_dequant4(d4,dq4,qp);vk_ref_idct4(d4);
+                    for(int y=0;y<4;++y)for(int x=0;x<4;++x){
+                        int v=p4[y*4+x]+d4[y*4+x];
+                        rmb[(by+y)*16+bx+x]=(uint8_t)(v<0?0:(v>255?255:v));
+                    }
+                }
+            } else
+                compute_i16_full(frame, w, mx*16, my*16, pred, qp,
+                                 q, acq, nnz, &cbp_luma, rmb, 0);
             int nz = 0;
             for (int i = 0; i < 16; ++i) if (q[i]) nz = 1;
             /* chroma neighbours */
@@ -494,6 +562,27 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
             int nza = (lc >> 8) & 1, nzb = (tc >> 8) & 1;
             int cmode_ctx = (left && cmode_fix[my*mw+mx-1] != 0)
                           + (top  && cmode_fix[(my-1)*mw+mx] != 0);
+            if(use_i4){
+                /* I4x4 header: mb_type, pred modes, chroma mode (x264 order) */
+                int ic=0;
+                if(left && mbcbp[my*mw+mx-1]!=0)ic++;
+                if(top && mbcbp[(my-1)*mw+mx]!=0)ic++;
+                vk_cabac_decision_noup(cb,3+ic,0);
+                /* x264 cabac_transform_size: decision(399+ctx, 0=4x4) */
+                vk_cabac_decision_noup(cb,399,0);
+                for(int i=0;i<16;++i)
+                    cb_pred4(cb,i4_pred(modes4,i,left,top),modes4[i]);
+                cabac_chroma_mode(cb,cmode,cmode_ctx);
+                cmode_fix[my*mw+mx]=(uint8_t)(cmode<=3?cmode:0);
+                cb_cbp_i4(cb,i4cbp,left?mbcbp[my*mw+mx-1]:0,
+                          top?mbcbp[(my-1)*mw+mx]:0);
+                vk_cabac_decision_noup(cb,77,0); /* chroma cbp 0 */
+                cabac_qp_delta0(cb);
+                for(int i=0;i<16;++i) if(i4cbp&(1<<(i/4))){
+                    vk_cabac_decision(cb,cbf_i4(nnz4,i),1);
+                    cabac_coeffs(cb,i4q[i],1);
+                }
+            } else {
             cabac_mb_type_i16(cb, left, top, imode, cbp_luma, cbp_chroma);
             cabac_chroma_mode(cb, cmode, cmode_ctx);
             cmode_fix[my*mw+mx] = (uint8_t)(cmode <= 3 ? cmode : 0);
@@ -522,7 +611,9 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                     cache[p] = (uint8_t)nnz[b];
                 }
             }
-            for (int i = 0; i < 16; ++i) nnzc[my*mw+mx][i] = (uint8_t)nnz[i];
+            } /* end !use_i4 */
+            if(use_i4) for(int i=0;i<16;++i) nnzc[my*mw+mx][i]=nnz4[i]&1;
+            else for (int i = 0; i < 16; ++i) nnzc[my*mw+mx][i] = (uint8_t)nnz[i];
             if (cbp_chroma) {
                 int ca = (lc>>9)&1, cb2 = (tc>>9)&1;  /* U DC cbf ctx */
                 int nu = 0, nv = 0;

@@ -317,6 +317,22 @@ of the remaining macroblock divergence; the gap is in analysis/mode decisions.
 
 All 10 presets now produce byte-identical SPS/PPS. Remaining failures are slice-level (stage-03 POC/slice types). Chart updated with 10/10 header parity and 2/10 byte-exact presets.
 
+## I4x4 CABAC path implemented (this turn) — not byte-exact yet
+
+Implemented a gated I4x4 macroblock path in `cabac_enc.c` for subme>=1:
+exported `vk_predict4`, added x264's I4 mb_type (decision only, no terminal),
+transform-size decision, 16 intra4x4 pred modes with x264 predictors, chroma
+mode in correct header position, CBP luma/chroma, per-4x4 residual with
+dequant/IDCT reconstruction, and intra CBF contexts (base 85). Ultrafast
+(subme=0) is gated off and remains byte-exact (gates all green).
+
+Result: audit still 12/120 byte-exact. The generated I4 CABAC bytes do not
+match x264 (e.g. superfast IDR `ff b8 e2 f0…` vs x264 `ff ec 83 7a…`). The
+remaining mismatch is in the detailed CABAC symbol stream (likely the
+transform-size context / pred-mode predictor / chroma CBP bit ordering) and
+needs bit-level comparison of the first I4 MB. This is now a code-level
+starting point rather than a pure gap.
+
 ## --partitions none shortcut ruled out (final turn)
 
 Tested whether x264 `--partitions none` (I4x4/I8x8 disabled) lets the
