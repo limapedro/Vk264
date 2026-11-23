@@ -219,7 +219,27 @@ for ultrafast CABAC cases that must stay byte-exact, and (b) emitting an I4
 mb_type with I16 residual/CBP coding produces a malformed MB. Reverted fully;
 baseline restored (29/29, 56/56, 12/120).
 
-### I16-vs-I4 decision uses rd_cost_mb, not SATD (definitive)
+### I16-vs-I4 decision CORRECTED (supersedes the rd_cost_mb note below)
+
+`build/rdcost_dump.py` dumps x264's actual decision costs at analyse.c:2943:
+```
+ultrafast: i16=28682 i4=COST_MAX i8=COST_MAX chosen=I16   (all 4 MBs)
+superfast: mb0 i16=28682 i4=2194 i8=7286 chosen=I4
+           mb1 i16=9576  i4=975       chosen=I4
+           mb2 i16=155   i4=COST_MAX chosen=I16
+           mb3 i16=357   i8=131       chosen=I8x8
+```
+Two decisive facts:
+1. **ultrafast has I4x4/I8x8 analysis disabled** (cost = COST_MAX), so I16 always wins. My earlier partial attempt regressed because it evaluated I4 for ultrafast too.
+2. For subme>=1 presets x264 uses plain SAD/SATD costs (not rd_cost_mb — that only applies when `i_mbrd>0`, false here). My `vk_i4x4_decide` returns 2200 vs x264's 2194 — essentially matching.
+
+`build/test_i4_decision.c` now gates on subme and reproduces x264's choice:
+```
+subme=0 -> I16 ; subme=1 -> I4
+```
+So the **decision primitive is now correct**; the remaining work is purely the atomic I4x4 (and I8x8) CABAC path. The rd_cost_mb note below was written before this dump and is superseded for these presets.
+
+### I16-vs-I4 decision uses rd_cost_mb, not SATD (SUPERSEDED)
 
 x264 `analyse.c:991` and `:1000` **overwrite** `a->i_satd_i16x16` and
 `a->i_satd_i4x4` with `rd_cost_mb(h, a->i_lambda2)` — the actual quantized

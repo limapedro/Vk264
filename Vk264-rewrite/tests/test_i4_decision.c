@@ -50,8 +50,12 @@ int main(int argc,char**argv)
         if(sad<b16sad)b16sad=sad;
     }
     int cost4=vk_i4x4_decide(src16,recon,16,0,0,qp,0,0,0,0,modes);
-    printf("I16 satd=%d sad=%d (mode %d) I4=%d lambda=%d -> satd:%s sad:%s\n",
-           b16satd,b16sad,bm,cost4,lambda,
-           cost4<b16satd?"I4":"I16",cost4<b16sad?"I4":"I16");
+    /* x264 ultrafast (subme=0) has X264_ANALYSE_I4x4/I8x8 disabled: cost=COST_MAX.
+     * Only subme>=1 presets actually consider I4. */
+    int subme = argc>2 ? atoi(argv[2]) : 0;
+    int want_i4 = (subme>=1) && (cost4 < b16sad);
+    printf("I16 satd=%d sad=%d (mode %d) I4=%d lambda=%d subme=%d -> %s\n",
+           b16satd,b16sad,bm,cost4,lambda,subme,
+           want_i4?"I4":"I16");
     return 0;
 }
