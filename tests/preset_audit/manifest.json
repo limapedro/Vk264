@@ -1,0 +1,3345 @@
+[
+  {
+    "exp": 1,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "ultrafast",
+    "entropy": "cavlc",
+    "verdict": "BYTE-EXACT",
+    "x264": {
+      "bytes": 840,
+      "sha": "9471e8a09157",
+      "frames": 2,
+      "green_blocks": 0,
+      "flat_blocks": 99,
+      "avgU": 119.8,
+      "avgV": 132.7,
+      "psnr": 45.61
+    },
+    "oracle": {
+      "bytes": 297,
+      "sha": "cd75d9be95be",
+      "frames": 2,
+      "green_blocks": 0,
+      "flat_blocks": 99,
+      "avgU": 119.8,
+      "avgV": 132.7,
+      "psnr": 45.61
+    }
+  },
+  {
+    "exp": 2,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "ultrafast",
+    "entropy": "cabac",
+    "verdict": "BYTE-EXACT",
+    "x264": {
+      "bytes": 835,
+      "sha": "fff148e5e2ba",
+      "frames": 2,
+      "green_blocks": 0,
+      "flat_blocks": 99,
+      "avgU": 119.8,
+      "avgV": 132.7,
+      "psnr": 45.61
+    },
+    "oracle": {
+      "bytes": 292,
+      "sha": "2ab679996c4c",
+      "frames": 2,
+      "green_blocks": 0,
+      "flat_blocks": 99,
+      "avgU": 119.8,
+      "avgV": 132.7,
+      "psnr": 45.61
+    }
+  },
+  {
+    "exp": 3,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "superfast",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 857,
+      "sha": "fcd2442df2ae",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 399,
+      "sha": "5160dea7c4ac",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 4,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "superfast",
+    "entropy": "cabac",
+    "verdict": "NAL2 byte5",
+    "x264": {
+      "bytes": 857,
+      "sha": "fcd2442df2ae",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 297,
+      "sha": "714a00079caf",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 5,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "veryfast",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 821,
+      "sha": "fd3b9b71893b",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 399,
+      "sha": "5160dea7c4ac",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 6,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "veryfast",
+    "entropy": "cabac",
+    "verdict": "NAL2 byte5",
+    "x264": {
+      "bytes": 821,
+      "sha": "fd3b9b71893b",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 297,
+      "sha": "714a00079caf",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 7,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "faster",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 829,
+      "sha": "42a171cfd896",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 400,
+      "sha": "d4fa90a87f0d",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 8,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "faster",
+    "entropy": "cabac",
+    "verdict": "NAL2 byte5",
+    "x264": {
+      "bytes": 829,
+      "sha": "42a171cfd896",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 298,
+      "sha": "fb060de954e5",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 9,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "fast",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 813,
+      "sha": "144e0a830fd3",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 400,
+      "sha": "d4fa90a87f0d",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 10,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "fast",
+    "entropy": "cabac",
+    "verdict": "NAL1 byte3",
+    "x264": {
+      "bytes": 813,
+      "sha": "144e0a830fd3",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 298,
+      "sha": "fb060de954e5",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 11,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "medium",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 813,
+      "sha": "9bae373224ba",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 400,
+      "sha": "fc799bb22c85",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 12,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "medium",
+    "entropy": "cabac",
+    "verdict": "NAL1 byte3",
+    "x264": {
+      "bytes": 813,
+      "sha": "9bae373224ba",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 298,
+      "sha": "8363cc6b6821",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 13,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "slow",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 811,
+      "sha": "d5dadd1bd68b",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 401,
+      "sha": "0dc024633823",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 14,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "slow",
+    "entropy": "cabac",
+    "verdict": "NAL1 byte3",
+    "x264": {
+      "bytes": 811,
+      "sha": "d5dadd1bd68b",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 298,
+      "sha": "ca3a4a60fbe8",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 15,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "slower",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 811,
+      "sha": "0df05a2a2f9d",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 403,
+      "sha": "0f7926745947",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 16,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "slower",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 811,
+      "sha": "0df05a2a2f9d",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 299,
+      "sha": "19be71895e1d",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 17,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "veryslow",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 816,
+      "sha": "43739b77a285",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 407,
+      "sha": "29226bba5620",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 18,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "veryslow",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 816,
+      "sha": "43739b77a285",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 300,
+      "sha": "77d9d8d2b438",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 19,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "placebo",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 819,
+      "sha": "7b54f96e06da",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 407,
+      "sha": "fa2cdb1f0f90",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 20,
+    "clip": "warzone2020",
+    "frames": 2,
+    "preset": "placebo",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 819,
+      "sha": "7b54f96e06da",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 301,
+      "sha": "70fb48ac07e8",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 21,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "ultrafast",
+    "entropy": "cavlc",
+    "verdict": "BYTE-EXACT",
+    "x264": {
+      "bytes": 2313,
+      "sha": "36c4f132d38a",
+      "frames": 8,
+      "green_blocks": 0,
+      "flat_blocks": 235,
+      "avgU": 118.6,
+      "avgV": 134.3,
+      "psnr": 40.15
+    },
+    "oracle": {
+      "bytes": 1770,
+      "sha": "3423dd4d1ef2",
+      "frames": 8,
+      "green_blocks": 0,
+      "flat_blocks": 235,
+      "avgU": 118.6,
+      "avgV": 134.3,
+      "psnr": 40.15
+    }
+  },
+  {
+    "exp": 22,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "ultrafast",
+    "entropy": "cabac",
+    "verdict": "BYTE-EXACT",
+    "x264": {
+      "bytes": 2181,
+      "sha": "fcdebe9172a9",
+      "frames": 8,
+      "green_blocks": 0,
+      "flat_blocks": 235,
+      "avgU": 118.6,
+      "avgV": 134.3,
+      "psnr": 40.15
+    },
+    "oracle": {
+      "bytes": 1638,
+      "sha": "5be4d2cda8f6",
+      "frames": 8,
+      "green_blocks": 0,
+      "flat_blocks": 235,
+      "avgU": 118.6,
+      "avgV": 134.3,
+      "psnr": 40.15
+    }
+  },
+  {
+    "exp": 23,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "superfast",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 2103,
+      "sha": "3d474e7f995d",
+      "frames": 7,
+      "green_blocks": 0,
+      "flat_blocks": 142,
+      "avgU": 118.9,
+      "avgV": 134.7,
+      "psnr": 24.49
+    },
+    "oracle": {
+      "bytes": 2413,
+      "sha": "42e3b1e065b4",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 188,
+      "avgU": 121.2,
+      "avgV": 131.6,
+      "psnr": 21.86
+    }
+  },
+  {
+    "exp": 24,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "superfast",
+    "entropy": "cabac",
+    "verdict": "NAL2 byte5",
+    "x264": {
+      "bytes": 2103,
+      "sha": "3d474e7f995d",
+      "frames": 7,
+      "green_blocks": 0,
+      "flat_blocks": 142,
+      "avgU": 118.9,
+      "avgV": 134.7,
+      "psnr": 24.49
+    },
+    "oracle": {
+      "bytes": 1649,
+      "sha": "05c487371a40",
+      "frames": 6,
+      "green_blocks": 384,
+      "flat_blocks": 369,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 9.42
+    }
+  },
+  {
+    "exp": 25,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "veryfast",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 2081,
+      "sha": "f8b255d49800",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 150,
+      "avgU": 118.7,
+      "avgV": 134.7,
+      "psnr": 24.52
+    },
+    "oracle": {
+      "bytes": 2413,
+      "sha": "42e3b1e065b4",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 188,
+      "avgU": 121.2,
+      "avgV": 131.6,
+      "psnr": 21.86
+    }
+  },
+  {
+    "exp": 26,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "veryfast",
+    "entropy": "cabac",
+    "verdict": "NAL2 byte5",
+    "x264": {
+      "bytes": 2081,
+      "sha": "f8b255d49800",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 150,
+      "avgU": 118.7,
+      "avgV": 134.7,
+      "psnr": 24.52
+    },
+    "oracle": {
+      "bytes": 1649,
+      "sha": "05c487371a40",
+      "frames": 6,
+      "green_blocks": 384,
+      "flat_blocks": 369,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 9.42
+    }
+  },
+  {
+    "exp": 27,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "faster",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 2121,
+      "sha": "e115d766ecbc",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 154,
+      "avgU": 118.8,
+      "avgV": 134.7,
+      "psnr": 24.48
+    },
+    "oracle": {
+      "bytes": 2416,
+      "sha": "1060815fe3d8",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 226,
+      "avgU": 120.6,
+      "avgV": 132.3,
+      "psnr": 22.16
+    }
+  },
+  {
+    "exp": 28,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "faster",
+    "entropy": "cabac",
+    "verdict": "NAL2 byte5",
+    "x264": {
+      "bytes": 2121,
+      "sha": "e115d766ecbc",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 154,
+      "avgU": 118.8,
+      "avgV": 134.7,
+      "psnr": 24.48
+    },
+    "oracle": {
+      "bytes": 1650,
+      "sha": "944ee9f34d33",
+      "frames": 4,
+      "green_blocks": 256,
+      "flat_blocks": 256,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 9.48
+    }
+  },
+  {
+    "exp": 29,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "fast",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 2117,
+      "sha": "e5f091097612",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 154,
+      "avgU": 118.9,
+      "avgV": 134.7,
+      "psnr": 24.42
+    },
+    "oracle": {
+      "bytes": 2416,
+      "sha": "1060815fe3d8",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 226,
+      "avgU": 120.6,
+      "avgV": 132.3,
+      "psnr": 22.16
+    }
+  },
+  {
+    "exp": 30,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "fast",
+    "entropy": "cabac",
+    "verdict": "NAL1 byte3",
+    "x264": {
+      "bytes": 2117,
+      "sha": "e5f091097612",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 154,
+      "avgU": 118.9,
+      "avgV": 134.7,
+      "psnr": 24.42
+    },
+    "oracle": {
+      "bytes": 1650,
+      "sha": "944ee9f34d33",
+      "frames": 4,
+      "green_blocks": 256,
+      "flat_blocks": 256,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 9.48
+    }
+  },
+  {
+    "exp": 31,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "medium",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 2112,
+      "sha": "1b8d666eb39e",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 148,
+      "avgU": 118.8,
+      "avgV": 134.7,
+      "psnr": 24.43
+    },
+    "oracle": {
+      "bytes": 2418,
+      "sha": "c0b950259448",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 294,
+      "avgU": 120.8,
+      "avgV": 132.1,
+      "psnr": 22.2
+    }
+  },
+  {
+    "exp": 32,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "medium",
+    "entropy": "cabac",
+    "verdict": "NAL1 byte3",
+    "x264": {
+      "bytes": 2112,
+      "sha": "1b8d666eb39e",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 148,
+      "avgU": 118.8,
+      "avgV": 134.7,
+      "psnr": 24.43
+    },
+    "oracle": {
+      "bytes": 1650,
+      "sha": "a879fc74004b",
+      "frames": 5,
+      "green_blocks": 320,
+      "flat_blocks": 320,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 9.43
+    }
+  },
+  {
+    "exp": 33,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "slow",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 2148,
+      "sha": "f0ef19db70a0",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 150,
+      "avgU": 118.9,
+      "avgV": 134.8,
+      "psnr": 24.43
+    },
+    "oracle": {
+      "bytes": 2421,
+      "sha": "9e05a76be111",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 294,
+      "avgU": 120.8,
+      "avgV": 132.1,
+      "psnr": 22.2
+    }
+  },
+  {
+    "exp": 34,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "slow",
+    "entropy": "cabac",
+    "verdict": "NAL1 byte3",
+    "x264": {
+      "bytes": 2148,
+      "sha": "f0ef19db70a0",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 150,
+      "avgU": 118.9,
+      "avgV": 134.8,
+      "psnr": 24.43
+    },
+    "oracle": {
+      "bytes": 1650,
+      "sha": "a389db56633a",
+      "frames": 4,
+      "green_blocks": 240,
+      "flat_blocks": 207,
+      "avgU": 7.7,
+      "avgV": 10.3,
+      "psnr": 9.67
+    }
+  },
+  {
+    "exp": 35,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "slower",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 1870,
+      "sha": "a8910f9144ea",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 175,
+      "avgU": 118.6,
+      "avgV": 134.5,
+      "psnr": 24.7
+    },
+    "oracle": {
+      "bytes": 2427,
+      "sha": "241ec00251c4",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 294,
+      "avgU": 120.8,
+      "avgV": 132.1,
+      "psnr": 22.2
+    }
+  },
+  {
+    "exp": 36,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "slower",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 1870,
+      "sha": "a8910f9144ea",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 175,
+      "avgU": 118.6,
+      "avgV": 134.5,
+      "psnr": 24.7
+    },
+    "oracle": {
+      "bytes": 1651,
+      "sha": "837e5b9d32dc",
+      "frames": 4,
+      "green_blocks": 256,
+      "flat_blocks": 193,
+      "avgU": 0.5,
+      "avgV": 0.1,
+      "psnr": 9.51
+    }
+  },
+  {
+    "exp": 37,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "veryslow",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 1841,
+      "sha": "d92120fb6092",
+      "frames": 7,
+      "green_blocks": 0,
+      "flat_blocks": 210,
+      "avgU": 118.3,
+      "avgV": 134.6,
+      "psnr": 28.83
+    },
+    "oracle": {
+      "bytes": 2450,
+      "sha": "6abe8201f31f",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 38,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "veryslow",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 1841,
+      "sha": "d92120fb6092",
+      "frames": 7,
+      "green_blocks": 0,
+      "flat_blocks": 210,
+      "avgU": 118.3,
+      "avgV": 134.6,
+      "psnr": 28.83
+    },
+    "oracle": {
+      "bytes": 1652,
+      "sha": "eadd951edf85",
+      "frames": 5,
+      "green_blocks": 308,
+      "flat_blocks": 238,
+      "avgU": 4.7,
+      "avgV": 0.1,
+      "psnr": 9.57
+    }
+  },
+  {
+    "exp": 39,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "placebo",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 1788,
+      "sha": "485f7592baa7",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 180,
+      "avgU": 117.9,
+      "avgV": 134.9,
+      "psnr": 24.24
+    },
+    "oracle": {
+      "bytes": 2450,
+      "sha": "c73e2832e1f3",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 40,
+    "clip": "warzone2020",
+    "frames": 8,
+    "preset": "placebo",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 1788,
+      "sha": "485f7592baa7",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 180,
+      "avgU": 117.9,
+      "avgV": 134.9,
+      "psnr": 24.24
+    },
+    "oracle": {
+      "bytes": 1653,
+      "sha": "828a74dda667",
+      "frames": 4,
+      "green_blocks": 252,
+      "flat_blocks": 164,
+      "avgU": 2.0,
+      "avgV": 2.3,
+      "psnr": 9.58
+    }
+  },
+  {
+    "exp": 41,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "ultrafast",
+    "entropy": "cavlc",
+    "verdict": "BYTE-EXACT",
+    "x264": {
+      "bytes": 7492,
+      "sha": "b0509864face",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 671,
+      "avgU": 121.2,
+      "avgV": 133.0,
+      "psnr": 39.31
+    },
+    "oracle": {
+      "bytes": 6949,
+      "sha": "3e823f749ecd",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 671,
+      "avgU": 121.2,
+      "avgV": 133.0,
+      "psnr": 39.31
+    }
+  },
+  {
+    "exp": 42,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "ultrafast",
+    "entropy": "cabac",
+    "verdict": "BYTE-EXACT",
+    "x264": {
+      "bytes": 7001,
+      "sha": "90fb0f200c04",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 671,
+      "avgU": 121.2,
+      "avgV": 133.0,
+      "psnr": 39.31
+    },
+    "oracle": {
+      "bytes": 6458,
+      "sha": "a0e473fde236",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 671,
+      "avgU": 121.2,
+      "avgV": 133.0,
+      "psnr": 39.31
+    }
+  },
+  {
+    "exp": 43,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "superfast",
+    "entropy": "cavlc",
+    "verdict": "NAL COUNT 34/32",
+    "x264": {
+      "bytes": 6767,
+      "sha": "8d3635467613",
+      "frames": 29,
+      "green_blocks": 0,
+      "flat_blocks": 527,
+      "avgU": 121.4,
+      "avgV": 133.0,
+      "psnr": 28.17
+    },
+    "oracle": {
+      "bytes": 9475,
+      "sha": "ccdb0aa9c5e9",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 311,
+      "avgU": 122.3,
+      "avgV": 130.7,
+      "psnr": 21.09
+    }
+  },
+  {
+    "exp": 44,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "superfast",
+    "entropy": "cabac",
+    "verdict": "NAL COUNT 34/32",
+    "x264": {
+      "bytes": 6767,
+      "sha": "8d3635467613",
+      "frames": 29,
+      "green_blocks": 0,
+      "flat_blocks": 527,
+      "avgU": 121.4,
+      "avgV": 133.0,
+      "psnr": 28.17
+    },
+    "oracle": {
+      "bytes": 6491,
+      "sha": "1a230f6dd23b",
+      "frames": 28,
+      "green_blocks": 1792,
+      "flat_blocks": 1611,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 9.47
+    }
+  },
+  {
+    "exp": 45,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "veryfast",
+    "entropy": "cavlc",
+    "verdict": "NAL COUNT 36/32",
+    "x264": {
+      "bytes": 6714,
+      "sha": "c472d21c4edc",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 663,
+      "avgU": 121.5,
+      "avgV": 132.8,
+      "psnr": 28.06
+    },
+    "oracle": {
+      "bytes": 9475,
+      "sha": "ccdb0aa9c5e9",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 311,
+      "avgU": 122.3,
+      "avgV": 130.7,
+      "psnr": 21.09
+    }
+  },
+  {
+    "exp": 46,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "veryfast",
+    "entropy": "cabac",
+    "verdict": "NAL COUNT 36/32",
+    "x264": {
+      "bytes": 6714,
+      "sha": "c472d21c4edc",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 663,
+      "avgU": 121.5,
+      "avgV": 132.8,
+      "psnr": 28.06
+    },
+    "oracle": {
+      "bytes": 6491,
+      "sha": "1a230f6dd23b",
+      "frames": 28,
+      "green_blocks": 1792,
+      "flat_blocks": 1611,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 9.47
+    }
+  },
+  {
+    "exp": 47,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "faster",
+    "entropy": "cavlc",
+    "verdict": "NAL COUNT 36/32",
+    "x264": {
+      "bytes": 6773,
+      "sha": "d2405ad64cf9",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 677,
+      "avgU": 121.6,
+      "avgV": 132.8,
+      "psnr": 28.06
+    },
+    "oracle": {
+      "bytes": 9481,
+      "sha": "b3da2db35b1b",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 684,
+      "avgU": 125.0,
+      "avgV": 132.3,
+      "psnr": 20.6
+    }
+  },
+  {
+    "exp": 48,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "faster",
+    "entropy": "cabac",
+    "verdict": "NAL COUNT 36/32",
+    "x264": {
+      "bytes": 6773,
+      "sha": "d2405ad64cf9",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 677,
+      "avgU": 121.6,
+      "avgV": 132.8,
+      "psnr": 28.06
+    },
+    "oracle": {
+      "bytes": 6492,
+      "sha": "2b33cbe3829b",
+      "frames": 27,
+      "green_blocks": 1728,
+      "flat_blocks": 1713,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 9.45
+    }
+  },
+  {
+    "exp": 49,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "fast",
+    "entropy": "cavlc",
+    "verdict": "NAL COUNT 36/32",
+    "x264": {
+      "bytes": 6741,
+      "sha": "1b56ffafc085",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 666,
+      "avgU": 121.6,
+      "avgV": 132.8,
+      "psnr": 28.04
+    },
+    "oracle": {
+      "bytes": 9481,
+      "sha": "b3da2db35b1b",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 684,
+      "avgU": 125.0,
+      "avgV": 132.3,
+      "psnr": 20.6
+    }
+  },
+  {
+    "exp": 50,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "fast",
+    "entropy": "cabac",
+    "verdict": "NAL COUNT 36/32",
+    "x264": {
+      "bytes": 6741,
+      "sha": "1b56ffafc085",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 666,
+      "avgU": 121.6,
+      "avgV": 132.8,
+      "psnr": 28.04
+    },
+    "oracle": {
+      "bytes": 6492,
+      "sha": "2b33cbe3829b",
+      "frames": 27,
+      "green_blocks": 1728,
+      "flat_blocks": 1713,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 9.45
+    }
+  },
+  {
+    "exp": 51,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "medium",
+    "entropy": "cavlc",
+    "verdict": "NAL COUNT 36/32",
+    "x264": {
+      "bytes": 6697,
+      "sha": "bf526173ca77",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 652,
+      "avgU": 121.6,
+      "avgV": 132.8,
+      "psnr": 28.03
+    },
+    "oracle": {
+      "bytes": 9490,
+      "sha": "fef6ce69fa9f",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 1014,
+      "avgU": 123.7,
+      "avgV": 132.2,
+      "psnr": 20.78
+    }
+  },
+  {
+    "exp": 52,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "medium",
+    "entropy": "cabac",
+    "verdict": "NAL COUNT 36/32",
+    "x264": {
+      "bytes": 6697,
+      "sha": "bf526173ca77",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 652,
+      "avgU": 121.6,
+      "avgV": 132.8,
+      "psnr": 28.03
+    },
+    "oracle": {
+      "bytes": 6492,
+      "sha": "52ced71847ce",
+      "frames": 27,
+      "green_blocks": 1728,
+      "flat_blocks": 1691,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 9.45
+    }
+  },
+  {
+    "exp": 53,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "slow",
+    "entropy": "cavlc",
+    "verdict": "NAL COUNT 36/32",
+    "x264": {
+      "bytes": 6790,
+      "sha": "1999113ee27d",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 632,
+      "avgU": 121.6,
+      "avgV": 132.8,
+      "psnr": 28.04
+    },
+    "oracle": {
+      "bytes": 9505,
+      "sha": "9f51e2b54400",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 1014,
+      "avgU": 123.7,
+      "avgV": 132.2,
+      "psnr": 20.78
+    }
+  },
+  {
+    "exp": 54,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "slow",
+    "entropy": "cabac",
+    "verdict": "NAL COUNT 36/32",
+    "x264": {
+      "bytes": 6790,
+      "sha": "1999113ee27d",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 632,
+      "avgU": 121.6,
+      "avgV": 132.8,
+      "psnr": 28.04
+    },
+    "oracle": {
+      "bytes": 6492,
+      "sha": "7697b89ba761",
+      "frames": 27,
+      "green_blocks": 1710,
+      "flat_blocks": 1560,
+      "avgU": 1.3,
+      "avgV": 1.7,
+      "psnr": 9.48
+    }
+  },
+  {
+    "exp": 55,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "slower",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 5824,
+      "sha": "f9b1eada5ae6",
+      "frames": 29,
+      "green_blocks": 0,
+      "flat_blocks": 589,
+      "avgU": 121.2,
+      "avgV": 133.0,
+      "psnr": 29.14
+    },
+    "oracle": {
+      "bytes": 9528,
+      "sha": "51f4173c7dbd",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 1014,
+      "avgU": 123.7,
+      "avgV": 132.2,
+      "psnr": 20.78
+    }
+  },
+  {
+    "exp": 56,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "slower",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 5824,
+      "sha": "f9b1eada5ae6",
+      "frames": 29,
+      "green_blocks": 0,
+      "flat_blocks": 589,
+      "avgU": 121.2,
+      "avgV": 133.0,
+      "psnr": 29.14
+    },
+    "oracle": {
+      "bytes": 6493,
+      "sha": "93a622383471",
+      "frames": 26,
+      "green_blocks": 1664,
+      "flat_blocks": 1219,
+      "avgU": 0.5,
+      "avgV": 0.1,
+      "psnr": 9.47
+    }
+  },
+  {
+    "exp": 57,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "veryslow",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 5764,
+      "sha": "474249418028",
+      "frames": 29,
+      "green_blocks": 0,
+      "flat_blocks": 630,
+      "avgU": 121.2,
+      "avgV": 132.9,
+      "psnr": 35.89
+    },
+    "oracle": {
+      "bytes": 9622,
+      "sha": "975b6c61f4c6",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 58,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "veryslow",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 5764,
+      "sha": "474249418028",
+      "frames": 29,
+      "green_blocks": 0,
+      "flat_blocks": 630,
+      "avgU": 121.2,
+      "avgV": 132.9,
+      "psnr": 35.89
+    },
+    "oracle": {
+      "bytes": 6494,
+      "sha": "282598fa887c",
+      "frames": 25,
+      "green_blocks": 1588,
+      "flat_blocks": 1229,
+      "avgU": 1.0,
+      "avgV": 0.1,
+      "psnr": 9.49
+    }
+  },
+  {
+    "exp": 59,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "placebo",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 5692,
+      "sha": "3f2fbd98e971",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 608,
+      "avgU": 121.2,
+      "avgV": 133.0,
+      "psnr": 22.85
+    },
+    "oracle": {
+      "bytes": 9622,
+      "sha": "c1d48f5e978b",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 60,
+    "clip": "warzone2020",
+    "frames": 30,
+    "preset": "placebo",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 5692,
+      "sha": "3f2fbd98e971",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 608,
+      "avgU": 121.2,
+      "avgV": 133.0,
+      "psnr": 22.85
+    },
+    "oracle": {
+      "bytes": 6495,
+      "sha": "5c84444f2b4f",
+      "frames": 24,
+      "green_blocks": 1532,
+      "flat_blocks": 1215,
+      "avgU": 0.4,
+      "avgV": 1.2,
+      "psnr": 9.54
+    }
+  },
+  {
+    "exp": 61,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "ultrafast",
+    "entropy": "cavlc",
+    "verdict": "BYTE-EXACT",
+    "x264": {
+      "bytes": 923,
+      "sha": "114dd2d10cc1",
+      "frames": 2,
+      "green_blocks": 0,
+      "flat_blocks": 5,
+      "avgU": 123.2,
+      "avgV": 134.0,
+      "psnr": 43.05
+    },
+    "oracle": {
+      "bytes": 380,
+      "sha": "97daa012de6a",
+      "frames": 2,
+      "green_blocks": 0,
+      "flat_blocks": 5,
+      "avgU": 123.2,
+      "avgV": 134.0,
+      "psnr": 43.05
+    }
+  },
+  {
+    "exp": 62,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "ultrafast",
+    "entropy": "cabac",
+    "verdict": "BYTE-EXACT",
+    "x264": {
+      "bytes": 856,
+      "sha": "d607119b34ab",
+      "frames": 2,
+      "green_blocks": 0,
+      "flat_blocks": 5,
+      "avgU": 123.2,
+      "avgV": 134.0,
+      "psnr": 43.05
+    },
+    "oracle": {
+      "bytes": 313,
+      "sha": "0af53e71f885",
+      "frames": 2,
+      "green_blocks": 0,
+      "flat_blocks": 5,
+      "avgU": 123.2,
+      "avgV": 134.0,
+      "psnr": 43.05
+    }
+  },
+  {
+    "exp": 63,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "superfast",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 944,
+      "sha": "c363978df7eb",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 408,
+      "sha": "8374c018b0a0",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 64,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "superfast",
+    "entropy": "cabac",
+    "verdict": "NAL2 byte5",
+    "x264": {
+      "bytes": 944,
+      "sha": "c363978df7eb",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 318,
+      "sha": "4f6a94507172",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 65,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "veryfast",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 928,
+      "sha": "6cb53c8b18cf",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 408,
+      "sha": "8374c018b0a0",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 66,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "veryfast",
+    "entropy": "cabac",
+    "verdict": "NAL2 byte5",
+    "x264": {
+      "bytes": 928,
+      "sha": "6cb53c8b18cf",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 318,
+      "sha": "4f6a94507172",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 67,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "faster",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 924,
+      "sha": "7ce6d5ca91c1",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 409,
+      "sha": "e90e087ef9a3",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 68,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "faster",
+    "entropy": "cabac",
+    "verdict": "NAL2 byte5",
+    "x264": {
+      "bytes": 924,
+      "sha": "7ce6d5ca91c1",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 319,
+      "sha": "49d5bd3994f6",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 69,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "fast",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 909,
+      "sha": "96130f366e2d",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 409,
+      "sha": "e90e087ef9a3",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 70,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "fast",
+    "entropy": "cabac",
+    "verdict": "NAL1 byte3",
+    "x264": {
+      "bytes": 909,
+      "sha": "96130f366e2d",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 319,
+      "sha": "49d5bd3994f6",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 71,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "medium",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 921,
+      "sha": "2528aa5f8711",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 409,
+      "sha": "844c91c297d3",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 72,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "medium",
+    "entropy": "cabac",
+    "verdict": "NAL1 byte3",
+    "x264": {
+      "bytes": 921,
+      "sha": "2528aa5f8711",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 319,
+      "sha": "cb74a5151142",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 73,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "slow",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 916,
+      "sha": "c9f41986e248",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 410,
+      "sha": "e9dde6717026",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 74,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "slow",
+    "entropy": "cabac",
+    "verdict": "NAL1 byte3",
+    "x264": {
+      "bytes": 916,
+      "sha": "c9f41986e248",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 319,
+      "sha": "a5cc6bdd5256",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 75,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "slower",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 921,
+      "sha": "642fe14c9431",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 412,
+      "sha": "d625731aa791",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 76,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "slower",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 921,
+      "sha": "642fe14c9431",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 320,
+      "sha": "1a3df4e7a4e5",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    }
+  },
+  {
+    "exp": 77,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "veryslow",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 928,
+      "sha": "9a2c32f4ce4d",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 416,
+      "sha": "0bf34902f271",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 78,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "veryslow",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 928,
+      "sha": "9a2c32f4ce4d",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 321,
+      "sha": "d190b427d6c1",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 79,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "placebo",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 923,
+      "sha": "8fb809a67856",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 416,
+      "sha": "e0185bb6f7ca",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 80,
+    "clip": "forza",
+    "frames": 2,
+    "preset": "placebo",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 923,
+      "sha": "8fb809a67856",
+      "decode": "EMPTY",
+      "frames": 0,
+      "green_blocks": -1,
+      "flat_blocks": -1,
+      "avgU": -1,
+      "avgV": -1,
+      "psnr": -1
+    },
+    "oracle": {
+      "bytes": 322,
+      "sha": "addb59d24a22",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 81,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "ultrafast",
+    "entropy": "cavlc",
+    "verdict": "BYTE-EXACT",
+    "x264": {
+      "bytes": 1852,
+      "sha": "f0fe352291c5",
+      "frames": 8,
+      "green_blocks": 0,
+      "flat_blocks": 37,
+      "avgU": 123.1,
+      "avgV": 134.0,
+      "psnr": 41.55
+    },
+    "oracle": {
+      "bytes": 1309,
+      "sha": "a34f855e3fe6",
+      "frames": 8,
+      "green_blocks": 0,
+      "flat_blocks": 37,
+      "avgU": 123.1,
+      "avgV": 134.0,
+      "psnr": 41.55
+    }
+  },
+  {
+    "exp": 82,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "ultrafast",
+    "entropy": "cabac",
+    "verdict": "BYTE-EXACT",
+    "x264": {
+      "bytes": 1653,
+      "sha": "94148a15aa29",
+      "frames": 8,
+      "green_blocks": 0,
+      "flat_blocks": 37,
+      "avgU": 123.1,
+      "avgV": 134.0,
+      "psnr": 41.55
+    },
+    "oracle": {
+      "bytes": 1110,
+      "sha": "3cd75d2eb473",
+      "frames": 8,
+      "green_blocks": 0,
+      "flat_blocks": 37,
+      "avgU": 123.1,
+      "avgV": 134.0,
+      "psnr": 41.55
+    }
+  },
+  {
+    "exp": 83,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "superfast",
+    "entropy": "cavlc",
+    "verdict": "NAL COUNT 12/10",
+    "x264": {
+      "bytes": 1685,
+      "sha": "f8b52ce413dd",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 12,
+      "avgU": 123.6,
+      "avgV": 134.0,
+      "psnr": 25.37
+    },
+    "oracle": {
+      "bytes": 1403,
+      "sha": "13883793f87e",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 6,
+      "avgU": 123.1,
+      "avgV": 134.0,
+      "psnr": 27.17
+    }
+  },
+  {
+    "exp": 84,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "superfast",
+    "entropy": "cabac",
+    "verdict": "NAL COUNT 12/10",
+    "x264": {
+      "bytes": 1685,
+      "sha": "f8b52ce413dd",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 12,
+      "avgU": 123.6,
+      "avgV": 134.0,
+      "psnr": 25.37
+    },
+    "oracle": {
+      "bytes": 1121,
+      "sha": "970b0c40a9d3",
+      "frames": 6,
+      "green_blocks": 384,
+      "flat_blocks": 365,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 3.71
+    }
+  },
+  {
+    "exp": 85,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "veryfast",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 1594,
+      "sha": "dd52ba5e807f",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 20,
+      "avgU": 123.5,
+      "avgV": 134.0,
+      "psnr": 24.36
+    },
+    "oracle": {
+      "bytes": 1403,
+      "sha": "13883793f87e",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 6,
+      "avgU": 123.1,
+      "avgV": 134.0,
+      "psnr": 27.17
+    }
+  },
+  {
+    "exp": 86,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "veryfast",
+    "entropy": "cabac",
+    "verdict": "NAL2 byte5",
+    "x264": {
+      "bytes": 1594,
+      "sha": "dd52ba5e807f",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 20,
+      "avgU": 123.5,
+      "avgV": 134.0,
+      "psnr": 24.36
+    },
+    "oracle": {
+      "bytes": 1121,
+      "sha": "970b0c40a9d3",
+      "frames": 6,
+      "green_blocks": 384,
+      "flat_blocks": 365,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 3.71
+    }
+  },
+  {
+    "exp": 87,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "faster",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 1609,
+      "sha": "ccea7f317cac",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 12,
+      "avgU": 123.1,
+      "avgV": 134.0,
+      "psnr": 24.33
+    },
+    "oracle": {
+      "bytes": 1406,
+      "sha": "f51940090ece",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 27,
+      "avgU": 123.0,
+      "avgV": 133.9,
+      "psnr": 26.88
+    }
+  },
+  {
+    "exp": 88,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "faster",
+    "entropy": "cabac",
+    "verdict": "NAL2 byte5",
+    "x264": {
+      "bytes": 1609,
+      "sha": "ccea7f317cac",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 12,
+      "avgU": 123.1,
+      "avgV": 134.0,
+      "psnr": 24.33
+    },
+    "oracle": {
+      "bytes": 1122,
+      "sha": "8b360db5b7ec",
+      "frames": 2,
+      "green_blocks": 128,
+      "flat_blocks": 107,
+      "avgU": 0.4,
+      "avgV": 0.2,
+      "psnr": 3.75
+    }
+  },
+  {
+    "exp": 89,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "fast",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 1605,
+      "sha": "939ccc53073f",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 9,
+      "avgU": 123.3,
+      "avgV": 134.0,
+      "psnr": 24.32
+    },
+    "oracle": {
+      "bytes": 1406,
+      "sha": "f51940090ece",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 27,
+      "avgU": 123.0,
+      "avgV": 133.9,
+      "psnr": 26.88
+    }
+  },
+  {
+    "exp": 90,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "fast",
+    "entropy": "cabac",
+    "verdict": "NAL1 byte3",
+    "x264": {
+      "bytes": 1605,
+      "sha": "939ccc53073f",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 9,
+      "avgU": 123.3,
+      "avgV": 134.0,
+      "psnr": 24.32
+    },
+    "oracle": {
+      "bytes": 1122,
+      "sha": "8b360db5b7ec",
+      "frames": 2,
+      "green_blocks": 128,
+      "flat_blocks": 107,
+      "avgU": 0.4,
+      "avgV": 0.2,
+      "psnr": 3.75
+    }
+  },
+  {
+    "exp": 91,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "medium",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 1650,
+      "sha": "206ebe524f40",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 8,
+      "avgU": 123.3,
+      "avgV": 134.0,
+      "psnr": 24.32
+    },
+    "oracle": {
+      "bytes": 1407,
+      "sha": "c8696426c32e",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 12,
+      "avgU": 123.1,
+      "avgV": 134.0,
+      "psnr": 27.16
+    }
+  },
+  {
+    "exp": 92,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "medium",
+    "entropy": "cabac",
+    "verdict": "NAL1 byte3",
+    "x264": {
+      "bytes": 1650,
+      "sha": "206ebe524f40",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 8,
+      "avgU": 123.3,
+      "avgV": 134.0,
+      "psnr": 24.32
+    },
+    "oracle": {
+      "bytes": 1122,
+      "sha": "012b6e25abbb",
+      "frames": 6,
+      "green_blocks": 367,
+      "flat_blocks": 357,
+      "avgU": 10.9,
+      "avgV": 6.0,
+      "psnr": 3.89
+    }
+  },
+  {
+    "exp": 93,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "slow",
+    "entropy": "cavlc",
+    "verdict": "NAL1 byte1",
+    "x264": {
+      "bytes": 1640,
+      "sha": "e3cfc0ca858b",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 10,
+      "avgU": 123.2,
+      "avgV": 134.0,
+      "psnr": 24.32
+    },
+    "oracle": {
+      "bytes": 1411,
+      "sha": "a887663c9803",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 12,
+      "avgU": 123.1,
+      "avgV": 134.0,
+      "psnr": 27.16
+    }
+  },
+  {
+    "exp": 94,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "slow",
+    "entropy": "cabac",
+    "verdict": "NAL1 byte3",
+    "x264": {
+      "bytes": 1640,
+      "sha": "e3cfc0ca858b",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 10,
+      "avgU": 123.2,
+      "avgV": 134.0,
+      "psnr": 24.32
+    },
+    "oracle": {
+      "bytes": 1122,
+      "sha": "d221e48ac553",
+      "frames": 5,
+      "green_blocks": 316,
+      "flat_blocks": 312,
+      "avgU": 1.5,
+      "avgV": 1.7,
+      "psnr": 3.73
+    }
+  },
+  {
+    "exp": 95,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "slower",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 1628,
+      "sha": "a9dfce83416e",
+      "frames": 7,
+      "green_blocks": 0,
+      "flat_blocks": 8,
+      "avgU": 123.2,
+      "avgV": 134.0,
+      "psnr": 25.02
+    },
+    "oracle": {
+      "bytes": 1419,
+      "sha": "8bbea6619dce",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 12,
+      "avgU": 123.1,
+      "avgV": 134.0,
+      "psnr": 27.16
+    }
+  },
+  {
+    "exp": 96,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "slower",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 1628,
+      "sha": "a9dfce83416e",
+      "frames": 7,
+      "green_blocks": 0,
+      "flat_blocks": 8,
+      "avgU": 123.2,
+      "avgV": 134.0,
+      "psnr": 25.02
+    },
+    "oracle": {
+      "bytes": 1123,
+      "sha": "3262219f94e2",
+      "frames": 2,
+      "green_blocks": 126,
+      "flat_blocks": 97,
+      "avgU": 3.9,
+      "avgV": 0.1,
+      "psnr": 3.81
+    }
+  },
+  {
+    "exp": 97,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "veryslow",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 1631,
+      "sha": "e8759416a021",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 12,
+      "avgU": 123.4,
+      "avgV": 134.0,
+      "psnr": 24.86
+    },
+    "oracle": {
+      "bytes": 1441,
+      "sha": "e9b9e05a522d",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 98,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "veryslow",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 1631,
+      "sha": "e8759416a021",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 12,
+      "avgU": 123.4,
+      "avgV": 134.0,
+      "psnr": 24.86
+    },
+    "oracle": {
+      "bytes": 1124,
+      "sha": "c0dc01d18622",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 99,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "placebo",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 1628,
+      "sha": "9b146b678d38",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 15,
+      "avgU": 123.2,
+      "avgV": 134.0,
+      "psnr": 24.84
+    },
+    "oracle": {
+      "bytes": 1441,
+      "sha": "52091b11845f",
+      "frames": 6,
+      "green_blocks": 320,
+      "flat_blocks": 382,
+      "avgU": 20.5,
+      "avgV": 0.0,
+      "psnr": 4.53
+    }
+  },
+  {
+    "exp": 100,
+    "clip": "forza",
+    "frames": 8,
+    "preset": "placebo",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 1628,
+      "sha": "9b146b678d38",
+      "frames": 6,
+      "green_blocks": 0,
+      "flat_blocks": 15,
+      "avgU": 123.2,
+      "avgV": 134.0,
+      "psnr": 24.84
+    },
+    "oracle": {
+      "bytes": 1125,
+      "sha": "52201d11ab66",
+      "frames": 3,
+      "green_blocks": 159,
+      "flat_blocks": 150,
+      "avgU": 22.6,
+      "avgV": 21.8,
+      "psnr": 4.4
+    }
+  },
+  {
+    "exp": 101,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "ultrafast",
+    "entropy": "cavlc",
+    "verdict": "BYTE-EXACT",
+    "x264": {
+      "bytes": 4078,
+      "sha": "d71bea6efe6d",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 350,
+      "avgU": 122.9,
+      "avgV": 134.2,
+      "psnr": 42.07
+    },
+    "oracle": {
+      "bytes": 3535,
+      "sha": "65a6fd61e8be",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 350,
+      "avgU": 122.9,
+      "avgV": 134.2,
+      "psnr": 42.07
+    }
+  },
+  {
+    "exp": 102,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "ultrafast",
+    "entropy": "cabac",
+    "verdict": "BYTE-EXACT",
+    "x264": {
+      "bytes": 3612,
+      "sha": "5980782989e8",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 350,
+      "avgU": 122.9,
+      "avgV": 134.2,
+      "psnr": 42.07
+    },
+    "oracle": {
+      "bytes": 3069,
+      "sha": "f266d58d0767",
+      "frames": 30,
+      "green_blocks": 0,
+      "flat_blocks": 350,
+      "avgU": 122.9,
+      "avgV": 134.2,
+      "psnr": 42.07
+    }
+  },
+  {
+    "exp": 103,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "superfast",
+    "entropy": "cavlc",
+    "verdict": "NAL COUNT 40/32",
+    "x264": {
+      "bytes": 3761,
+      "sha": "bebd43929cc0",
+      "frames": 29,
+      "green_blocks": 0,
+      "flat_blocks": 146,
+      "avgU": 123.3,
+      "avgV": 134.2,
+      "psnr": 31.08
+    },
+    "oracle": {
+      "bytes": 3811,
+      "sha": "cb339e1924d1",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 86,
+      "avgU": 123.1,
+      "avgV": 134.2,
+      "psnr": 23.26
+    }
+  },
+  {
+    "exp": 104,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "superfast",
+    "entropy": "cabac",
+    "verdict": "NAL COUNT 40/32",
+    "x264": {
+      "bytes": 3761,
+      "sha": "bebd43929cc0",
+      "frames": 29,
+      "green_blocks": 0,
+      "flat_blocks": 146,
+      "avgU": 123.3,
+      "avgV": 134.2,
+      "psnr": 31.08
+    },
+    "oracle": {
+      "bytes": 3102,
+      "sha": "55cb60921a1e",
+      "frames": 28,
+      "green_blocks": 1792,
+      "flat_blocks": 1655,
+      "avgU": 0.1,
+      "avgV": 0.1,
+      "psnr": 3.65
+    }
+  },
+  {
+    "exp": 105,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "veryfast",
+    "entropy": "cavlc",
+    "verdict": "NAL COUNT 34/32",
+    "x264": {
+      "bytes": 3580,
+      "sha": "0f5177c03b1f",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 187,
+      "avgU": 123.4,
+      "avgV": 134.3,
+      "psnr": 25.49
+    },
+    "oracle": {
+      "bytes": 3811,
+      "sha": "cb339e1924d1",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 86,
+      "avgU": 123.1,
+      "avgV": 134.2,
+      "psnr": 23.25
+    }
+  },
+  {
+    "exp": 106,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "veryfast",
+    "entropy": "cabac",
+    "verdict": "NAL COUNT 34/32",
+    "x264": {
+      "bytes": 3580,
+      "sha": "0f5177c03b1f",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 187,
+      "avgU": 123.4,
+      "avgV": 134.3,
+      "psnr": 25.49
+    },
+    "oracle": {
+      "bytes": 3102,
+      "sha": "55cb60921a1e",
+      "frames": 28,
+      "green_blocks": 1792,
+      "flat_blocks": 1655,
+      "avgU": 0.1,
+      "avgV": 0.1,
+      "psnr": 3.65
+    }
+  },
+  {
+    "exp": 107,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "faster",
+    "entropy": "cavlc",
+    "verdict": "NAL COUNT 34/32",
+    "x264": {
+      "bytes": 3633,
+      "sha": "1863573b3247",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 162,
+      "avgU": 122.8,
+      "avgV": 134.3,
+      "psnr": 25.46
+    },
+    "oracle": {
+      "bytes": 3821,
+      "sha": "72518a1eae25",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 65,
+      "avgU": 123.1,
+      "avgV": 133.9,
+      "psnr": 24.79
+    }
+  },
+  {
+    "exp": 108,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "faster",
+    "entropy": "cabac",
+    "verdict": "NAL COUNT 34/32",
+    "x264": {
+      "bytes": 3633,
+      "sha": "1863573b3247",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 162,
+      "avgU": 122.8,
+      "avgV": 134.3,
+      "psnr": 25.46
+    },
+    "oracle": {
+      "bytes": 3103,
+      "sha": "576be1e58b85",
+      "frames": 26,
+      "green_blocks": 1664,
+      "flat_blocks": 1643,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 3.62
+    }
+  },
+  {
+    "exp": 109,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "fast",
+    "entropy": "cavlc",
+    "verdict": "NAL COUNT 34/32",
+    "x264": {
+      "bytes": 3650,
+      "sha": "0c8daa87219b",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 128,
+      "avgU": 123.1,
+      "avgV": 134.4,
+      "psnr": 25.48
+    },
+    "oracle": {
+      "bytes": 3821,
+      "sha": "72518a1eae25",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 65,
+      "avgU": 123.1,
+      "avgV": 133.9,
+      "psnr": 24.79
+    }
+  },
+  {
+    "exp": 110,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "fast",
+    "entropy": "cabac",
+    "verdict": "NAL COUNT 34/32",
+    "x264": {
+      "bytes": 3650,
+      "sha": "0c8daa87219b",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 128,
+      "avgU": 123.1,
+      "avgV": 134.4,
+      "psnr": 25.48
+    },
+    "oracle": {
+      "bytes": 3103,
+      "sha": "576be1e58b85",
+      "frames": 26,
+      "green_blocks": 1664,
+      "flat_blocks": 1643,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 3.62
+    }
+  },
+  {
+    "exp": 111,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "medium",
+    "entropy": "cavlc",
+    "verdict": "NAL COUNT 34/32",
+    "x264": {
+      "bytes": 3854,
+      "sha": "ff6655f740d1",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 123,
+      "avgU": 123.1,
+      "avgV": 134.4,
+      "psnr": 25.47
+    },
+    "oracle": {
+      "bytes": 3828,
+      "sha": "f57d49639319",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 50,
+      "avgU": 123.2,
+      "avgV": 134.0,
+      "psnr": 24.87
+    }
+  },
+  {
+    "exp": 112,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "medium",
+    "entropy": "cabac",
+    "verdict": "NAL COUNT 34/32",
+    "x264": {
+      "bytes": 3854,
+      "sha": "ff6655f740d1",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 123,
+      "avgU": 123.1,
+      "avgV": 134.4,
+      "psnr": 25.47
+    },
+    "oracle": {
+      "bytes": 3103,
+      "sha": "dee03332e9d4",
+      "frames": 28,
+      "green_blocks": 1775,
+      "flat_blocks": 1755,
+      "avgU": 2.3,
+      "avgV": 1.3,
+      "psnr": 3.69
+    }
+  },
+  {
+    "exp": 113,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "slow",
+    "entropy": "cavlc",
+    "verdict": "NAL COUNT 34/32",
+    "x264": {
+      "bytes": 3873,
+      "sha": "eba52c39d946",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 91,
+      "avgU": 123.1,
+      "avgV": 134.4,
+      "psnr": 25.46
+    },
+    "oracle": {
+      "bytes": 3841,
+      "sha": "1debc7e23dbe",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 50,
+      "avgU": 123.2,
+      "avgV": 134.0,
+      "psnr": 24.87
+    }
+  },
+  {
+    "exp": 114,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "slow",
+    "entropy": "cabac",
+    "verdict": "NAL COUNT 34/32",
+    "x264": {
+      "bytes": 3873,
+      "sha": "eba52c39d946",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 91,
+      "avgU": 123.1,
+      "avgV": 134.4,
+      "psnr": 25.46
+    },
+    "oracle": {
+      "bytes": 3103,
+      "sha": "92696f9d0afa",
+      "frames": 24,
+      "green_blocks": 1532,
+      "flat_blocks": 1475,
+      "avgU": 0.3,
+      "avgV": 0.4,
+      "psnr": 3.61
+    }
+  },
+  {
+    "exp": 115,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "slower",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 3640,
+      "sha": "89021c4597f3",
+      "frames": 29,
+      "green_blocks": 0,
+      "flat_blocks": 80,
+      "avgU": 123.2,
+      "avgV": 134.3,
+      "psnr": 32.07
+    },
+    "oracle": {
+      "bytes": 3869,
+      "sha": "2b66622c7cf8",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 50,
+      "avgU": 123.2,
+      "avgV": 134.0,
+      "psnr": 24.87
+    }
+  },
+  {
+    "exp": 116,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "slower",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 3640,
+      "sha": "89021c4597f3",
+      "frames": 29,
+      "green_blocks": 0,
+      "flat_blocks": 80,
+      "avgU": 123.2,
+      "avgV": 134.3,
+      "psnr": 32.07
+    },
+    "oracle": {
+      "bytes": 3104,
+      "sha": "963883bb95e1",
+      "frames": 27,
+      "green_blocks": 1726,
+      "flat_blocks": 1578,
+      "avgU": 0.4,
+      "avgV": 0.0,
+      "psnr": 3.64
+    }
+  },
+  {
+    "exp": 117,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "veryslow",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 3563,
+      "sha": "efe831edd617",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 92,
+      "avgU": 123.2,
+      "avgV": 134.3,
+      "psnr": 26.99
+    },
+    "oracle": {
+      "bytes": 3957,
+      "sha": "39437da14025",
+      "decode": "FAIL"
+    }
+  },
+  {
+    "exp": 118,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "veryslow",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 3563,
+      "sha": "efe831edd617",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 92,
+      "avgU": 123.2,
+      "avgV": 134.3,
+      "psnr": 26.99
+    },
+    "oracle": {
+      "bytes": 3105,
+      "sha": "738dba8848e3",
+      "frames": 25,
+      "green_blocks": 1600,
+      "flat_blocks": 1574,
+      "avgU": 0.0,
+      "avgV": 0.0,
+      "psnr": 3.61
+    }
+  },
+  {
+    "exp": 119,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "placebo",
+    "entropy": "cavlc",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 3548,
+      "sha": "0ca3b8c54bc7",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 90,
+      "avgU": 123.2,
+      "avgV": 134.3,
+      "psnr": 27.0
+    },
+    "oracle": {
+      "bytes": 3957,
+      "sha": "cd78930f3853",
+      "frames": 28,
+      "green_blocks": 1600,
+      "flat_blocks": 1790,
+      "avgU": 4.6,
+      "avgV": 10.4,
+      "psnr": 3.92
+    }
+  },
+  {
+    "exp": 120,
+    "clip": "forza",
+    "frames": 30,
+    "preset": "placebo",
+    "entropy": "cabac",
+    "verdict": "NAL0 byte5",
+    "x264": {
+      "bytes": 3548,
+      "sha": "0ca3b8c54bc7",
+      "frames": 28,
+      "green_blocks": 0,
+      "flat_blocks": 90,
+      "avgU": 123.2,
+      "avgV": 134.3,
+      "psnr": 27.0
+    },
+    "oracle": {
+      "bytes": 3106,
+      "sha": "a06589c2fae4",
+      "frames": 25,
+      "green_blocks": 1567,
+      "flat_blocks": 1556,
+      "avgU": 2.7,
+      "avgV": 2.6,
+      "psnr": 3.68
+    }
+  }
+]
