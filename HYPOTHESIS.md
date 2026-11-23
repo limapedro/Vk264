@@ -2175,3 +2175,34 @@ per-MB cost/ME model at all, but in how those costs are combined across passes
 (path costs, cost caching, or frame-level cost scaling). Reverted; 13/16.
 
 Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56. Tree clean.
+
+### Stage 03: cross-pass frame-cost differential (this turn)
+
+Built `build/fcache_dump.py` (x264 slicetype_frame_cost) and an env-traced
+oracle `frame_cost` dump. Comparing every (p0,p1,b) call for the early frames:
+```
+(p0,p1,b)   x264   oracle baseline
+(0,1,1)      246       478   <-- 2x
+(1,2,2)      281       247
+(0,2,2)      302       275
+(0,2,1)      169       136
+(2,3,3)      168       248
+(0,3,3)      203       403   <-- 2x
+(0,3,1)      187       192
+(0,3,2)      131       154
+```
+Most frame costs are CLOSE; the outliers are far-reference P costs
+P(1<-0)=478 vs 246 and P(3<-0)=403 vs 203. These are the costs of frames whose
+own per-MB dump diverged (MB(1,2)=409 vs x264 60; MB(1,1)=9 vs x264 103).
+
+So the picture is consistent across all three granularities (path, frame, MB):
+the per-MB ME divergence in two blocks drives the far-reference P costs, which
+drive the path costs, which flip the B/P decisions. x264's exact candidate
+start fixes those MBs (409->70, 9->163) but also perturbs every other frame's
+cost, and net agreement regresses to 11/16 — indicating the remaining error is
+a compensating interaction across ALL frame costs, not any single one.
+
+Diagnostics preserved in build/: me_trace.py, me_full_dump.py, dia_trace.py,
+fcache_dump.py, mbcost_dump.py, pathcost_dump.py. Code reverted to the verified
+13/16 baseline; tree clean. Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360,
+MP4 56/56.
