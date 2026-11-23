@@ -8,6 +8,8 @@
 
 /* Predict an 8x8 block for mode m (0..11) from left[8], top[8] and
  * top-right tr[8]. Edge samples unavailable should be passed as 128. */
+void vk_predict8_filtered(uint8_t out[64], int m, const uint8_t left[8],
+                          const uint8_t top[16], int lt);
 void vk_predict8(uint8_t out[64], int m, const uint8_t left[8],
                  const uint8_t top[8], const uint8_t tr[8]);
 

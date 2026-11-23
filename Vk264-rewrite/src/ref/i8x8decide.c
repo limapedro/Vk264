@@ -3,6 +3,19 @@
 
 static int clip(int v){ return v<0?0:(v>255?255:v); }
 
+static void i8_build_edge(uint8_t e[36], const uint8_t l[8],
+                          const uint8_t t[16], int lt, int have_tr);
+static void i8_pred_edge(uint8_t out[64], int m, const uint8_t e[36]);
+
+/* Reconstruction predictor using x264's filtered edge (same as decision). */
+void vk_predict8_filtered(uint8_t out[64], int m, const uint8_t l[8],
+                          const uint8_t t[16], int lt)
+{
+    uint8_t e[36];
+    i8_build_edge(e,l,t,lt,1);
+    i8_pred_edge(out,m,e);
+}
+
 void vk_predict8(uint8_t out[64], int m, const uint8_t l[8],
                  const uint8_t t[8], const uint8_t tr[8])
 {
@@ -203,7 +216,8 @@ static void i8_pred_edge(uint8_t out[64], int m, const uint8_t e[36])
         for(int y=0;y<8;++y) for(int x=0;x<8;++x){
             int d=2*x-y,v;
             if(d>=0&&!(d&1)){int i=d/2;v=i8_F1(i?ET(i-1):ELT,ET(i));}
-            else if(d>=0) v=i8_F2(ET((d-1)/2),ET((d+1)/2),ET((d+3)/2));
+            else if(d>=0){ int k=(d-1)/2;
+                v=i8_F2(k?ET(k-1):ELT, ET(k), ET(k+1)); }
             else {int n=-d;
                 if(n==1)v=i8_F2(EL(0),ELT,ET(0));
                 else if(n==2)v=i8_F2(EL(1),EL(0),ELT);

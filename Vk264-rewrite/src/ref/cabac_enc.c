@@ -512,7 +512,12 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                     int m=vk_i8x8_decide(src8,l8,t8,tr8,lt8,hl,ht,lambda,&bc,0,mx>0&&my>0);
                     modes8[idx]=(uint8_t)m;
                     i8cost += bc + 3*lambda;
-                    vk_predict8(p8,m,l8,t8,tr8);
+                    if(mx>0 && my>0){
+                        uint8_t t16[16];
+                        for(int k=0;k<8;++k) t16[k]=t8[k];
+                        for(int k=0;k<8;++k) t16[8+k]=tr8[k];
+                        vk_predict8_filtered(p8,m,l8,t16,lt8);
+                    } else vk_predict8(p8,m,l8,t8,tr8);
                     int d8[64];vk_ref_dct8x8(d8,src8,p8);
                     int nz=vk_ref_quant8(d8,mf8,bias8);
                     i8nnz[idx]=(uint8_t)nz;
