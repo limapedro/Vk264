@@ -1831,3 +1831,33 @@ with `pred_mode` = DC(2) when both neighbours exist, DC_LEFT/RIGHT/128 otherwise
 Fixtures pass; gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56,
 compare_slicetype 13/16. The I8x8 emitter is still opt-in, so this change does
 not affect byte-exact streams; full RD-based I16/I8/I4 selection remains open.
+
+### Stage 03: decisive diagnostic — x264's ME is SUBOPTIMAL vs ours (this turn)
+
+Computed my hpel-plane SAD at x264's exact MV (16,-2) spel = (4,-0.5) for the
+diverging frame-1 P MBs:
+```
+MB(2,2): my SAD at x264 MV = 30   (x264 cost 49 => ~19 overhead: mv+penalty)
+MB(1,2): my SAD at x264 MV = 45   (x264 cost 64 => ~19 overhead)
+```
+So the cost model is CORRECT: at x264's MV my SAD reproduces x264's cost.
+
+But my exhaustive hpel search finds much better MVs that x264 never finds:
+```
+MB(2,2): best hpel = 15 at plane3 (4,0)
+MB(1,2): best hpel =  9 at plane3 (4,0)
+```
+**x264's lowres ME is deliberately suboptimal** (DIA from a predictor, limited
+refinement); my model finds lower-cost MVs, hence lower frame costs, hence
+different B/P decisions. This explains why every "more faithful" candidate
+start regressed: my candidate MVs (from my better previous-MB searches) steer
+DIA toward even better matches than x264 would find.
+
+Consequence: to reach 16/16 the model must replicate x264's exact search
+TRAJECTORY (which MVs it settles on), not just its cost function. That requires
+bit-exact spel MV state across MBs, FPEL candidate rounding, BITS_MVD and the
+single hpel iteration applied in the same order. This is a stateful port well
+beyond local tuning; stage 03 stays at 13/16.
+
+All candidate-start experiments this turn were reverted; tree clean.
+Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
