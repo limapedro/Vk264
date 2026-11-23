@@ -55,7 +55,7 @@ STATS = [
     ("PRESET BYTE-EXACT VIDEO", "2 / 10 presets", "20.0%", "#d29922"),
     # Non-ultrafast macroblock payload: byte-exact prefix of the IDR slice
     # NAL2 for the superfast preset against x264 (build/progress_metrics.py).
-    ("SUPERFAST NAL2 PREFIX", "80 / 130 B", "61.5%", "#d29922"),
+    ("SUPERFAST NAL2 PREFIX", "130 / 130 B EXACT", "100%", "#2ea043"),
 ]
 
 # Superfast IDR slice NAL2 byte-exact prefix progression, by merged PR.
@@ -71,6 +71,7 @@ NAL2_PREFIX_PROGRESSION = [
     ("#217", 49, "#2ea043"),
     ("#251", 67, "#3fb950"),
     ("#255", 80, "#2ea043"),
+    ("#256", 130, "#2ea043"),
 ]
 NAL2_FULL = 130
 
@@ -342,7 +343,7 @@ OPEN_TARGETS = [
     ("CQM scaling lists", 0, 2, "#f85149"),
     ("Rate control VBV / CRF", 0, 45, "#d29922"),
     ("I4x4/I8x8 CABAC emission (superfast)", 1, 1, "#2ea043"),
-    ("Superfast NAL2 macroblock prefix", 80, 130, "#d29922"),
+    ("Superfast NAL2 macroblock prefix", 130, 130, "#2ea043"),
     ("Full NAL2 byte-exact (all presets)", 2, 20, "#f85149"),
     ("04 Analysis weighted family coverage", 2, 10, "#d29922"),
 ]
