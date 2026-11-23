@@ -89,6 +89,29 @@ int main(void)
         fprintf(stderr,"CRF frame0 QP FAIL got=%.6f want=%.6f\n",qp0,want0);
         return 1;
     }
-    printf("ratecontrol PASS: primitives + CRF const/qscale + stateful blur + frame0 QP\n");
+    /* accum_p_qp/accum_p_norm, exact x264 fixtures from build/accum_dump.py.
+     * Sequence in coding order: frame0(I),3(P),1(B),2(B),4(P),5(P),7(P),6(B). */
+    vk_rc_state_t ra;
+    vk_rc_state_init(&ra,16,1,0.6,0,23.0);
+    struct { double qp; int is_i; double eq, en; } aq[] = {
+        {20.087439,1,23.218499,1.009500},
+        {21.986553,0,44.044128,1.959025},
+        {23.122087,0,64.964009,2.861074},
+        {24.257622,0,85.973430,3.718020},
+        {23.063107,0,104.737865,4.532119},
+        {25.281273,0,124.782245,5.305513},
+        {26.011154,0,144.554287,6.040237},
+        {27.917282,0,165.243854,6.738226}
+    };
+    for (unsigned i=0; i<sizeof(aq)/sizeof(aq[0]); ++i) {
+        vk_rc_accum_update(&ra,aq[i].qp,aq[i].is_i,1.4f);
+        if (fabs(ra.accum_p_qp-aq[i].eq)>2e-4 ||
+            fabs(ra.accum_p_norm-aq[i].en)>2e-6) {
+            fprintf(stderr,"accum FAIL i=%u got=%.6f/%.6f want=%.6f/%.6f\n",
+                    i,ra.accum_p_qp,ra.accum_p_norm,aq[i].eq,aq[i].en);
+            return 1;
+        }
+    }
+    printf("ratecontrol PASS: primitives + CRF + accum_p_qp/accum_p_norm\n");
     return 0;
 }

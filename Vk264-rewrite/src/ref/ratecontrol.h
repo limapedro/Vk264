@@ -36,6 +36,7 @@ typedef struct {
     double short_term_cplxsum, short_term_cplxcount;
     double rate_factor_constant;
     double rf_constant;
+    double accum_p_qp, accum_p_norm;
     float qcompress;
 } vk_rc_state_t;
 
@@ -48,5 +49,9 @@ double vk_rc_frame_qscale(vk_rc_state_t *rc,double satd);
  * ip_factor for superfast is 1.4. */
 double vk_rc_frame_qp(vk_rc_state_t *rc,double satd,int is_idr,int frame_index,
                       float ip_factor);
+
+/* x264 ratecontrol.c:1410-1419 accum_p_qp_update, called once per coded frame
+ * in coding order. ip_offset = 6*log2(ip_factor) (ratecontrol.c:821). */
+void vk_rc_accum_update(vk_rc_state_t *rc,double qp,int is_idr,float ip_factor);
 
 #endif

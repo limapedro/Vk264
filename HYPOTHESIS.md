@@ -2024,3 +2024,30 @@ The I-offset raises IDR QP as x264 does. Still not byte-exact: subsequent
 I-frames use `accum_p_qp/accum_p_norm` (ratecontrol_end state) which is not yet
 ported. Gates unchanged: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56,
 compare_slicetype 13/16.
+
+### Stage 10: accum_p_qp/accum_p_norm ported (this turn)
+
+`build/accum_dump.py` dumps x264's per-frame accumulation (ratecontrol.c:
+1410-1419) in CODING order for CRF23 64x64 superfast:
+```
+frame0(I) qp=20.087439  0.230000/0.010000 -> 23.218499/1.009500
+frame3(P) qp=21.986553 23.218499/1.009500 -> 44.044128/1.959025
+frame1(B) qp=23.122087 44.044128/1.959025 -> 64.964009/2.861074
+frame2(B) qp=24.257622 ...
+```
+B-frames DO update the accumulator. `ip_offset = 6*log2(ip_factor)` = 2.908
+for 1.4, added only for I frames (confirmed by frame0:
+0.23*0.95 + 20.087439 + 2.908 = 23.2185).
+
+Ported `vk_rc_accum_update` and added accum state to `vk_rc_state_t`
+(init accum_p_norm=0.01, accum_p_qp=rf*0.01 per ratecontrol.c:813-814).
+`vk_rc_frame_qp` now uses accum_p_qp/accum_p_norm for subsequent I-frames
+(ratecontrol.c:2602-2607). Wired the update into the CLI after each frame.
+All 8 x264 accumulation fixtures match to <2e-4/<2e-6.
+
+CRF output sizes unchanged (5918/4029/2742 for CRF 18/23/28) since this clip
+has only one I-frame; the new state matters for multi-keyint encodes.
+
+Still not byte-exact vs x264: mb-tree is unported, and the CLI does not emit
+B-frames by default (VK_SLICETYPE_CLI / ORACLE_BSLICE_TEST are opt-in).
+Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56, stage03 13/16.

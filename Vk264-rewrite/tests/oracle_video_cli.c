@@ -238,6 +238,7 @@ int main(int argc, char **argv)
             int crf_qp = (int)(qp + 0.5f);
             if (crf_qp < 0) crf_qp = 0; if (crf_qp > 51) crf_qp = 51;
             qp_i = qp_p = crf_qp;
+            vk_rc_accum_update(&rc, qp, is_idr, 1.4f);
             memcpy(lo_ref, lo_cur, (size_t)dw*dh*VK_LOWRES_PLANES);
         }
         memset(buf, 0, sizeof(buf)); vk_bs_init(&bs, buf, sizeof(buf));
