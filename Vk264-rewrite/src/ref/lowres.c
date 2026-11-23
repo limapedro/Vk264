@@ -83,8 +83,11 @@ int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
         /* x264: cost -= p_cost_mv[0]; if MV!=0 cost += 5*lambda */
         best -= mv_cost(0);
         if(bmx||bmy) best += 5*LAMBDA;
-        total += best + LOWRES_PENALTY;
         if(st && mb<VK_LOWRES_MAX_MBS){ st->mv[mb][0]=bmx; st->mv[mb][1]=bmy; }
+        /* x264 slicetype.c:532/782 - COST_EST counts only interior MBs. */
+        int nbx=(dw/8), nby=(dh/8), mx=(bx/8), my=(by/8);
+        if(nbx>2 && nby>2 && mx>0 && mx<nbx-1 && my>0 && my<nby-1)
+            total += best + LOWRES_PENALTY;
         mb++;
     }
     return total;
@@ -163,7 +166,10 @@ int vk_lowres_b_cost(const uint8_t *cur,const uint8_t *r0,const uint8_t *r1,
             if(ok) cd=satd8(cur,dw,bx,by,avg,8,0,0)+LOWRES_PENALTY;
         }
         int m=c0<c1?c0:c1; if(cb<m) m=cb; if(cz<m) m=cz; if(cd<m) m=cd;
-        total+=m; mb++;
+        int nbx=(dw/8), nby=(dh/8), mx=(bx/8), my=(by/8);
+        if(nbx<=2 || nby<=2 || (mx>0 && mx<nbx-1 && my>0 && my<nby-1))
+            total+=m;
+        mb++;
     }
     return total;
 }

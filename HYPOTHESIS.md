@@ -1460,3 +1460,25 @@ Frame types still do not match x264 (oracle coding order
 x264_me_search hex/refine details and row-SATD accumulation.
 
 Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03 interior-MB cost gating + corrected comparison (this turn)
+Found x264 slicetype.c:532/782: COST_EST accumulates ONLY interior MBs
+(`b_frame_score_mb`: mb_x>0 && mb_x<width-1 && mb_y>0 && mb_y<height-1).
+For a 4x4 lowres MB grid that's 4 of 16 MBs — a 4x cost reduction. Added
+this gating to `vk_lowres_p_cost` and `vk_lowres_b_cost`.
+
+Measured effect:
+```
+frame1 P(prev) 1403 -> 503   (x264 246)
+frame2 P(prev) 1485 -> 440
+```
+Costs are now within ~2x of x264's (previously ~8x).
+
+Also fixed `build/compare_slicetype.py`: it compared x264's CODING-order
+index against oracle's DISPLAY index and used different type enums. Now it
+re-keys both by display index and maps x264 types (0=P,1=B,2=I) to oracle
+VK_FRAME types (2=P,4=B,0=IDR). Corrected result: **7/16 frame types agree**
+(display order). Remaining diffs: x264 picks B for displays 1,6,8,9,13
+where oracle picks P; oracle picks B for 2,10,12,14 where x264 picks P/B.
+
+Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
