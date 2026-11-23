@@ -108,15 +108,15 @@
 | 102 | forza | 30 | ultrafast | cabac | BYTE-EXACT | 42.07 | 42.07 | 0 |
 | 103 | forza | 30 | superfast | cavlc | NAL COUNT 40/32 | 31.08 | 23.24 | 0 |
 | 104 | forza | 30 | superfast | cabac | NAL COUNT 40/32 | 31.08 | 3.64 | 1728 |
-| 105 | forza | 30 | veryfast | cavlc | NAL COUNT 34/32 | 25.5 | 23.24 | 0 |
+| 105 | forza | 30 | veryfast | cavlc | NAL COUNT 34/32 | 25.5 | 23.26 | 0 |
 | 106 | forza | 30 | veryfast | cabac | NAL COUNT 34/32 | 25.49 | 3.64 | 1728 |
 | 107 | forza | 30 | faster | cavlc | NAL COUNT 34/32 | 25.48 | 24.79 | 0 |
 | 108 | forza | 30 | faster | cabac | NAL COUNT 34/32 | 25.46 | 3.61 | 1600 |
-| 109 | forza | 30 | fast | cavlc | NAL COUNT 34/32 | 25.48 | 24.88 | 0 |
+| 109 | forza | 30 | fast | cavlc | NAL COUNT 34/32 | 25.48 | 24.86 | 0 |
 | 110 | forza | 30 | fast | cabac | NAL COUNT 34/32 | 25.48 | 3.6 | 1600 |
 | 111 | forza | 30 | medium | cavlc | NAL COUNT 34/32 | 25.48 | 24.87 | 0 |
 | 112 | forza | 30 | medium | cabac | NAL COUNT 34/32 | 25.47 | 3.65 | 1784 |
-| 113 | forza | 30 | slow | cavlc | NAL COUNT 34/32 | 25.47 | 24.87 | 0 |
+| 113 | forza | 30 | slow | cavlc | NAL COUNT 34/32 | 25.47 | 24.86 | 0 |
 | 114 | forza | 30 | slow | cabac | NAL COUNT 34/32 | 25.46 | 3.61 | 1597 |
 | 115 | forza | 30 | slower | cavlc | NAL2 byte4 | 32.03 | 24.87 | 0 |
 | 116 | forza | 30 | slower | cabac | NAL2 byte5 | 32.07 | 3.78 | 1660 |
