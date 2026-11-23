@@ -499,7 +499,7 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                         l8[k]=(bx>0)?rmb[(by+k)*16+bx-1]
                              :(left?rbase[(my*16+by+k)*rs+mx*16-1]:128);
                         t8[k]=(by>0)?rmb[(by-1)*16+bx+k]
-                             :(top?rbase[(my*16+by-1)*rs+mx*16+k]:128);
+                             :(top?rbase[(my*16+by-1)*rs+mx*16+bx+k]:128);
                         tr8[k]=(by>0)?((bx+8<16)?rmb[(by-1)*16+bx+8+k]
                                     :rbase[(my*16+by-1)*rs+mx*16+bx+8+k]):128;
                     }
