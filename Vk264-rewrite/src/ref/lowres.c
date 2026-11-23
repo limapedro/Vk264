@@ -314,6 +314,59 @@ int vk_lowres_i_cost(const uint8_t *cur,int dw,int dh)
     return cost;
 }
 
+/* Exact x264 lowres ME component (candidate-seeded DIA + hpel). */
+int vk_lowres_me_exact(const uint8_t fenc[64],const uint8_t *ref,int rw,int rh,
+                       int bx,int by,int cand[4][2],int ncand,int mvp[2],
+                       int mvspel[2])
+{
+    int maxx=rw-8-bx, maxy=rh-8-by;
+    /* me.c:291: bcost at rounded median MVP is plain SAD. */
+    int bmx=mvp[0], bmy=mvp[1];
+    if(bmx<-bx)bmx=-bx; if(bmx>maxx)bmx=maxx;
+    if(bmy<-by)bmy=-by; if(bmy>maxy)bmy=maxy;
+    int bcost=0x7fffffff;
+    /* fenc is an 8x8 block with stride 8; ref plane 0 has stride rw. */
+#define FSAD(mx,my) sad_hpel(fenc,8,0,0,ref,rw,rh,bx+(mx),by+(my),0,0)
+    bcost=FSAD(bmx,bmy);
+    /* me.c:293-313: evaluate all FPEL-rounded candidates with BITS_MVD. */
+    for(int i=0;i<ncand;++i){
+        int nx=cand[i][0], ny=cand[i][1];
+        if(nx<-bx||ny<-by||nx>maxx||ny>maxy) continue;
+        int c=FSAD(nx,ny)+mv_cost(nx*4)+mv_cost(ny*4);
+        if(c<bcost){bcost=c;bmx=nx;bmy=ny;}
+    }
+    static const int dd[4][2]={{0,-1},{0,1},{-1,0},{1,0}};
+    for(int it=0;it<16;++it){
+        int bestk=-1;
+        for(int k=0;k<4;++k){
+            int nx=bmx+dd[k][0], ny=bmy+dd[k][1];
+            if(nx<-bx||ny<-by||nx>maxx||ny>maxy) continue;
+            int c=FSAD(nx,ny)+mv_cost(nx*4)+mv_cost(ny*4);
+            if(c<bcost){bcost=c;bestk=k;}
+        }
+        if(bestk<0) break;
+        bmx+=dd[bestk][0]; bmy+=dd[bestk][1];
+    }
+    /* refine_subpel hpel: planes 1/2 at +-1 fullpel positions (me.c:903-911). */
+    int best=FSAD(bmx,bmy);
+    int fx=bmx,fy=bmy,hx=0,hy=0;
+    const int p[4][2]={{bmx,bmy-1},{bmx,bmy+1},{bmx-1,bmy},{bmx+1,bmy}};
+    const int pl[4]={2,2,1,1};
+    for(int i=0;i<4;++i){
+        const uint8_t *refp=LR_PLANE(ref,rw,rh,pl[i]);
+        int rx=bx+p[i][0], ry=by+p[i][1];
+        if(rx<0||ry<0||rx+8>rw||ry+8>rh) continue;
+        int s=0;
+        for(int y=0;y<8;++y)for(int x=0;x<8;++x){
+            int d=fenc[y*8+x]-refp[(ry+y)*rw+rx+x];s+=d<0?-d:d;
+        }
+        if(s<best){best=s;fx=p[i][0];fy=p[i][1];hx=pl[i]&1;hy=pl[i]>>1;}
+    }
+#undef FSAD
+    mvspel[0]=4*fx+2*hx; mvspel[1]=4*fy+2*hy;
+    return best;
+}
+
 void vk_lowres_intra_costs(const uint8_t *cur,int dw,int dh,uint16_t *out)
 {
     int mb=0;

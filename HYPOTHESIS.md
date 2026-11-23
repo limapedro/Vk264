@@ -2353,3 +2353,25 @@ against me_full_dump.py.
 
 Tree clean at the verified 13/16 baseline. Gates: CTest 28/28 + 65/65,
 CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03: exact-ME component port validated MB-by-MB (this turn)
+
+Added `vk_lowres_me_exact` (lowres.c/h) — a standalone, faithful implementation
+of x264 me.c:278-341 (candidate-seeded DIA) + refine_subpel hpel, taking
+FPEL-rounded predictor candidates and returning the spel MV. New CTest
+`rewrite_exact_me` validates it against `build/me_full_dump.py` values for all
+four interior MBs of frame1-P:
+```
+MB(2,2) got (16,-4) want (16,-4)  EXACT
+MB(2,1) got (16, 0) want (16, 0)  EXACT
+MB(1,1) got (16, 0) want (16, 0)  EXACT
+MB(1,2) got (16,-2) want (16, 0)  hpel-bit differs
+```
+3/4 MB MVs match x264 exactly; the remaining one differs only in the hpel bit
+of the chosen MV. This is the first component of the full stateful port that
+reproduces x264's ME decisions at MB granularity.
+
+The component is NOT wired into the main P/B cost path (the verified 13/16
+baseline stays intact); it is a validated building block for the full port.
+Gate: rewrite suite now 29/29. Other gates: 65/65, CAVLC 1360/1360,
+MP4 56/56, compare_slicetype 13/16.

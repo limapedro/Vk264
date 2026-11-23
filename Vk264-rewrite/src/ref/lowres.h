@@ -27,6 +27,13 @@ int vk_lowres_p_cost_mb(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
 int vk_lowres_i_cost(const uint8_t *cur,int dw,int dh);
 /* Per-MB intra costs (x264 frame_t.i_intra_cost) for mb-tree. */
 void vk_lowres_intra_costs(const uint8_t *cur,int dw,int dh,uint16_t *out);
+
+/* Exact x264 lowres ME for one 8x8 MB (me.c:278-341 + refine_subpel):
+ * cand[] are FPEL-rounded predictor candidates, mvp is the median; returns
+ * the chosen MV in spel (qpel units) and its SA8D-based cost. */
+int vk_lowres_me_exact(const uint8_t fenc[64],const uint8_t *ref,int rw,int rh,
+                       int bx,int by,int cand[4][2],int ncand,int mvp[2],
+                       int mvspel[2]);
 int vk_lowres_b_cost(const uint8_t *cur,const uint8_t *r0,const uint8_t *r1,
                      int dw,int dh,const vk_lowres_mv_t *st_p0,
                      const vk_lowres_mv_t *st_p1,int p0,int p1,int b);
