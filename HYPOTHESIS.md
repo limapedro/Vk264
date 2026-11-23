@@ -2089,3 +2089,20 @@ Still not wired: the full propagate loop (macroblock_tree_propagate) and
 application of f_qp_offset to the lookahead vertex costs. mb-tree is therefore
 not active in the CLI, so CRF is not byte-exact end-to-end. Gates: CTest
 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56, stage03 13/16.
+
+### Stage 10: macroblock_tree_propagate loop primitive (this turn)
+
+Added `vk_mbtree_propagate_frame` (mbtree.c), a faithful port of x264
+slicetype.c:1051-1085: per MB row it runs `vk_mbtree_propagate_cost` then
+`vk_mbtree_propagate_list` for both reference lists (with bipred weights
+`64-(dsf>>2)` / `64-that`), skipping a list when b==p{l}. New CTest fixture
+(two MBs, zero MVs, list-bit set, propagated cost clamps to 32767) passes.
+
+Stage 10 now has the complete set of mb-tree DSP pieces: propagate_cost,
+propagate_list, finish (f_qp_offset), and the per-frame propagate loop.
+
+Still NOT wired into the CLI: retaining per-MB lowres MVs/costs/inv_qscales
+across frames and applying f_qp_offset to the lookahead costs requires a
+CLI-side state refactor, so mb-tree remains inactive and CRF is not byte-exact
+end-to-end. Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56,
+stage03 13/16.

@@ -28,4 +28,16 @@ void vk_mbtree_finish(float *qp_offset,const uint16_t *intra_cost,
                       const float *aq_offset,int fps_factor,float qcompress,
                       int len);
 
+/* x264 encoder/slicetype.c:1051-1089 macroblock_tree_propagate for one frame.
+ * Propagates frame b's cost back onto its two reference frames' propagate_cost
+ * arrays. mv0/mv1 are NULL when b==p0 / b==p1 respectively. */
+void vk_mbtree_propagate_frame(uint16_t *ref0_cost,uint16_t *ref1_cost,
+                               const int16_t (*mv0)[2],const int16_t (*mv1)[2],
+                               const uint16_t *propagate_in,
+                               const uint16_t *intra_cost,
+                               const uint16_t *inv_qscale,
+                               const uint16_t *lowres_cost,
+                               int p0_is_b,int p1_is_b,int dist_scale_factor,
+                               float fps_factor,int width,int height,int stride);
+
 #endif

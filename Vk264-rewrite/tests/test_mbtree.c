@@ -57,6 +57,19 @@ int main(void)
             return 1;
         }
     }
-    printf("mbtree fixture PASS (propagate_cost + list + finish)\n");
+    /* propagate_frame: two MBs, zero MVs -> each ref MB gets the clamped
+     * propagated amount. intra=1000, invq=256(Q8.8), inter=0, fps=256,
+     * pin=0 -> amount=1000*256=256000, num=den=1000 -> 32767 after clamp. */
+    uint16_t ref0[2]={0,0}, ref1[2]={0,0};
+    int16_t mvz[2][2]={{0,0},{0,0}};
+    uint16_t pin2[2]={0,0}, ia2[2]={1000,1000}, iq2[2]={256,256};
+    uint16_t lc2[2]={1<<VK_LOWRES_COST_SHIFT,1<<VK_LOWRES_COST_SHIFT};
+    vk_mbtree_propagate_frame(ref0,ref1,mvz,NULL,pin2,ia2,iq2,lc2,
+                              0,1,256,256.0f,2,1,2);
+    for(int i=0;i<2;++i){
+        if(ref0[i]!=32767){fprintf(stderr,"propagate_frame FAIL ref0[%d]=%d\n",i,ref0[i]);return 1;}
+        if(ref1[i]!=0){fprintf(stderr,"propagate_frame FAIL ref1[%d]=%d\n",i,ref1[i]);return 1;}
+    }
+    printf("mbtree fixture PASS (cost + list + finish + propagate_frame)\n");
     return 0;
 }
