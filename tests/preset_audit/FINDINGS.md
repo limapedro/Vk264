@@ -316,3 +316,10 @@ of the remaining macroblock divergence; the gap is in analysis/mode decisions.
 ## PR: header parity progress
 
 All 10 presets now produce byte-identical SPS/PPS. Remaining failures are slice-level (stage-03 POC/slice types). Chart updated with 10/10 header parity and 2/10 byte-exact presets.
+
+## --partitions none shortcut ruled out (final turn)
+
+Tested whether x264 `--partitions none` (I4x4/I8x8 disabled) lets the
+oracle I16-only encoder match non-ultrafast presets. Result: unchanged —
+superfast still uses I4 (NAL2 byte4/5), all presets still diverge. So there
+is no invocation shortcut; the I4x4/I8x8 CABAC path must be implemented.
