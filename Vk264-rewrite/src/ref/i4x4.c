@@ -124,7 +124,7 @@ void vk_predict4(uint8_t out[16], int m, const uint8_t left[4], const uint8_t to
 
 int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
                    int px, int py, int qp, int have_l, int have_t,
-                   int have_tl, int have_tr, uint8_t modes_out[16])
+                   int have_tl, int have_tr, uint8_t modes_out[16], int thresh)
 {
     int mf[16],bias[16],deq[16];
     vk_ref_quant_tables(qp, 0, mf, bias, deq);
@@ -239,6 +239,9 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
             int v=p[y*4+x]+d[y*4+x];
             recon_y[(py+by+y)*rs+px+bx+x]=(uint8_t)(v<0?0:(v>255?255:v));
         }
+        /* x264 analyse.c:897/951: break when i_cost exceeds i_satd_thresh;
+         * a partial analysis yields COST_MAX (I4 not selected). */
+        if(total > thresh && idx != 15) return VK_I4_COST_MAX;
     }
     return total;
 }

@@ -480,25 +480,13 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 int c = sad + lambda*vk_mode_bits(m);
                 if (c < best) { best = c; bestmode = m; }
             }
-            /* x264: I4x4 analysis only when subme>=1 */
-            int use_i4=0, i4cbp=0, c4=0x7fffffff;
-            uint8_t modes4[16], nnz4[16]={0};
-            int i4q[16][16]; memset(i4q,0,sizeof(i4q));
-            if(vk_i4_analysis_enabled){
-                uint8_t src16[256];
-                for(int yy=0;yy<16;++yy)for(int xx=0;xx<16;++xx)
-                    src16[yy*16+xx]=frame[(my*16+yy)*w+mx*16+xx];
-                c4=vk_i4x4_decide(src16,recon+ro,rs,mx*16,my*16,qp,
-                                  left,top,0,0,modes4);
-                if(c4<best) use_i4=1;
-            }
             /* x264 analyse.c:745-835: I8x8 analysis (4 8x8 blocks). */
-            int use_i8=0, i8cbp=0;
+            int use_i8=0, i8cbp=0, i8cost=VK_I4_COST_MAX;
             uint8_t modes8[4]={2,2,2,2};
             int i8q[4][64]; memset(i8q,0,sizeof(i8q));
             uint8_t i8nnz[4]={0};
             if(vk_i8_analysis_enabled){
-                int i8cost = lambda*4;
+                i8cost = lambda*4;
                 int mf8[64],bias8[64],deq8[64];
                 vk_ref_quant_tables8(qp,mf8,bias8,deq8);
                 for(int idx=0;idx<4;++idx){
@@ -534,7 +522,24 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                     for(int y=0;y<8;++y)for(int x=0;x<8;++x)
                         rmb[(by+y)*16+bx+x]=rec8[y*8+x];
                 }
-                if(i8cost<best && (!use_i4 || i8cost<c4)) use_i8=1;
+                if(i8cost<best) use_i8=1;
+            }
+            /* x264: I4x4 analysis only when subme>=1 */
+            int use_i4=0, i4cbp=0, c4=0x7fffffff;
+            uint8_t modes4[16], nnz4[16]={0};
+            int i4q[16][16]; memset(i4q,0,sizeof(i4q));
+            if(vk_i4_analysis_enabled){
+                uint8_t src16[256];
+                for(int yy=0;yy<16;++yy)for(int xx=0;xx<16;++xx)
+                    src16[yy*16+xx]=frame[(my*16+yy)*w+mx*16+xx];
+                /* x264 i_satd_thresh = MIN(i16, i8) for early-terminate;
+                 * if I4 analysis aborts, c4 == COST_MAX and is not chosen. */
+                int i4thresh = best < i8cost ? best : i8cost;
+                c4=vk_i4x4_decide(src16,recon+ro,rs,mx*16,my*16,qp,
+                                  left,top,0,0,modes4,i4thresh);
+                if(c4 < best && c4 < i8cost){ use_i4=1; use_i8=0; }
+                else if(!(i8cost<best)) use_i8=0;
+
             }
             int imode = bestmode;
             vk_predict16(pred, t, l, tl, imode);

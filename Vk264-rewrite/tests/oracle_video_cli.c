@@ -91,7 +91,7 @@ static void encode_idr_cavlc(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
                 uint8_t modes[16];
                 uint8_t *tmp = malloc((size_t)rs*(h+64));
                 memset(tmp, 128, (size_t)rs*(h+64));
-                vk_i4x4_decide(sy, tmp+32*rs+32, rs, px, py, qp, 0,0,0,0, modes);
+                vk_i4x4_decide(sy, tmp+32*rs+32, rs, px, py, qp, 0,0,0,0, modes,VK_I4_COST_MAX);
                 free(tmp);
                 vk_encode_i4x4_mb(bs, sy, su, sv, oy, ou, ov, qp, &nb, w, w/2,
                                   modes, on, oc, &od, 0);
