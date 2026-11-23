@@ -23,7 +23,7 @@ from datetime import date
 # ---------------------------------------------------------------------------
 # Data — update these after each parity PR, then regenerate the SVG.
 # ---------------------------------------------------------------------------
-SNAPSHOT = "8e1b6f7"
+SNAPSHOT = "c480423"
 GENERATED = date.today().isoformat()
 
 # Overall numbers (from build/*_parity_sweep.py, ctest, tests/video_experiments.json)
@@ -49,6 +49,10 @@ STATS = [
      "#2ea043" if VIDEO_EXACT == VIDEO_TOTAL else "#d29922"),
     ("x264 INVENTORY", f"{FUNC_TOTAL_INV} funcs / {FUNC_PORTED+3} ported",
      f"{(FUNC_PORTED+3)/FUNC_TOTAL_INV*100:.1f}%", "#d29922"),
+    # Fresh all-preset audit (tests/preset_audit/): header parity is complete
+    # for all 10 presets; slice/POC parity remains open.
+    ("PRESET SPS/PPS HEADERS", "10 / 10 presets exact", "100.0%", "#2ea043"),
+    ("PRESET BYTE-EXACT VIDEO", "2 / 10 presets", "20.0%", "#d29922"),
 ]
 
 # Byte-exact sweep progression (each row is one merged PR)
