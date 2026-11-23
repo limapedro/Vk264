@@ -219,6 +219,33 @@ for ultrafast CABAC cases that must stay byte-exact, and (b) emitting an I4
 mb_type with I16 residual/CBP coding produces a malformed MB. Reverted fully;
 baseline restored (29/29, 56/56, 12/120).
 
+### Atomic I4x4 CABAC path — exact x264 syntax specification
+
+From `encoder/cabac.c` `macroblock_write_cabac_internal`, an I4x4 MB writes
+(in this exact order):
+1. `cabac_mb_type_intra` with I4x4: `decision(3+left_nonI4+top_nonI4, 0)`
+   then `encode_terminal` (cabac.c:35-41, 381-392).
+2. If `b_transform_8x8_mode`: `cabac_transform_size` (decision 399+neighbor,
+   cabac.c:235-239). For superfast I4 MBs the transform is 4x4 (type=0),
+   so this decision is 0.
+3. For all 16 4x4 blocks in `block_idx_xy_fenc` order:
+   `cabac_intra4x4_pred_mode(ctx68/69)` with x264's predictor from cached
+   left/top fixed modes (cabac.c:83-96, analyse.c predictor).
+4. `cabac_intra_chroma_pred_mode` (cabac.c:98).
+5. `cabac_cbp_luma` + `cabac_cbp_chroma` (cabac.c:968-970) — 4+2 bits with
+   neighbour-nnz contexts.
+6. `cabac_transform_size` again if allowed and cbp_luma != 0 (cabac.c:973-976).
+7. `cabac_qp_delta` (zero here).
+8. For each set 4x4 block in cbp_luma: `cabac_block_residual_cbf` with
+   DCT_LUMA_4x4 contexts and intra flag; chroma DC (2 blocks, DCT_CHROMA_DC)
+   then chroma AC (8 blocks, DCT_CHROMA_AC) if cbp_chroma==2 (cabac.c:1052-1079).
+9. Reconstruction: per-block DCT→quant→dequant→IDCT→add, updating the nnz
+   cache used by subsequent CABAC contexts.
+
+The oracle currently has none of this: `cabac_enc.c:497` always emits the I16
+path. Implementing it atomically requires all 9 steps plus the nnz/neighbour
+cache maintenance. This is the concrete remaining feature for preset parity.
+
 ### I16-vs-I4 decision CORRECTED (supersedes the rd_cost_mb note below)
 
 `build/rdcost_dump.py` dumps x264's actual decision costs at analyse.c:2943:
