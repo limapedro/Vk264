@@ -149,6 +149,27 @@ gap, not a separate cosmetic issue.
 
 Full per-clip per-preset size/NAL tables: `PER_PRESET.md`, `manifest.json`.
 
+## Slice-level analysis (NAL2) after header fixes
+
+Bit-level comparison of the first IDR slice (`build/bit_diff.py`):
+
+| preset | first differing byte | x264 prefix | oracle prefix |
+|---|---|---|---|
+| superfast | 5 | `65 88 84 00 ff ec 83 7a` | `65 88 84 00 ff fe ca 4f` |
+| fast | 10 | `... ff fe ca 4f 81 4b 9c dc` | `... ff fe ca 4f 81 4b 9d 18` |
+| slower | 10 | same as fast | same as fast divergence |
+| veryslow | 11 | `... 81 4b 9c dc` | `... 81 4b 9d 18` |
+
+Notable: the oracle's superfast IDR prefix (`ff fe ca 4f 81 4b`) matches
+x264's *fast* prefix, while x264 superfast uses `ff ec 83 7a`. So the oracle
+emits the same IDR slice header for all non-ultrafast presets, but x264 varies
+one header field with the preset (likely `idr_pic_id`/POC-related). Decoded
+header fields (`build/slice_fields.py`) currently show identical values, so
+the exact differing field needs a corrected bit-level decoder (my decoder's
+`qp_delta` reads −15 while x264 reports −3, indicating a missing field before
+`slice_qp_delta` — probably `delta_pic_order_cnt_bottom` or `cabac_init_idc`
+presence). This is the concrete next task for slice parity.
+
 ## What this changes about the roadmap
 
 - Stage 03 (slicetype) explains failure class 3 (NAL count) and is still
