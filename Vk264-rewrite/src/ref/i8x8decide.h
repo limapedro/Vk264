@@ -28,7 +28,7 @@ int vk_i8x8_decide(const uint8_t src[64], const uint8_t left[8],
 int vk_i8x8_decide_ex(const uint8_t src[64], const uint8_t left[8],
                    const uint8_t top[8], const uint8_t tr[8], int lt,
                    int have_l, int have_t, int lambda, int *cost_out,
-                   int use_satd, int mb_gate, int have_tr);
+                   int use_satd, int mb_gate, int have_tr, int pred8);
 
 /* SATD of two 8x8 blocks (Hadamard, x264 pixel_satd_8x8). */
 int vk_satd8(const uint8_t a[64], const uint8_t b[64]);
