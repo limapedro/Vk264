@@ -1881,3 +1881,34 @@ change across recent turns (candidate start, FPEL rounding, DIA, exact hpel)
 has regressed or been neutral. Stage 03 remains 13/16.
 
 Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56. Tree clean.
+
+### Stage 03: full 16-MB ME trace + combined stateful port attempt (this turn)
+
+Built `build/me_trace.py`: instruments x264's `slicetype_mb_cost` to dump, for
+every interior MB of frame1-P, the predictor, final spel MV and cost, and
+compares against an env-traced oracle run. Only 4 interior MBs are evaluated
+(x264 skips edge MBs when mb-tree/VBV are off).
+
+Result (x264 MV is spel; oracle MV halfpel):
+```
+MB     x264 mvp   x264 MV    x264cost | oracle MV    oraclecost
+(1,1)   16,-2     16,-2       107     |  0,10          780
+(2,1)   16,-2     16,-2        13     | -1, 4          651
+(1,2)    0, 0     16,-2        64     | -3, 1          578
+(2,2)    0, 0     16,-2        49     | -6, 7          388
+```
+x264 converges ALL interior MBs onto MV (16,-2) spel=(4,-0.5) via the
+right-neighbour candidate chain; my median predictor sends them to different,
+much worse MVs. This is the core of the 3-frame divergence.
+
+Attempted the full combination requested: FPEL-rounded predictor-candidate
+start + search-time BITS_MVD + exact x264 refine_subpel hpel (planes 1/2 only),
+with spel/halfpel state propagated through neighbours. Result REGRESSED to
+**10/16** (frame-1 P cost 808 vs x264 246); the per-MB trace showed oracle MVs
+still not converging on (4,-0.5). Reverted everything; median-DIA baseline
+restored at **13/16**, tree clean.
+
+So even the combination of all three known x264 mechanisms does not reproduce
+the trajectory — my understanding of the lowres ME state/interaction is still
+incomplete. Stage 03 remains 13/16. Gates: CTest 27/27 + 65/65, CAVLC P
+1360/1360, MP4 56/56.
