@@ -139,10 +139,154 @@ int vk_i16x16_decide(const uint8_t src[256],const uint8_t top[16],
     return best_mode;
 }
 
-int vk_i8x8_decide(const uint8_t src[64], const uint8_t l[8],
-                   const uint8_t t[8], const uint8_t tr[8],
-                   int have_l, int have_t, int lambda, int *cost_out, int use_satd)
+/* x264 8x8 intra mode decision: filtered edge + intra_sad_x3 + shortcut
+ * (encoder/analyse.c:745-835, common/predict.c:627-621).
+ * Keeps the existing public signature (l[8], t[8], tr[8]). */
+static int i8_F1(int a,int b){ return (a+b+1)>>1; }
+static int i8_F2(int a,int b,int c){ return (a+2*b+c+2)>>2; }
+
+static void i8_build_edge(uint8_t e[36], const uint8_t l[8],
+                          const uint8_t t[16], int lt, int have_tr)
 {
+    e[15]=(uint8_t)((t[0]+2*lt+l[0]+2)>>2);
+    e[14]=(uint8_t)((lt+2*l[0]+l[1]+2)>>2);
+    for(int y=1;y<7;++y) e[14-y]=(uint8_t)i8_F2(l[y-1],l[y],l[y+1]);
+    e[7]=e[6]=(uint8_t)((l[6]+3*l[7]+2)>>2);
+    e[16]=(uint8_t)((lt+2*t[0]+t[1]+2)>>2);
+    for(int x=1;x<7;++x) e[16+x]=(uint8_t)i8_F2(t[x-1],t[x],t[x+1]);
+    e[23]=(uint8_t)i8_F2(t[6],t[7],have_tr?t[8]:t[7]);
+    if(have_tr){
+        for(int x=8;x<15;++x) e[16+x]=(uint8_t)i8_F2(t[x-1],t[x],t[x+1]);
+        e[31]=e[32]=(uint8_t)((t[14]+3*t[15]+2)>>2);
+    } else {
+        for(int x=24;x<33;++x) e[x]=t[7];
+    }
+}
+#define EL(y) e[14-(y)]
+#define ET(x) e[16+((x)<15?(x):15)]
+#define ELT e[15]
+static void i8_pred_edge(uint8_t out[64], int m, const uint8_t e[36])
+{
+    switch(m){
+    case 0:
+        for(int y=0;y<8;++y) for(int x=0;x<8;++x) out[y*8+x]=ET(x);
+        break;
+    case 1:
+        for(int y=0;y<8;++y) for(int x=0;x<8;++x) out[y*8+x]=EL(y);
+        break;
+    case 2: case 9: case 10: case 11: {
+        int s;
+        if(m==2){s=0;for(int i=0;i<8;++i)s+=EL(i)+ET(i);s=(s+8)>>4;}
+        else if(m==9){s=0;for(int i=0;i<8;++i)s+=EL(i);s=(s+4)>>3;}
+        else if(m==10){s=0;for(int i=0;i<8;++i)s+=ET(i);s=(s+4)>>3;}
+        else s=128;
+        for(int i=0;i<64;++i) out[i]=(uint8_t)s;
+        break;
+    }
+    case 3:
+        for(int y=0;y<8;++y) for(int x=0;x<8;++x){
+            int d=x+y; out[y*8+x]=(uint8_t)i8_F2(ET(d),ET(d+1),ET(d+2));
+        }
+        break;
+    case 4:
+        for(int y=0;y<8;++y) for(int x=0;x<8;++x){
+            int k=7-y+x,v;
+            if(k<=5)v=i8_F2(EL(7-k),EL(6-k),EL(5-k));
+            else if(k==6)v=i8_F2(EL(1),EL(0),ELT);
+            else if(k==7)v=i8_F2(EL(0),ELT,ET(0));
+            else if(k==8)v=i8_F2(ELT,ET(0),ET(1));
+            else v=i8_F2(ET(k-9),ET(k-8),ET(k-7));
+            out[y*8+x]=(uint8_t)v;
+        }
+        break;
+    case 5:
+        for(int y=0;y<8;++y) for(int x=0;x<8;++x){
+            int d=2*x-y,v;
+            if(d>=0&&!(d&1)){int i=d/2;v=i8_F1(i?ET(i-1):ELT,ET(i));}
+            else if(d>=0) v=i8_F2(ET((d-1)/2),ET((d+1)/2),ET((d+3)/2));
+            else {int n=-d;
+                if(n==1)v=i8_F2(EL(0),ELT,ET(0));
+                else if(n==2)v=i8_F2(EL(1),EL(0),ELT);
+                else v=i8_F2(EL(n-1),EL(n-2),EL(n-3));
+            }
+            out[y*8+x]=(uint8_t)v;
+        }
+        break;
+    case 6:
+        for(int y=0;y<8;++y) for(int x=0;x<8;++x){
+            int d=2*y-x,v;
+            if(d>=0&&d<8) v=i8_F2(EL(d),(d+1<8)?EL(d+1):ELT,(d+2<8)?EL(d+2):ET(0));
+            else if(d<0) v=i8_F2(ET(-d),ET(-d+1),ET(-d+2));
+            else v=128;
+            out[y*8+x]=(uint8_t)v;
+        }
+        break;
+    case 7:
+        for(int y=0;y<8;++y) for(int x=0;x<8;++x){
+            int d=x+(y>>1); out[y*8+x]=(uint8_t)i8_F2(ET(d),ET(d+1),ET(d+2));
+        }
+        break;
+    case 8:
+        for(int y=0;y<8;++y) for(int x=0;x<8;++x){
+            int d=y+(x>>1); out[y*8+x]=(uint8_t)(d<8?EL(d):EL(7));
+        }
+        break;
+    default:
+        for(int i=0;i<64;++i) out[i]=128;
+        break;
+    }
+}
+#undef EL
+#undef ET
+#undef ELT
+
+static int i8_sad(const uint8_t a[64],const uint8_t b[64])
+{
+    int s=0;for(int i=0;i<64;++i){int d=a[i]-b[i];s+=d<0?-d:d;}return s;
+}
+
+/* intra_analysis_shortcut[avoid_topright=0][cand9][favor_vertical] */
+static const int8_t I8_SC[2][2][5] = {
+    {{8,-1,-1,-1,-1}, {3,7,-1,-1,-1}},
+    {{4,6,8,-1,-1},  {3,4,5,7,-1}}
+};
+
+int vk_i8x8_decide(const uint8_t src[64], const uint8_t l[8],
+                   const uint8_t t[8], const uint8_t tr[8], int lt_in,
+                   int have_l, int have_t, int lambda, int *cost_out,
+                   int use_satd, int mb_gate)
+{
+    (void)use_satd;
+    /* Exact x264 filtered-edge x3 + shortcut, only for MBs with all
+     * three neighbours (mx>0 && my>0). Edge MBs keep the original
+     * baseline all-candidate path — verified byte-exact for MB3/MB4. */
+    if(mb_gate){
+        uint8_t t16[16], e[36], pred[64];
+        for(int i=0;i<8;++i) t16[i]=t[i];
+        for(int i=0;i<8;++i) t16[8+i]=tr[i];
+        i8_build_edge(e,l,t16,lt_in,1);
+        int pred_mode=2, satd[3];
+        for(int m=0;m<3;++m){ i8_pred_edge(pred,m,e); satd[m]=i8_sad(src,pred); }
+        int favor=satd[1]>satd[0];
+        if(pred_mode<3) satd[pred_mode]-=3*lambda;
+        int best=satd[2], bm=2;
+        if(satd[1]<best){best=satd[1];bm=1;}
+        if(satd[0]<best){best=satd[0];bm=0;}
+        static const int8_t SHORT[2][5]={{4,6,8,-1,-1},{3,4,5,7,-1}};
+        const int8_t *cands=SHORT[favor];
+        if(best>0){
+            for(int k=0;cands[k]>=0;++k){
+                int m=cands[k];
+                i8_pred_edge(pred,m,e);
+                int c=i8_sad(src,pred);
+                if(pred_mode==(m<=8?m:2)){ c-=3*lambda; if(c<=0){best=c;bm=m;break;} }
+                if(c<best){best=c;bm=m;}
+            }
+        }
+        if(cost_out)*cost_out=best+3*lambda;
+        return bm;
+    }
+
     uint8_t pred[64];
     int best_mode = (have_l && have_t) ? 2 : (have_l ? 9 : (have_t ? 10 : 11));
     int best = 0x7fffffff;
