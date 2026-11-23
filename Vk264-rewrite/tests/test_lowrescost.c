@@ -9,7 +9,7 @@ int main(int argc,char**argv){
     FILE*f=fopen(path,"rb"); if(!f){perror("open");return 2;}
     uint8_t*raw=malloc(fs*n); fread(raw,fs,n,f); fclose(f);
     uint8_t**lo=malloc(n*sizeof(*lo));
-    for(int i=0;i<n;++i){lo[i]=malloc(dw*dh);
+    for(int i=0;i<n;++i){lo[i]=malloc(dw*dh*VK_LOWRES_PLANES);
         vk_lowres_luma(raw+i*fs,w,h,lo[i],dw,dh);}
     vk_lowres_mv_t st[6]; memset(st,0,sizeof(st));
     for(int i=0;i<n;++i) vk_lowres_mv_init(&st[i],dw,dh);

@@ -1616,3 +1616,38 @@ during search, hpel planes, exact DIA stepping), now localized conclusively.
 
 Best verified state: 12/16, neighbour-MV bipred port retained. Gates:
 CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03: hpel lowres planes found and ported (this turn) — 13/16
+
+**Root cause of the ~2x cost gap found.** x264's lowres ME uses 4 half-pel
+planes (`frame_t.lowres[0..3]`), not just the base plane. Direct measurement
+on the byte-exact lowres frames at frame1 MB(2,2): base-plane SAD at fullpel
+MV (4,0) = 1494, but x264 reports cost 49 with MV (16,-2) spel = (4,-0.5)
+halfpel. `lowres_context_init` sets `i_subpel_refine=2` =>
+`subpel_iterations[2]={0,1,1,0}` = 1 hpel iteration (me.c:792-796). My model
+was integer-only.
+
+**Implemented** (lowres.c):
+- `vk_lowres_luma` now generates all 4 planes contiguously
+  (`VK_LOWRES_PLANES=4`, `LR_PLANE` macro) using x264's FILTER on the fullres
+  source with edge clamping. All lowres buffer allocations updated.
+- `sad_hpel` / `hpel_min_sad`: SAD against plane[hx+2*hy] at fullpel offset
+  (hx,hy∈{0,1}), matching x264 `get_ref` plane selection.
+- hpel refinement at the chosen fullpel MV in `vk_lowres_p_cost` and in the
+  B-path's two single-list costs (`c0`,`c1`).
+
+**Result: 12/16 -> 13/16 agreement.** Remaining diffs: displays 1,6,8
+(x264 B, oracle P). Costs dropped: frame1 P 495->474, B 519->519 (single-list
+hpel helped; bipred still base-plane).
+
+**Negative results (reverted):**
+- hpel-aware GLOBAL search (min over planes at every candidate MV): P(prev)
+  474->57 (x264 246 — over-improved), agreement 10/16. x264 refines hpel only
+  at the fullpel MV; global search finds matches x264 never considers.
+- hpel over all 16 plane-pairs for the bipred candidates: B 519->469, agreement
+  13/16 -> 12/16 (over-approximation). Zero/dmv candidates correctly use plane
+  0 (their MVs have no fractional bits); only searched bipred would need hpel,
+  which requires storing hpel bits in MVs (future work).
+- LAMBDA=1 with hpel: 11/16.
+
+Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56. Best 13/16.

@@ -12,7 +12,13 @@ typedef struct {
 } vk_lowres_mv_t;
 
 void vk_lowres_mv_init(vk_lowres_mv_t *st,int dw,int dh);
+/* Lowres luma buffer holds 4 contiguous dw*dh planes, as x264 frame_t.lowres:
+ * [0]=base, [1]=h-shift (0.5px right), [2]=v-shift (0.5px down), [3]=both.
+ * A prediction at fullpel (fx,fy) + halfpel (hx,hy) is read from
+ * plane[hx+2*hy] at position (fx,fy). */
+#define VK_LOWRES_PLANES 4
 void vk_lowres_luma(const uint8_t *src,int sw,int sh,uint8_t *dst,int dw,int dh);
+#define LR_PLANE(base,dw,dh,idx) ((base)+(size_t)(idx)*(dw)*(dh))
 int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
                      vk_lowres_mv_t *st);
 int vk_lowres_i_cost(const uint8_t *cur,int dw,int dh);

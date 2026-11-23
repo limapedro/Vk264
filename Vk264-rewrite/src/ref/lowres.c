@@ -22,14 +22,51 @@ static uint16_t mv_cost(int mv)
 
 void vk_lowres_luma(const uint8_t *src,int sw,int sh,uint8_t *dst,int dw,int dh)
 {
-    /* x264 common/mc.c frame_init_lowres_core:494 FILTER macro (matches asm).
-     * FILTER(a,b,c,d) = (((a+b+1)>>1)+((c+d+1)>>1)+1)>>1 */
+    /* x264 common/mc.c frame_init_lowres_core:484-506: generate all 4 planes.
+     * FILTER(a,b,c,d) = (((a+b+1)>>1)+((c+d+1)>>1)+1)>>1. x264 duplicates the
+     * last row/column of `plane[0]` before filtering so the right/bottom edges
+     * don't special-case; we clamp to the last valid sample instead. */
 #define LF(a,b,c,d) ((((a)+(b)+1)>>1)+(((c)+(d)+1)>>1)+1)>>1
+#define PX(x,y) src[((y)<sh?(y):sh-1)*sw+((x)<sw?(x):sw-1)]
+    uint8_t *p0=dst, *p1=LR_PLANE(dst,dw,dh,1),
+            *p2=LR_PLANE(dst,dw,dh,2), *p3=LR_PLANE(dst,dw,dh,3);
     for(int y=0;y<dh;++y) for(int x=0;x<dw;++x){
-        const uint8_t *p=src+(2*y)*sw+2*x;
-        dst[y*dw+x]=(uint8_t)(LF(p[0],p[sw],p[1],p[sw+1]));
+        int sx=2*x, sy=2*y;
+        p0[y*dw+x]=(uint8_t)(LF(PX(sx,sy),PX(sx,sy+1),PX(sx+1,sy),PX(sx+1,sy+1)));
+        p1[y*dw+x]=(uint8_t)(LF(PX(sx+1,sy),PX(sx+1,sy+1),PX(sx+2,sy),PX(sx+2,sy+1)));
+        p2[y*dw+x]=(uint8_t)(LF(PX(sx,sy+1),PX(sx,sy+2),PX(sx+1,sy+1),PX(sx+1,sy+2)));
+        p3[y*dw+x]=(uint8_t)(LF(PX(sx+1,sy+1),PX(sx+1,sy+2),PX(sx+2,sy+1),PX(sx+2,sy+2)));
     }
+#undef PX
 #undef LF
+}
+
+/* SAD of an 8x8 block against a reference plane at a halfpel MV.
+ * hx,hy in {0,1} select the shifted plane; (fx,fy) is the fullpel offset. */
+static int sad_hpel(const uint8_t *cur,int dw,int bx,int by,
+                    const uint8_t *refbase,int rw,int rh,
+                    int fx,int fy,int hx,int hy)
+{
+    const uint8_t *ref=LR_PLANE(refbase,rw,rh,hx+2*hy);
+    int s=0;
+    for(int y=0;y<8;++y) for(int x=0;x<8;++x){
+        int rx=bx+fx+x, ry=by+fy+y;
+        if(rx<0||ry<0||rx>=rw||ry>=rh) return 0x7fffffff;
+        int d=(int)cur[(by+y)*dw+bx+x]-(int)ref[ry*rw+rx];
+        s+=d<0?-d:d;
+    }
+    return s;
+}
+
+static int hpel_min_sad(const uint8_t *cur,int dw,int bx,int by,
+                        const uint8_t *refbase,int rw,int rh,int fx,int fy)
+{
+    int best=0x7fffffff;
+    for(int hy=0;hy<2;++hy) for(int hx=0;hx<2;++hx){
+        int s=sad_hpel(cur,dw,bx,by,refbase,rw,rh,fx,fy,hx,hy);
+        if(s<best) best=s;
+    }
+    return best;
 }
 
 void vk_lowres_mv_init(vk_lowres_mv_t *st,int dw,int dh)
@@ -84,6 +121,14 @@ int vk_lowres_p_cost(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
             }
             if(!improved && rad>4) break;
         }
+        /* x264 lowres i_subpel_refine=2 does 1 hpel iteration around the
+         * fullpel MV using the 4 shifted lowres planes (me.c:792-796). */
+        int hbest=0x7fffffff;
+        for(int hy=0;hy<2;++hy) for(int hx=0;hx<2;++hx){
+            int s=sad_hpel(cur,dw,bx,by,ref,dw,dh,bmx,bmy,hx,hy);
+            if(s<hbest) hbest=s;
+        }
+        if(hbest<0x7fffffff) best=hbest;
         /* x264: cost -= p_cost_mv[0]; if MV!=0 cost += 5*lambda */
         best -= mv_cost(0);
         if(bmx||bmy) best += 5*LAMBDA;
@@ -165,11 +210,12 @@ int vk_lowres_b_cost(const uint8_t *cur,const uint8_t *r0,const uint8_t *r1,
             mv[l][mb][0]=mxv; mv[l][mb][1]=myv;
         }
         /* list0 / list1 single-prediction costs */
-        int c0=satd8(cur,dw,bx,by,r0,dw,bx+mv[0][mb][0],by+mv[0][mb][1])+LOWRES_PENALTY;
-        int c1=satd8(cur,dw,bx,by,r1,dw,bx+mv[1][mb][0],by+mv[1][mb][1])+LOWRES_PENALTY;
+        int c0=hpel_min_sad(cur,dw,bx,by,r0,dw,dh,mv[0][mb][0],mv[0][mb][1])+LOWRES_PENALTY;
+        int c1=hpel_min_sad(cur,dw,bx,by,r1,dw,dh,mv[1][mb][0],mv[1][mb][1])+LOWRES_PENALTY;
         if(mv[0][mb][0]||mv[0][mb][1]) c0+=5*LAMBDA;
         if(mv[1][mb][0]||mv[1][mb][1]) c1+=5*LAMBDA;
-        /* zero-MV bipred (penalty 0) */
+        /* zero-MV bipred (penalty 0): x264 TRY_BIDIR with hpel_idx=0 reads
+         * the base plane of each list. */
         uint8_t avg[64];
         for(int y=0;y<8;++y) for(int x=0;x<8;++x)
             avg[y*8+x]=(uint8_t)((r0[(by+y)*dw+bx+x]+r1[(by+y)*dw+bx+x]+1)>>1);

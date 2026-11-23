@@ -93,7 +93,7 @@ void vk_slicetype_decide(const uint8_t *frames, int n, int w, int h,
     int dw=w/2, dh=h/2;
     uint8_t **lo = malloc((size_t)n*sizeof(*lo));
     for (int f=0; f<n; ++f) {
-        lo[f]=malloc((size_t)dw*dh);
+        lo[f]=malloc((size_t)dw*dh*VK_LOWRES_PLANES);
         vk_lowres_luma(frames+(size_t)f*(size_t)w*h*3/2,w,h,lo[f],dw,dh);
     }
     int i = 0;
