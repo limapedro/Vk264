@@ -1815,3 +1815,19 @@ candidate rounding, BITS_MVD, and hpel planes during the search -- not just
 the candidate-selection rule. Stage 03 remains 13/16.
 
 Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 04: I8x8 mode penalty corrected (this turn)
+
+`vk_i8x8_decide` used `SATD + lambda*(m<9 ? 3 : 1)` — a positive per-mode bit
+penalty. x264 analyse.c:816-821 instead uses SA8D with a **-3*lambda DISCOUNT**
+for the predicted mode (`if (i_pred_mode == fix(i_mode)) i_satd -= 3*lambda`),
+and stores `i_satd + 4*lambda` only for the RD cost table, not the decision.
+
+Changed the decision cost to `vk_satd8(src,pred) - (m==pred_mode ? 3*lambda : 0)`
+with `pred_mode` = DC(2) when both neighbours exist, DC_LEFT/RIGHT/128 otherwise
+(x264's typical prediction). `vk_satd8` already matches x264's SA8D (sum of four
+4x4 Hadamards each >>1).
+
+Fixtures pass; gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56,
+compare_slicetype 13/16. The I8x8 emitter is still opt-in, so this change does
+not affect byte-exact streams; full RD-based I16/I8/I4 selection remains open.

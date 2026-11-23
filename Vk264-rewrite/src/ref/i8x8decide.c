@@ -112,7 +112,11 @@ int vk_i8x8_decide(const uint8_t src[64], const uint8_t l[8],
         if (m==10 && !(have_t && !have_l)) continue;
         if (m==11 && (have_l||have_t)) continue;
         vk_predict8(pred,m,l,t,tr);
-        int cost = vk_satd8(src,pred) + lambda * (m<9 ? 3 : 1);
+        /* x264 analyse.c:816-821: the mode decision uses SA8D with a -3*lambda
+         * DISCOUNT for the predicted mode (typically DC when both neighbours
+         * exist), not a positive per-mode bit penalty. */
+        int pred_mode = (have_l && have_t) ? 2 : (have_l ? 9 : (have_t ? 10 : 11));
+        int cost = vk_satd8(src,pred) - (m==pred_mode ? 3*lambda : 0);
         if (cost < best) { best=cost; best_mode=m; }
     }
     return best_mode;
