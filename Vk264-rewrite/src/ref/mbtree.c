@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "mbtree.h"
+#include <math.h>
 
 void vk_mbtree_propagate_cost(int16_t *dst,const uint16_t *propagate_in,
                               const uint16_t *intra_costs,
@@ -19,6 +20,22 @@ void vk_mbtree_propagate_cost(int16_t *dst,const uint16_t *propagate_in,
         float propagate_denom=(float)intra_cost;
         int v=propagate_denom>0 ? (int)(propagate_amount*propagate_num/propagate_denom+0.5f) : 0;
         dst[i]=(int16_t)(v<32767?v:32767);
+    }
+}
+
+void vk_mbtree_finish(float *qp_offset,const uint16_t *intra_cost,
+                      const uint16_t *inv_qscale,const uint16_t *propagate_cost,
+                      const float *aq_offset,int fps_factor,float qcompress,
+                      int len)
+{
+    /* x264 slicetype.c:1038-1047. inv_qscale is Q8.8. */
+    float strength=5.0f*(1.0f-qcompress);
+    for(int i=0;i<len;++i){
+        int ic=(int)(((unsigned)intra_cost[i]*inv_qscale[i]+128)>>8);
+        if(!ic) continue;
+        int pc=(propagate_cost[i]*fps_factor+128)>>8;
+        float ratio=log2f((float)(ic+pc))-log2f((float)ic);
+        qp_offset[i]=aq_offset[i]-strength*ratio;
     }
 }
 

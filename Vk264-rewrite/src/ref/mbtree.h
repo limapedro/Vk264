@@ -20,4 +20,12 @@ void vk_mbtree_propagate_list(uint16_t *ref_costs,const int16_t (*mvs)[2],
                               int mb_y,int len,int list,int width,int height,
                               int stride);
 
+/* x264 encoder/slicetype.c:1029-1049 macroblock_tree_finish: derive the
+ * per-MB QP offset from intra cost, propagated cost and Q8.8 inv_qscale.
+ * fps_factor is the integer factor from line 1031. */
+void vk_mbtree_finish(float *qp_offset,const uint16_t *intra_cost,
+                      const uint16_t *inv_qscale,const uint16_t *propagate_cost,
+                      const float *aq_offset,int fps_factor,float qcompress,
+                      int len);
+
 #endif

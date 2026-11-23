@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <math.h>
 #include "mbtree.h"
 
 int main(void)
@@ -40,6 +41,22 @@ int main(void)
     int16_t amt[1]={100}; uint16_t lc[1]={1<<VK_LOWRES_COST_SHIFT};
     vk_mbtree_propagate_list(refs,mvs,amt,lc,32,0,1,0,4,4,4);
     if(refs[0]!=100){ fprintf(stderr,"mbtree list mv0 FAIL %d\n",refs[0]); return 1; }
-    printf("mbtree fixture PASS (propagate_cost + zero-MV list)\n");
+    /* macroblock_tree_finish (x264 slicetype.c:1029-1049):
+     * ic=(intra*invq+128)>>8; pc=(prop*fps+128)>>8;
+     * off = aq - 5*(1-qcompress)*(log2(ic+pc)-log2(ic)). */
+    uint16_t ic[2]={1000,2000}, iq[2]={256,300}, pc[2]={500,800};
+    float aq[2]={0.0f,0.0f}, off[2]={99.0f,99.0f};
+    vk_mbtree_finish(off,ic,iq,pc,aq,256,0.6f,2);
+    float strength=5.0f*(1.0f-0.6f);
+    for(int i=0;i<2;++i){
+        int ci=(ic[i]*iq[i]+128)>>8;
+        int cp=(pc[i]*256+128)>>8;
+        float want=aq[i]-strength*(log2f((float)(ci+cp))-log2f((float)ci));
+        if(fabsf(off[i]-want)>1e-4f){
+            fprintf(stderr,"mbtree finish FAIL i=%d got=%.6f want=%.6f\n",i,off[i],want);
+            return 1;
+        }
+    }
+    printf("mbtree fixture PASS (propagate_cost + list + finish)\n");
     return 0;
 }

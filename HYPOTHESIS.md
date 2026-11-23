@@ -2072,3 +2072,20 @@ These are standalone primitives: mb-tree is NOT yet wired into the CLI (that
 needs the full propagate/propagate-cost loop and f_qp_offset application to
 lookahead costs). Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56,
 stage03 13/16.
+
+### Stage 10: mb-tree f_qp_offset finish primitive (this turn)
+
+Added `vk_mbtree_finish` (mbtree.c) porting x264 slicetype.c:1029-1049:
+`ic=(intra*invq+128)>>8; pc=(prop*fps_factor+128)>>8;
+ off = aq - 5*(1-qcompress)*(log2(ic+pc)-log2(ic))`. This is the step that
+turns propagated costs into the per-MB QP offsets applied to lookahead costs.
+CTest fixture added; rewrite suite 28/28.
+
+Note a live x264 dump (`build/mbtree_finish_dump.py`) produced no lines because
+mb-tree pruning is not triggered on the 64x64 test clip even with --mbtree;
+fixtures are therefore computed from x264's exact source semantics.
+
+Still not wired: the full propagate loop (macroblock_tree_propagate) and
+application of f_qp_offset to the lookahead vertex costs. mb-tree is therefore
+not active in the CLI, so CRF is not byte-exact end-to-end. Gates: CTest
+28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56, stage03 13/16.
