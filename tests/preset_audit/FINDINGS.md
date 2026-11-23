@@ -219,6 +219,19 @@ for ultrafast CABAC cases that must stay byte-exact, and (b) emitting an I4
 mb_type with I16 residual/CBP coding produces a malformed MB. Reverted fully;
 baseline restored (29/29, 56/56, 12/120).
 
+### I16-vs-I4 decision uses rd_cost_mb, not SATD (definitive)
+
+x264 `analyse.c:991` and `:1000` **overwrite** `a->i_satd_i16x16` and
+`a->i_satd_i4x4` with `rd_cost_mb(h, a->i_lambda2)` — the actual quantized
+residual RD cost (distortion + lambda2 × coded bits) after transform/quant.
+The final MB-type comparison (`analyse.c:2943-2945`) uses those RD costs, not
+the initial SATD. My oracle compares raw SATD/SAD, so its decision is not
+comparable at all — this is why it picks I4 where x264 picks I16 despite a
+"better" SATD. Correcting the decision requires an `rd_cost_mb` equivalent
+for both I16 and I4 candidate modes (transform, quant, dequant, coeff bits),
+i.e. effectively the atomic I4 path plus RD costing. This is the true scope of
+the remaining parity work.
+
 ### I16-vs-I4 decision primitive is also wrong (this turn)
 
 `build/test_i4_decision.c` measures the I16-vs-I4 decision on the ultrafast

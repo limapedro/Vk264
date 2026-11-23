@@ -93,6 +93,9 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
     int mf[16],bias[16],deq[16];
     vk_ref_quant_tables(qp, 0, mf, bias, deq);
     int lambda = vk_lambda(qp);
+    /* x264 analyse.c:867: base mode-bit cost lambda*(24+16), absent from
+     * our model until now. */
+    int total = lambda * (24 + 16);
     /* x264 analyse.c: cost_i4x4_mode = 3*lambda*(i!=8) */
     int raw[16];
     for (int i=0;i<16;++i) raw[i]=-1;
@@ -102,7 +105,6 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
     for(int i=0;i<64;++i) cache_idx[i]=-1;
     for(int i=0;i<16;++i) cache_idx[SCAN8[i]]=i;
 
-    int total=0;
     for (int idx=0; idx<16; ++idx) {
         int bx=XY[idx][0]*4, by=XY[idx][1]*4;
         uint8_t left[4],top[4],tr[4],lt;
