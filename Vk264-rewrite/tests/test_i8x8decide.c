@@ -23,6 +23,17 @@ int main(void)
     memset(src,128,64); memset(l,128,8); memset(t,128,8); memset(tr,128,8);
     m=vk_i8x8_decide(src,l,t,tr,0,0,1);
     if (m!=11) { fprintf(stderr,"FAIL DC_128: got %d\n",m); return 1; }
-    printf("i8x8decide fixture PASS (DC/V/DC_LEFT/DC_128)\n");
+    /* I16x16: flat block with neighbours -> DC (2), zero residual.
+     * Vertical gradient with top row matching -> V (0). */
+    uint8_t s16[256],t16[16],l16[16];
+    memset(s16,80,256); memset(t16,80,16); memset(l16,80,16);
+    int cost=0;
+    int m16=vk_i16x16_decide(s16,t16,l16,1,1,1,&cost);
+    if(m16!=0 || cost!=1){ fprintf(stderr,"FAIL i16 flat: mode=%d cost=%d\n",m16,cost); return 1; }
+    for(int x=0;x<16;++x) t16[x]=x*4;
+    for(int y=0;y<16;++y) for(int x=0;x<16;++x) s16[y*16+x]=x*4;
+    m16=vk_i16x16_decide(s16,t16,l16,1,1,1,&cost);
+    if(m16!=0){ fprintf(stderr,"FAIL i16 vertical: mode=%d\n",m16); return 1; }
+    printf("i8x8decide+i16x16 fixture PASS (DC/V/DC_LEFT/DC_128 + I16 DC/V)\n");
     return 0;
 }

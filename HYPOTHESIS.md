@@ -2206,3 +2206,16 @@ Diagnostics preserved in build/: me_trace.py, me_full_dump.py, dia_trace.py,
 fcache_dump.py, mbcost_dump.py, pathcost_dump.py. Code reverted to the verified
 13/16 baseline; tree clean. Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360,
 MP4 56/56.
+
+### Stage 04: I16x16 RD decision added (this turn)
+
+Added `vk_i16x16_decide` (i8x8decide.c/h) implementing x264 analyse.c:690-734:
+predict modes V(0)/H(1)/DC(2)/P(3) for a 16x16 MB, score with SA8D over four
+8x8 quadrants plus `lambda * bs_size_ue(mode)` (bit costs 1,3,3,3), and pick
+the cheapest. Note mode P is currently simplified to DC (true plane prediction
+not implemented). Added CTest fixtures (flat block -> V with cost 1, vertical
+gradient -> V).
+
+This is a step toward RD-based I16/I8/I4 selection, but it is not wired into
+the encoder yet (I4x4 and I8x8 emitters remain opt-in). Gates: CTest 28/28 +
+65/65, CAVLC P 1360/1360, MP4 56/56, stage03 13/16.

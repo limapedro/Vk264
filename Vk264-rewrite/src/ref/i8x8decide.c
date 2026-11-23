@@ -95,6 +95,50 @@ int vk_satd8(const uint8_t a[64], const uint8_t b[64])
     return total;
 }
 
+/* x264 I16x16 mode-bit costs: lambda * bs_size_ue(mode).
+ * bs_size_ue(0)=1, (1)=(2)=(3)=3. */
+static const int i16_mode_bits[4]={1,3,3,3};
+
+int vk_i16x16_decide(const uint8_t src[256],const uint8_t top[16],
+                     const uint8_t left[16],int have_t,int have_l,int lambda,
+                     int *cost_out)
+{
+    uint8_t pred[256];
+    int best=0x7fffffff, best_mode=2;
+    for(int m=0;m<4;++m){
+        if(m==0 && !have_t) continue;
+        if(m==1 && !have_l) continue;
+        for(int y=0;y<16;++y) for(int x=0;x<16;++x){
+            int v;
+            if(m==0) v=top[x];
+            else if(m==1) v=left[y];
+            else {
+                int s=0,n=0;
+                if(!have_t && !have_l) v=128;
+                else {
+                    if(have_t){for(int i=0;i<16;++i){s+=top[i];++n;}}
+                    if(have_l){for(int i=0;i<16;++i){s+=left[i];++n;}}
+                    v=(s+n/2)/n;
+                }
+            }
+            pred[y*16+x]=(uint8_t)v;
+        }
+        int c=0;
+        for(int qy=0;qy<16;qy+=8) for(int qx=0;qx<16;qx+=8){
+            uint8_t a[64],b[64];
+            for(int y=0;y<8;++y) for(int x=0;x<8;++x){
+                a[y*8+x]=src[(qy+y)*16+qx+x];
+                b[y*8+x]=pred[(qy+y)*16+qx+x];
+            }
+            c+=vk_satd8(a,b);
+        }
+        c+=lambda*i16_mode_bits[m];
+        if(c<best){best=c;best_mode=m;}
+    }
+    if(cost_out)*cost_out=best;
+    return best_mode;
+}
+
 int vk_i8x8_decide(const uint8_t src[64], const uint8_t l[8],
                    const uint8_t t[8], const uint8_t tr[8],
                    int have_l, int have_t, int lambda)

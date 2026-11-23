@@ -20,4 +20,10 @@ int vk_i8x8_decide(const uint8_t src[64], const uint8_t left[8],
 /* SATD of two 8x8 blocks (Hadamard, x264 pixel_satd_8x8). */
 int vk_satd8(const uint8_t a[64], const uint8_t b[64]);
 
+/* I16x16 intra decision (x264 analyse.c:690-734). Modes V=0,H=1,DC=2,P=3.
+ * Returns the best mode; *cost_out gets its SA8D + lambda*mode_bits. */
+int vk_i16x16_decide(const uint8_t src[256],const uint8_t top[16],
+                     const uint8_t left[16],int have_t,int have_l,int lambda,
+                     int *cost_out);
+
 #endif
