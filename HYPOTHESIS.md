@@ -2236,3 +2236,26 @@ lambda) has regressed or been neutral. The 13/16 configuration is an empirical
 fit; closing stage 03 requires a different strategy, not another tweak.
 
 Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56. Tree clean.
+
+### Stage 03: all lowres planes byte-exact + qpel MV-cost test (this turn)
+
+`build/lowres_planes_dump.py` dumps all 4 lowres planes of frames 0 and 1 from
+x264 and compares them byte-for-byte with my generator. Result:
+```
+frame0 plane0..3: 0 differing bytes each
+frame1 plane0..3: 0 differing bytes each
+```
+So the lowres PIXEL DATA is fully exact; the divergence is purely in search /
+cost accumulation, not filtering or downsampling.
+
+Also tested x264's exact BITS_MVD qpel indexing (`p_cost_mv[mv*4]` instead of
+`p_cost_mv[mv]`). P costs changed (P(next) 262->250, 568->355) but frame-type
+agreement stayed 13/16. Reverted to keep the verified baseline.
+
+Combined with ~40 turns of negative results, stage 03 is conclusively blocked
+under incremental changes. The preserved build/ harness now covers: lowres
+planes (byte-exact), per-MB ME state, per-frame costs, path costs, and frame
+types. Any further progress needs a component-by-component bit-exact port of
+x264's entire lookahead state machine validated against those dumps.
+
+Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56. Tree clean.
