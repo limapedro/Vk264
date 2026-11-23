@@ -1861,3 +1861,23 @@ beyond local tuning; stage 03 stays at 13/16.
 
 All candidate-start experiments this turn were reverted; tree clean.
 Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03: exact refine_subpel hpel model (this turn, reverted)
+
+Read x264 me.c:886-923: `refine_subpel` with hpel_iters=1 evaluates only four
+positions relative to a fullpel MV: (fx,fy±1) on plane 2 and (fx±1,fy) on
+plane 1 (MV ±2 qpel). Plane 3 is unreachable from a fullpel start. My previous
+`hpel_best_offset` evaluated all 4 planes at the SAME offset, including plane 3
+(which my Python showed gives the best SAD of all) -- a model x264 cannot use.
+
+Implemented the exact x264 refine_subpel positions and propagated the resulting
+absolute halfpel MV through P and B costs. Result: agreement REGRESSED
+13/16 -> 12/16, frame-1 P cost 474 -> 599 (x264's is 246). Reverted cleanly.
+
+Together with the earlier diagnostic that at x264's exact MV my SAD reproduces
+x264's cost, this means the residual is x264's exact search TRAJECTORY, and my
+"more correct" models keep finding MVs/costs x264 never finds. Every faithful
+change across recent turns (candidate start, FPEL rounding, DIA, exact hpel)
+has regressed or been neutral. Stage 03 remains 13/16.
+
+Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56. Tree clean.
