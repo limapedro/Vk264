@@ -62,3 +62,11 @@ Also ruled out:
 - QP mismatch (verified qp=25 both).
 - Quant table scale (x264 flat CQM scales dequant by 16; oracle matches).
 - SATD vs SAD in mode decision (both produce identical modes on this clip).
+
+## Update (this turn)
+
+The decision stream now agrees through MB0 completely and into MB1
+(first divergence at #53). See FINDINGS.md for the four CABAC fixes
+(block order, DCT_LUMA_4x4 category, CBF bin, scan8 nnz cache) and the
+mode-decision candidate-class fix. The next remaining issue is MB1's
+intra mode selection on textured content.

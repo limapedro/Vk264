@@ -373,3 +373,34 @@ runs using `--fps 60`), so QP is not the cause.
 
 Gates remain green; audit remains 12/120. Next step: port x264's FDEC padding
 and per-block reconstruction exactly so blocks 2+ see the same neighbours.
+
+## I4 residual block order + contexts (this turn) — PR #212
+
+Extended the x264-vs-oracle decision differential. The first divergence moved
+from decision #20 to **decision #53** (two full macroblocks of exact agreement).
+
+Root causes found and fixed:
+1. **4x4 block order** — `cabac_enc.c` I4 residual loop used row-major
+   `(i%4,i/4)`, but x264's `block_idx_xy_fenc` (and `modes4[]`) is
+   quadrant-major: (0,0),(4,0),(0,4),(4,4),(8,0),... Added `I4XY[16][2]`.
+   This alone moved the first stream diff from byte 5 to byte 8.
+2. **Residual context category** — I4 luma uses `DCT_LUMA_4x4` (cat 2:
+   CBF base 93, sig/last/level offsets 134/195/248), not `DCT_LUMA_AC`
+   (cat 1). Fixed both `cbf_i4()` and `cabac_coeffs()` call.
+3. **CBF bin** — was hardcoded to 1 for every block in a nonzero 8x8;
+   x264 emits 0 for blocks whose own nnz is zero.
+4. **nnz cache** — CBF contexts read out-of-bounds neighbour values; added
+   a 48-entry scan8 cache with 0x80 only for *unavailable* neighbours
+   (within-MB blocks store plain 0/1).
+5. `vk_i4x4_decide` candidate classes are now derived from `have_l/t/tl`
+   like x264's `i_neighbour4[]` (previously a fixed first-MB table).
+6. Corrected the x9 mode-bias formula to `3*lambda*(m!=pred)`.
+
+x264 gold trace now agrees through all of MB0 (mb_type, transform size,
+16 pred modes, chroma mode, CBP, qp_delta, CBF+coefficients for all
+blocks) and most of MB1; remaining mismatch is MB1's intra mode choice
+(SAD vs x264 SATD on textured content — SATD breaks the SAD-based
+`rewrite_i4x4_decide` fixture, so it was not adopted).
+
+Gates: CTest 29/29 + 65/65, CAVLC 1360/1360, MP4 56/56, slicetype 13/16.
+Audit remains 12/120 — parity still not achieved.

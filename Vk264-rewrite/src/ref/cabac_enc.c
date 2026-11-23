@@ -127,7 +127,9 @@ static void cb_cbp_i4(vk_cabac_t *cb,int cbp,int cl,int ct){
     vk_cabac_decision_noup(cb,76-((cbp>>2)&1)-((cbp>>0)&2),(cbp>>3)&1);
 }
 static int cbf_i4(const uint8_t nnz[48],int i){
-    int p=S8I[i];return 85+2*!!nnz[p-8]+!!nnz[p-1];
+    /* I4 luma residual uses DCT_LUMA_4x4 (base_ctx[2] = 93), not
+     * DCT_LUMA_DC/LUMA_AC. nnz entries carry the intra bit (0x80). */
+    int p=S8I[i];return 93+2*!!nnz[p-8]+!!nnz[p-1];
 }
 
 /* x264 cabac_intra_chroma_pred_mode */
@@ -475,8 +477,15 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
             if(use_i4){
                 int mf4[16],bi4[16],dq4[16];
                 vk_ref_quant_tables(qp,0,mf4,bi4,dq4);
+                /* x264 intra4x4 decision order (common/macroblock.h
+                 * block_idx_xy_fenc): quadrant-major, not row-major. The
+                 * modes4[] array from vk_i4x4_decide uses this same order. */
+                static const int I4XY[16][2] = {
+                    {0,0},{4,0},{0,4},{4,4}, {8,0},{12,0},{8,4},{12,4},
+                    {0,8},{4,8},{0,12},{4,12}, {8,8},{12,8},{8,12},{12,12}
+                };
                 for(int i=0;i<16;++i){
-                    int bx=(i%4)*4,by=(i/4)*4;
+                    int bx=I4XY[i][0],by=I4XY[i][1];
                     uint8_t l4[4],t4[4],tr4[4],p4[16],s4[16];
                     for(int k=0;k<4;++k){
                         l4[k]=(bx>0)?rmb[(by+k)*16+bx-1]:(left?rmb[(by+k)*16-1]:128);
@@ -495,6 +504,7 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                     }
                     nnz4[i]=(uint8_t)(nz4?0x81:0x80);
                     if(nz4)i4cbp|=1<<(i/4);
+
                     for(int k=0;k<16;++k)d4[k]=i4q[i][k];
                     vk_ref_dequant4(d4,dq4,qp);vk_ref_idct4(d4);
                     for(int y=0;y<4;++y)for(int x=0;x<4;++x){
@@ -581,9 +591,18 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                           top?mbcbp[(my-1)*mw+mx]:-1);
                 vk_cabac_decision_noup(cb,77,0); /* chroma cbp 0 */
                 cabac_qp_delta0(cb);
+                /* x264's per-MB nnz cache in scan8 layout. Unavailable
+                 * left/top neighbours carry the intra bit (0x80). */
+                uint8_t nnzc4[48];
+                memset(nnzc4,0x80,sizeof(nnzc4));
+                /* Within-MB nnz is 0/1; only unavailable neighbours are 0x80. */
+                for(int i=0;i<16;++i) nnzc4[S8I[i]]=nnz4[i]&1;
                 for(int i=0;i<16;++i) if(i4cbp&(1<<(i/4))){
-                    vk_cabac_decision(cb,cbf_i4(nnz4,i),1);
-                    cabac_coeffs(cb,i4q[i],1);
+                    /* x264 emits CBF for all 4 4x4 blocks of a nonzero 8x8;
+                     * the bin is 0 for blocks whose own nnz is zero. */
+                    int bnz = nnz4[i] & 1;
+                    vk_cabac_decision(cb,cbf_i4(nnzc4,i),bnz);
+                    if(bnz) cabac_coeffs(cb,i4q[i],2);  /* DCT_LUMA_4x4 */
                 }
             } else {
             cabac_mb_type_i16(cb, left, top, imode, cbp_luma, cbp_chroma);

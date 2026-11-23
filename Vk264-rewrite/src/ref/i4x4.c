@@ -19,8 +19,22 @@ static const int MODE_AVAIL[2][5][10] = {
     { {11,-1},{9,1,8,-1},{10,0,3,7,-1},{2,1,0,3,7,8,-1},{2,1,0,3,4,5,6,7,8,-1} },
     { {11,-1},{9,1,8,-1},{10,0,-1},{2,1,0,8,-1},{2,1,0,4,5,6,8,-1} }
 };
-/* neighbour class for the first MB of an I-frame (no external neighbours) */
-static const int NB4[16] = {0,1,2,4, 1,1,4,4, 2,4,2,4, 4,4,4,4};
+/* x264 i_neighbour4[] neighbour-class derivation (common/macroblock.h:
+ * 1340-1351): bit0=LEFT, bit1=TOP, bit2=TOPLEFT. Within-MB neighbours are
+ * always available; only the MB-edge blocks depend on have_l/t/tl. */
+static int i4_neighbour_class(int idx,int have_l,int have_t,int have_tl)
+{
+    int f;
+    switch(idx){
+    case 0:  f=(have_l?1:0)|(have_t?2:0)|(have_tl?4:0); break;
+    case 1: case 4: case 5:  f=1|(have_t?6:0); break;
+    case 2: case 8: case 10: f=2|(have_l?5:0); break;
+    default: f=7; break;  /* all 4 neighbours lie inside the MB */
+    }
+    /* predict_4x4_mode_available: all three -> class 4, else drop TOPLEFT */
+    if(f==7) return 4;
+    return f&3;
+}
 
 int vk_i4x4_fix(int m) { return (m >= 0 && m <= 8) ? m : 2; }
 
@@ -121,7 +135,7 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
         int mb = (ti>=0) ? vk_i4x4_fix(raw[ti]) : -1;
         int pred = ma<mb ? ma : mb;
         if (pred<0) pred=2;
-        int cls = NB4[idx];  /* already the candidate-table class index */
+        int cls = i4_neighbour_class(idx,have_l,have_t,have_tl);
         const int *cands = MODE_AVAIL[0][cls];
         int nc=0; while(cands[nc]>=0) nc++;
         int use_x9 = (nc>=9);
@@ -139,7 +153,10 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
             int sad=0;
             for(int i=0;i<16;++i) { int d=srcblock[i]-p[i]; sad += d<0?-d:d; }
             int c;
-            if (use_x9) c = sad + (m!=8 ? 3*lambda : 0) - pred;
+            /* x264 analyse.c:173 cost_i4x4_mode[i]=3*lambda*(i!=8);
+             * the x9 SIMD is passed cost_i4x4_mode+8-i_pred_mode, so the
+             * zero-bias case is m==pred (not m==8, and not "-pred"). */
+            if (use_x9) c = sad + (m!=pred ? 3*lambda : 0);
             else c = sad + (vk_i4x4_fix(m)==pred ? -3*lambda : 0);
             if (c<best) { best=c; bestm=m; }
         }
