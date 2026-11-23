@@ -619,14 +619,15 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
              * so the decoded frame diverged from x264 in every I8 MB. */
             int nz = 0;
             if (use_i8) {
+                /* x264's cbp bit8 (luma DC cbf) is clear for I4/I8 MBs. */
                 cbp_luma = i8cbp;
-                nz = 0;  /* TEST: x264 cbp bit8 (luma DC cbf) for I8 */
+                nz = 0;
             } else if (use_i4) {
                 /* x264 caches i_cbp_luma = i4cbp for I4x4 MBs; leaving the
                  * I16-derived cbp_luma (often 0) here corrupts the CBP
                  * context derivation of all following MBs. */
                 cbp_luma = i4cbp;
-                nz = 0;  /* TEST: x264 cbp bit8 (luma DC cbf) for I4 */
+                nz = 0;
             } else
                 for (int i = 0; i < 16; ++i) if (q[i]) nz = 1;
             /* chroma neighbours */
