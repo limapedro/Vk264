@@ -2315,3 +2315,20 @@ full stateful port validated MB-by-MB against `me_full_dump.py`.
 
 No code change; tree clean at the verified baseline. Gates: CTest 28/28 +
 65/65, CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03: exact DIA initial-cost asymmetry (this turn, reverted)
+
+x264 me.c:291 sets the initial cost at the rounded MVP to SAD only (no MV cost),
+while stepped DIA candidates include BITS_MVD — an asymmetry that decides
+near-ties. Changed my `dia_search` initial bcost accordingly. Result:
+frame1 P(prev) 478 -> 293 (x264 246, much closer), but frame-type agreement
+REGRESSED 13/16 -> 11/16 because other frame costs moved the wrong way
+(P(2<-1) 247->304 vs x264 281; P(2<-0) 275->251 vs x264 302). Reverted.
+
+This is yet another instance of the compensating-error pattern: improving an
+individual frame cost toward x264's value degrades the relative path costs that
+actually decide B/P types. Confirms that reaching 16/16 requires matching ALL
+frame costs simultaneously via a full stateful port, not local corrections.
+
+Tree clean at the verified 13/16 baseline. Gates: CTest 28/28 + 65/65,
+CAVLC P 1360/1360, MP4 56/56.
