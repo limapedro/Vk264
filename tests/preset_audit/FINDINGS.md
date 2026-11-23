@@ -163,12 +163,26 @@ Bit-level comparison of the first IDR slice (`build/bit_diff.py`):
 Notable: the oracle's superfast IDR prefix (`ff fe ca 4f 81 4b`) matches
 x264's *fast* prefix, while x264 superfast uses `ff ec 83 7a`. So the oracle
 emits the same IDR slice header for all non-ultrafast presets, but x264 varies
-one header field with the preset (likely `idr_pic_id`/POC-related). Decoded
-header fields (`build/slice_fields.py`) currently show identical values, so
-the exact differing field needs a corrected bit-level decoder (my decoder's
-`qp_delta` reads −15 while x264 reports −3, indicating a missing field before
-`slice_qp_delta` — probably `delta_pic_order_cnt_bottom` or `cabac_init_idc`
-presence). This is the concrete next task for slice parity.
+one header field with the preset (likely `idr_pic_id`/POC-related).
+
+**Decoder misalignment RESOLVED:** the missing field was `dec_ref_pic_marking()`
+— x264 `encoder.c:330-334` writes `no_output_of_prior_pics_flag` and
+`long_term_reference_flag` (2 bits) for IDR slices after POC. After adding
+those, `build/slice_fields.py` decodes x264 and oracle identically:
+```
+superfast: first_mb=0 slice_type=7 pps_id=0 frame_num=0 idr_pic_id=0
+           poc_lsb=0 no_output_prior=0 long_term_ref=0 qp_delta=-3
+           disable_deblock=1  (28 header bits, BOTH)
+```
+**Conclusion: the entire IDR slice header is byte-identical.** The first
+differing byte (5 for superfast, 10–11 for fast/slower/veryslow) lies in the
+**macroblock payload**, not the header. All header/parameter-set parity is
+complete; what remains is macroblock analysis + residual coding.
+
+One concrete macroblock-level gap: `chroma_qp_index_offset` (now correctly
+written to the PPS as −2 for fast+) is **not applied** by the oracle encoder —
+`i4x4enc.c`/`cabac_enc.c` quantize chroma with the luma `qp`, while x264 uses
+`qp + chroma_qp_offset` for chroma. Applying that offset is the next fix.
 
 ## What this changes about the roadmap
 
