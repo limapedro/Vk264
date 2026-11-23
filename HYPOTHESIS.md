@@ -1912,3 +1912,29 @@ So even the combination of all three known x264 mechanisms does not reproduce
 the trajectory — my understanding of the lowres ME state/interaction is still
 incomplete. Stage 03 remains 13/16. Gates: CTest 27/27 + 65/65, CAVLC P
 1360/1360, MP4 56/56.
+
+### Stage 03: x264 DIA trajectory + interior-only scan (this turn, reverted)
+
+`build/dia_trace.py` instruments me.c's DIA step loop and shows x264's exact
+trajectory for frame1-P MB(2,2):
+```
+step (0,0) cost 976 -> (1,0) 582 -> (2,0) 265 -> (3,0) 60 -> (4,0) 56
+then hpel refinement -> final MV (16,-2) spel = (4,-0.5)
+```
+So x264's DIA does step right from (0,0); my DIA does too when the predictor
+is zero. The differing predictor comes from edge MBs: x264's
+`slicetype_slice_cost:823-831` skips edge MBs entirely when mb-tree/VBV are off
+(their lowres_mvs stay zero), while my model evaluates all 16 MBs.
+
+Implemented x264's exact interior-only scan in both P and B cost functions.
+Result REGRESSED 13/16 -> 11/16 (frame-1 B 208 -> 121, P unchanged at 464).
+Reverted; median-DIA baseline restored at 13/16.
+
+Combined with all earlier results, EVERY x264-faithful change tried over ~30
+turns (DIA, hpel planes, halfpel MVs, candidate start, FPEL, exact refine_subpel,
+interior-only scan, cross-pass caching, BITS_MVD) has regressed or been neutral.
+The 13/16 configuration is an empirical fit whose residual cannot be closed by
+isolated fidelity fixes. Further progress requires a different strategy or a
+full bit-exact port validated component-by-component against x264 internals.
+
+Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56. Tree clean.
