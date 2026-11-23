@@ -103,6 +103,10 @@ void vk_slicetype_decide(const uint8_t *frames, int n, int w, int h,
         /* x264 b-adapt=fast: last_nonb starts at the GOP keyframe. */
         int last_nonb = i;
         int remaining_b = bframes;
+        /* x264 caches lowres_mvs on frame objects across all slicetype passes;
+         * keep one MV state array for the whole GOP, indexed by absolute frame. */
+        vk_lowres_mv_t *st = calloc(n, sizeof(*st));
+        for(int qf=0;qf<n;++qf) vk_lowres_mv_init(&st[qf],dw,dh);
         for (int j = i+1; j < gop_end; ++j) {
             if (out[j].type != VK_FRAME_AUTO && out[j].type != VK_FRAME_B) {
                 last_nonb = j; remaining_b = bframes; continue;
@@ -122,14 +126,12 @@ void vk_slicetype_decide(const uint8_t *frames, int n, int w, int h,
             path[1+nb]='P'; path[2+nb]='P'; path[3+nb]='\0';
             int npath = nb+4;
             if (npath > gop_end-last_nonb) npath = gop_end-last_nonb;
-            vk_lowres_mv_t *st = calloc(n, sizeof(*st));
-            for(int qf=0;qf<n;++qf) vk_lowres_mv_init(&st[qf],dw,dh);
-            uint64_t cp=vk_slicetype_path_cost(lo+last_nonb,dw,dh,path,npath,UINT64_MAX,st);
+            uint64_t cp=vk_slicetype_path_cost(lo+last_nonb,dw,dh,path,npath,UINT64_MAX,st+last_nonb);
             path[1+nb]='B'; /* path[2+nb] stays 'P' */
-            uint64_t cb=vk_slicetype_path_cost(lo+last_nonb,dw,dh,path,npath,cp,st);
-            free(st);
+            uint64_t cb=vk_slicetype_path_cost(lo+last_nonb,dw,dh,path,npath,cp,st+last_nonb);
             out[j].type = (cb < cp) ? VK_FRAME_B : VK_FRAME_P;
         }
+        free(st);
         if (b_pyramid) {
             /* find B runs of length>=2 and mark the middle as BREF */
             for (int j=i+1;j<gop_end;++j)

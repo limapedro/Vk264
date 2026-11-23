@@ -1674,3 +1674,23 @@ Negative results (reverted):
   (flipped several P frames to B). The scale is not the source of the gap.
 
 Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56. Best 13/16.
+
+### Stage 03: cross-pass MV caching experiment (this turn, no effect)
+
+Tested the hypothesis that x264's cached `lowres_mvs`/`i_cost_est` across
+slicetype passes is the source of the remaining B/P divergence:
+- made `vk_lowres_mv_t *st` persist across all `j` iterations of a GOP and
+  passed `st+last_nonb` so indices stay absolute (x264 stores MVs on frame
+  objects, not per-path);
+- seeded `vk_lowres_b_cost`'s per-MV arrays from the frame's cached list0 MVs
+  and wrote the searched MVs back (x264's `do_search[list]==0` reuse).
+
+Result: **no change to frame types (13/16)** and no change to path costs. The
+B cost's local MV arrays are re-seeded by the reverse-scan neighbour predictor
+each call, so the cached seed does not alter the chosen MVs. Reverted the
+B-cost caching; kept the harmless absolute-indexed GOP-lifetime `st`.
+
+j=2 remains the key divergence: oracle cp=1319 cb=1431 (P wins) vs x264
+cp=639 cb=521 (B wins). Both costs are ~2x, B relatively more.
+
+Gates: CTest 27/27 + 65/65, CAVLC P 1360/1360, MP4 56/56. Best 13/16.
