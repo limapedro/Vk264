@@ -20,7 +20,7 @@ int main(void)
     if(!src||!ry||!ru||!rv)return 2;
     memset(ry,128,(size_t)RS*48);memset(ru,128,2048);memset(rv,128,2048);
     uint8_t modes[16];
-    vk_i4x4_decide(src,ry+ORIGIN*RS+ORIGIN,RS,0,0,25,0,0,0,0,modes);
+    vk_i4x4_decide(src,ry+ORIGIN*RS+ORIGIN,RS,0,0,25,0,0,0,0,modes,VK_I4_COST_MAX);
     /* rebuild clean recon (decide modified it) */
     memset(ry,128,(size_t)RS*48);
     vk_neighbours_t nb;memset(&nb,0,sizeof(nb));

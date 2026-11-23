@@ -10,10 +10,14 @@
  * padding (px/py = MB top-left in that plane). qp: slice QP.
  * modes_out[16] is filled in x264's decision order (block_idx_xy_fenc).
  * Returns the sum of best SAD costs (for I16-vs-I4 mode selection). */
+/* thresh: x264's i_satd_thresh; when the accumulated cost exceeds it, I4x4
+ * analysis aborts early and COST_MAX (0x10000000) is returned. Pass
+ * COST_MAX to disable early termination. */
+#define VK_I4_COST_MAX 0x10000000
 int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
                    int px, int py, int qp, int have_l, int have_t,
                    int have_tl, int have_tr,
-                   uint8_t modes_out[16]);
+                   uint8_t modes_out[16], int thresh);
 
 /* x264_mb_pred_mode4x4_fix: raw modes 9/10/11 map to DC(2) at write time. */
 int vk_i4x4_fix(int mode);

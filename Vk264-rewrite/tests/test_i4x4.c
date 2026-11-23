@@ -17,7 +17,7 @@ int main(void)
 
     uint8_t modes[16];
     vk_i4x4_decide(src, recon + ORIGIN*RS + ORIGIN, RS, 0, 0, 25,
-                   0, 0, 0, 0, modes);
+                   0, 0, 0, 0, modes,VK_I4_COST_MAX);
 
     /* x264 raw modes in decision order for this fixture */
     static const uint8_t expect[16] = {
