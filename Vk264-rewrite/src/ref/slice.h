@@ -8,6 +8,7 @@
 
 typedef struct {
     int i_first_mb, i_type, i_pps_id, i_frame_num;
+    int i_poc;              /* pic_order_cnt_lsb (0 for IDR) */
     int i_idr_pic_id;
     int i_qp_delta;
     int i_disable_deblocking_filter_idc;

@@ -317,6 +317,8 @@ int main(int argc, char **argv)
             if (entropy) {
                 vk_slice_header_t sh; memset(&sh, 0, sizeof(sh));
                 sh.i_type = 0; sh.i_pps_id = 0; sh.i_frame_num = frame_num;
+                /* x264 writes POC = 2*frame_num for non-B P slices. */
+                sh.i_poc = 2*frame_num;
                 sh.i_idr_pic_id = -1; sh.i_qp_delta = qp_p - pps.i_pic_init_qp;
                 sh.i_disable_deblocking_filter_idc = pps.b_deblocking_filter ? 0 : 1;
                 vk_slice_header_write(&bs, &sh, &sps, &pps, 2);

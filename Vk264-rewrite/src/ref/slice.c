@@ -265,11 +265,24 @@ void vk_slice_header_write(vk_bs_t *s, const vk_slice_header_t *sh,
                 (uint32_t)sh->i_frame_num);
     if (sh->i_idr_pic_id >= 0)
         vk_bs_write_ue(s, (uint32_t)sh->i_idr_pic_id);
-    if (sps->i_poc_type == 0)
-        vk_bs_write(s, (unsigned)sps->i_log2_max_poc_lsb, 0);
+    if (sps->i_poc_type == 0) {
+        vk_bs_write(s, (unsigned)sps->i_log2_max_poc_lsb,
+                    (uint32_t)sh->i_poc);
+        if (pps->b_pic_order)
+            vk_bs_write_se(s, 0);  /* delta_pic_order_cnt_bottom */
+    }
     if (sh->i_type != 2 && sh->i_type != 7) { /* not I */
         vk_bs_write1(s, 0); /* num_ref_idx_active_override */
         vk_bs_write1(s, 0); /* ref_pic_list_reordering */
+    }
+    /* x264 writes pred_weight_table before dec_ref_pic_marking. */
+    if (sh->i_type != 2 && sh->i_type != 7 && pps->b_weighted_pred) {
+        vk_bs_write_ue(s, 0);  /* luma_log2_weight_denom */
+        vk_bs_write_ue(s, 0);  /* chroma_log2_weight_denom */
+        for (int i = 0; i < pps->i_num_ref_idx_l0_default_active; ++i) {
+            vk_bs_write1(s, 0);  /* luma_weight_l0_flag */
+            vk_bs_write1(s, 0);  /* chroma_weight_l0_flag */
+        }
     }
     if (nal_ref_idc != 0) {
         if (sh->i_idr_pic_id >= 0) {
