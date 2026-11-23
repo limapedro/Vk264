@@ -2332,3 +2332,24 @@ frame costs simultaneously via a full stateful port, not local corrections.
 
 Tree clean at the verified 13/16 baseline. Gates: CTest 28/28 + 65/65,
 CAVLC P 1360/1360, MP4 56/56.
+
+### Stage 03: DIA direction-bit mapping verified exact (this turn)
+
+Verified x264 me.c:336-337 packed direction decoding with a C probe:
+```
+dir=1 -> delta (0,-1)    dir=3 -> delta (0,+1)
+dir=4 -> delta (-1,0)    dir=12 -> delta (+1,0)
+```
+This exactly matches my simplified DIA's neighbour order and strict-first-min
+tie-breaking, so the DIA stepping logic itself is confirmed faithful. (The
+probe was removed from the build after verification.)
+
+With lowres planes byte-exact, DIA stepping verified, and per-MB SADs matching
+at x264's MVs, the remaining divergence is the SEARCH TRAJECTORY: which of
+several near-equal SAD optima each implementation settles on, determined by
+the predictor chain accumulated across MBs and frames. No isolated change to
+cost or stepping can fix that — only a full stateful port validated MB-by-MB
+against me_full_dump.py.
+
+Tree clean at the verified 13/16 baseline. Gates: CTest 28/28 + 65/65,
+CAVLC P 1360/1360, MP4 56/56.
