@@ -48,7 +48,7 @@
 | 042 | warzone2020 | 30 | ultrafast | cabac | BYTE-EXACT | 39.31 | 39.31 | 0 |
 | 043 | warzone2020 | 30 | superfast | cavlc | NAL COUNT 34/32 | 28.17 | 21.09 | 0 |
 | 044 | warzone2020 | 30 | superfast | cabac | NAL COUNT 34/32 | 28.17 | 9.47 | 1792 |
-| 045 | warzone2020 | 30 | veryfast | cavlc | NAL COUNT 36/32 | 28.06 | 21.09 | 0 |
+| 045 | warzone2020 | 30 | veryfast | cavlc | NAL COUNT 36/32 | 28.06 | 21.06 | 0 |
 | 046 | warzone2020 | 30 | veryfast | cabac | NAL COUNT 36/32 | 28.06 | 9.47 | 1792 |
 | 047 | warzone2020 | 30 | faster | cavlc | NAL COUNT 36/32 | 28.06 | 20.6 | 0 |
 | 048 | warzone2020 | 30 | faster | cabac | NAL COUNT 36/32 | 28.06 | 9.44 | 1728 |
@@ -106,9 +106,9 @@
 | 100 | forza | 8 | placebo | cabac | NAL2 byte6 | 24.84 | - | - |
 | 101 | forza | 30 | ultrafast | cavlc | BYTE-EXACT | 42.07 | 42.07 | 0 |
 | 102 | forza | 30 | ultrafast | cabac | BYTE-EXACT | 42.07 | 42.07 | 0 |
-| 103 | forza | 30 | superfast | cavlc | NAL COUNT 40/32 | 31.08 | 21.45 | 0 |
+| 103 | forza | 30 | superfast | cavlc | NAL COUNT 40/32 | 31.08 | 23.24 | 0 |
 | 104 | forza | 30 | superfast | cabac | NAL COUNT 40/32 | 31.08 | 3.64 | 1728 |
-| 105 | forza | 30 | veryfast | cavlc | NAL COUNT 34/32 | 25.5 | 23.23 | 0 |
+| 105 | forza | 30 | veryfast | cavlc | NAL COUNT 34/32 | 25.5 | 23.24 | 0 |
 | 106 | forza | 30 | veryfast | cabac | NAL COUNT 34/32 | 25.49 | 3.64 | 1728 |
 | 107 | forza | 30 | faster | cavlc | NAL COUNT 34/32 | 25.48 | 24.79 | 0 |
 | 108 | forza | 30 | faster | cabac | NAL COUNT 34/32 | 25.46 | 3.61 | 1600 |
