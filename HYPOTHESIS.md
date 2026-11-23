@@ -2151,3 +2151,27 @@ still monotonic. Remaining non-byte-exact gaps: propagation targets only the
 immediately previous frame (not the true p0/p1 refs), f_qp_offset is applied as
 a mean rather than per-MB, and inv_qscale is a flat 256 (no AQ). Gates:
 CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56, stage03 13/16.
+
+### Stage 03: exact candidate-start fixes per-MB costs but regresses types
+
+Instrumented the current 13/16 baseline per-MB for frame1-P and compared to
+x264's `me_full_dump.py` (which filters b==1,p0==0,p1==1):
+```
+MB        x264 HP cost | oracle baseline | oracle + candidate-start
+(2,2)        45        |      52         |       52
+(1,2)        60        |     409         |       70
+(2,1)         9        |       8         |       17
+(1,1)       103        |       9         |      163
+```
+x264's `me.c:293-312` (subpel_refine<3) starts DIA from the cheapest FPEL-
+rounded predictor candidate, not the median: for MB(1,2) the candidate (16,-2)
+spel -> FPEL (4,0) has SAD 99 vs median (0,0) SAD 406. Implementing that exact
+logic improved per-MB costs substantially (70 vs 60, 163 vs 103), yet frame
+type agreement REGRESSED 13/16 -> 11/16.
+
+This is the clearest evidence yet: even when per-MB ME costs closely match
+x264's, the B/P frame decisions diverge. The residual is therefore NOT in the
+per-MB cost/ME model at all, but in how those costs are combined across passes
+(path costs, cost caching, or frame-level cost scaling). Reverted; 13/16.
+
+Gates: CTest 28/28 + 65/65, CAVLC P 1360/1360, MP4 56/56. Tree clean.
