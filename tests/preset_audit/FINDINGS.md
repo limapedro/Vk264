@@ -219,6 +219,19 @@ for ultrafast CABAC cases that must stay byte-exact, and (b) emitting an I4
 mb_type with I16 residual/CBP coding produces a malformed MB. Reverted fully;
 baseline restored (29/29, 56/56, 12/120).
 
+### I16-vs-I4 decision primitive is also wrong (this turn)
+
+`build/test_i4_decision.c` measures the I16-vs-I4 decision on the ultrafast
+audit clip (where x264 uses I16 for the first MBs):
+```
+I16 SATD=14358  I16 SAD=28674  I4(vk_i4x4_decide)=2040  -> both models pick I4
+```
+So even with x264's subme-dependent primitive (SAD for ≤1, SATD for >1), the
+oracle's `vk_i4x4_decide` cost is far too low relative to I16 — it selects I4
+where x264 selects I16. The decision itself must be corrected (cost units /
+mode-bit penalties / neighbour reconstruction) **before** wiring an atomic I4
+path; otherwise it will misfire exactly as the partial attempt did.
+
 Conclusion: I4x4 support must be **atomic** — mb_type, 16 pred modes, CBP,
 luma/chroma residual and reconstruction all together — before it can be
 enabled. A partial implementation makes streams worse. This is the concrete

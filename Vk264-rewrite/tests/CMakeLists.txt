@@ -155,3 +155,6 @@ add_test(NAME rewrite_shader_predict COMMAND vk264_test_shader_predict)
 add_executable(vk264_exact_me test_exact_me.c)
 target_link_libraries(vk264_exact_me PRIVATE vk264_rewrite_ref)
 add_test(NAME rewrite_exact_me COMMAND vk264_exact_me "${CMAKE_CURRENT_SOURCE_DIR}/../../build/long64.yuv")
+
+add_executable(vk264_i4_decision test_i4_decision.c)
+target_link_libraries(vk264_i4_decision PRIVATE vk264_rewrite_ref)
