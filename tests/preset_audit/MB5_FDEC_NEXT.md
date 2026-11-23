@@ -1,13 +1,15 @@
-# Next: byte-compare MB5 FDEC vs oracle rec8
+# Next: prediction-vs-residual split for MB5
 
-MB5's intra modes/CBP match x264, but MB6's H-mode x3 cost differs
-(x264 90 vs oracle 202), suggesting MB5's reconstructed samples fed into
-MB6's edge cache are not byte-exact.
+The MB5 FDEC byte-compare (`MB5_FDEC_RESULT.md`) shows mode-correct but
+sample-different reconstruction for non-flat blocks (idx1/idx3). Before
+changing any quant/IDCT code, determine which stage diverges:
 
-1. Extend `build/dump_x264_fullpipe2.py` to dump MB5 idx0-3 FDEC after
-   `x264_mb_encode_i8x8`, filtered by frame 0 / I-slice.
-2. Dump oracle `rec8[]` for MB5 idx0-3 (instrument `cabac_enc.c`).
-3. Byte-compare pass-tagged values. If they differ, fix the 8x8 residual
-   reconstruction before touching MB6's decision logic.
-4. Re-validate with `build/wholeframe_diff2.py`: MB0-5 stay matching,
-   MB6 becomes I8 modes 2,2,5,2.
+1. Pass-tag x264's `p_dst[0]` immediately before `x264_mb_encode_i8x8`
+   for MB5 idx1 (frame 0, I-slice).
+2. Dump oracle's `p8[0]` and raw DCT DC for MB5 idx1.
+3. Compare. If predictions differ, fix the 8x8 VR predictor / edge
+   filtering; if predictions match but recon differs, dump post-quant
+   DCT and dequant for that block.
+
+Validate any fix with `build/wholeframe_diff2.py` (MB0-5 must stay
+matching, MB6 should become I8 2,2,5,2).
