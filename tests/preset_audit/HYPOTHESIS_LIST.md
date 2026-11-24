@@ -472,3 +472,19 @@ MV (-48/-52 spel) is supplied by cached per-frame state from an
 earlier lookahead pass, which the oracle has no equivalent of.
 
 Durable state unchanged: 14/16 @ a827816, all gates green.
+
+
+### Two-pass cost cache tested (this turn, reverted)
+
+Implemented b-adapt twice with x264's `fenc->i_cost_est[b-p0][p1-b]`
+persisting across passes and frame types reset to AUTO before pass 2:
+
+- two-pass alone: **14/16**, mismatches {5,8} (frame 9 now correct,
+  but frame 2 and 8 unchanged) — no net gain over the single pass;
+- + non-iterative anchor forcing: **14/16**, mismatches {8,9};
+- + candidate seeding: **12/16**.
+
+So cross-pass cost caching does change decisions (frame 9 flips to B)
+but still cannot fix frame 8's P9(ref7) cost. Frame 8 remains the sole
+blocking defect: with it corrected, anchor forcing + cached costs
+would give 16/16. All changes reverted; baseline 14/16 @ b5f1d5f.
