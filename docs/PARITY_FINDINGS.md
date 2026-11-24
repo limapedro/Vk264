@@ -121,6 +121,14 @@ there is no "two-phase" requirement. The failure of those attempts
 must lie in the RD cost details (fenc SATD cache, psy scaling, or
 coefficient handling), not the CABAC state timing.
 
+## CORRECTION: psy-RD is NOT the source of the MB0 residual gap
+
+Tested x264 `--psy-rd 0` and `--psy-rd 0 --trellis 0` at subme=8:
+MB0 cbp stays 7 in all three cases. So the 12 nonzero blocks are not
+psy-RD/trellis induced; the earlier attribution was wrong. The
+residual gap must come from a different I16 prediction/mode or
+quantisation detail that the dumps have not yet distinguished.
+
 ## CBP fix attempt → psy-RD texture residual (this turn)
 
 Adding DC to the I16 CBP decision gated at subme>=6 changed oracle
