@@ -252,3 +252,10 @@ lookahead framing differs. x264's dump also shows **four separate
 decision passes** over j=1..3 with different costs, i.e. incremental
 lookahead frames; the oracle decides once over all 16 frames.
 Both the B-cost and the multi-pass framing must be matched.
+
+**Tested (partial):** x264's bipred average uses a weighted blend
+`w = 64 - (dsf>>2)`; the oracle used a fixed 50/50 average. Porting
+the weighted blend changed j=2 cb from 749 to 732 (toward x264's
+521) but did not flip the decision, and slicetype stayed 13/16.
+Reverted. The remaining B-cost gap is in the lowres ME itself, not
+the averaging weight.
