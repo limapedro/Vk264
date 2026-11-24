@@ -217,14 +217,14 @@ static int me_search_pred(const uint8_t *cur,int dw,int bx,int by,
     int maxx=dw-8-bx, maxy=rh-8-by;
     int cx = mvpx<-bx ? -bx : (mvpx>maxx?maxx:mvpx);
     int cy = mvpy<-by ? -by : (mvpy>maxy?maxy:mvpy);
-    int best=satd8(cur,dw,bx,by,ref,dw,bx+cx,by+cy);
+    int best=satd8(cur,dw,bx,by,ref,dw,bx+cx,by+cy)+mv_cost(cx)+mv_cost(cy);
     static const int dd[4][2]={{0,-1},{0,1},{-1,0},{1,0}};
     for(int it=0;it<24;++it){
         int bi=-1,bv=best;
         for(int k=0;k<4;++k){
             int sx=cx+dd[k][0], sy=cy+dd[k][1];
             if(bx+sx<0||by+sy<0||bx+sx>dw-8||by+sy>rh-8) continue;
-            int c=satd8(cur,dw,bx,by,ref,dw,bx+sx,by+sy);
+            int c=satd8(cur,dw,bx,by,ref,dw,bx+sx,by+sy)+mv_cost(sx)+mv_cost(sy);
             if(c<bv){bv=c;bi=k;}
         }
         if(bi<0) break;
