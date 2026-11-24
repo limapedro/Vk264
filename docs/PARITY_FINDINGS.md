@@ -121,6 +121,24 @@ there is no "two-phase" requirement. The failure of those attempts
 must lie in the RD cost details (fenc SATD cache, psy scaling, or
 coefficient handling), not the CABAC state timing.
 
+## Prediction-sample comparison (this turn)
+
+With mode 5 forced at IDR MB1 block 2:
+
+```
+x264 pred:   16,14,26,53, 16,15,20,39, 16,16,14,26, 16,16,15,20
+oracle pred: 14,12,27,55, 15,13,19,41, 16,14,12,27, 16,15,13,19
+oracle inputs: l=16,16,16,16  t=11,12,41,69  tr=68,68,68,68  lt=16
+```
+
+The predictions differ by 1-2 per sample. Mode numbering was verified
+identical (x264 predict.h:5=VR, oracle i4x4.c:5=VR), so the residual
+gap traces to the neighbour reconstruction samples fed into the VR
+predictor (top row comes from MB0's reconstructed bottom edge), not to
+the predictor function itself. x264's MB0 is I16 with nnz=0; if its I16
+prediction mode or DC reconstruction differs slightly, MB1's top
+samples shift by 1-2 and cascade into different coefficients.
+
 ## Coefficient-level finding — CORRECTED (this turn)
 
 For IDR MB1 block 2 (x264 slow):
