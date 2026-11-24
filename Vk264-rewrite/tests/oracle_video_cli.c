@@ -30,6 +30,20 @@
 #include <string.h>
 #include <math.h>
 
+static void pad420(uint8_t *dst,int cw,int ch,const uint8_t *src,int w,int h){
+    for(int y=0;y<ch;++y){ int sy=y<h?y:h-1;
+        memcpy(dst+y*cw, src+sy*w, w);
+        memset(dst+y*cw+w, src[sy*w+w-1], cw-w);
+    }
+    uint8_t *du=dst+(size_t)cw*ch, *dv=du+(size_t)(cw/2)*(ch/2);
+    const uint8_t *su=src+(size_t)w*h, *sv=su+(size_t)(w/2)*(h/2);
+    int sw=w/2,sh=h/2,scw=cw/2,sch=ch/2;
+    for(int y=0;y<sch;++y){ int sy=y<sh?y:sh-1;
+        memcpy(du+y*scw, su+sy*sw, sw); memset(du+y*scw+sw, su[sy*sw+sw-1], scw-sw);
+        memcpy(dv+y*scw, sv+sy*sw, sw); memset(dv+y*scw+sw, sv[sy*sw+sw-1], scw-sw);
+    }
+}
+
 static void encode_idr_cavlc(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *pps,
                              const uint8_t *frame, int w, int h, int qp,
                              int idr_pic_id,
@@ -144,8 +158,9 @@ int main(int argc, char **argv)
     int w = atoi(argv[2]), h = atoi(argv[3]);
     int qp_i = atoi(argv[4]), qp_p = atoi(argv[5]);
     int entropy = atoi(argv[6]), keyint = atoi(argv[7]), nframes = atoi(argv[8]);
-    if (w % 16 || h % 16 || nframes < 1 || keyint < 1) return 2;
-    int mw = w/16, mh = h/16;
+    if (w % 2 || h % 2 || nframes < 1 || keyint < 1) return 2;
+    int cw = ((w+15)/16)*16, ch = ((h+15)/16)*16;
+    int mw = cw/16, mh = ch/16;
     /* Optional CRF: x264 derives each frame's complexity from its lookahead
      * cost (x264_rc_analyse_slice -> i_cost_est) and feeds it through the
      * ratecontrol state to pick a QP. Off by default: fixed-QP paths stay
@@ -153,7 +168,7 @@ int main(int argc, char **argv)
     const char *crf_env = getenv("VK264_CRF");
     double crf = crf_env ? atof(crf_env) : -1.0;
     vk_rc_state_t rc;
-    int dw = w/2, dh = h/2;
+    int dw = cw/2, dh = ch/2;
     uint8_t *lo_cur = NULL, *lo_ref = NULL;
     /* mb-tree per-frame state (x264 frame_t.i_intra_cost / i_propagate_cost). */
     int n_mbs = (dw/8)*(dh/8);
@@ -175,7 +190,9 @@ int main(int argc, char **argv)
         for(int q=0;q<nframes;++q) vk_lowres_mv_init(&mvst[q],dw,dh);
     }
     size_t fs = (size_t)w*h*3/2;
-    uint8_t *frames = malloc(fs);
+    size_t cfs = (size_t)cw*ch*3/2;
+    uint8_t *srcf = malloc(fs);
+    uint8_t *frames = malloc(cfs);
     FILE *fi = fopen(argv[1], "rb");
     if (!fi) return 1;
     FILE *fo = fopen(argv[9], "wb");
@@ -202,20 +219,20 @@ int main(int argc, char **argv)
     vk_nal_write(fo, 0x67, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 1);
     memset(buf, 0, sizeof(buf)); vk_bs_init(&bs, buf, sizeof(buf));
     vk_pps_write(&bs, &sps, &pps);
-    vk_nal_write(fo, 0x68, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 1);
+    vk_nal_write(fo, 0x68, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 1); fprintf(stderr,"A2\n");
 
     /* match x264 PADH/PADV=32 (luma) and the 4:2:0 chroma equivalent */
-    int rs = w + 64, rh = h + 64, ro = 32*rs + 32;
-    int cs = w/2 + 32, co = 16*cs + 16;
+    int rs = cw + 64, rh = ch + 64, ro = 32*rs + 32;
+    int cs = cw/2 + 32, co = 16*cs + 16;
     uint8_t (*nnz_c)[16] = calloc((size_t)mw*mh, 16);
     uint8_t (*cnnz_c)[2][4] = calloc((size_t)mw*mh, 8);
     uint8_t *dcnz_c = calloc((size_t)mw*mh, 1);
-    uint8_t *ry = malloc((size_t)rs*rh), *ru = malloc((size_t)cs*(h/2+32));
-    uint8_t *rv = malloc((size_t)cs*(h/2+32));
+    uint8_t *ry = malloc((size_t)rs*rh), *ru = malloc((size_t)cs*(ch/2+32));
+    uint8_t *rv = malloc((size_t)cs*(ch/2+32));
     memset(ry, 128, (size_t)rs*rh);
-    memset(ru, 128, (size_t)cs*(h/2+32));
-    memset(rv, 128, (size_t)cs*(h/2+32));
-    uint8_t *ref = calloc(1, fs), *recon = calloc(1, fs);
+    memset(ru, 128, (size_t)cs*(ch/2+32));
+    memset(rv, 128, (size_t)cs*(ch/2+32));
+    uint8_t *ref = calloc(1, cfs), *recon = calloc(1, cfs);
     /* x264's fdec->mv16x16: per-MB analysis MVs of the reference frame,
      * used for temporal MV predictors in chained P-slices. */
     int (*refmv)[2] = calloc((size_t)mw*mh, 2*sizeof(int));
@@ -243,11 +260,11 @@ int main(int argc, char **argv)
         rewind(fi);
     }
     for (int f = 0; f < nframes; ++f) {
-        if (allframes) memcpy(frames, allframes+(size_t)f*fs, fs);
-        else if (fread(frames, 1, fs, fi) != fs) { fprintf(stderr, "short input at frame %d\n", f); break; }
+        if (allframes) pad420(frames,cw,ch,allframes+(size_t)f*fs,w,h);
+        else { if (fread(srcf, 1, fs, fi) != fs) { fprintf(stderr, "short input at frame %d\n", f); break; } pad420(frames,cw,ch,srcf,w,h); }
         int is_idr = stypes ? (stypes[f].type == VK_FRAME_IDR) : (f % keyint == 0);
         if (crf >= 0) {
-            vk_lowres_luma(frames, w, h, lo_cur, dw, dh);
+            vk_lowres_luma(frames, cw, ch, lo_cur, dw, dh);
             uint16_t *ic = mb_intra + (size_t)f*n_mbs;
             uint16_t *lc = mb_cost  + (size_t)f*n_mbs;
             double cost;
@@ -296,16 +313,16 @@ int main(int argc, char **argv)
                 vk_slice_header_write(&bs, &sh, &sps, &pps, 3);
                 vk_bs_align_1(&bs);
                 vk_cabac_init_ctx(&cb, 2, qp_i, 0);
-                vk_cabac_encode_idr_recon_frame(&bs, &cb, frames, w, h, qp_i, recon, f);
+                vk_cabac_encode_idr_recon_frame(&bs, &cb, frames, cw, ch, qp_i, recon, f);
                 memset(curintra, 1, (size_t)mw*mh);  /* IDR: all MBs intra */
             } else {
                 memset(nnz_c, 0, (size_t)mw*mh*16);
                 memset(cnnz_c, 0, (size_t)mw*mh*8);
                 memset(dcnz_c, 0, (size_t)mw*mh);
                 memset(ry, 128, (size_t)rs*rh);
-                memset(ru, 128, (size_t)cs*(h/2+32));
-                memset(rv, 128, (size_t)cs*(h/2+32));
-                encode_idr_cavlc(&bs, &sps, &pps, frames, w, h, qp_i,
+                memset(ru, 128, (size_t)cs*(ch/2+32));
+                memset(rv, 128, (size_t)cs*(ch/2+32));
+                encode_idr_cavlc(&bs, &sps, &pps, frames, cw, ch, qp_i,
                                  idr_pic_id, nnz_c, cnnz_c, dcnz_c,
                                  ry, rs, ro, ru, rv, cs, co, recon, p.i_subme > 0);
                 memset(curintra, 1, (size_t)mw*mh);  /* IDR: all MBs intra */
@@ -324,7 +341,7 @@ int main(int argc, char **argv)
                 vk_slice_header_write(&bs, &sh, &sps, &pps, 2);
                 vk_bs_align_1(&bs);
                 vk_cabac_init_ctx(&cb, 0, qp_p, 0);
-                vk_cabac_encode_p_recon_frame(&bs, &cb, frames, ref, w, h, qp_p, recon, f,
+                vk_cabac_encode_p_recon_frame(&bs, &cb, frames, ref, cw, ch, qp_p, recon, f,
                                               refmv, curmv, refintra, curintra);
                 vk_nal_write(fo, 0x41, buf, (size_t)(bs.p - buf), 2);
             } else if (getenv("ORACLE_BSLICE_TEST") && f == 5) {
@@ -334,7 +351,7 @@ int main(int argc, char **argv)
                 vk_bs_rbsp_trailing(&bs);
                 vk_nal_write(fo, 0x41, buf,
                              (size_t)((vk_bs_pos(&bs)+7)/8), 2);
-                memcpy(recon, ref, (size_t)w*h*3/2);
+                memcpy(recon, ref, cfs);
             } else if (getenv("ORACLE_BSLICE_TEST") &&
                        (f==2 || f==3 || f==4 || f==6)) {
                 /* x264 superfast bframes=3 frame map (frame_num, POC) for
@@ -351,12 +368,12 @@ int main(int argc, char **argv)
                 vk_bs_rbsp_trailing(&bs);
                 vk_nal_write(fo, br ? 0x21 : 0x01, buf,
                              (size_t)((vk_bs_pos(&bs)+7)/8), 2);
-                memcpy(recon, ref, (size_t)w*h*3/2);
+                memcpy(recon, ref, cfs);
             } else {
                 int pfn = (getenv("ORACLE_BSLICE_TEST") && f==7) ? 4 : frame_num;
                 int ppoc = (getenv("ORACLE_BSLICE_TEST") && f==7) ? 14 : 8*frame_num;
                 vk_encode_p_frame_recon_mv(&bs, &sps, &pps, frames, ref,
-                                           w, h, qp_p, pfn, recon,
+                                           cw, ch, qp_p, pfn, recon,
                                            refmv, curmv, refintra, curintra,
                                            p.i_subme, ppoc);
                 vk_nal_write(fo, 0x41, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 2);
@@ -366,16 +383,16 @@ int main(int argc, char **argv)
         if (rpath) {
             char rp[1024]; snprintf(rp, sizeof(rp), "%s.%d", rpath, f);
             FILE *rf = fopen(rp, "wb");
-            if (rf) { fwrite(recon, 1, fs, rf); fclose(rf); }
+            if (rf) { fwrite(recon, 1, cfs, rf); fclose(rf); }
         }
-        memcpy(ref, recon, fs);
+        memcpy(ref, recon, cfs);
         int (*tmp)[2] = refmv; refmv = curmv; curmv = tmp;
         memset(curmv, 0, (size_t)mw*mh*2*sizeof(int));
         uint8_t *tmpi = refintra; refintra = curintra; curintra = tmpi;
         memset(curintra, 0, (size_t)mw*mh);
     }
     fclose(fi); fclose(fo);
-    free(frames); free(ref); free(recon); free(refmv); free(curmv);
+    free(srcf); free(frames); free(ref); free(recon); free(refmv); free(curmv);
     free(refintra); free(curintra); free(ry); free(ru); free(rv);
     free(nnz_c); free(cnnz_c); free(dcnz_c);
     return 0;
