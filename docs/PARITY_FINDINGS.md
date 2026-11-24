@@ -105,6 +105,32 @@ No code change is associated with this report; it is the tracked
 baseline for further work.
 
 
+## Next divergence after PR #280: MB1 I4 modes
+
+With MB0 now correctly I16, NAL2 matches through byte 10 and
+diverges at byte 11. MB types and chroma prediction modes match for
+MB0-3:
+```
+x264 final types:      {0:2, 1:0, 2:2, 3:2, 4:2, 5:0, 6:0, 7:2}
+x264 chroma modes:     {0:6, 1:4, 2:4, 3:4, ...}
+oracle types (0-3):    {0:2, 1:0, 2:2, 3:2}   (match)
+oracle chroma (0-3):   {0:6, 1:4, 2:4, 3:4}   (match)
+```
+The mismatch is inside MB1's I4 syntax:
+```
+x264  MB1 modes: 9,9,5,5,9,9,2,2,2,5,2,5,2,2,5,2
+      MB1 nnz:   1,0,0,0,0,0,0,0,0,1,0,1,0,0,1,0
+oracle MB1 modes: 9,9,4,5,9,9,2,2,1,5,2,4,2,2,5,2
+      MB1 nnz:   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+```
+So x264's subme>=6 RD selects different I4 modes *and* keeps five
+nonzero residual blocks; the oracle's SAD/shortcut path selects
+mostly DC-like modes with all-zero residual. Re-enabling the RD I4
+path (full enumeration + trial-quant SSD + estimated bit cost) changed
+the modes but still did not match x264, and produced no metric gain —
+reverted. The exact x264 `rd_cost_i4x4` (psy term + exact CABAC bits
+from the live context state) remains necessary.
+
 ## IMPLEMENTED: MB-level intra RD for subme>=6 (bitstream gain)
 
 Following the corrected root cause, added a reconstructed-RD
