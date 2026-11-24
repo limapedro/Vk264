@@ -103,3 +103,24 @@ separate, structural failure mode from byte-level divergence.
 
 No code change is associated with this report; it is the tracked
 baseline for further work.
+
+
+## Addendum: deblock hypothesis ruled out
+
+Investigated whether the missing deblocking filter explains the
+P-slice skip divergence. Evidence:
+
+- Oracle encoder recon vs x264 `--no-deblock` decoded recon: **0/6144
+  bytes different** — the pre-deblock reconstructions match exactly.
+- x264 deblocked decoded recon differs by 657/6144 bytes.
+- But x264's own deblock parameters at the actual QP are
+  `qp=25, index_a=25, alpha=13, beta=4, tc0_table[25]={-1,0,0,0}` —
+  i.e. boundary strength 2 gives **tc=0**, so x264's filter is a
+  no-op for this frame.
+
+I implemented the deblock filter (exact alpha/beta/tc0 tables from
+`common/deblock.c`) and wired it into the oracle CLI; it changed 0
+bytes for this clip, consistent with x264's tc=0. The 657-byte
+difference therefore comes from the decoder's reconstruction path,
+not from an encoder-side deblocking omission. Reverted the filter;
+tree clean.
