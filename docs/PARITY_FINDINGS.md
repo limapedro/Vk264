@@ -105,6 +105,22 @@ No code change is associated with this report; it is the tracked
 baseline for further work.
 
 
+## Exact rd_cost_i4x4 attempted (reverted)
+
+Implemented the full x264 `rd_cost_i4x4` for subme>=6: trial encode,
+reconstructed SSD, psy term `satd(fdec)-dc-satd(fenc)` scaled by
+256*lambda, and exact CABAC bit counts from a copy of the live context
+state (entropy table + f8 primitives + size-mode pred/CBF/residual
+writers), with i_mbrd full candidate enumeration and no SATD-threshold
+early abort.
+
+MB1 I4 modes changed to `9,9,1,0,9,9,0,2,1,0,2,1,1,2,0,7` — still not
+x264's `9,9,5,5,9,9,2,2,2,5,2,5,2,2,5,2` — and all nnz remained 0.
+No bitstream metric changed. Reverted; PR #280 gain intact. The
+remaining discrepancy is in the RD cost's SSD/psy/bit weighting or in
+the CABAC context state at the point of the intra analysis, not in the
+absence of bit accounting alone.
+
 ## Next divergence after PR #280: MB1 I4 modes
 
 With MB0 now correctly I16, NAL2 matches through byte 10 and
