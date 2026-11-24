@@ -105,6 +105,26 @@ No code change is associated with this report; it is the tracked
 baseline for further work.
 
 
+## Addendum: faithful RD I4 port attempted (reverted)
+
+Implemented the full RD pipeline the matrix calls for: exact
+`x264_cabac_entropy[128]` table, `f8_bits_encoded` size primitives
+(`vk_cabac_size_decision/bypass/terminal/ue_bypass`), size-mode
+`cb_pred4`/`cabac_coeffs` with the CBF bin, and
+`vk_i4x4_decide_rd` (trial encode + reconstructed SSD + exact bit
+count from a copy of the live CABAC state), gated on subme>=6.
+
+Result: builds clean and c004/slicetype unchanged (0 recon diff,
+16/16), but slow's IDR NAL2 grew 135 → 149 bytes and still diverged
+at byte 5. The RD-chosen I4 modes were `11,9,10,2,9,9,2,2,...`
+(the superfast pattern), not x264 slow's `11,11,11,11,9,9,9,9,...`.
+RD costs were dominated by the bit term (~1,058,916 for most modes),
+so the missing differentiator is x264's psy-RD modified coefficients
+(active for subme>=6), which the oracle does not implement at all.
+
+Verified `x264_lambda2_tab[25] = 4644` matches the oracle table.
+All RD changes reverted; tree clean.
+
 ## Addendum: deblock hypothesis ruled out
 
 Investigated whether the missing deblocking filter explains the
