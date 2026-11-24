@@ -143,6 +143,20 @@ That pattern is consistent with x264's psy-RD (active subme>=6)
 modifying the encoder's quantised coefficients to preserve source
 texture. No CBP-only change can reproduce it; reverted.
 
+## Definitive x264 MB1 I4 modes/coefficients (this turn)
+
+Hooked x264's final MB1 encode (cbp=15 at encode, 13 at write):
+```
+modes = 9,9,5,5,9,9,2,2,2,5,2,5,2,2,5,2
+q0    = 10,-7,3,0,1,0,0,-2,1,0,0,0,0,0,0,0
+```
+vs oracle modes `9,9,4,5,9,9,2,2,1,5,2,4,2,2,5,2` with only one
+nonzero coefficient. The differences are at blocks 2, 8, 11
+(oracle 4/1/4 vs x264 5/2/5). These are all modes that the oracle's
+SAD+mode-bit decision ranks differently from x264's RD decision.
+Earlier forcing blocks 2 and 11 to mode 5 did not move the metric,
+because x264's RD also changes blocks 8 and the coefficient values.
+
 ## SATD mode-decision metric tested (reverted)
 
 x264 `mbcmp_init` (encoder.c:1411) uses SATD for mode decision when
