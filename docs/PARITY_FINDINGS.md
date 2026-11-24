@@ -105,6 +105,20 @@ No code change is associated with this report; it is the tracked
 baseline for further work.
 
 
+## RD refinement timing (this turn)
+
+Reading x264 `analyse.c:890-959` confirms the initial I4 analysis
+always uses SAD (`pixf.mbcmp[PIXEL_4x4]`) and only changes the
+candidate set for i_mbrd>=1 (`predict_mode += 3`). The final I4 modes
+for subme>=6 come from the later `intra_rd_refine` pass, which calls
+`rd_cost_i4x4` **after** `intra_rd` has already chosen the MB type and
+written its header into the live CABAC context state. All earlier RD
+attempts ran during initial I4 analysis, before that header/context
+state existed — so even exact f8 bit counts were measured against the
+wrong context. A faithful port must run RD refinement after the MB
+type decision with the post-header CABAC state, which requires a
+restructured two-phase IDR MB encoder.
+
 ## Coefficient-level confirmation (this turn)
 
 For IDR MB1 block 2 (x264 slow):
