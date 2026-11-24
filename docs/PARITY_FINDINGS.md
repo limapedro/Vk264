@@ -143,6 +143,16 @@ That pattern is consistent with x264's psy-RD (active subme>=6)
 modifying the encoder's quantised coefficients to preserve source
 texture. No CBP-only change can reproduce it; reverted.
 
+## CORRECTION: MB0 CBP claim retracted (this turn)
+
+Hooking x264's actual CABAC MB writer (`cabac_mb_header_i`) showed four
+writes for IDR MB0 under slow (RD trials): I16/cbp0, I4/cbp1,
+I8/cbp7, then I16/cbp0 as the LAST write. So x264's final written MB0
+is I16 with cbp=0 — identical to the oracle. The earlier "x264 cbp=7"
+dump was an intermediate RD trial, not the final encode. MB0's type,
+mode, cbp and reconstruction all match; the byte-11 divergence is
+elsewhere, not MB0.
+
 ## CONCRETE DIVERGENCE: MB0 CBP (this turn)
 
 Post-encode dumps for IDR frame0 MB0 under slow:
