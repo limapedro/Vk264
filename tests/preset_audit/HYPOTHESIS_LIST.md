@@ -346,3 +346,38 @@ passes.
 These confirm that only the final-cost BITS_MVD term was safe to port
 in isolation; the ME seeding/MV-cache work requires the full stateful
 rewrite and remains out of scope for incremental changes.
+
+
+### Stage 03: absolute-frame cost decomposition for frames 5/8 (this turn)
+
+`build/dump_abscost_compare.py` dumped x264/oracle per-call frame costs
+with absolute frame indices. The two remaining slicetype mismatches reduce
+to single P costs, not B costs:
+
+- frame 8 (cur=7, nb=0): x264 cb = P9(ref7)=1260 + B8(refs7,9)=1567
+  = 2827; oracle cb = P9(ref7)=**2563** + B8=1562 = 4125.
+  B8 itself matches (1567 vs 1562) — the whole 1298-point gap is P9(ref7).
+- frame 5 (cur=4, nb=0): x264 cb = P6(ref4)=2090 + B5=2238 = 4328;
+  oracle cb = P6(ref4)=**2529** + B5=2151 = 4680. Likewise P dominates.
+
+`build/dump_p9_detail.py` showed x264's P9 search selects large negative
+MVs (-48/-52 spel = -12/-13 lowres px) on several MBs. x264 pads lowres
+planes by PADH/PADV=32 (`common/frame.c:627`) and allows MVs 12 lowres px
+beyond the frame edge (`slicetype.c:552-560`); the oracle rejects any
+out-of-frame MV in `sad_hpel` and clips search to frame bounds.
+
+Experiments (all reverted, verified tree stays 14/16):
+- border replication + 12px extended search range alone: no change (DIA
+  stays in its local minimum; it never reaches those MVs).
+- x264-faithful multi-candidate seeding on the P path: j=1 costs become
+  nearly exact (cp 511 vs x264 527, cb 489 vs 471) but j=2 cb jumps to
+  859 (x264 521) and total drops to 12/16.
+- same seeding on the B path only: 13/16.
+- full `vk_lowres_me_exact` wired into P path with BITS_MVD kept: fixes
+  frame 8 (cp 3196/cb 2815 vs x264 3337/2827) but breaks frames
+  2,4,5,10,11,14 -> 10/16.
+
+This reconfirms the compensating-errors finding: the oracle's remaining
+P-cost deficits need a full stateful port (border-padded planes, x264's
+persistent per-frame MV cache and multi-pass framing) applied atomically;
+no isolated ME change is safe.
