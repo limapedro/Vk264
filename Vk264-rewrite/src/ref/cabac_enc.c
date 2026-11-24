@@ -2,6 +2,7 @@
  * CABAC I-slice writer (I16 macroblocks, zero residual DC), ported from
  * x264 encoder/cabac.c. */
 #include "cabac_enc.h"
+#include "trellis.h"
 #include "cabac_tables.h"
 #include "intra16.h"
 #include "i4x4.h"
@@ -9,11 +10,11 @@
 #include "i8x8.h"
 #include "motion.h"
 #include "slice.h"
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 extern int vk_cur_subme;
+extern int vk_cur_trellis;
 static const int vk_lambda2_tab[52] = {
     14,18,22,28,36,45,57,72,91,115,145,182,230,290,365,460,
     580,731,921,1161,1462,1843,2322,2925,3686,4644,5851,7372,9289,
@@ -250,8 +251,10 @@ static void compute_i16_dc(const uint8_t *cur, int w, int x, int y,
 static void compute_i16_full(const uint8_t *cur, int w, int x, int y,
                              const uint8_t pred[256], int qp,
                              int q[16], int acq[16][15], int nnz[16],
-                             int *cbp_luma, uint8_t recon[256], int b_decimate)
+                             int *cbp_luma, uint8_t recon[256], int b_decimate,
+                             uint8_t *cabac_state)
 {
+    
     int mf[16], bias[16], deq[16];
     vk_ref_quant_tables(qp, 0, mf, bias, deq);
     static const uint8_t zz[16] = {0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
@@ -267,7 +270,13 @@ static void compute_i16_full(const uint8_t *cur, int w, int x, int y,
         vk_ref_dct4x4(dct[b], s, p);
         dc[b] = dct[b][0];
         dct[b][0] = 0;
-        for (int i = 0; i < 16; ++i) dct[b][i] = vk_ref_quant_one(dct[b][i], mf[i], bias[i]);
+        if (cabac_state && vk_cur_trellis >= 1) {
+            int orig16[16]; memcpy(orig16, dct[b], sizeof(orig16));
+            int lam2 = vk_trellis_lambda2(qp, 1);
+            vk_trellis_quant_4x4(dct[b], orig16, mf, bias, deq, qp, lam2, 1, cabac_state, 2, 0);
+        } else {
+            for (int i = 0; i < 16; ++i) dct[b][i] = vk_ref_quant_one(dct[b][i], mf[i], bias[i]);
+        }
         for (int i = 0; i < 15; ++i) acq[b][i] = dct[b][zz[i+1]];
         nnz[b] = 0;
         for (int i = 0; i < 16; ++i) nnz[b] += dct[b][i] != 0;
@@ -508,7 +517,7 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 int rdq[16], rdacq[16][15], rdnnz[16], rdcbp=0;
                 uint8_t rdrecon[256];
                 compute_i16_full(frame,w,mx*16,my*16,trial,qp,rdq,rdacq,
-                                 rdnnz,&rdcbp,rdrecon,0);
+                                 rdnnz,&rdcbp,rdrecon,0, NULL);
                 uint64_t ssd=0;
                 for(int yy=0;yy<16;++yy) for(int xx=0;xx<16;++xx){
                     int d=frame[(my*16+yy)*w+mx*16+xx]-rdrecon[yy*16+xx];
@@ -656,9 +665,16 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                         s4[y*4+x]=frame[(my*16+by+y)*w+mx*16+bx+x];
                     int d4[16];vk_ref_dct4x4(d4,s4,p4);
                     int nz4=0;
-                    for(int k=0;k<16;++k){
-                        i4q[i][k]=vk_ref_quant_one(d4[k],mf4[k],bi4[k]);
-                        if(i4q[i][k])nz4=1;
+                    if (vk_cur_trellis >= 1) {
+                        int od4[16]; memcpy(od4,d4,sizeof(od4));
+                        int lam2 = vk_trellis_lambda2(qp,1);
+                        vk_trellis_quant_4x4(d4, od4, mf4, bi4, dq4, qp, lam2, 0, cb->state, 0, 0);
+                        for(int k=0;k<16;++k){ i4q[i][k]=d4[k]; if(i4q[i][k]) nz4=1; }
+                    } else {
+                        for(int k=0;k<16;++k){
+                            i4q[i][k]=vk_ref_quant_one(d4[k],mf4[k],bi4[k]);
+                            if(i4q[i][k])nz4=1;
+                        }
                     }
                     nnz4[i]=(uint8_t)(nz4?0x81:0x80);
                     if(nz4)i4cbp|=1<<(i/4);
@@ -672,7 +688,7 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 }
             } else if (!use_i8)
                 compute_i16_full(frame, w, mx*16, my*16, pred, qp,
-                                 q, acq, nnz, &cbp_luma, rmb, 0);
+                                 q, acq, nnz, &cbp_luma, rmb, 0, cb->state);
             /* For I8x8 the analysis loop above has already reconstructed all
              * four 8x8 blocks into rmb[].  Running compute_i16_full() here
              * (the old `else` branch) overwrote them with an I16
@@ -1564,7 +1580,7 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 int q[16] = {0}, acq[16][15], nnz[16], cbp_luma = 0;
                 uint8_t rmb[256];
                 compute_i16_full(cur, w, mx*16, my*16, pred16, qp,
-                                 q, acq, nnz, &cbp_luma, rmb, 1);
+                                 q, acq, nnz, &cbp_luma, rmb, 1, NULL);
                 int qu[4], qv[4], acu[4][15], acv[4][15], nnzu[4], nnzv[4];
                 uint8_t pu[64], pv[64];
                 compute_chroma_dc(cu, w/2, mx*8, my*8, itu, ilu, itlu, icmode, qp,

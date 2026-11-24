@@ -219,7 +219,7 @@ int main(int argc, char **argv)
     vk_nal_write(fo, 0x67, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 1);
     memset(buf, 0, sizeof(buf)); vk_bs_init(&bs, buf, sizeof(buf));
     vk_pps_write(&bs, &sps, &pps);
-    vk_nal_write(fo, 0x68, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 1); fprintf(stderr,"A2\n");
+    vk_nal_write(fo, 0x68, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 1);
 
     /* match x264 PADH/PADV=32 (luma) and the 4:2:0 chroma equivalent */
     int rs = cw + 64, rh = ch + 64, ro = 32*rs + 32;
