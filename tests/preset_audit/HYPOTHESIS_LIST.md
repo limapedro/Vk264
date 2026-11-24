@@ -724,3 +724,21 @@ at byte 5. x264's i_mbrd>=1 decision is **RD-based** (bit cost via
 enumeration, so this approximation is invalid. Reverted; no source
 change kept. Faithful subme support requires implementing x264's
 RDO mode decision (`encoder/rdo.c`) and CABAC bit-count estimation.
+
+
+### IDR MB0 type check (this turn)
+
+`build/dump_idr_mb0_modes2.py` dumped x264's frame0 MB0 at encode
+time for the exp014 clip:
+```
+superfast: M0 type=0 cbp=1 qp=25 chroma_pred=6
+slow:      M0 type=2 cbp=1 qp=25 chroma_pred=6   (RD trial encode)
+           M0 type=0 cbp=0 qp=25 chroma_pred=6   (final encode)
+```
+So slow's RD analysis does evaluate I_16x16 (type 2) as a trial,
+but the final MB type is I_4x4 (type 0) — the same as superfast.
+The first-MB divergence is therefore in the I4 prediction modes /
+residual coefficients, not in the MB type or chroma prediction.
+That narrows the RD work needed: the I4 refinement path
+(`intra_rd_refine`, `analyse.c:1016`) is the relevant piece, not the
+whole MB-level RD framework.
