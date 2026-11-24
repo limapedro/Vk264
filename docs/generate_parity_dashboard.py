@@ -159,9 +159,9 @@ STAGES = [
     ]),
     ("03  Lookahead & slice type", "lookahead.c · slicetype.c · slicetype-cl.c", [
         ("x264_lookahead_*", 9, "MISSING"),
-        ("slicetype_*", 26, "MISSING"),
+        ("slicetype_*", 26, "PARTIAL"),
         ("macroblock_tree*", 5, "MISSING"),
-        ("scenecut*", 3, "MISSING"),
+        ("scenecut*", 3, "PARTIAL"),
         ("OpenCL slicetype-cl", 8, "N/A"),
     ]),
     ("04  Analysis / mode decision", "encoder/analyse.c · rdo.c", [
@@ -344,6 +344,8 @@ OPEN_TARGETS = [
     ("Rate control VBV / CRF", 0, 45, "#d29922"),
     ("I4x4/I8x8 CABAC emission (superfast)", 1, 1, "#2ea043"),
     ("Superfast NAL2 macroblock prefix", 130, 130, "#2ea043"),
+    ("Slicetype frame-type agreement (16f)", 16, 16, "#2ea043"),
+    ("CABAC first-diff progress (6 presets)", 6, 6, "#d29922"),
     ("Full NAL2 byte-exact (all presets)", 2, 20, "#f85149"),
     ("04 Analysis weighted family coverage", 2, 10, "#d29922"),
 ]
