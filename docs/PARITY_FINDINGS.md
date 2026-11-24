@@ -143,6 +143,25 @@ That pattern is consistent with x264's psy-RD (active subme>=6)
 modifying the encoder's quantised coefficients to preserve source
 texture. No CBP-only change can reproduce it; reverted.
 
+## DEFINITIVE final-written MB syntax comparison (this turn)
+
+Hooked x264's `cabac_mb_header_i` (the actual bitstream writer) and
+the oracle's equivalent write point, taking the LAST write per MB:
+
+```
+MB   x264 (type,cbp,i16pred,chroma)   oracle
+0    2, 0, 6, 6                       2, 0, 6, 6    MATCH
+1    0,13, 4, 4                       0, 7, 4, 4    cbp differs (13 vs 7)
+2    2, 0, 1, 4                       2, 0, 4, 4    i16 pred differs (1 vs 4)
+3    2, 0, 1, 4                       2, 0, 4, 4    i16 pred differs
+4    2, 0, 0, 5                       2, 0, 0, 5    MATCH
+```
+
+This is the first byte-11-level divergence locus, measured from the
+final written syntax rather than RD trials: MB1's I4 CBP (13 vs 7)
+and MB2/MB3's I16 prediction mode (1 vs 4). Earlier claims that MB0
+differed are fully retracted — MB0 matches exactly.
+
 ## CORRECTION: MB0 CBP claim retracted (this turn)
 
 Hooking x264's actual CABAC MB writer (`cabac_mb_header_i`) showed four
