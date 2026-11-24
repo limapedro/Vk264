@@ -113,4 +113,30 @@ explained by the cost array alone; instrumented `vk_i8x8_decide_ex`
 returned mode 2 with `bc=21` despite `pred8=0`. Need a deeper look at
 context state vs SAD values. No fix landed.
 
-### H3/H4/H5/H6 — not yet tested
+### H5 — CONFIRMED, root cause identified, fix insufficient alone
+Reproduced the veryslow CAVLC decode failure on `c017.yuv`:
+```
+oracle CLI exit=0, 414-byte stream
+ffmpeg: illegal reordering_of_pic_nums_idc 32 / no frame
+x264 NAL sizes: [7:25, 8:6, 5:120, 1:20]
+oracle NAL sizes: [7:25, 8:6, 5:216, 1:151]
+```
+Instrumented x264 `slice_header_write`:
+```
+VH fn=1 poc=2 ovr=1 nl0=1 defl0=16 wpred=1
+```
+x264 (`encoder.c:2639`) sets `i_num_ref_idx_l0_active` to the number
+of available references (1 for the first P frame) and signals
+`num_ref_idx_active_override_flag=1`; the oracle always wrote 0 and
+its pred_weight_table looped over the PPS default (16) instead of the
+active count.
+
+Implemented both corrections in `pframe.c`: override signalling and
+active-count weight table. The error changed from
+`illegal reordering_of_pic_nums_idc 32` to `no frame`, but the stream
+still does not decode and the audit stays 12/120 — the IDR NAL2 is
+216 bytes vs x264's 120, i.e. the CAVLC IDR residual path itself is
+substantially wrong for multi-ref presets. Changes reverted; the
+header bug is documented for the CAVLC rewrite.
+
+### H3/H4/H6 — not yet tested
