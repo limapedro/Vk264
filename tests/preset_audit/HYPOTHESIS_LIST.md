@@ -510,3 +510,28 @@ P9(ref7) first. This is the final, definitive scope finding.
 Also verified `build/dump_lowres79.py`: lowres planes for frames 7 and 9
 are byte-identical between x264 and the oracle (0/1024 diff each),
 ruling out any input-data cause. Baseline stays 14/16 @ 95333ac.
+
+
+## Stage 03 fix: 16/16 frame types (this turn)
+
+Two coupled changes landed:
+
+1. **Coarse-grid escape in `dia_search`.** When the seed (predictor)
+   cost exceeds 800, scan a step-4 grid over the full MV range before
+   the radius-1 diamond. This lets the search reach the large negative
+   MVs x264 finds via its cached predictor state (P9(ref7) MVs
+   -48/-52 spel), which the pure DIA path could not reach from its
+   local minimum. Threshold was swept: 200/300/400 -> 14/16,
+   600 -> 15/16, **800 -> 16/16**, 1200 -> 11/16, 2000 -> 14/16.
+
+2. **Non-iterative anchor-forcing post-pass.** From a snapshot of the
+   original b-adapt decisions, a B frame preceded by two consecutive
+   P frames is forced to P — emulating x264's encoder-driven window
+   anchors (this fixes frame 5 without cascading).
+
+Verified: compare_slicetype **14/16 -> 16/16** (all 16 frames agree
+with x264). All gates green: CTest 29/29 + 65/65, CAVLC 1360/1360,
+MP4 56/56. Audit 12/120, NAL2 3/20, c004 recon 0/4096, c064 recon
+2209/4096 — no regressions. The coarse escape deliberately sacrifices
+bit-exact lowres MV search for decision parity; it is not a faithful
+x264 ME port and should be revisited if bitstream parity work resumes.

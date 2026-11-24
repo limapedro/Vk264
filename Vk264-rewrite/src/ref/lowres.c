@@ -131,6 +131,15 @@ static void dia_search(const uint8_t *cur,int dw,int bx,int by,
         int c=satd8(cur,dw,bx,by,ref,dw,bx,by)+2*mv_cost(0);
         if(c<bcost){bcost=c;bmx=0;bmy=0;}
     }
+    /* Escape local minima: when the seed cost is high, scan a coarse grid
+     * before the radius-1 diamond (x264's far MVs come from such seeds). */
+    if(bcost > 800){
+        int lo_x=-bx, hi_x=maxx, lo_y=-by, hi_y=maxy;
+        for(int gy=lo_y; gy<=hi_y; gy+=4) for(int gx=lo_x; gx<=hi_x; gx+=4){
+            int c=satd8(cur,dw,bx,by,ref,dw,bx+gx,by+gy)+mv_cost(gx)+mv_cost(gy);
+            if(c<bcost){bcost=c;bmx=gx;bmy=gy;}
+        }
+    }
     static const int dd[4][2]={{0,-1},{0,1},{-1,0},{1,0}};
     for(int it=0;it<64;++it){
         int bestk=-1;
