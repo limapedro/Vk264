@@ -121,6 +121,20 @@ there is no "two-phase" requirement. The failure of those attempts
 must lie in the RD cost details (fenc SATD cache, psy scaling, or
 coefficient handling), not the CABAC state timing.
 
+## CBP fix attempt → psy-RD texture residual (this turn)
+
+Adding DC to the I16 CBP decision gated at subme>=6 changed oracle
+MB0 cbp from 0 to 1 (still not x264's 7). Dumping the DC coefficients:
+```
+oracle: nat = -163,0,0,0,...   (only ONE nonzero coefficient)
+x264:   nnz = 1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0  (12 nonzero blocks)
+```
+So the gap is not CBP signalling — x264's final I16 residual contains
+12 nonzero 4x4 blocks while the oracle has a single DC coefficient.
+That pattern is consistent with x264's psy-RD (active subme>=6)
+modifying the encoder's quantised coefficients to preserve source
+texture. No CBP-only change can reproduce it; reverted.
+
 ## CONCRETE DIVERGENCE: MB0 CBP (this turn)
 
 Post-encode dumps for IDR frame0 MB0 under slow:
