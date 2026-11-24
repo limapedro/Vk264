@@ -742,3 +742,23 @@ residual coefficients, not in the MB type or chroma prediction.
 That narrows the RD work needed: the I4 refinement path
 (`intra_rd_refine`, `analyse.c:1016`) is the relevant piece, not the
 whole MB-level RD framework.
+
+
+### Decisive: I4 modes differ between superfast and slow (this turn)
+
+`build/dump_i4_pred.py` dumped x264's IDR frame0 MB0 I4 prediction
+modes and nnz at encode time:
+```
+superfast pred: 11,9,10,2, 9,9,2,2, 10,2,10,2, 2,2,2,2
+          nnz:  1,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0
+slow      pred: 11,11,11,11, 9,9,9,9, 10,10,10,10, 2,2,2,2
+          nnz:  1,1,1,1, 1,1,1,1, 1,1,1,1, 0,0,0,0
+```
+So the MB type and chroma mode match, but RD refinement changes
+nearly every I4 prediction mode and turns 11 more blocks nonzero.
+This confirms the requested work item: x264's `intra_rd_refine`
+I4 branch (`analyse.c:1086-1135`) with `rd_cost_i4x4` (encode +
+SSD + CABAC bit count via lambda2) is the missing piece for
+subme>=6 presets. It must be gated so superfast/ultrafast (which
+currently match byte-exactly) are untouched. Not implemented this
+turn; the evidence is now sufficient to justify the full port.
