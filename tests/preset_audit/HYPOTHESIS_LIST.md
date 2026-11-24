@@ -206,9 +206,15 @@ wiring the existing emitters to real `vk_i4x4_decide`/I8 decisions.
 choosing min(I16,I4,I8) cost. Decisions fired (MB1: ca_type=1,
 icost=2856, c4=1828, c8=1256) but x264 chooses **I4** for that MB
 with i4=975 — the oracle's I4 cost model is ~2x too high, so it
-picked I8. Audit stayed 12/120, NAL2 3/20, CAVLC first-diff bytes
-unchanged. Reverted. The CAVLC I4 cost primitive must be corrected
-before the emitter wiring can help.
+picked I8. **Correction:** the I4 primitive itself is correct — on
+c004 MB1 the oracle's `vk_i4x4_decide` returns exactly 975, matching
+x264's i4=975. The 1828 reading was a bug in my new helper: I passed
+`cur` (frame stride 64) where `vk_i4x4_decide` expects a tight
+stride-16 source patch. After fixing that (and pointing `recon_y` at
+the current MB), MB1 correctly selects **I4** (c4=602, c8=7198),
+yet the audit still stayed 12/120, NAL2 3/20, CAVLC byte4 unchanged.
+So the remaining CAVLC gap is in the emitter/header details, not the
+cost primitive. Reverted.
 
 ### H6 — CONFIRMED (same root cause as H5)
 Reproduced on `c099.yuv` (forza 8f placebo CAVLC): CLI exits 0 but
