@@ -618,3 +618,60 @@ Verified quant deadzones match x264: x264 `set.c:81` deadzone[4]
 `--no-deblock`: it makes NAL2 diverge at byte 4, so deblocking is
 not the cause. The remaining suspect is the 4x4 residual DCT/quant
 of MB0 block b=2; no source change made.
+
+
+## Preset study: slow / slower / placebo (this turn)
+
+NAL dumps (`build/dump_slow_presets.py`) for the 2f small64 CABAC cases:
+
+```
+exp014 slow    NAL2 lens 120/135 firstdiff 5
+exp016 slower  NAL2 lens 120/135 firstdiff 5
+exp020 placebo NAL2 lens 121/136 firstdiff 6
+```
+
+SPS (NAL0) and PPS (NAL1) are byte-identical in all three. After a
+common 5-byte (slow/slower) or 6-byte (placebo) IDR-slice prefix,
+x264 continues `fe ca 4f 81 4b 9c dc 7e 6a 49 f5 74` while the
+oracle emits `ec 83 7a 29 3f c1 6b 3b 81 55 1d 11` — the same
+alternate pattern for all three presets, i.e. a shared MB-level
+emitter difference beginning at the first macroblock's CABAC data.
+
+**Root cause identified: trellis RDO is not implemented in the oracle.**
+`Vk264-rewrite/src/ref/nal.c:59` explicitly says "Analysis knobs
+(me/subme/trellis/lookahead) are not [applied]". x264 preset trellis
+settings (`base.c`):
+
+```
+ultrafast/superfast/veryfast : trellis = 0
+medium/fast/faster           : trellis = 1
+slow/slower/veryslow/placebo : trellis = 2
+```
+
+This correlates exactly with the measured first-diff bytes:
+
+```
+preset       trellis  CABAC first-diff byte
+veryfast       0      16
+faster         0      16
+fast           1       5
+medium         1       5
+slow           2       5
+slower         2       5
+veryslow       2       6
+placebo        2       6
+```
+
+Every trellis=0 preset keeps the IDR slice byte-identical for longer
+(first diff at byte 16, outside the first MB), while every
+trellis>0 preset diverges at byte 5/6 — the first MB's residual
+coefficients. Implementing x264's `trellis_quant` (`common/quant.c`)
+is the highest-value next step for bitstream parity on these
+important presets.
+
+Also noted: oracle NAL3 (P slice) tails are preset-independent
+(`be ed 44 73 ad 0a 6f 7f`), while x264's P slices vary strongly
+with preset — the oracle's P-frame encoder does not implement
+subme/ME differences.
+
+No source change made; baseline 14/16 slicetype, gates green.
