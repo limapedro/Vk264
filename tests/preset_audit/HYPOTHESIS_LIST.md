@@ -291,6 +291,15 @@ This indicates compensating errors: isolated component fixes disturb
 the cost balance. A correct port must replace the whole B-cost path
 atomically, not individual terms.
 
+**Atomic cached-MV port attempted and rejected:** added a prepass in
+`vk_slicetype_decide` analysing each frame as P to populate per-frame
+lowres MV caches, passed `st[b]` into `vk_lowres_b_cost`, and used it
+to seed the list-0 search. Slicetype collapsed 13/16 -> 10/16: cached
+P MVs are not x264's per-list B predictors. A correct port must
+reproduce x264's `slicetype_mb_cost` B branch in full (MVC from
+`fenc_mvs[l]`, temporal dmv, x264_me_search DIA with p_cost_mv, all
+TRY_BIDIR penalties). Reverted; tree clean @ 0125412.
+
 **Tested (partial):** x264's bipred average uses a weighted blend
 `w = 64 - (dsf>>2)`; the oracle used a fixed 50/50 average. Porting
 the weighted blend changed j=2 cb from 749 to 732 (toward x264's
