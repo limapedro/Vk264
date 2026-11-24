@@ -535,3 +535,25 @@ MP4 56/56. Audit 12/120, NAL2 3/20, c004 recon 0/4096, c064 recon
 2209/4096 — no regressions. The coarse escape deliberately sacrifices
 bit-exact lowres MV search for decision parity; it is not a faithful
 x264 ME port and should be revisited if bitstream parity work resumes.
+
+
+### Stage 04: c064 MB2 idx2 per-mode cost dump (this turn, reverted)
+
+`build/dump_i8_modes2.py` dumped the oracle's per-mode I8 costs for
+c064 MB2 idx2; x264's discounted `i_satd_i8x8_dir[2]`:
+
+```
+mode:      0    1    2    3    4    5    6    7    8
+oracle:  101  157   57  215  207  666  746  121  213
+x264:     51  151   57  192  109   82  162  104  133
+```
+
+DC (mode 2) matches exactly (57), but V (mode 0) is 101 vs 51 —
+that 50-point gap flips the decision from x264's mode 0 to oracle's
+mode 2. Modes 5/6 (VR/HD) are off by 8x, pointing to the top-right
+edge samples rather than the metric.
+
+Tried: x264's filtered top edge for the V predictor (mode 0 cost
+101->85, still >57) and SA8D for mode 0 (124, worse). Filtering the
+whole non-gated path: c064 2209->2271. All reverted; c004 stays
+byte-exact and slicetype stays 16/16 @ db3c166.
