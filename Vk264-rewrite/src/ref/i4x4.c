@@ -6,6 +6,7 @@
 #include "slice.h"
 #include <stdlib.h>
 #include <string.h>
+extern int vk_cur_subme;
 
 /* decision order: block_idx_xy_fenc (x264 macroblock.h:225) */
 static const int XY[16][2] = {
@@ -210,12 +211,25 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
                 int c = sad + (vk_i4x4_fix(m)==pred ? -3*lambda : 0);
                 if (c<best){best=c;bestm=m;}
             }
+        } else if (vk_cur_subme>=6) {
+            /* x264 analyse.c:916: i_mbrd>=1 bypasses intra_analysis_shortcut
+             * and evaluates ALL available candidate modes. */
+            for(int k=0;k<nc;++k) {
+                int m=cands[k];
+                vk_predict4(p,m,left,top,lt,tr);
+                int sad=0;
+                for(int i=0;i<16;++i){int d=srcblock[i]-p[i];sad+=d<0?-d:d;}
+                if (vk_i4x4_fix(m)==pred) sad-=3*lambda;
+                if (sad<best){best=sad;bestm=m;}
+            }
         } else if (best>0) {
             for(int k=0;k<loop_n;++k) {
                 int m=loop[k];
                 vk_predict4(p,m,left,top,lt,tr);
                 int sad=0;
                 for(int i=0;i<16;++i){int d=srcblock[i]-p[i];sad+=d<0?-d:d;}
+                if(px==16&&py==0&&idx==2)
+                  fprintf(stderr,"OCST mode=%d sad=%d pred=%d\n",m,sad,pred);
                 if (vk_i4x4_fix(m)==pred) {
                     sad-=3*lambda;
                     if (sad<=0) { best=sad; bestm=m; break; }

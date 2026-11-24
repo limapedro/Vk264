@@ -126,8 +126,17 @@ static const uint8_t S8I[16]={12,13,20,21,14,15,22,23,28,29,36,37,30,31,38,39};
 /* x264 ZIGZAG4_FRAME: natural DCT index -> scan index. */
 static const uint8_t ZZ4[16]={0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
 static int i4_pred(const uint8_t m[16],int i,int l,int t){
-    int a=(i%4)?m[i-1]:(l?2:-1), b=(i>=4)?m[i-4]:(t?2:-1);
-    int p=(a<b)?a:b; return p<0?2:p;
+    /* x264 x264_mb_predict_intra4x4_mode uses h->mb.cache.intra4x4_pred_mode
+     * with x264_scan8[] indices. The top neighbour is cache[scan8[i]-8],
+     * which is NOT i-4 for i>=6 in x264's zigzag scan8 layout. */
+    static const uint8_t s8[16]={12,13,20,21,14,15,22,23,28,29,36,37,30,31,38,39};
+    static int rev[64], init=0;
+    if(!init){ for(int q=0;q<64;++q) rev[q]=-1;
+               for(int q=0;q<16;++q) rev[s8[q]]=q; init=1; }
+    int a=(i%4)?m[i-1]:(l?2:-1);
+    int tp=rev[s8[i]-8], b=(tp>=0)?m[tp]:(t?2:-1);
+    int p=(vk_i4x4_fix(a)<vk_i4x4_fix(b))?vk_i4x4_fix(a):vk_i4x4_fix(b);
+    return p<0?2:p;
 }
 static void cb_pred4(vk_cabac_t *cb,int pred,int mode){
     if(pred==mode){vk_cabac_decision(cb,68,1);return;}
