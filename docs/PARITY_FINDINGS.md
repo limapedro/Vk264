@@ -105,6 +105,27 @@ No code change is associated with this report; it is the tracked
 baseline for further work.
 
 
+## Addendum: psy-RD + RD I4 attempted (reverted)
+
+Added the psy-RD cost term from x264 `rdo.c:123-148` (`satd4(fdec) -
+dc - satd4(fenc)` scaled by `psy_rd=256 * psy_rd_lambda=lambda`,
+plus exact CABAC f8 bit counting and full candidate enumeration for
+subme>=6.
+
+Two concrete defects were found and fixed during the attempt:
+- the early-termination `total > thresh` check aborted I4 analysis
+  after block 0 because RD costs use a different scale than SATD
+  costs (disabled it for the RD path);
+- x264's i_mbrd>=1 bypasses the analysis shortcut (full candidate
+  enumeration).
+
+Even with both corrections, the chosen modes remained
+`11,9,10,2,9,9,2,2,...` instead of x264 slow's
+`11,11,11,11,9,9,9,9,...`, and slow's IDR NAL2 stayed 144 bytes with
+first diff at byte 5. So psy-RD alone does not explain the mode gap;
+the remaining difference is in the exact Hadamard/cache details or
+in the coefficient quantisation path. All changes reverted.
+
 ## Addendum: faithful RD I4 port attempted (reverted)
 
 Implemented the full RD pipeline the matrix calls for: exact
