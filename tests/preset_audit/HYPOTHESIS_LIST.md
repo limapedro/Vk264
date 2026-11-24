@@ -512,6 +512,17 @@ are byte-identical between x264 and the oracle (0/1024 diff each),
 ruling out any input-data cause. Baseline stays 14/16 @ 95333ac.
 
 
+## PARITY_PLAN E15: I4 SATD metric attempted (reverted)
+
+Implemented a correct 4x4 SATD (2D Hadamard, sum|coeff|>>1) and gated
+I4 mode decision on it for subme>=6. For MB1 block2 the oracle's SATD
+ranks mode5=128 < mode4=132, matching x264's ranking (112 vs 144).
+However the overall mode array became `9,9,1,0,...` vs x264's
+`9,9,5,5,...` and first-diff stayed 11/12. Conclusion: x264's final
+I4 modes at subme>=6 come from `intra_rd_refine` RD costs, not raw SATD
+ranking — SATD alone cannot reproduce them. Reverted; PR #287's two
+fidelity fixes kept.
+
 ## PARITY_PLAN E1/E6: two faithful intra fixes (no metric gain)
 
 E1 verified from x264 `macroblock.h:420` that the CABAC intra4x4 pred
