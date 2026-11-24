@@ -105,19 +105,21 @@ No code change is associated with this report; it is the tracked
 baseline for further work.
 
 
-## RD refinement timing (this turn)
+## RD refinement timing — CORRECTION (this turn)
 
-Reading x264 `analyse.c:890-959` confirms the initial I4 analysis
-always uses SAD (`pixf.mbcmp[PIXEL_4x4]`) and only changes the
-candidate set for i_mbrd>=1 (`predict_mode += 3`). The final I4 modes
-for subme>=6 come from the later `intra_rd_refine` pass, which calls
-`rd_cost_i4x4` **after** `intra_rd` has already chosen the MB type and
-written its header into the live CABAC context state. All earlier RD
-attempts ran during initial I4 analysis, before that header/context
-state existed — so even exact f8 bit counts were measured against the
-wrong context. A faithful port must run RD refinement after the MB
-type decision with the post-header CABAC state, which requires a
-restructured two-phase IDR MB encoder.
+Reading x264 `analyse.c:890-959` confirms initial I4 analysis uses SAD
+and only expands the candidate set for i_mbrd>=1. Final I4 modes for
+subme>=6 come from the later `intra_rd_refine` pass.
+
+**Correction to a previous claim:** encoder.c:2861 calls
+`x264_macroblock_analyse` (including RD refinement) BEFORE
+`x264_macroblock_write_cabac` at encoder.c:2878. So the CABAC context
+state during RD refinement is from *previous* MBs only — which is
+exactly what the earlier RD attempts used (live cb before the current
+MB header). My earlier note claiming a post-header context was wrong;
+there is no "two-phase" requirement. The failure of those attempts
+must lie in the RD cost details (fenc SATD cache, psy scaling, or
+coefficient handling), not the CABAC state timing.
 
 ## Coefficient-level confirmation (this turn)
 
