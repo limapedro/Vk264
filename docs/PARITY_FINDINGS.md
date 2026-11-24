@@ -121,6 +121,25 @@ there is no "two-phase" requirement. The failure of those attempts
 must lie in the RD cost details (fenc SATD cache, psy scaling, or
 coefficient handling), not the CABAC state timing.
 
+## ROOT CAUSE FOUND: MB0 internal reconstruction mismatch (this turn)
+
+Dumped MB0's I16 prediction and reconstruction in the oracle:
+```
+R0 i16=1 i8=0 i4=0 bestmode=6 edge=16,16,16,16, pred=128,128,128,128
+```
+Mode 6 is `I_PRED_16x16_DC_128`, so `pred=128` is correct. But the
+reconstructed right edge is 16, not 128. In `compute_i16_full`,
+when `nnz[b]==0` the code still calls `vk_ref_add_block_dc(dst,16,dcq[b])`
+(line 312); the quantised DC is nonzero, so the internal reconstruction
+becomes `128 + dcq ≈ 16`. x264's MB0 has cbp=0 and reconstructs 128.
+
+Because cbp=0, this residual is NOT written to the bitstream — so NAL2
+matches through MB0 — but the oracle feeds the wrong reconstruction to
+MB1's predictors, producing the 1-2 sample differences and the byte-11
+divergence. This is the concrete primitive to fix: zero the DC residual
+when x264 would (I-frame DC handling / decimation), so recon == pred
+for cbp=0 I16 MBs.
+
 ## MB0 / neighbour state confirmed (this turn)
 
 MB0's I16 prediction mode matches between encoders:
