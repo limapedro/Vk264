@@ -16,11 +16,17 @@ marked as such so they are not re-run.
 CTest 29/29 + 65/65     CAVLC P-slice 1360/1360     MP4 56/56
 audit                    12/120 byte-exact (ultrafast only)
 NAL2 pairs               3/20 byte-exact
-CABAC first-diff bytes   veryfast/faster 16, fast/medium/slow/slower 11,
-                         veryslow/placebo 12
+CABAC first-diff bytes   veryfast 49, faster 17, fast/medium/slow/slower 15,
+                         veryslow/placebo 16  (was 16/16/11/12 before PR #288)
 compare_slicetype        16/16 frame types agree (decision parity only)
 recon c004 / c064        0/4096  /  2209/4096
 ```
+
+### Delta this session (evidence)
+- PR #287: faithful scan8 i4_pred neighbour + subme>=6 full-candidate enum — no metric gain, fidelity.
+- PR #288: **SATD for subme>1 in I4 x3+candidate loops** (`encoder.c:1409 mbcmp_init`). First-diff sum +58 bytes across 8 presets; veryfast 16→49 and its MB1 I4 modes now match x264 exactly.
+- E18 confirmed: faster vs veryfast byte-17 divergence is **trellis=1** (not subme/refs/lookahead). `--preset faster --trellis 0` == veryfast; `--preset veryfast --trellis 1` == faster.
+- Resolution probe on `D:\02 PehdrewTV\Videos` (4 clips, 2f, cabac): 1280x720 and 720x1280 ultrafast EXACT; 1920x1080 and 640x360 produce **0 oracle NALs** while x264 produces 4 — confirmed mod16-height failure (1088/368 ok, 1080/360 fail). This is a real parity/robustness gap.
 
 The gap is **preset-gated, not content-gated**: every clip × frame-count
 group has exactly the same 2/20 result, and every preset has 0/12 except
@@ -34,6 +40,8 @@ tiers*, not to fix arbitrary content bugs.
 - PR #277: MB-level reconstructed-RD type selection for subme>=6 — first-diff 5/6 → 11/12 (six presets)
 - PR #279–#285: full parameter/function documentation, dashboard, findings
 - Stage 03: slicetype 13/16 → 16/16 (coarse-grid ME escape + anchor forcing; PR #278)
+- PR #287: faithful scan8 i4_pred neighbour + subme>=6 full-candidate I4 enum (fidelity, no metric)
+- PR #288: **SATD for subme>1 in I4 analysis** (x264 `mbcmp_init`) — veryfast 16→49, faster 16→17, fast+ 11→15, veryslow/placebo 12→16; c004 recon 0/4096, all gates green
 
 ---
 
@@ -101,56 +109,46 @@ These were intermediate RD-trial or dump-ordering artifacts:
 
 ---
 
-## 4. Experiment programme (>30 falsifiable experiments)
+## 4. Next 16 priority work items (evidence-ranked, 2026-11-24)
 
-Each experiment: **hypothesis**, **method**, **expected signal**, **gate**, **decision rule**.
-A "no metric change" result is a failed experiment, not progress; revert it.
-Use `build/progress_metrics.py` (first-diff bytes) as the primary signal,
-`audit_presets.py` (12/120) as the acceptance signal, and all gates as a
-hard constraint.
+Each item has: **why now**, **concrete change**, **signal/gate**, **owner files**. 
+Rule: one change per experiment, revert on no metric gain, keep all gates green.
 
-### A. CABAC pred-mode / bin-level (byte 11) — highest priority
+| # | priority | work item | evidence / why now | concrete change | primary signal | gate |
+|---|---|---|---|---|---|---|
+| 1 | P0 | **Faithful CABAC trellis (4x4/8x8/DC/chroma)** | E18 confirmed: faster byte-17 is trellis=1; 7 presets inherit trellis. Biggest single gap. | Port x264 `quant_trellis_cabac` C fallback (`encoder/rdo.c:730-895`) + `trellis_coef0/1/n`, `x264_cabac_entropy[128]`, node/level structs. Wire at 4x4/8x8/DC/chroma AC quant when `i_trellis>=1 && b_cabac`, using **live** CABAC state. Unit-test one block against x264 before integration. | faster first-diff 17→?; audit cases for faster..placebo | c004 recon 0, slicetype 16/16, CTest 29+65, CAVLC 1360, MP4 56 |
+| 2 | P0 | **Trellis-aware RD: pass live cabac state through RD/encode** | Trellis depends on CABAC context state; oracle RD often quantizes without live state. | Plumb `vk_cabac_t*`/state snapshot through `compute_i16_full`, I4/I8 encode, RD trial paths; use `x264_cabac_size_decision2`/entropy cost where x264 does. | same as #1; prevents wrong trellis decisions | all gates |
+| 3 | P0 | **Veryfast byte-49 tail: locate next IDR mismatch after SATD gain** | veryfast jumped 16→49, now first diverges at 49. | Bin/byte trace x264 vs oracle for veryfast cabac 8f c004; identify whether it's pred-mode, coeff, cbp, or chroma. | veryfast first-diff 49→higher | c004 recon 0 |
+| 4 | P0 | **I16 mode decision: SATD vs SAD for subme>1** | x264 mbcmp_init makes I16 x3 SATD at subme>1; oracle I16 path still uses SAD (E16 partial). Resolution probe showed veryfast/medium diff@6/8 on 720p — I16 likely involved. | Apply satd16x16/x264-equivalent to I16 mode selection gated `vk_cur_subme>1`; verify against x264 costs on c004 MB0. | 720p probe diff moves; veryfast/faster first-diff | c004 recon 0, ultrafast exact |
+| 5 | P1 | **I8x8 analysis metric: SA8D/SATD parity** | x264 uses `intra_sa8d_x3_8x8` when mbcmp==satd (subme>1). Oracle I8 still SAD/approx. | Add 8x8 SA8D for mode decision gated subme>1; keep x264 shortcut table behavior. | fast+ IDR first-diff; I8 MB mode matches on traces | all gates |
+| 6 | P1 | **MB-level RD (`intra_rd`/`intra_rd_refine`) exact port** | E9/E10: rough RD gave no gain; need x264's exact `rd_cost_mb` with SSD+psy+f8 CABAC bits and fenc SATD cache. | Port `rd_cost_mb`, `rd_cost_i4x4`, `intra_rd`, `intra_rd_refine` semantics; gate subme>=6; use real CABAC size. | fast/medium/slow/slower/veryslow/placebo first-diff 15/16→higher | c004 recon 0, superfast exact |
+| 7 | P1 | **Psy-RD / psy-trellis cost terms** | x264 defaults psy-rd 1.0, psy-trellis 0; oracle has no psy term. Needed for exact RD/trellis decisions. | Add `i_psy_rd`, `fenc_satd`/`fenc_hadamard` cache, psy cost in RD; wire psy-trellis only when i_trellis>=2? (check x264). | RD decisions match on traced MBs | all gates |
+| 8 | P1 | **Mod16/mod8 resolution handling bug** | Probe: oracle returns 0 NALs for 1920x1080 and 640x360 (height%16!=0), while 1088/368 work; x264 works. | Find dimension validation/allocation in oracle CLI/encoder; support mod2/mod8 like x264 or at minimum match x264's supported dims; add tests. | 1920x1080/640x360 produce NALs and decode | no regression on 64x64/720p |
+| 9 | P1 | **Chroma mode decision parity (cbp/chroma pred)** | I16 chroma/CBP differences seen in earlier traces; resolution probe shows early diff@6/8 on 720p. | Dump x264 vs oracle chroma pred mode, DC/AC cbp, and chroma SATD/SAD costs for first differing MB. | 720p diff moves; cbp/chroma bins match | recon/gates |
+| 10 | P1 | **P-slice fast P-skip / early termination** | superfast P-slice byte 7; x264 analyse.c:3002-3014 uses b_fast_pskip + subme>=3 ME-based skip. | Port ME-based P_SKIP probe: cost threshold 300*lambda, mv near pskip_mv, probe; gate by preset/subme. | superfast P-slice first-diff improves | P-slice CAVLC 1360 stays green |
+| 11 | P2 | **B-slice emission / NAL count mismatches (24 cases)** | Audit has NAL COUNT mismatches on multi-frame clips. | Trace NAL type sequences 30f slow; compare b-adapt decisions, B-slice encode path, and slice header. | NAL counts equal on affected cases | slicetype 16/16 |
+| 12 | P2 | **HEX/UMH/TESA ME per preset** | x264: veryfast+ HEX, slower UMH, placebo TESA; oracle DIA. Affects P/B and lookahead cost. | Implement HEX first (subme>=2), then UMH/TESA; gate by preset. | P-slice first-diff/NAL2, slicetype stable | recon/gates |
+| 13 | P2 | **Weighted prediction (SIMPLE/SMART) parity** | x264 uses SMART for medium+ in effect; oracle simplified. PPS/slice header bits can differ. | Compare x264 `x264_weighted_pred_init` outputs and PPS flags for medium/slow; implement exact weight calc. | PPS/header byte match; P-slice diff moves | all gates |
+| 14 | P2 | **MB-tree / lookahead AQ integration** | Oracle mb-tree exists but not fully wired into lookahead; x264 uses it for qp offsets/cost. | Audit mb-tree qp delta map vs x264 for 30f clips; wire propagation/gating. | 30f NAL count/byte diffs | slicetype 16/16 |
+| 15 | P2 | **Deblock & reconstruction at tc!=0** | Current tested QP gives tc0=0 so deblock no-op; c064 recon 2209/4096 may involve deblock/QP/cbp differences. | Run targeted QP sweep (e.g. 18-24) where tc>0; compare filtered edges; port missing deblock strength/BS logic if any. | c064 recon decreases; no regression at QP28 | recon/gates |
+| 16 | P3 | **Cross-resolution/aspect regression suite** | Current audit is 64x64 only; real videos exposed mod16 failure and early diffs at 720p. | Add small automated probe set: 1280x720, 720x1280, 1920x1088, 640x368, odd-crop mod16, 2-8f, ultrafast/veryfast/medium. Track in progress metrics. | new suite reports pass/fail; prevents regressions | CI-friendly runtime |
 
-**E1 — neighbour-mode cache source.** Hypothesis: x264's CABAC pred-mode
-is derived from the *raw* neighbour modes in `h->mb.cache.intra4x4_pred_mode`,
-which may retain RD-trial values, not from the final `modes4[]`. Method: dump
-`i_pred` and the four neighbour cache values at x264's `cabac_intra4x4_pred_mode`
-for MB1 block15, and the oracle's `i4_pred(modes4,15)` inputs. Signal: an
-i_pred difference with equal modes → root cause. Gate: superfast recon.
+### 4.1 Notes from resolution probe (2026-11-24)
 
-**E2 — unavailable-neighbour sentinel.** Hypothesis: x264 uses `-1` (→DC)
-for MB-edge neighbours while the oracle uses `2`; with `b_transform_8x8`
-these differ. Method: compare ctx68 bin for MB1 block0/block4 under
-`--no-8x8dct` vs default. Signal: first-diff changes. Gate: superfast.
+Command probe (2 frames, `--qp 28 --cabac --keyint 30`, oracle CLI vs x264):
 
-**E3 — chroma pred-mode context.** Hypothesis: MB2/MB3 I16 pred differences
-(oracle 4 vs x264 1) come from chroma-mode availability flags, not luma.
-Method: force x264's chroma mode for MB2 and dump ctx64 bins from both.
+| clip | res | ultrafast | veryfast | medium | note |
+|---|---|---|---|---|---|
+| ssstwitter 1732160055221 | 1920x1080 | oracle 0 NALs | oracle 0 NALs | oracle 0 NALs | **mod16 height failure** |
+| ssstwitter 1748848847689 | 1280x720 | EXACT | IDR diff@6 | IDR diff@6 | works |
+| ssstwitter 1724445469565 | 720x1280 | EXACT | IDR diff@8 | IDR diff@8 | vertical OK |
+| ssstwitter 1732158697723 | 640x360 | oracle 0 NALs | oracle 0 NALs | oracle 0 NALs | **mod16 height failure** |
 
-**E4 — I16 mode candidate ordering.** Hypothesis: x264's
-`predict_16x16_mode_available` returns `{4,1}` for my=0 and the oracle's
-`pi16av` returns `{4,1}` too, so ordering matches; verify by dumping both
-candidate lists at MB2. Experiment is a cheap confirmation.
+Follow-up: 1920x1088 and 640x368 produce oracle output; 1080/360 fail. Treat as parity-blocking robustness bug (item 8).
 
-**E5 — `x264_mb_pred_mode4x4_fix` table.** Hypothesis: a single table entry
-differs for raw mode 9/10/11. Method: compare x264's `fix[13]` against
-`vk_i4x4_fix` for all 13 inputs. Gate: none.
+## 5. Existing experiment backlog (keep, do not rerun retracted claims)
 
-**E6 — MB1 I4 mode decision cost.** Hypothesis: x264's i_mbrd>=1 initial
-analysis uses `predict_mode += 3` (all candidates) with SATD, while the
-oracle still uses the shortcut for I4 when `nc>=6` (this was gated only in a
-reverted experiment). Method: gate full candidate enumeration on subme>=6
-*only in `vk_i4x4_decide`* (not the earlier RD rewrite). Measure first-diff.
-Gate: c004 recon, superfast.
-
-**E7 — CABAC ctx68/69 transition state.** Hypothesis: context state diverges
-before bin29 due to an earlier bin that happens to encode the same byte.
-Method: compare `cb->state[68]`/`[69]` immediately before bin29 in both.
-
-**E8 — quant/dequant coefficient ordering in writer.** Hypothesis: oracle
-writes `i4q` through a second zigzag that double-permutes. Method: dump the
-exact zigzag index sequence passed to `cabac_coeffs` in both encoders for
-MB1 block0. (This is a real 1-in-N chance given the earlier ordering artifact.)
+### A. CABAC pred-mode / bin-level (byte 11)
 
 ### B. I4/I8 analysis & RD (byte 5 tier) — now history, but needed for presets above subme=6
 
@@ -264,33 +262,18 @@ verdict categories after any fix; never declare progress on a single clip.
 
 ---
 
-## 5. Priority and dependency order
+## 6. Priority and dependency order
 
-```
-P0  E1–E8   pred-mode / bin-level byte-11 mismatch (six presets)
-P1  E9–E17  MB-level RD + I4/I8 analysis (fast..placebo IDR byte-5 tier)
-P2  E18–E22 trellis + quant (fast..placebo)
-P3  E23–E32 ME, P/B slices, NAL counts (all presets + 24 structural cases)
-P4  E33–E36 structural verification and regression sweeps
-```
+1. **Items 1-2 (trellis + live CABAC state plumbing)** - highest ROI; E18 confirmed as 7-preset gap. Do together.
+2. **Items 3-5,9 (locate veryfast@49 tail, I16 SATD, I8 SA8D, chroma parity)** - close remaining IDR mode/coeff gaps.
+3. **Item 8 (mod16/mod8 resolution bug)** - fix early; blocks real-video validation.
+4. **Items 6-7 (exact MB-RD/intra_rd_refine + psy)** - needed after trellis gives correct coeff costs.
+5. **Items 10-14 (P-skip, B-slice/NAL count, ME levels, weighted pred, mb-tree)** - structural preset gaps.
+6. **Items 15-16 (deblock tc!=0, cross-res regression suite)** - coverage and reconstruction.
 
-Do **not** start P1 until P0 is either fixed or proven independent — the
-byte-11 mismatch is inside a single MB and is much cheaper to close.
+Rule: never trade a gate for a metric; revert no-gain experiments; document every retracted claim.
 
-### Verification protocol (every experiment)
-1. `git status` clean before edit.
-2. Apply one gated change (preserve ultrafast/superfast).
-3. `cmake --build Vk264-rewrite/build --config Release`.
-4. `python build/progress_metrics.py` → first-diff bytes.
-5. `python build/recon_pair.py c004` → must stay 0/4096.
-6. `python build/compare_slicetype.py` → must stay 16/16.
-7. `ctest` 29/29 + 65/65, CAVLC 1360/1360, MP4 56/56.
-8. If no metric gain: **revert** and record the result in `HYPOTHESIS_LIST.md`.
-9. If gain: full `audit_presets.py`, update docs + SVG, open/merge PR.
-
----
-
-## 6. Acceptance criteria for the overall goal
+## 7. Acceptance criteria for the overall goal
 - `audit_presets.py`: **120/120 byte-exact**
 - `progress_metrics.py`: NAL2 pairs 20/20; no first-diff bytes
 - `compare_slicetype.py`: 16/16
