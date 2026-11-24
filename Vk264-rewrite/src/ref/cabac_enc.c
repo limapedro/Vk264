@@ -13,6 +13,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern int vk_cur_subme;
+static const int vk_lambda2_tab[52] = {
+    14,18,22,28,36,45,57,72,91,115,145,182,230,290,365,460,
+    580,731,921,1161,1462,1843,2322,2925,3686,4644,5851,7372,9289,
+    11703,14745,18578,23407,29491,37156,46814,58982,74313,93628,117964,
+    148626,187257,235929,297252,374514,471859,594505,749029,943740,
+    1189156,1500160,1891796
+};
 static uint8_t clip8(int v) { return v < 0 ? 0 : (v > 255 ? 255 : (uint8_t)v); }
 
 #define LPAD 32   /* mirror x264 PADH/PADV=32 */
@@ -485,6 +493,26 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 int c = sad + lambda*vk_mode_bits(m);
                 if (c < best) { best = c; bestmode = m; }
             }
+            /* subme>=6: x264 intra_rd() re-evaluates MB types with RD cost.
+             * Approximate the I16 term by reconstructed SSD + CABAC bits. */
+            if(vk_cur_subme>=6){
+                int rdq[16], rdacq[16][15], rdnnz[16], rdcbp=0;
+                uint8_t rdrecon[256];
+                compute_i16_full(frame,w,mx*16,my*16,trial,qp,rdq,rdacq,
+                                 rdnnz,&rdcbp,rdrecon,0);
+                uint64_t ssd=0;
+                for(int yy=0;yy<16;++yy) for(int xx=0;xx<16;++xx){
+                    int d=frame[(my*16+yy)*w+mx*16+xx]-rdrecon[yy*16+xx];
+                    ssd+=(uint64_t)d*d;
+                }
+                int bits=6; /* mb_type + pred mode + chroma pred */
+                for(int b=0;b<16;++b) if(rdq[b]||rdacq[b][0]){
+                    bits+=1;
+                    for(int k=0;k<15;++k) if(rdacq[b][k]) bits+=4;
+                }
+                uint64_t rdc=ssd + (uint64_t)bits*vk_lambda2_tab[qp<0?0:(qp>51?51:qp)];
+                best=(int)(rdc>0x7fffffff?0x7fffffff:rdc);
+            }
             /* x264 analyse.c:745-835: I8x8 analysis (4 8x8 blocks). */
             int use_i8=0, i8cbp=0, i8cost=VK_I4_COST_MAX;
             uint8_t modes8[4]={2,2,2,2};
@@ -566,6 +594,16 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 int i4thresh = best < i8cost ? best : i8cost;
                 c4=vk_i4x4_decide(src16,recon+ro,rs,mx*16,my*16,qp,
                                   left,top,0,0,modes4,i4thresh);
+                if(vk_cur_subme>=6){
+                    /* x264 intra_rd: bit cost for I4/I8 MB syntax */
+                    int l2=vk_lambda2_tab[qp<0?0:(qp>51?51:qp)];
+                    int b4=4+16+4;
+                    for(int k=0;k<16;++k) if(nnz4[k]) b4+=1+4*nnz4[k];
+                    c4=(int)((uint64_t)c4+(uint64_t)b4*(unsigned)l2);
+                    int b8=4+1+4+4;
+                    for(int k=0;k<4;++k) if(i8nnz[k]) b8+=1+4*i8nnz[k];
+                    i8cost=(int)((uint64_t)i8cost+(uint64_t)b8*(unsigned)l2);
+                }
                 if(c4 < best && c4 < i8cost){ use_i4=1; use_i8=0; }
                 else if(!(i8cost<best)) use_i8=0;
 
