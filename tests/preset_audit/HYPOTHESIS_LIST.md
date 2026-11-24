@@ -251,7 +251,16 @@ high**. The lowres B-cost primitive (`vk_lowres_b_cost`) or the
 lookahead framing differs. x264's dump also shows **four separate
 decision passes** over j=1..3 with different costs, i.e. incremental
 lookahead frames; the oracle decides once over all 16 frames.
-Both the B-cost and the multi-pass framing must be matched.
+**Framing ruled out as the cause:** running x264 with `--frames`
+4/8/16 and dumping slice-header types gives I,B,B,P for frames
+0-3 in every case (`build/types_by_depth2.py`). Early decisions are
+stable across lookahead depth, so the 3/16 mismatch is purely the
+lowres B-path cost, not the multi-pass framing.
+
+Also corrected: superfast's `b_weighted_bipred` stays at its default
+1 (`base.c:451`) — the weighted-blend port was the right direction;
+it reduced cb 749->732 but x264 is 521, so the residual gap is in
+the lowres B motion estimation itself.
 
 **Tested (partial):** x264's bipred average uses a weighted blend
 `w = 64 - (dsf>>2)`; the oracle used a fixed 50/50 average. Porting
