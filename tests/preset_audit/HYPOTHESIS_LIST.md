@@ -675,3 +675,37 @@ with preset — the oracle's P-frame encoder does not implement
 subme/ME differences.
 
 No source change made; baseline 14/16 slicetype, gates green.
+
+
+### CORRECTION: trellis is not the primary IDR divergence cause
+
+Single-knob sweeps from `--preset slow` (`build/sweep_slow_knobs.py`,
+`build/test_trellis_zero.py`) on the exp014 clip:
+
+```
+x264 slow default          NAL2 120/135  firstdiff 5
+x264 slow --trellis 0      NAL2 126/135  firstdiff 5   <-- unchanged!
+x264 slow --subme 1        NAL2 127/135  firstdiff 17
+x264 slow --subme 1 --trellis 0   NAL2 130/135  firstdiff 32
++ --psy-rd 0 / --chroma-qp-offset 0 / --ref 1 / --me dia
+                                  firstdiff 32 (no further change)
++ --no-8x8dct               firstdiff 5 (worse)
+```
+
+So trellis alone does **not** move the first divergence; the earlier
+claim that trellis explains the byte-5/6 split was wrong — the
+first-diff-byte correlation with trellis settings was coincidental.
+The dominant knob is **subme**: forcing x264 slow to `--subme 1`
+moves the first IDR divergence from byte 5 to byte 17, and
+`--subme 1 --trellis 0` to byte 32.
+
+Also verified: the oracle's IDR NAL2 tails are preset-independent
+(`ec 83 7a 29 3f c1 6b 3b 81 55 1d 11` in superfast/slow/slower/
+placebo), so its I-frame MB analysis does not apply subme/trellis.
+The IDR slice header itself decodes identically in both encoders
+(12 fields, 32 bits, including slice_qp_delta=-15 and deblocking
+0/0), and the first bit divergence is bit 35 — in the first MB's
+CABAC data.
+
+Corrected priority: implement subme-dependent I-frame analysis
+(or at minimum match x264's subme=1 I8/I4 decisions) before trellis.
