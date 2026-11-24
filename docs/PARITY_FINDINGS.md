@@ -121,6 +121,21 @@ there is no "two-phase" requirement. The failure of those attempts
 must lie in the RD cost details (fenc SATD cache, psy scaling, or
 coefficient handling), not the CABAC state timing.
 
+## CORRECTION: MB0 reconstruction actually matches (this turn)
+
+The earlier "x264 reconstructs 128, oracle 16" claim was based on a
+dump taken at **prediction time**, before the residual was applied.
+The final post-encode dump (`build/dump_x264_final_recon.py`) shows:
+```
+x264 FINAL MB0: type=2 cbp=7 edge=16,16,16,16
+```
+and the oracle's MB0 edge is also `16,16,16,16` with the same final
+type/cbp. So MB0's reconstruction MATCHES; there is no uncoded-DC
+recon divergence. The 1-2 sample differences at MB1 block2 must come
+from elsewhere in MB1's intra analysis (e.g. the I4 predictor inputs
+or the SAD-based mode choice), not from MB0's reconstruction. All
+earlier notes claiming an MB0 recon mismatch are superseded.
+
 ## DC-residual fix attempted (reverted)
 
 Zeroing the I16 DC residual in `compute_i16_full` when `cbp_luma==0`
