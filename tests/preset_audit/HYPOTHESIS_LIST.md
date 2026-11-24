@@ -512,6 +512,28 @@ are byte-identical between x264 and the oracle (0/1024 diff each),
 ruling out any input-data cause. Baseline stays 14/16 @ 95333ac.
 
 
+## PARITY_PLAN E1/E6: two faithful intra fixes (no metric gain)
+
+E1 verified from x264 `macroblock.h:420` that the CABAC intra4x4 pred
+neighbour is `cache[scan8[i]-8]`, which is NOT `i-4` for i>=6. Fixed the
+oracle's `i4_pred` to use the scan8 reverse map and x264's
+`x264_mb_pred_mode4x4_fix` on each neighbour.
+
+E6 verified from x264 `analyse.c:916` that `i_mbrd>=1` bypasses
+`intra_analysis_shortcut`; added a subme>=6 branch evaluating all
+candidate modes with SAD.
+
+Also measured x264's true final MB1 fixed mode array at the CABAC
+writer: `2,2,5,5,2,2,2,2,2,5,2,5,2,2,5,2`; oracle is
+`2,2,4,5,2,2,2,2,1,5,2,4,2,2,5,2` — differences at blocks 2, 8, 11.
+x264's SATD for block2: mode4=144, mode5=112; oracle SAD: mode4=44,
+mode5=52. So the SAD→SATD metric difference is the mode-choice cause.
+
+Both fixes are faithful to x264 source but did not move first-diff
+(11/12) or audit (12/120); all gates green, c004 recon 0/4096,
+slicetype 16/16. Kept as fidelity improvements. A correct 4x4 SATD
+is needed for the next attempt (my first helper returned a constant).
+
 ## Stage 03 fix: 16/16 frame types (this turn)
 
 Two coupled changes landed:
