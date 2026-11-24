@@ -8,6 +8,33 @@
 #include <string.h>
 extern int vk_cur_subme;
 
+/* x264 mbcmp_init (encoder.c:1409): satd = subme>1. 4x4 SATD is the
+ * 2D Hadamard transform of the residual, sum|coeff| >> 1. */
+static int satd4x4(const uint8_t *a, const uint8_t *b)
+{
+    int d[16], t[16], s=0;
+    for(int i=0;i<16;++i) d[i]=(int)a[i]-(int)b[i];
+    for(int y=0;y<4;++y){
+        int p=d[y*4+0]+d[y*4+2], m=d[y*4+0]-d[y*4+2];
+        int q=d[y*4+1]+d[y*4+3], r=d[y*4+1]-d[y*4+3];
+        t[y*4+0]=p+q; t[y*4+1]=p-q; t[y*4+2]=m+r; t[y*4+3]=m-r;
+    }
+    for(int x=0;x<4;++x){
+        int p=t[0*4+x]+t[2*4+x], m=t[0*4+x]-t[2*4+x];
+        int q=t[1*4+x]+t[3*4+x], r=t[1*4+x]-t[3*4+x];
+        int v[4]={p+q,m+r,p-q,m-r};
+        for(int k=0;k<4;++k) s+=v[k]<0?-v[k]:v[k];
+    }
+    return s>>1;
+}
+static int i4cmp(const uint8_t *a, const uint8_t *b)
+{
+    if(vk_cur_subme>1) return satd4x4(a,b);
+    int s=0;
+    for(int i=0;i<16;++i){int d=(int)a[i]-(int)b[i]; s+=d<0?-d:d;}
+    return s;
+}
+
 /* decision order: block_idx_xy_fenc (x264 macroblock.h:225) */
 static const int XY[16][2] = {
     {0,0},{1,0},{0,1},{1,1},{2,0},{3,0},{2,1},{3,1},
@@ -184,9 +211,7 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
             int s3[3];  /* indexed by mode 0=V, 1=H, 2=DC */
             for (int m=0;m<3;++m) {
                 vk_predict4(p,m,left,top,lt,tr);
-                int sad=0;
-                for(int i=0;i<16;++i){int d=srcblock[i]-p[i];sad+=d<0?-d:d;}
-                s3[m]=sad;
+                s3[m]=i4cmp(srcblock,p);
             }
             if (pred<3) s3[pred]-=3*lambda;
             best=s3[2]; bestm=2;
@@ -206,8 +231,7 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
             for(int k=0;k<nc;++k) {
                 int m=cands[k];
                 vk_predict4(p,m,left,top,lt,tr);
-                int sad=0;
-                for(int i=0;i<16;++i){int d=srcblock[i]-p[i];sad+=d<0?-d:d;}
+                int sad=i4cmp(srcblock,p);
                 int c = sad + (vk_i4x4_fix(m)==pred ? -3*lambda : 0);
                 if (c<best){best=c;bestm=m;}
             }
@@ -217,8 +241,7 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
             for(int k=0;k<nc;++k) {
                 int m=cands[k];
                 vk_predict4(p,m,left,top,lt,tr);
-                int sad=0;
-                for(int i=0;i<16;++i){int d=srcblock[i]-p[i];sad+=d<0?-d:d;}
+                int sad=i4cmp(srcblock,p);
                 if (vk_i4x4_fix(m)==pred) sad-=3*lambda;
                 if (sad<best){best=sad;bestm=m;}
             }
@@ -226,10 +249,7 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
             for(int k=0;k<loop_n;++k) {
                 int m=loop[k];
                 vk_predict4(p,m,left,top,lt,tr);
-                int sad=0;
-                for(int i=0;i<16;++i){int d=srcblock[i]-p[i];sad+=d<0?-d:d;}
-                if(px==16&&py==0&&idx==2)
-                  fprintf(stderr,"OCST mode=%d sad=%d pred=%d\n",m,sad,pred);
+                int sad=i4cmp(srcblock,p);
                 if (vk_i4x4_fix(m)==pred) {
                     sad-=3*lambda;
                     if (sad<=0) { best=sad; bestm=m; break; }

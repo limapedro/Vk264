@@ -275,6 +275,33 @@ x264's `x264_mb_encode_i16x16` sets `block_cbp` from the full 4x4
 quantisation *including* the DC coefficient, which is why it gets 7.
 This is the next fix: include DC in the CBP decision for I16 MBs.
 
+## MAJOR GAIN: SATD for subme>1 (PARITY_PLAN E15 revisited)
+
+x264's `mbcmp_init` (`encoder/cabac.c:1409`) sets `satd = subme>1`,
+switching **all** intra mbcmp functions from SAD to SATD. The oracle used
+SAD unconditionally. Adding a correct 4x4 SATD (2D Hadamard,
+`sum|coeff| >> 1`) gated on `vk_cur_subme>1` to **both** the x3 DC/H/V
+initial comparison (which selects `favor_vertical` and therefore the
+`intra_analysis_shortcut` loop) and the full/shortcut candidate loops
+produced a large first-diff improvement:
+
+| preset | before | after |
+|---|---|---|
+| veryfast | 16 | **49** |
+| faster | 16 | 17 |
+| fast/medium/slow/slower | 11 | 15 |
+| veryslow/placebo | 12 | 16 |
+
+For veryfast (subme=2), the oracle's MB1 fixed I4 mode array now matches
+x264 exactly: `2,2,4,5,2,2,2,2,2,5,2,4,2,2,5,2`. This confirms that the
+subme=2 mode decisions come from SATD, not RD refinement. The x3-stage
+fix was essential: without it the shortcut loop was `{4,6,8}` (no mode
+5), while with SATD it becomes `{3,4,5,7}`.
+
+All gates stay green: CTest 29/29 + 65/65, CAVLC 1360/1360, MP4 56/56,
+c004 recon 0/4096, slicetype 16/16. Audit still 12/120 (first-diff 49
+bytes is not yet a full IDR match); c064 recon unchanged at 2209/4096.
+
 ## CORRECTION: MB0 reconstruction actually matches (this turn)
 
 The earlier "x264 reconstructs 128, oracle 16" claim was based on a

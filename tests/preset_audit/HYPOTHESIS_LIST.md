@@ -512,6 +512,19 @@ are byte-identical between x264 and the oracle (0/1024 diff each),
 ruling out any input-data cause. Baseline stays 14/16 @ 95333ac.
 
 
+## PARITY_PLAN E15 revisited: SATD for subme>1 — MAJOR GAIN
+
+x264 `encoder.c:1409` `mbcmp_init`: `satd = subme>1`. The oracle used SAD
+everywhere. Implemented correct 4x4 SATD (2D Hadamard, sum|coeff|>>1)
+gated on `vk_cur_subme>1` and applied it to BOTH the x3 DC/H/V initial
+comparison (which picks the `intra_analysis_shortcut` loop) and the
+candidate loops. Result: veryfast first-diff 16→49, faster 16→17,
+fast+ 11→15, veryslow/placebo 12→16. veryfast's MB1 I4 modes now match
+x264 exactly. The earlier E15 attempt failed because it applied SATD
+only to the subme>=6 branch and left the x3 stage on SAD. All gates
+green; audit still 12/120. Next: extend SATD to I16/I8 decisions and
+investigate faster's smaller gain (subme=4).
+
 ## PARITY_PLAN E9/E10: I4 RD trial-encode cost attempted (reverted)
 
 Implemented `i4_rd_cost` (trial DCT + quant + dequant + IDCT,
