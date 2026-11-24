@@ -163,4 +163,24 @@ set. A per-call decision dump showed
 wins in the oracle's cost model for that block, so matching x264
 requires matching the edge samples feeding SAD, not the search.
 
+### H1/H2 edge dump (c064 MB2) — precise input difference
+Dumped `edge[36]` for c064 MB2 idx0 (I8, top MB row):
+```
+x264: rawl=203,203,203,203,200,199,196,195
+      rawt=135,69,89,65,180,5,90,65
+      filtered edge[16..23]=117,119,91,78,100,108,70,63
+orcl: rawl=203,203,203,203,200,199,196,195   (identical, verified
+                                               by a direct l8 dump)
+      rawt=128,128,128,128,128,128,128,128   (top unavailable)
+```
+The left neighbours match exactly; the divergence is the **top
+samples for a top-MB-row I8 block**. x264's `i_neighbour8[0]` for
+MB2 is `1` (LEFT only), yet `predict_8x8_filter(..., ALL_NEIGHBORS)`
+still filters the top edge from FDEC padding, which on c064 contains
+highly variable data. The oracle substitutes 128 for unavailable
+top neighbours. This is why the I8 cost/SAD inputs diverge on
+textured content but happen to agree on flat c004.
+Any fix must reproduce x264's FDEC top-padding content for top-row
+MBs rather than substituting 128. Not yet implemented.
+
 ### H3/H4/H6 — not yet tested
