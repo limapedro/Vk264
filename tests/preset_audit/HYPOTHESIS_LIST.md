@@ -283,6 +283,14 @@ both the seed and the diamond steps. j=2 costs moved cp 659 -> 618
 no gate/metric regression. Adding x264's temporal MV predictor from
 the future ref regressed slicetype to 12/16 and was reverted.
 
+**Important pattern:** three separate "make the ME more like x264"
+changes (temporal predictor, unconditional zero-MV candidate, weighted
+bipred) each moved costs toward x264 but changed or regressed slicetype
+decisions, while the MV-cost fix moved costs closer with no regression.
+This indicates compensating errors: isolated component fixes disturb
+the cost balance. A correct port must replace the whole B-cost path
+atomically, not individual terms.
+
 **Tested (partial):** x264's bipred average uses a weighted blend
 `w = 64 - (dsf>>2)`; the oracle used a fixed 50/50 average. Porting
 the weighted blend changed j=2 cb from 749 to 732 (toward x264's
