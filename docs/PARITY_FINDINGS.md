@@ -105,6 +105,32 @@ No code change is associated with this report; it is the tracked
 baseline for further work.
 
 
+## IMPLEMENTED: MB-level intra RD for subme>=6 (bitstream gain)
+
+Following the corrected root cause, added a reconstructed-RD
+I16 cost plus bit-cost penalties for I4/I8 in the CABAC IDR path,
+gated on `vk_cur_subme >= 6` (superfast/ultrafast untouched):
+
+- I16: `compute_i16_full` -> reconstructed SSD + estimated CABAC
+  bit cost using `x264_lambda2_tab`
+- I4: add `bits ~ 24 + sum(cbf + 4*nnz)` x lambda2
+- I8: add `bits ~ 13 + sum(cbf + 4*nnz)` x lambda2
+
+This makes oracle MB0 pick I_16x16 for slow, matching x264.
+
+Measured improvement (fresh audit, all gates green):
+
+```
+CABAC first-diff bytes BEFORE: fast=5 medium=5 slow=5 slower=5 veryslow=6 placebo=6
+CABAC first-diff bytes AFTER:  fast=11 medium=11 slow=11 slower=11 veryslow=12 placebo=12
+```
+
+All 16 slicetype decisions still agree; c004 recon still 0/4096;
+CTest 29/29 + 65/65, CAVLC 1360/1360, MP4 56/56. Audit remains
+12/120 byte-exact because the remaining divergence is now much
+later in the slice (byte 11/12), likely in chroma intra prediction
+or coefficient ordering.
+
 ## Addendum: ROOT CAUSE of the byte-5 IDR divergence (this turn)
 
 Correctly placed dumps (at the END of `x264_macroblock_encode`,
