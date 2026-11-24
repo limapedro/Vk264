@@ -190,4 +190,24 @@ oracle's unavailable top samples with that pattern changed neither
 recon (c064 2209, c004 0) nor NAL2 pairs (3/20). So the padding is
 NOT the driver; the divergence is elsewhere. Reverted.
 
-### H3/H4/H6 — not yet tested
+### H3 — CONFIRMED (CAVLC I4/I8 not implemented in normal path)
+Read `Vk264-rewrite/src/ref/pframe.c:1168`: the CAVLC P-slice
+I4/I8 emitters (`vk_encode_i4x4_mb`, `vk_encode_i8x8_mb`, mb_type
+offset 5) are gated behind `use_intra && (p7==0 || p7==1)`, and `p7`
+is only nonzero when `VK_P7_TEST` is set with `frame_num==4 &&
+poc==14`. Normal CAVLC intra MBs fall through to I16-only
+(`use_intra` branch at line 1235). Explains the CAVLC byte4/byte5/
+byte10 classes: ultrafast (I16-only) is byte-exact, every other
+preset needs I4/I8 and has no normal-path emitter. Fix requires
+wiring the existing emitters to real `vk_i4x4_decide`/I8 decisions.
+
+### H6 — CONFIRMED (same root cause as H5)
+Reproduced on `c099.yuv` (forza 8f placebo CAVLC): CLI exits 0 but
+ffmpeg reports `luma_log2_weight_denom 32 is out of range`, the
+same PPS-weight-table misalignment as H5. H5/H6 are one class.
+
+### H4 — partially verified
+`compare_slicetype.py` shows 3/16 mismatches in display order:
+frames 2 (B->P), 5 (P->B), 8 (B->P) — b-adapt decisions in
+`vk_slicetype_decide`, not scene cuts. Fix requires matching x264's
+path costs for those frames.
