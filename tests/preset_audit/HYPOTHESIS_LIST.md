@@ -575,3 +575,19 @@ begins in the first macroblock's CABAC decision data, not in any slice
 header syntax element. This points to a P-slice MB mode/decision
 mismatch (consistent with the earlier "fourth pred-mode/input"
 finding) rather than a header or context-initialisation bug.
+
+
+### P-slice first MB (this turn)
+
+`build/dump_first_mb2.py` instrumented x264's
+`x264_macroblock_encode` on the exp004 clip (c004.yuv, 2 frames,
+superfast CABAC): frame 1 MB0 is **P_SKIP** (`type=4 skip=1 cbp=0`).
+Combined with the bit-49 first divergence in NAL3 and an identical
+slice header, the first CABAC bin that differs is the `mb_skip_flag`
+of P-slice MB0 (x264 encodes skip=1).
+
+The oracle's CABAC skip-decision site (`cabac_enc.c:1452`) did not
+produce a trace for MB0 with the instrumentation used, so the
+oracle's actual skip bin for that MB remains unconfirmed; no source
+change was made. Next step is to trace `vk_cabac_encode_p_recon_frame`
+entry/decision for frame 1 directly.
