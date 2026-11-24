@@ -275,6 +275,34 @@ x264's `x264_mb_encode_i16x16` sets `block_cbp` from the full 4x4
 quantisation *including* the DC coefficient, which is why it gets 7.
 This is the next fix: include DC in the CBP decision for I16 MBs.
 
+## ROOT CAUSE OF FASTER+ DIVERGENCE: trellis=1 (PARITY_PLAN E18)
+
+Controlled experiments (`build/t3_*.h264`) isolated the byte-17 divergence
+between veryfast and faster — it is **NOT subme** (2 vs 4), NOT refs
+(1 vs 2) and NOT lookahead (10 vs 20). It is **trellis**:
+
+```
+--preset faster --trellis 0  -> IDR bytes[14:22] = 55 1d 0f 66 3f 6f 1f 9b  (== veryfast)
+--preset veryfast --trellis 1 -> IDR bytes[14:22] = 55 1d 0f ea 61 cd e3 f3  (== faster)
+```
+
+x264's defaults set `i_trellis=1` (`common/base.c:455`); the veryfast
+preset explicitly sets `i_trellis=0` (`:534`) but **faster/fast/medium/
+slow/slower/veryslow/placebo inherit trellis=1**. The oracle has no
+trellis quantizer at all — it always uses deadzone `vk_ref_quant_one`.
+
+This is the dominant remaining gap for 7 of 10 presets. x264 ships a
+complete C reference implementation of `quant_trellis_cabac` in
+`encoder/rdo.c:730-895` (under the `#if HAVE_MMX && ARCH_X86_64` fallback)
+that can be ported directly; it needs only the `x264_cabac_entropy[128]`
+table (`common/tables.c:1717`), `x264_cabac_transition` (oracle already
+has `vk_cabac_transition`), `trellis_coef0/1/n` helpers (rdo.c:494-660)
+and the node/level structures (rdo.c:417-428).
+
+The oracle's faster output is byte-identical to its veryfast output,
+confirming trellis is completely absent. fast+ additionally have the
+subme>=6 RD gap, hence their first-diff is 15 (earlier than faster's 17).
+
 ## MAJOR GAIN: SATD for subme>1 (PARITY_PLAN E15 revisited)
 
 x264's `mbcmp_init` (`encoder/cabac.c:1409`) sets `satd = subme>1`,

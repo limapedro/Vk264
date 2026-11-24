@@ -188,11 +188,20 @@ V/H/DC; oracle loops. Verify identical outputs on c004 MB0.
 I-slices with certain neighbour conditions; oracle sets 0 for IDR. Verify
 against x264 for 30f clips.
 
-### C. Trellis and quantisation (presets fast+)
+### C. Trellis and quantisation (presets faster+) — HIGHEST PRIORITY
 
-**E18 — trellis quant primitive.** x264 `trellis_cabac_4x4` with
-`x264_trellis_lambda2_tab`; oracle has no trellis. Port as a standalone
-function, unit-test against x264's output on one 4x4 block.
+**E18 — trellis quant primitive.** **CONFIRMED as the dominant gap for 7 presets.**
+Controlled experiments proved faster's byte-17 divergence is entirely
+trellis=1 (inherited from x264 defaults at `base.c:455`), NOT subme/refs/
+lookahead: `--preset faster --trellis 0` is byte-identical to veryfast
+and `--preset veryfast --trellis 1` is byte-identical to faster. The
+oracle has no trellis at all. Port x264's complete C reference
+`quant_trellis_cabac` (`encoder/rdo.c:730-895`) with its helper macros
+(`trellis_coef0/1/n`, rdo.c:494-660), the `x264_cabac_entropy[128]` table
+(`common/tables.c:1717`), and the node/level structures (rdo.c:417-428).
+Integrate at the 4x4 quant call sites gated on `i_trellis>0 && b_cabac`.
+Unit-test against x264's output on one 4x4 block before integration.
+This is worth 7 presets × 12 audit cases = 84 cases.
 
 **E19 — deadzone tables.** Verify `quant4_bias` for CQM_4IY/4PC at all QPs
 against `vk_ref_quant_tables`; earlier index-[25] check matched.
