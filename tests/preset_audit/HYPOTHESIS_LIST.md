@@ -709,3 +709,18 @@ CABAC data.
 
 Corrected priority: implement subme-dependent I-frame analysis
 (or at minimum match x264's subme=1 I8/I4 decisions) before trellis.
+
+
+### subme-dependent I8 analysis attempted (reverted)
+
+Added a `vk_cur_subme` global and forced the full (non-shortcut)
+I8 mode enumeration for subme>=6 (`vk_i8x8_decide_ex` `mb_gate=0`),
+approximating x264 `a->i_mbrd>=1` which evaluates all 9 directions.
+
+Result: c004 recon stayed byte-exact and slicetype stayed 16/16,
+but slow's IDR NAL2 grew from 135 to 158 bytes and still diverged
+at byte 5. x264's i_mbrd>=1 decision is **RD-based** (bit cost via
+`partition_i8x8_size_cabac` + lambda2), not merely full mode
+enumeration, so this approximation is invalid. Reverted; no source
+change kept. Faithful subme support requires implementing x264's
+RDO mode decision (`encoder/rdo.c`) and CABAC bit-count estimation.
