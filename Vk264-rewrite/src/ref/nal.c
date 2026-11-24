@@ -198,7 +198,16 @@ void vk_sps_init(vk_sps_t *s, int id, const vk_param_t *p)
     s->b_gaps_in_frame_num_value_allowed = 0;
     s->b_mb_adaptive_frame_field = p->b_interlaced;
     s->b_direct8x8_inference = 1;
-    s->b_crop = 0;
+    {
+        int cw = s->i_mb_width * 16;
+        int ch = s->i_mb_height * 16 * (s->b_frame_mbs_only ? 1 : 2);
+        int crop_right = cw - p->i_width;
+        int crop_bottom = ch - p->i_height;
+        s->crop_left = s->crop_top = 0;
+        s->crop_right = crop_right;
+        s->crop_bottom = crop_bottom;
+        s->b_crop = (crop_right || crop_bottom) ? 1 : 0;
+    }
     s->b_vui = p->b_vui;
 
     s->vui.b_aspect_ratio_info_present = 0;
