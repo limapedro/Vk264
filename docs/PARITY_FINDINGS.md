@@ -121,6 +121,24 @@ there is no "two-phase" requirement. The failure of those attempts
 must lie in the RD cost details (fenc SATD cache, psy scaling, or
 coefficient handling), not the CABAC state timing.
 
+## MB0 / neighbour state confirmed (this turn)
+
+MB0's I16 prediction mode matches between encoders:
+```
+x264 final I16 mode for MB0 = 6
+oracle bestmode for MB0     = 6
+```
+MB0 is I16 with nnz=0 in both, so its reconstruction should match.
+
+Correction to the previous note: I4 scan index 2 in x264's
+`block_idx_xy_fenc` order is position (0,1), i.e. by=4, so its "top"
+samples come from MB1's own reconstructed block 0 (`rmb[3][0..3]`),
+not from MB0. The oracle dumps `t=11,12,41,69` for those samples.
+Therefore the 1-2 sample prediction difference at block 2 is a
+cascade from block 0's reconstruction *within MB1*, not from MB0.
+Block 0's mode matches (9 in both encoders), so the remaining
+difference is in its DC_LEFT predictor inputs or quant/dequant path.
+
 ## Prediction-sample comparison (this turn)
 
 With mode 5 forced at IDR MB1 block 2:
