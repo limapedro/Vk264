@@ -762,3 +762,16 @@ SSD + CABAC bit count via lambda2) is the missing piece for
 subme>=6 presets. It must be gated so superfast/ultrafast (which
 currently match byte-exactly) are untouched. Not implemented this
 turn; the evidence is now sufficient to justify the full port.
+
+
+### I4 full-candidate attempt (reverted)
+
+Added a `vk_cur_subme` global and, for subme>=6, replaced x264's
+`intra_analysis_shortcut` table with a full loop over all candidate
+I4 modes (SAD + pred-mode discount) in `vk_i4x4_decide`.
+
+Result: c004 recon stayed 0 and slicetype 16/16, but slow's IDR
+NAL2 stayed 135 bytes with first diff at byte 5 — no change. So
+the mode divergence is not just the candidate-set shortcut: it
+comes from x264's RD cost (trial encode + SSD + CABAC bit count),
+which changes both mode selection and nnz. Reverted.
