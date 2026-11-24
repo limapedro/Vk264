@@ -262,6 +262,19 @@ Also corrected: superfast's `b_weighted_bipred` stays at its default
 it reduced cb 749->732 but x264 is 521, so the residual gap is in
 the lowres B motion estimation itself.
 
+Checked the cost structure against x264 `slicetype.c:516-758`:
+- dist_scale_factor formula matches (`base.c:870`).
+- `lowres_penalty=4` is added once per MB in x264 (line 758) and
+  effectively once in the oracle (min of candidates each +4).
+- `TRY_BIDIR` uses `penalty * i_lambda` plus mbcmp; the oracle uses
+  `5*LAMBDA` plus SAD — same structure.
+- `b_weighted_bipred` is 1 for superfast (default at base.c:451;
+  superfast does not override it), so the weighted blend is correct.
+- The oracle's `satd8()` is actually plain SAD (no Hadamard), matching
+  x264's lowres mbcmp for subme<=1.
+So the remaining 228-point B-cost gap (732 vs 521) is in ME search
+quality / MV caching, not the cost formula.
+
 **Tested (partial):** x264's bipred average uses a weighted blend
 `w = 64 - (dsf>>2)`; the oracle used a fixed 50/50 average. Porting
 the weighted blend changed j=2 cb from 749 to 732 (toward x264's
