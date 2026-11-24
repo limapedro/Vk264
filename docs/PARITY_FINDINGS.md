@@ -121,6 +121,26 @@ there is no "two-phase" requirement. The failure of those attempts
 must lie in the RD cost details (fenc SATD cache, psy scaling, or
 coefficient handling), not the CABAC state timing.
 
+## CONCRETE DIVERGENCE: MB0 CBP (this turn)
+
+Post-encode dumps for IDR frame0 MB0 under slow:
+```
+x264:   type=2 (I16)  cbp=7  cbpch=0  edge=16,16,16,16
+oracle: type=2 (I16)  cbp=0
+```
+Both reconstruct edge=16, but x264 signals luma CBP=7 (three 8x8
+blocks with residual) while the oracle signals 0. This means the
+bitstream differs in the MB0 CBP syntax and residual coefficients —
+a concrete, byte-level divergence at MB0, not MB1. The oracle's
+`compute_i16_full` sets `*cbp_luma = any_nz ? 15 : 0` with
+`b_decimate=0`; with `nat[0]=-163` and all AC zero, nnz[b] should be
+nonzero for some blocks, yet cbp=0 was observed — so either DC
+coefficients are excluded from `nnz` (they are: `dct[b][0]=0` before
+quantisation at line 260) or x264 includes DC in its CBP decision.
+x264's `x264_mb_encode_i16x16` sets `block_cbp` from the full 4x4
+quantisation *including* the DC coefficient, which is why it gets 7.
+This is the next fix: include DC in the CBP decision for I16 MBs.
+
 ## CORRECTION: MB0 reconstruction actually matches (this turn)
 
 The earlier "x264 reconstructs 128, oracle 16" claim was based on a
