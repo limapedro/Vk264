@@ -591,3 +591,30 @@ produce a trace for MB0 with the instrumentation used, so the
 oracle's actual skip bin for that MB remains unconfirmed; no source
 change was made. Next step is to trace `vk_cabac_encode_p_recon_frame`
 entry/decision for frame 1 directly.
+
+
+### P-slice MB0 skip probe traced (this turn)
+
+`build/trace_pskip_all.py` (correct CLI arg order:
+`qp_i qp_p entropy keyint nframes`) dumped the oracle's P-frame:
+```
+PFRAME frame=1 qp=28 mw=4 mh=4
+PSKIP idx=0 do_skip=0 ctx=11 mvd=0,0 do_intra=0
+PSKIP idx=1 do_skip=0 ctx=12
+PSKIP idx=2 do_skip=0 ctx=12 do_intra=1
+PSKIP idx=3 do_skip=1 ctx=12
+```
+x264 encodes frame 1 MB0 as P_SKIP (`type=4 skip=1 cbp=0`),
+so the first CABAC `mb_skip_flag` bin differs, matching the bit-49
+first divergence.
+
+`build/trace_skip_cond.py`: oracle MB0 has ME MV=(0,0) == pskip
+MV=(0,0), but `p_probe` returns 0. `build/trace_probe.py` shows
+the luma decimation fails at 4x4 block b=2 with `dec=9 >= 6`.
+
+Verified quant deadzones match x264: x264 `set.c:81` deadzone[4]
+= {21,11,21,11}; oracle `p_probe` uses list 1 (luma, 11) and 3
+(chroma, 11) — correct for CQM_4PY/CQM_4PC. Also tested
+`--no-deblock`: it makes NAL2 diverge at byte 4, so deblocking is
+not the cause. The remaining suspect is the 4x4 residual DCT/quant
+of MB0 block b=2; no source change made.
