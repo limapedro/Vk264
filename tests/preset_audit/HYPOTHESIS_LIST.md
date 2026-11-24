@@ -201,6 +201,15 @@ byte10 classes: ultrafast (I16-only) is byte-exact, every other
 preset needs I4/I8 and has no normal-path emitter. Fix requires
 wiring the existing emitters to real `vk_i4x4_decide`/I8 decisions.
 
+**Attempted (negative result):** removed the P7 gate and wired
+`vk_i4x4_decide`/`vk_i8x8_decide_ex` into the normal CAVLC path,
+choosing min(I16,I4,I8) cost. Decisions fired (MB1: ca_type=1,
+icost=2856, c4=1828, c8=1256) but x264 chooses **I4** for that MB
+with i4=975 — the oracle's I4 cost model is ~2x too high, so it
+picked I8. Audit stayed 12/120, NAL2 3/20, CAVLC first-diff bytes
+unchanged. Reverted. The CAVLC I4 cost primitive must be corrected
+before the emitter wiring can help.
+
 ### H6 — CONFIRMED (same root cause as H5)
 Reproduced on `c099.yuv` (forza 8f placebo CAVLC): CLI exits 0 but
 ffmpeg reports `luma_log2_weight_denom 32 is out of range`, the
