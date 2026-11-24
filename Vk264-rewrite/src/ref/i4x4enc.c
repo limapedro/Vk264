@@ -108,7 +108,7 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
         if(fixed==predm) vk_bs_write1(bs,1);
         else vk_bs_write(bs,4,(unsigned)(fixed-(fixed>predm)));
         uint8_t p[16],s[16];
-        pred4(modes[idx],l,t,lt,tr,p);
+        vk_predict4(p,modes[idx],l,t,lt,tr);
         for(int y=0;y<4;++y)for(int x=0;x<4;++x)s[y*4+x]=src_y[(by+y)*stride_y+bx+x];
         for(int y=0;y<4;++y)for(int x=0;x<4;++x) pred[by*16+bx+y*4+x]=p[y*4+x];
         vk_ref_dct4x4(dct[idx],s,p);

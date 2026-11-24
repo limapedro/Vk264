@@ -239,5 +239,16 @@ same PPS-weight-table misalignment as H5. H5/H6 are one class.
 ### H4 — partially verified
 `compare_slicetype.py` shows 3/16 mismatches in display order:
 frames 2 (B->P), 5 (P->B), 8 (B->P) — b-adapt decisions in
-`vk_slicetype_decide`, not scene cuts. Fix requires matching x264's
-path costs for those frames.
+`vk_slicetype_decide`, not scene cuts.
+
+Dumped path costs on both sides:
+```
+x264  j=2 (first pass): cp=639  cb=521  -> B
+orcl  j=2:             cp=659  cb=749  -> P
+```
+The P-path cost is close; the oracle's **B-path cost is ~44% too
+high**. The lowres B-cost primitive (`vk_lowres_b_cost`) or the
+lookahead framing differs. x264's dump also shows **four separate
+decision passes** over j=1..3 with different costs, i.e. incremental
+lookahead frames; the oracle decides once over all 16 frames.
+Both the B-cost and the multi-pass framing must be matched.
