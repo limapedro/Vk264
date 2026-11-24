@@ -121,6 +121,15 @@ there is no "two-phase" requirement. The failure of those attempts
 must lie in the RD cost details (fenc SATD cache, psy scaling, or
 coefficient handling), not the CABAC state timing.
 
+## DC-residual fix attempted (reverted)
+
+Zeroing the I16 DC residual in `compute_i16_full` when `cbp_luma==0`
+and `subme>=6` (so internal recon equals prediction): no bitstream
+metric change, MB0's MB type shifted from I16 to I4, and an ungated
+version regressed c004 recon 0 -> 662. Reverted. So the 128-vs-16
+reconstruction difference is real but its cause is not simply an
+uncoded DC residual — the MB-type decision and recon are coupled.
+
 ## ROOT CAUSE FOUND: MB0 internal reconstruction mismatch (this turn)
 
 Dumped MB0's I16 prediction and reconstruction in the oracle:
