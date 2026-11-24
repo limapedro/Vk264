@@ -105,6 +105,18 @@ No code change is associated with this report; it is the tracked
 baseline for further work.
 
 
+## Coefficient-level confirmation (this turn)
+
+For IDR MB1 block 2 (x264 slow):
+```
+x264:   mode=5  coeffs 1,-2,1,1,-2,1,-1,1,-1,0,...  (9 nonzero)
+oracle: mode=4  coeffs 1,0,0,0,-1,0,...             (2 nonzero)
+```
+Per-MB QP is 25 for both encoders on all MBs, so the nnz difference
+is entirely due to the prediction mode selected. x264's RD picks a
+diagonal/vertical mode with richer residual; the oracle's SATD-based
+decision picks a mode with a much flatter residual.
+
 ## Exact rd_cost_i4x4 attempted (reverted)
 
 Implemented the full x264 `rd_cost_i4x4` for subme>=6: trial encode,
