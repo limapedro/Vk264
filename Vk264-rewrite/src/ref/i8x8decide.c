@@ -1,3 +1,4 @@
+#include <stdio.h>
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "i8x8decide.h"
 
@@ -257,11 +258,24 @@ static void i8_pred_edge(uint8_t out[64], int m, const uint8_t e[36])
             int d=x+(y>>1); out[y*8+x]=(uint8_t)i8_F2(ET(d),ET(d+1),ET(d+2));
         }
         break;
-    case 8:
+    case 8: {
+        /* x264 predict_8x8_hu_c: packed F1/F2 pairs of the left edge. */
+        int q[16];
+        q[ 0]=i8_F1(EL(0),EL(1));   q[ 1]=i8_F2(EL(0),EL(1),EL(2));
+        q[ 2]=i8_F1(EL(1),EL(2));   q[ 3]=i8_F2(EL(1),EL(2),EL(3));
+        q[ 4]=i8_F1(EL(2),EL(3));   q[ 5]=i8_F2(EL(2),EL(3),EL(4));
+        q[ 6]=i8_F1(EL(3),EL(4));   q[ 7]=i8_F2(EL(3),EL(4),EL(5));
+        q[ 8]=i8_F1(EL(4),EL(5));   q[ 9]=i8_F2(EL(4),EL(5),EL(6));
+        q[10]=i8_F1(EL(5),EL(6));   q[11]=i8_F2(EL(5),EL(6),EL(7));
+        q[12]=i8_F1(EL(6),EL(7));   q[13]=i8_F2(EL(6),EL(7),EL(7));
+        q[14]=EL(7);                q[15]=EL(7);
         for(int y=0;y<8;++y) for(int x=0;x<8;++x){
-            int d=y+(x>>1); out[y*8+x]=(uint8_t)(d<8?EL(d):EL(7));
+            int idx=2*y+x;
+            if(idx>15) idx=14+((idx-14)&1);
+            out[y*8+x]=(uint8_t)q[idx];
         }
         break;
+    }
     default:
         for(int i=0;i<64;++i) out[i]=128;
         break;
