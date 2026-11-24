@@ -143,6 +143,21 @@ That pattern is consistent with x264's psy-RD (active subme>=6)
 modifying the encoder's quantised coefficients to preserve source
 texture. No CBP-only change can reproduce it; reverted.
 
+## CORRECTION: coefficient "divergence" was a dump-order artifact
+
+Dumping x264's raw DCT input at the final-write point showed it is
+IDENTICAL to the oracle's for MB1 block0:
+`10,40,52,51,-2,21,50,49,0,1,35,50,1,-4,25,53`.
+Both DCT implementations and both QUANT_ONE macros are identical too.
+The apparent coefficient mismatch was an ordering artifact: x264's
+`cabac_block_residual_internal` receives ZIGZAG-ordered coefficients,
+while the oracle's `i4q[][]` is stored in traversal order. Applying the
+zigzag scan `{0,4,1,2,5,8,...}` to the oracle's
+`[10,3,0,0,-7,1,...]` gives `[10,-7,3,0,1,...]` — matching x264.
+So the stage-04 "residual path divergence" claims are largely
+retracted; the genuine remaining difference is elsewhere. All earlier
+coefficient-comparison notes are superseded by this correction.
+
 ## FINAL-WRITTEN coefficient confirmation (this turn)
 
 Hooked x264's `cabac_block_residual_internal` (the actual bitstream
