@@ -330,3 +330,19 @@ All gates green (29/29, 65/65, CAVLC 1360/1360, MP4 56/56), audit
 mismatches: frame 5 (x264 P, oracle B) and frame 8 (x264 B, oracle P),
 both nb=0 two-frame comparisons decided in different x264 lookahead
 passes.
+
+
+### Stage 03 experiments ruled out this turn (all reverted)
+
+- Wiring the pre-existing MB-validated `vk_lowres_me_exact` into the
+  P-cost path: 13/16 -> 9/16 (its returned cost omits the search's
+  BITS_MVD accounting, so path totals rose).
+- Multi-candidate ME seeding (x264 me.c:293-312): 14/16 -> 12/16 both
+  with and without the BITS_MVD fix — the oracle's single-pass state
+  cannot absorb x264's candidate-seeded predictors.
+- Persistent `st->mv` cache as spatial predictor: no cost change at j=2.
+- Temporal MV predictor and unconditional zero-MV candidate (earlier):
+  13/16 -> 12/16 each.
+These confirm that only the final-cost BITS_MVD term was safe to port
+in isolation; the ME seeding/MV-cache work requires the full stateful
+rewrite and remains out of scope for incremental changes.
