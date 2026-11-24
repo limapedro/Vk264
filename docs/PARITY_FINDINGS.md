@@ -143,6 +143,15 @@ That pattern is consistent with x264's psy-RD (active subme>=6)
 modifying the encoder's quantised coefficients to preserve source
 texture. No CBP-only change can reproduce it; reverted.
 
+## SATD mode-decision metric tested (reverted)
+
+x264 `mbcmp_init` (encoder.c:1411) uses SATD for mode decision when
+`subpel_refine > 1`, SAD otherwise — the oracle always used SAD. I
+gated I16 mode selection to SATD for subme>1: no bitstream metric
+changed and c004 recon stayed exact. Reverted. So MB2/3's I16 mode
+difference (oracle 4 vs x264 1) is not explained by the SAD/SATD
+metric alone.
+
 ## DEFINITIVE final-written MB syntax comparison (this turn)
 
 Hooked x264's `cabac_mb_header_i` (the actual bitstream writer) and
