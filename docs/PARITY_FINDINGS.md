@@ -105,6 +105,35 @@ No code change is associated with this report; it is the tracked
 baseline for further work.
 
 
+## Addendum: ROOT CAUSE of the byte-5 IDR divergence (this turn)
+
+Correctly placed dumps (at the END of `x264_macroblock_encode`,
+`build/dump_final_modes.py`) show:
+
+```
+x264 superfast  FINAL MB0: type=0 (I_4x4)
+                pred=11,9,10,2,9,9,2,2,10,2,10,2,2,2,2,2
+                nnz =1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+
+x264 slow       FINAL MB0: type=2 (I_16x16), all nnz=0
+  (the 11,11,11,11,... pattern seen earlier was only an I8x8 trial)
+```
+
+Oracle MB0 decision dump (`build/dump_oracle_mbtype2.py`):
+
+```
+superfast: i16_cost=28682  i8_cost=7294  i4_cost=2194  -> I4
+slow:      i16_cost=28682  i8_cost=7294  i4_cost=2194  -> I4
+```
+
+So the oracle picks I4 for both presets, matching superfast but not
+slow. The subme>=6 difference is **MB-type selection**, not I4 mode
+refinement — all the earlier RD-I4 work targeted the wrong primitive.
+x264's `intra_rd()` (analyse.c:982-1014) recomputes I16/I4/I8 costs via
+`rd_cost_mb` (reconstructed SSD + CABAC bits + psy term); the oracle
+uses SATD-based costs and never applies that MB-level RD pass. This is
+the single highest-value missing primitive for subme>=6 presets.
+
 ## Addendum: psy-RD + RD I4 attempted (reverted)
 
 Added the psy-RD cost term from x264 `rdo.c:123-148` (`satd4(fdec) -
