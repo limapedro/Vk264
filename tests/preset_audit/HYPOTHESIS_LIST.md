@@ -451,3 +451,24 @@ x264 MVs (-48,0), (-52,-10), (-52,0) spel with costs
 fullpel with costs 32/790/33/634. The ME searches settle in
 different local minima — not a cost-scaling or bias issue.
 All changes reverted; tree stays 14/16 @ 0ad2833.
+
+
+### Final combination matrix (this turn, all reverted)
+
+| MVD-relative cost | anchor forcing | 8-neighbour DIA | slicetype |
+|---|---|---|---|
+| no | no | no | **14/16** {5,8} |
+| no | yes | no | 14/16 {8,9} |
+| yes | no | no | 13/16 |
+| yes | yes | no | 13/16 |
+| no | yes | yes | 12/16 |
+
+Read x264 `me.c:195-341` end-to-end: DIA is radius-1 with early exit
+when no neighbour improves (`bcost&15 == 0`), exactly as the oracle
+implements; the search range `[-bx-12, dw-8-bx+12]` I used matches
+`mv_limit_fpel` (`slicetype.c:552-560`) exactly. So the remaining
+frame-8 gap is not a search-geometry or cost-formula error: x264's
+MV (-48/-52 spel) is supplied by cached per-frame state from an
+earlier lookahead pass, which the oracle has no equivalent of.
+
+Durable state unchanged: 14/16 @ a827816, all gates green.
