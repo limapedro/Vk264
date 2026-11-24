@@ -428,3 +428,26 @@ Both variants were tested:
 So even the correctly MVP-relative MV cost cannot be ported in
 isolation: it interacts with the search's candidate set and the
 cached predictor state. All reverted; tree stays 14/16 @ f1edb0d.
+
+
+### Stage 03: anchor forcing isolated (this turn)
+
+Implemented x264's window-anchor behaviour as a post-pass: force a
+B frame to P when, in a snapshot of the original b-adapt decisions, it
+is preceded by two consecutive P frames. Effect:
+
+- baseline 14/16, mismatches {5, 8};
+- with non-iterative anchor forcing 14/16, mismatches {8, 9}
+  (frame 5 fixed, frame 9 now forced P because frame 8 is wrongly P).
+- applying x264 candidate seeding on top: 12/16.
+
+Therefore: **anchor forcing alone fixes frame 5; fixing frame 8's
+P9(ref7) cost would make frame 9 stay B and yield 16/16.** The two
+remaining defects are independent and both now isolated.
+
+`build/dump_p9_detail2.py` per-MB dump for P9(ref7):
+x264 MVs (-48,0), (-52,-10), (-52,0) spel with costs
+22/635/16/1468; oracle MVs (-8,4), (-10,4), (-8,13), (-11,1)
+fullpel with costs 32/790/33/634. The ME searches settle in
+different local minima — not a cost-scaling or bias issue.
+All changes reverted; tree stays 14/16 @ 0ad2833.
