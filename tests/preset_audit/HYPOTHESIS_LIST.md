@@ -181,6 +181,13 @@ highly variable data. The oracle substitutes 128 for unavailable
 top neighbours. This is why the I8 cost/SAD inputs diverge on
 textured content but happen to agree on flat c004.
 Any fix must reproduce x264's FDEC top-padding content for top-row
-MBs rather than substituting 128. Not yet implemented.
+MBs rather than substituting 128.
+
+**Tested (negative result):** the padding values are identical for
+c004 and c064 (`135,69,89,65,180,5,90,65`), i.e. a stable initial
+`intra_border_backup` allocation state, not content. Initialising the
+oracle's unavailable top samples with that pattern changed neither
+recon (c064 2209, c004 0) nor NAL2 pairs (3/20). So the padding is
+NOT the driver; the divergence is elsewhere. Reverted.
 
 ### H3/H4/H6 — not yet tested
