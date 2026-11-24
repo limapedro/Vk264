@@ -139,4 +139,28 @@ still does not decode and the audit stays 12/120 — the IDR NAL2 is
 substantially wrong for multi-ref presets. Changes reverted; the
 header bug is documented for the CAVLC rewrite.
 
+### H1 update — c064 MB2 residual quantified
+Dumped writer-pass I8 coefficients for c064 MB2 (x264) and the
+oracle's `i8q[4][64]`:
+```
+x264 q0=[0,0,0,0,-1,0...] q1=[-1,0,0,0,-1,0...]
+      q2=[1,0,-1,0...]    q3=[-2,1,0,0...]
+orcl q0=[0,-1,0,0...]     q1=[-3,2,0,0...]
+      q2=[0,0,0,0,0,0,0,0,1,0...] q3=[-1,1,0,0,0,0,0,0,2,0...]
+```
+Differences are small (one or two levels) but change which
+coefficient is nonzero, so reconstructed pixels differ by a few LSB
+and cascade. This is quant/rounding sensitivity to slightly different
+predictions, not a syntax bug.
+
+### H2 update — full 9-mode search tested and reverted
+Replaced the oracle's I8 x3+shortcut with an all-9-mode search
+(matching x264 x9 breadth). Result: c064 recon 2209 -> 2265 (worse),
+c004 stayed 0, audit 12/120, NAL2 3/20. Reverted. The mode choice
+difference is therefore in the *edge/cost inputs*, not the candidate
+set. A per-call decision dump showed
+`satd=[52,56,26], pred8=0, lambda=6 -> bm=2, cost=38`: DC genuinely
+wins in the oracle's cost model for that block, so matching x264
+requires matching the edge samples feeding SAD, not the search.
+
 ### H3/H4/H6 — not yet tested
