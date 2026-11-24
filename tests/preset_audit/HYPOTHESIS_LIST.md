@@ -306,3 +306,27 @@ the weighted blend changed j=2 cb from 749 to 732 (toward x264's
 521) but did not flip the decision, and slicetype stayed 13/16.
 Reverted. The remaining B-cost gap is in the lowres ME itself, not
 the averaging weight.
+
+
+## Stage 03: BITS_MVD final-cost term found and fixed (this turn)
+
+Dumped x264's b-adapt fast decisions (`build/dump_badapt_x264.py`) and
+verified the path-cost decomposition exactly: x264 j=2
+cp = frame(0,2,2)=302 + frame(0,2,1)=169 + frame(2,3,3)=168 = 639;
+oracle before cp = 275 + 95 + 248 = 618. Also dumped per-MB lowres
+planes from both encoders (`build/dump_lowres_compare.py`) — byte-identical
+(0/1024 diff on frames 0 and 1), so lowres generation is correct.
+
+Root cause: `x264_me_search` includes `BITS_MVD(mv)` in `m.cost`, and
+`slicetype.c:695-697` only subtracts `p_cost_mv[0]` and adds `5*lambda`.
+The oracle subtracted `mv_cost(0)` but never added `BITS_MVD(mv)`, so
+every inter-MB cost was missing the MV-rate term. Added
+`mv_cost(2*smx)+mv_cost(2*smy)` to both `vk_lowres_p_cost_mb` and the
+list0/list1 costs in `vk_lowres_b_cost` (halfpel -> spel conversion).
+
+Result: compare_slicetype **13/16 -> 14/16**; frame 2 now correctly B.
+All gates green (29/29, 65/65, CAVLC 1360/1360, MP4 56/56), audit
+12/120, NAL2 3/20, c004 recon 0/4096, no regression. Remaining
+mismatches: frame 5 (x264 P, oracle B) and frame 8 (x264 B, oracle P),
+both nb=0 two-frame comparisons decided in different x264 lookahead
+passes.
