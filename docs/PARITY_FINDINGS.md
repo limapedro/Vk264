@@ -143,6 +143,20 @@ That pattern is consistent with x264's psy-RD (active subme>=6)
 modifying the encoder's quantised coefficients to preserve source
 texture. No CBP-only change can reproduce it; reverted.
 
+## FINAL-WRITTEN coefficient confirmation (this turn)
+
+Hooked x264's `cabac_block_residual_internal` (the actual bitstream
+writer, not an RD trial) for MB1 and captured:
+```
+x264 final MB1 block0: 10,-7,3,0,1,0,0,-2,1,0,...  cbp=13
+oracle (x264 modes forced): 10,3,0,0,-7,1,0,0,0,-2,0,...  cbp=7
+```
+Both are traversal-order quantised coefficients, so this is an
+apples-to-apples comparison: the counts differ (6 vs 5 nonzero) and
+several positions differ. The earlier RD-trial dumps pointed the same
+way. This definitively places the byte-11 divergence in the
+prediction-sample/DCT-quant path, independent of mode selection.
+
 ## Forced-exact-modes experiment (this turn)
 
 Forced the oracle to use x264's exact MB1 mode array
