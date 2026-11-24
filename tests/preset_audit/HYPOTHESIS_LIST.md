@@ -275,6 +275,14 @@ Checked the cost structure against x264 `slicetype.c:516-758`:
 So the remaining 228-point B-cost gap (732 vs 521) is in ME search
 quality / MV caching, not the cost formula.
 
+**Source fix landed:** `me_search_pred` (used by both P and B lowres
+cost) searched on raw SAD only, while x264's `x264_me_search_ref`
+minimises `SAD + mv_cost(mvx) + mv_cost(mvy)`. Added `mv_cost()` to
+both the seed and the diamond steps. j=2 costs moved cp 659 -> 618
+(x264 639) and cb 749 -> 637 (x264 521); slicetype stays 13/16 with
+no gate/metric regression. Adding x264's temporal MV predictor from
+the future ref regressed slicetype to 12/16 and was reverted.
+
 **Tested (partial):** x264's bipred average uses a weighted blend
 `w = 64 - (dsf>>2)`; the oracle used a fixed 50/50 average. Porting
 the weighted blend changed j=2 cb from 749 to 732 (toward x264's
