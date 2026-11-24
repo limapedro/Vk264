@@ -48,7 +48,7 @@
 | 042 | warzone2020 | 30 | ultrafast | cabac | BYTE-EXACT | 39.31 | 39.31 | 0 |
 | 043 | warzone2020 | 30 | superfast | cavlc | NAL COUNT 34/32 | 28.17 | 21.09 | 0 |
 | 044 | warzone2020 | 30 | superfast | cabac | NAL COUNT 34/32 | 28.17 | 18.65 | 0 |
-| 045 | warzone2020 | 30 | veryfast | cavlc | NAL COUNT 36/32 | 28.06 | 21.04 | 0 |
+| 045 | warzone2020 | 30 | veryfast | cavlc | NAL COUNT 36/32 | 28.06 | 21.09 | 0 |
 | 046 | warzone2020 | 30 | veryfast | cabac | NAL COUNT 36/32 | 28.06 | 18.65 | 0 |
 | 047 | warzone2020 | 30 | faster | cavlc | NAL COUNT 36/32 | 28.06 | 20.6 | 0 |
 | 048 | warzone2020 | 30 | faster | cabac | NAL COUNT 36/32 | 28.06 | 21.18 | 0 |
@@ -87,40 +87,40 @@
 | 081 | forza | 8 | ultrafast | cavlc | BYTE-EXACT | 41.55 | 41.55 | 0 |
 | 082 | forza | 8 | ultrafast | cabac | BYTE-EXACT | 41.55 | 41.55 | 0 |
 | 083 | forza | 8 | superfast | cavlc | NAL COUNT 12/10 | 25.37 | 27.17 | 0 |
-| 084 | forza | 8 | superfast | cabac | NAL COUNT 12/10 | 25.37 | 14.94 | 0 |
+| 084 | forza | 8 | superfast | cabac | NAL COUNT 12/10 | 25.37 | 14.97 | 0 |
 | 085 | forza | 8 | veryfast | cavlc | NAL2 byte4 | 24.36 | 27.17 | 0 |
-| 086 | forza | 8 | veryfast | cabac | NAL2 byte6 | 24.36 | 14.94 | 0 |
+| 086 | forza | 8 | veryfast | cabac | NAL2 byte6 | 24.36 | 14.97 | 0 |
 | 087 | forza | 8 | faster | cavlc | NAL2 byte4 | 24.34 | 26.88 | 0 |
 | 088 | forza | 8 | faster | cabac | NAL2 byte6 | 24.33 | 14.97 | 0 |
 | 089 | forza | 8 | fast | cavlc | NAL2 byte4 | 24.33 | 27.09 | 0 |
 | 090 | forza | 8 | fast | cabac | NAL2 byte5 | 24.32 | 14.97 | 0 |
 | 091 | forza | 8 | medium | cavlc | NAL2 byte4 | 24.32 | 27.16 | 0 |
-| 092 | forza | 8 | medium | cabac | NAL2 byte5 | 24.32 | 14.96 | 0 |
+| 092 | forza | 8 | medium | cabac | NAL2 byte5 | 24.32 | 14.97 | 0 |
 | 093 | forza | 8 | slow | cavlc | NAL2 byte4 | 24.33 | 27.16 | 0 |
 | 094 | forza | 8 | slow | cabac | NAL2 byte5 | 24.32 | 14.97 | 0 |
 | 095 | forza | 8 | slower | cavlc | NAL2 byte4 | 24.99 | 27.16 | 0 |
 | 096 | forza | 8 | slower | cabac | NAL2 byte5 | 25.02 | 14.97 | 0 |
 | 097 | forza | 8 | veryslow | cavlc | NAL2 byte5 | 24.88 | - | - |
-| 098 | forza | 8 | veryslow | cabac | NAL2 byte6 | 24.86 | 14.97 | 0 |
+| 098 | forza | 8 | veryslow | cabac | NAL2 byte6 | 24.86 | 14.96 | 0 |
 | 099 | forza | 8 | placebo | cavlc | NAL2 byte5 | 24.87 | 4.53 | 320 |
-| 100 | forza | 8 | placebo | cabac | NAL2 byte6 | 24.84 | 14.97 | 0 |
+| 100 | forza | 8 | placebo | cabac | NAL2 byte6 | 24.84 | 14.96 | 0 |
 | 101 | forza | 30 | ultrafast | cavlc | BYTE-EXACT | 42.07 | 42.07 | 0 |
 | 102 | forza | 30 | ultrafast | cabac | BYTE-EXACT | 42.07 | 42.07 | 0 |
-| 103 | forza | 30 | superfast | cavlc | NAL COUNT 40/32 | 31.08 | 21.45 | 0 |
-| 104 | forza | 30 | superfast | cabac | NAL COUNT 40/32 | 31.08 | 14.68 | 0 |
+| 103 | forza | 30 | superfast | cavlc | NAL COUNT 40/32 | 31.08 | 23.24 | 0 |
+| 104 | forza | 30 | superfast | cabac | NAL COUNT 40/32 | 31.08 | 14.74 | 0 |
 | 105 | forza | 30 | veryfast | cavlc | NAL COUNT 34/32 | 25.5 | 23.24 | 0 |
-| 106 | forza | 30 | veryfast | cabac | NAL COUNT 34/32 | 25.49 | 14.68 | 0 |
+| 106 | forza | 30 | veryfast | cabac | NAL COUNT 34/32 | 25.49 | 14.74 | 0 |
 | 107 | forza | 30 | faster | cavlc | NAL COUNT 34/32 | 25.48 | 24.79 | 0 |
 | 108 | forza | 30 | faster | cabac | NAL COUNT 34/32 | 25.46 | 14.72 | 0 |
-| 109 | forza | 30 | fast | cavlc | NAL COUNT 34/32 | 25.48 | 24.87 | 0 |
+| 109 | forza | 30 | fast | cavlc | NAL COUNT 34/32 | 25.48 | 24.88 | 0 |
 | 110 | forza | 30 | fast | cabac | NAL COUNT 34/32 | 25.48 | 14.72 | 0 |
 | 111 | forza | 30 | medium | cavlc | NAL COUNT 34/32 | 25.48 | 24.87 | 0 |
-| 112 | forza | 30 | medium | cabac | NAL COUNT 34/32 | 25.47 | 14.68 | 0 |
+| 112 | forza | 30 | medium | cabac | NAL COUNT 34/32 | 25.47 | 14.7 | 0 |
 | 113 | forza | 30 | slow | cavlc | NAL COUNT 34/32 | 25.47 | 24.87 | 0 |
-| 114 | forza | 30 | slow | cabac | NAL COUNT 34/32 | 25.46 | 14.8 | 0 |
+| 114 | forza | 30 | slow | cabac | NAL COUNT 34/32 | 25.46 | 14.71 | 0 |
 | 115 | forza | 30 | slower | cavlc | NAL2 byte4 | 32.03 | 24.87 | 0 |
-| 116 | forza | 30 | slower | cabac | NAL2 byte5 | 32.07 | 14.81 | 0 |
+| 116 | forza | 30 | slower | cabac | NAL2 byte5 | 32.07 | 14.77 | 0 |
 | 117 | forza | 30 | veryslow | cavlc | NAL2 byte5 | 27.0 | - | - |
-| 118 | forza | 30 | veryslow | cabac | NAL2 byte6 | 26.99 | 14.81 | 0 |
+| 118 | forza | 30 | veryslow | cabac | NAL2 byte6 | 26.99 | 14.83 | 0 |
 | 119 | forza | 30 | placebo | cavlc | NAL2 byte5 | 27.02 | 4.06 | 1600 |
-| 120 | forza | 30 | placebo | cabac | NAL2 byte6 | 27.0 | 14.81 | 0 |
+| 120 | forza | 30 | placebo | cabac | NAL2 byte6 | 27.0 | 14.83 | 0 |
