@@ -143,6 +143,16 @@ That pattern is consistent with x264's psy-RD (active subme>=6)
 modifying the encoder's quantised coefficients to preserve source
 texture. No CBP-only change can reproduce it; reverted.
 
+## Forced-exact-modes experiment (this turn)
+
+Forced the oracle to use x264's exact MB1 mode array
+`9,9,5,5,9,9,2,2,2,5,2,5,2,2,5,2` under subme>=6. Its block-0
+coefficients became `10,3,0,0,-7,1,0,0,0,-2,0,...` (5 nonzero)
+versus x264's `10,-7,3,0,1,0,0,-2,1,0,...` (6 nonzero), cbp still 7.
+So even with identical prediction modes, the residual coefficients
+differ — the gap is in the prediction samples / DCT-quant path, not
+mode selection alone. Reverted; no metric change.
+
 ## Definitive x264 MB1 I4 modes/coefficients (this turn)
 
 Hooked x264's final MB1 encode (cbp=15 at encode, 13 at write):
