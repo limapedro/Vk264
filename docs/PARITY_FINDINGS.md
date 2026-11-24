@@ -143,6 +143,27 @@ That pattern is consistent with x264's psy-RD (active subme>=6)
 modifying the encoder's quantised coefficients to preserve source
 texture. No CBP-only change can reproduce it; reverted.
 
+## CABAC bin-level trace (this turn)
+
+Added matching bin traces to both encoders' CABAC decision functions
+and diffed the final-written bin sequences:
+
+- bins 0–28 are **identical** (MB0 header + residual + MB1 start)
+- first mismatch: **bin 29** (ctx 69) = MB1 block2's prediction-mode
+  bin — x264 encodes mode 5, oracle mode 4
+- forcing modes 2, 8, 11 to x264's values moved the mismatch to bin 40,
+  then 47, then 56
+- with all four differing modes forced to x264's exact MB1 array
+  `9,9,5,5,9,9,2,2,2,5,2,5,2,2,5,2`, the modes match but **bin 56**
+  still differs: x264 ctx68=1, oracle ctx68=0
+
+Bin 56 is block15's pred-mode bin. Since both modes are 2 there, the
+difference is in the **pred-mode derivation** from neighbour modes —
+the oracle's `i4_pred` (`cabac_enc.c:128`) computes the min of neighbour
+modes without x264's `x264_mb_pred_mode4x4_fix` normalization. This is
+the precise next primitive to align, and it explains why forcing modes
+never moved the bitstream metric.
+
 ## CORRECTION: coefficient "divergence" was a dump-order artifact
 
 Dumping x264's raw DCT input at the final-write point showed it is
