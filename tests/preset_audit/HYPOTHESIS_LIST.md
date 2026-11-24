@@ -488,3 +488,25 @@ So cross-pass cost caching does change decisions (frame 9 flips to B)
 but still cannot fix frame 8's P9(ref7) cost. Frame 8 remains the sole
 blocking defect: with it corrected, anchor forcing + cached costs
 would give 16/16. All changes reverted; baseline 14/16 @ b5f1d5f.
+
+
+### Coupled B->P MV state port tested (this turn, reverted)
+
+Implemented the actual coupling: `vk_lowres_b_cost` now receives the
+current frame's `vk_lowres_mv_t` and writes its per-list MVs into
+distance-keyed `l0mv/l1mv` arrays; `vk_lowres_p_cost_mb` reads those
+cached MVs as an additional spatial predictor candidate (with a
+distance global). Combined with the verified anchor-forcing post-pass:
+
+- coupled cache alone: 14/16 (unchanged);
+- + anchor forcing: 14/16, mismatches {8,9}.
+
+So even a correctly coupled MV cache cannot fix frame 8. The deciding
+factor is **when** the cache is populated: x264's frame-9 MVs come from
+analyses performed in earlier encoder-driven lookahead passes, which
+occur before P9(ref7) is evaluated; a single oracle pass evaluates
+P9(ref7) first. This is the final, definitive scope finding.
+
+Also verified `build/dump_lowres79.py`: lowres planes for frames 7 and 9
+are byte-identical between x264 and the oracle (0/1024 diff each),
+ruling out any input-data cause. Baseline stays 14/16 @ 95333ac.
