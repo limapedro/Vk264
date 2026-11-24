@@ -512,6 +512,16 @@ are byte-identical between x264 and the oracle (0/1024 diff each),
 ruling out any input-data cause. Baseline stays 14/16 @ 95333ac.
 
 
+## PARITY_PLAN E9/E10: I4 RD trial-encode cost attempted (reverted)
+
+Implemented `i4_rd_cost` (trial DCT + quant + dequant + IDCT,
+reconstructed SSD, approximate pred/CBF/coefficient bit cost) in the
+subme>=6 full-enumeration branch. No metric change (first-diff 11/12,
+audit 12/120), gates green. Reverted. This is the third RD formulation
+that fails to reproduce x264's final I4 modes; the remaining difference
+is in the exact RD cost inputs (psy-weighted SATD cache + exact f8
+CABAC bits from live contexts), not the trial-encode structure itself.
+
 ## PARITY_PLAN E15: I4 SATD metric attempted (reverted)
 
 Implemented a correct 4x4 SATD (2D Hadamard, sum|coeff|>>1) and gated
