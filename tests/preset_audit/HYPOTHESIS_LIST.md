@@ -557,3 +557,21 @@ Tried: x264's filtered top edge for the V predictor (mode 0 cost
 101->85, still >57) and SA8D for mode 0 (124, worse). Filtering the
 whole non-gated path: c064 2209->2271. All reverted; c004 stays
 byte-exact and slicetype stays 16/16 @ db3c166.
+
+
+## Bitstream first-divergence diagnosis (this turn)
+
+`build/dump_naldiff.py` on exp004 (superfast CABAC, 2f small64):
+NAL0 (SPS), NAL1 (PPS), NAL2 (IDR slice) are all **byte-identical**
+(lengths 23/4/130). Only NAL3 (P slice) diverges: lengths 61/53,
+first differing byte 7.
+
+`build/find_first_bitdiff.py` localised it to **bit 49** of the slice
+RBSP. `build/parse_sps_pslice.py` decoded the slice header from both
+streams: first_mb=0, slice_type=5 (P), pps_id=0, frame_num=1,
+poc_lsb=0, luma_log2_weight_denom=16, ref0 offset=0/weight=-7 — all
+identical. The common bit prefix extends to ~bit 48, so the divergence
+begins in the first macroblock's CABAC decision data, not in any slice
+header syntax element. This points to a P-slice MB mode/decision
+mismatch (consistent with the earlier "fourth pred-mode/input"
+finding) rather than a header or context-initialisation bug.
