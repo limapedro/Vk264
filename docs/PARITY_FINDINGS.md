@@ -121,17 +121,26 @@ there is no "two-phase" requirement. The failure of those attempts
 must lie in the RD cost details (fenc SATD cache, psy scaling, or
 coefficient handling), not the CABAC state timing.
 
-## Coefficient-level confirmation (this turn)
+## Coefficient-level finding — CORRECTED (this turn)
 
 For IDR MB1 block 2 (x264 slow):
 ```
 x264:   mode=5  coeffs 1,-2,1,1,-2,1,-1,1,-1,0,...  (9 nonzero)
 oracle: mode=4  coeffs 1,0,0,0,-1,0,...             (2 nonzero)
 ```
-Per-MB QP is 25 for both encoders on all MBs, so the nnz difference
-is entirely due to the prediction mode selected. x264's RD picks a
-diagonal/vertical mode with richer residual; the oracle's SATD-based
-decision picks a mode with a much flatter residual.
+Per-MB QP is 25 for both encoders on all MBs. I then **forced the
+oracle to use mode 5** (`build/test_forced_mode.py`) and dumped its
+coefficients again:
+```
+oracle forced mode5: 0,0,0,0,1,0,...   (1 nonzero)
+x264 mode5:          1,-2,1,1,-2,1,-1,1,-1,0,...  (9 nonzero)
+```
+So the residual differs even with identical mode numbers. My earlier
+claim that the nnz gap was "entirely mode-driven" was wrong: the
+prediction samples (left/top neighbour reconstructions) or the DCT /
+quantisation path must differ. Mode numbering itself was verified
+identical (x264 predict.h:5=VR, oracle i4x4.c:5=VR). This explains why
+every mode-selection-only RD port failed.
 
 ## Exact rd_cost_i4x4 attempted (reverted)
 
