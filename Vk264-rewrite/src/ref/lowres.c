@@ -192,10 +192,15 @@ int vk_lowres_p_cost_mb(const uint8_t *cur,const uint8_t *ref,int dw,int dh,
         int hx=0,hy=0;
         int hbest=hpel_best_offset(cur,dw,bx,by,ref,dw,dh,mxv,myv,&hx,&hy);
         if(hbest>=0x7fffffff) hbest=satd8(cur,dw,bx,by,ref,dw,bx+mxv,by+myv);
+        /* x264 slicetype.c:695-697: m.cost already includes BITS_MVD(mv)
+         * from x264_me_search; subtract p_cost_mv[0], add 5*lambda if mv!=0.
+         * The oracle previously omitted the BITS_MVD(mv) term entirely. */
+        int smx=2*mxv+hx, smy=2*myv+hy;   /* halfpel units, as st->mv */
+        hbest += mv_cost(2*smx)+mv_cost(2*smy);
         hbest -= mv_cost(0);
         if(mxv||myv) hbest += 5*LAMBDA;
         if(st && mb<VK_LOWRES_MAX_MBS){
-            st->mv[mb][0]=2*mxv+hx; st->mv[mb][1]=2*myv+hy;
+            st->mv[mb][0]=smx; st->mv[mb][1]=smy;
         }
         mvs[mb][0]=mxv; mvs[mb][1]=myv;
         if(nbx>2&&nby>2&&mx>0&&mx<nbx-1&&my>0&&my<nby-1)
@@ -272,10 +277,14 @@ int vk_lowres_b_cost(const uint8_t *cur,const uint8_t *r0,const uint8_t *r1,
             mv[l][mb][0]=mxv; mv[l][mb][1]=myv;
         }
         /* list0 / list1 single-prediction costs at the MVs' own hpel plane */
+        /* x264 slicetype.c:695-697: m.cost includes BITS_MVD(mv) from the
+         * ME search; subtract p_cost_mv[0], add 5*lambda when mv != 0. */
         int c0=sad_hpel(cur,dw,bx,by,r0,dw,dh,mv[0][mb][0]>>1,mv[0][mb][1]>>1,
                         mv[0][mb][0]&1,mv[0][mb][1]&1)+LOWRES_PENALTY;
         int c1=sad_hpel(cur,dw,bx,by,r1,dw,dh,mv[1][mb][0]>>1,mv[1][mb][1]>>1,
                         mv[1][mb][0]&1,mv[1][mb][1]&1)+LOWRES_PENALTY;
+        c0+=mv_cost(2*mv[0][mb][0])+mv_cost(2*mv[0][mb][1])-mv_cost(0);
+        c1+=mv_cost(2*mv[1][mb][0])+mv_cost(2*mv[1][mb][1])-mv_cost(0);
         if(mv[0][mb][0]||mv[0][mb][1]) c0+=5*LAMBDA;
         if(mv[1][mb][0]||mv[1][mb][1]) c1+=5*LAMBDA;
         /* zero-MV bipred (penalty 0): hpel_idx=0 reads the base planes. */
