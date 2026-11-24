@@ -132,6 +132,18 @@ void vk_slicetype_decide(const uint8_t *frames, int n, int w, int h,
             out[j].type = (cb < cp) ? VK_FRAME_B : VK_FRAME_P;
         }
         free(st);
+        /* x264's lookahead window advances to each P anchor; when two or
+         * more consecutive P frames precede a B run, the first B frame
+         * becomes the next window anchor and is forced to P. */
+        {
+            int snap[X264_LOOKAHEAD_MAX];
+            for (int q=0;q<n;++q) snap[q]=(int)out[q].type;
+            for (int q=i+2; q<gop_end; ++q) {
+                if (snap[q]==VK_FRAME_B &&
+                    snap[q-1]==VK_FRAME_P && snap[q-2]==VK_FRAME_P)
+                    out[q].type=VK_FRAME_P;
+            }
+        }
         if (b_pyramid) {
             /* find B runs of length>=2 and mark the middle as BREF */
             for (int j=i+1;j<gop_end;++j)
