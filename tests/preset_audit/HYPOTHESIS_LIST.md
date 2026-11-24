@@ -406,3 +406,25 @@ oracle modes [8,8,2,0] with costs [83,288,57,209]. idx0/idx1 match.
 The idx2 gap is consistent with x264's filtered top edge for the V
 predictor (x264 raw 51 for mode 0 vs oracle's raw-edge SAD), but
 changing that unilaterally risks the byte-exact c004 path.
+
+
+### Stage 03: MV cost is MVD-relative, not absolute (this turn)
+
+`x264_me_search_ref` (`me.c:211`) does
+`p_cost_mvx = m->p_cost_mv - m->mvp[0]`, so `BITS_MVD(mx,my)`
+(`me.c:60` = `p_cost_mv[mx*4]`) is measured **relative to the MVP**
+in spel units. The oracle's `dia_search`/`me_search_pred` used an
+absolute fullpel `mv_cost()` (first unscaled, then `mv_cost(4*mv)`).
+Both variants were tested:
+
+- absolute `mv_cost(4*mv)` alone: j=1 cp 837->834, j=5 cb
+  4680->4676, **14/16 unchanged**;
+- MVD-relative `mv_cost(4*mv - mvp_spel)` alone: j=1 cb 446->512
+  (closer to x264 471) but j=2 cb 741->862, **13/16**;
+- MVD-relative + border replication + extended range + candidate
+  seeding: j=1 cp=510/cb=500 (x264 527/471, nearly exact), j=8
+  correct B, but j=2 cp=745/cb=858 (x264 639/521), **10/16**.
+
+So even the correctly MVP-relative MV cost cannot be ported in
+isolation: it interacts with the search's candidate set and the
+cached predictor state. All reverted; tree stays 14/16 @ f1edb0d.
