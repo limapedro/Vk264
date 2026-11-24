@@ -201,6 +201,21 @@ byte10 classes: ultrafast (I16-only) is byte-exact, every other
 preset needs I4/I8 and has no normal-path emitter. Fix requires
 wiring the existing emitters to real `vk_i4x4_decide`/I8 decisions.
 
+**IDR CAVLC attempt:** wired real I4/I8 decisions into
+`encode_idr_cavlc` for all MBs with an I16 cost comparison. Type
+decisions and costs matched x264 exactly for MB0-3:
+```
+MB0 ctype=I4 ic16=28682 c4=2194
+MB1 ctype=I4 ic16=9576  c4=975
+MB2 ctype=I16 ic16=155  (x264 I16)
+MB3 ctype=I8 ic16=357  c8=186 (x264 I8)
+```
+NAL2 first-diff improved byte4 -> byte17, but NAL2 grew 210 -> 242
+bytes and decoded PSNR dropped 24.49 -> 11.5 dB: the CAVLC
+`vk_encode_i4x4_mb` / `vk_encode_i8x8_mb` emitters themselves emit
+wrong residual/nnz state. Reverted. Next prerequisite: fix those
+emitters, not the decision logic.
+
 **Attempted (negative result):** removed the P7 gate and wired
 `vk_i4x4_decide`/`vk_i8x8_decide_ex` into the normal CAVLC path,
 choosing min(I16,I4,I8) cost. Decisions fired (MB1: ca_type=1,
