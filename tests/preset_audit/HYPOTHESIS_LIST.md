@@ -381,3 +381,28 @@ This reconfirms the compensating-errors finding: the oracle's remaining
 P-cost deficits need a full stateful port (border-padded planes, x264's
 persistent per-frame MV cache and multi-pass framing) applied atomically;
 no isolated ME change is safe.
+
+
+### Final experiments this turn (all reverted; verified tree stays 14/16)
+
+- **MV-cost indexing scale:** x264 `BITS_MVD(mx,my) = p_cost_mv[mx*4]`
+  (`me.c:60`) indexes the table in spel units, while `dia_search` /
+  `me_search_pred` called `mv_cost()` with fullpel MVs. Changed to
+  `mv_cost(4*mv)`; j=1 cp 837->834, j=5 cb 4680->4676, no decision change.
+  Faithful but no parity gain, so left out to keep the verified state.
+- **`i_cost_est` cache:** added x264's per-frame
+  `i_cost_est[b-p0][p1-b]` cache (`slicetype.c:848`) to `vk_lowres_mv_t`.
+  No effect — x264's benefit comes from persistence across lookahead
+  passes, which a single oracle pass cannot reproduce.
+- **Stage 04 I8 metric:** x264 uses `sa8d()` for I8 mode decision
+  (`analyse.c:816`) while the oracle passes `use_satd=0` (plain SAD).
+  Switching to SA8D made c004 regress 0->534 and c064 2209->2271,
+  so it is not the right isolated change — c004's byte-exact I8 path
+  depends on the current SAD accounting.
+
+c064 MB2 I8 dump: x264 modes [8,8,0,7] with
+`i_satd_i8x8_dir[2]=[67,167,73,208,125,98,178,120,149]`;
+oracle modes [8,8,2,0] with costs [83,288,57,209]. idx0/idx1 match.
+The idx2 gap is consistent with x264's filtered top edge for the V
+predictor (x264 raw 51 for mode 0 vs oracle's raw-edge SAD), but
+changing that unilaterally risks the byte-exact c004 path.
