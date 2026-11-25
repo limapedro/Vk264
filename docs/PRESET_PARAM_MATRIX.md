@@ -68,7 +68,7 @@ as x264** for every preset. Current alignment (verified at `main @ 8f9112e`):
 | `rc.b_mb_tree` | 0/0/1... | not wired into lookahead | **PARTIAL** — plan item 14 |
 | `rc.i_lookahead` | 0/0/10/20/30/40/50/60/60/60 | single-pass | **MISSING** — plan item 14 |
 | `analyse.i_weighted_pred` | NONE/SIMPLE.../SMART | partial | **PARTIAL** — plan item 13 |
-| `analyse.i_psy_rd` | 1.0 fast+ | not implemented | **MISSING** — plan item 7 |
+| `analyse.i_psy_rd` | 1.0 fast+ | same (256 fast+, approximate SATD term, E49) | **ALIGNED (approximate)** — refine cached_satd |
 
 Rule: an ALIGNED parameter must not be disabled just because its current
 implementation is incomplete — the value must match x264, and the

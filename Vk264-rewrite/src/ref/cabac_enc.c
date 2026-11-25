@@ -16,6 +16,30 @@
 extern int vk_cur_subme;
 extern int vk_cur_trellis;
 extern int vk_cur_me_range;
+extern int vk_cur_psy_rd;
+
+/* x264 ssd_plane psy term (rdo.c:123-147): SATD relative to zero minus DC,
+ * compared between reconstructed and source blocks. */
+static int satd16_zeroref(const uint8_t *p, int stride)
+{
+    int total = 0;
+    static const uint8_t z[64] = {0};
+    for (int by = 0; by < 16; by += 8)
+        for (int bx = 0; bx < 16; bx += 8) {
+            uint8_t a[64];
+            for (int y = 0; y < 8; ++y)
+                memcpy(a+y*8, p+(by+y)*stride+bx, 8);
+            total += vk_satd8(a, z);
+        }
+    return total;
+}
+static int sad16_zeroref(const uint8_t *p, int stride)
+{
+    int s = 0;
+    for (int y = 0; y < 16; ++y)
+        for (int x = 0; x < 16; ++x) s += p[y*stride+x];
+    return s;
+}
 
 /* x264 mbcmp_init (encoder.c:1409): chroma mode decision uses SATD when
  * subme>1, SAD otherwise. vk_satd8 = four 4x4 SATDs. */
@@ -530,6 +554,18 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 for(int yy=0;yy<16;++yy) for(int xx=0;xx<16;++xx){
                     int d=frame[(my*16+yy)*w+mx*16+xx]-rdrecon[yy*16+xx];
                     ssd+=(uint64_t)d*d;
+                }
+                if (vk_cur_psy_rd) {
+                    /* x264 rdo.c:141-145 for size > 8x8 */
+                    uint8_t *fdec = rdrecon;
+                    const uint8_t *fenc = frame + (my*16)*w + mx*16;
+                    int dc = sad16_zeroref(fdec, 16) >> 1;
+                    int dsatd = satd16_zeroref(fdec, 16);
+                    int fsatd = satd16_zeroref(fenc, w);
+                    int satd = dsatd - dc - fsatd;
+                    if (satd < 0) satd = -satd;
+                    int64_t tmp = ((int64_t)satd * vk_cur_psy_rd * lambda + 128) >> 8;
+                    ssd += (uint64_t)(tmp > 0 ? tmp : 0);
                 }
                 int bits=6; /* mb_type + pred mode + chroma pred */
                 for(int b=0;b<16;++b) if(rdq[b]||rdacq[b][0]){
