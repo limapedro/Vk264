@@ -114,7 +114,7 @@ entropies × 6 clip/frame groups). Current baseline: **12/120 byte-exact**,
 |---|---|---|---:|---:|---|
 | **ultrafast** | subme 0, no B, no CABAC, no I4/I8, trellis 0 | **COMPLETE** — the oracle implements exactly this tier | EXACT | 12/12 | none |
 | **superfast** | subme 1, SAD mbcmp, 8x8dct on, refs 1 | CABAC byte-exact (IDR); CAVLC first-diff byte4→byte10/17 (E77) | EXACT (IDR) | 0/12 | CAVLC coefficient syntax (MB0 byte 10/17) |
-| **veryfast** | subme 2, SATD mbcmp, trellis 0, lookahead 10 | I16/I8/I4 analysis largely faithful; E74 SA8D + E79 exact SATD | **80** | 0/12 | MB11/MB15 type mismatch; later-MB coefficient syntax |
+| **veryfast** | subme 2, SATD mbcmp, trellis 0, lookahead 10 | I16/I8/I4 analysis largely faithful; E74 SA8D + E79 exact SATD | **84** | 0/12 | MB11/MB15 type mismatch; later-MB coefficient syntax |
 | **faster** | subme 4, trellis 1, refs 2 | I8/I4 decisions aligned; trellis primitive block-exact 17/17 but write-time integration regresses (E68–E70) | **30** | 0/12 | trellis-aware coefficient writing; write-time state timing |
 | **fast** | subme 6, trellis 1, psy-RD, chroma QP −2 | RD paths present; CAVLC coefficients still non-trellis | **41** | 0/12 | trellis-aware CAVLC coefficients; MB-level RD refinement |
 | **medium** | subme 7, 3 refs, defaults | same gaps as fast, plus 3-ref P-frame behaviour | **41** | 0/12 | multi-ref, B-slice emission |

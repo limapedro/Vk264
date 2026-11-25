@@ -174,8 +174,11 @@ static int i4_pred(const uint8_t m[16],int i,int l,int t){
     static int rev[64], init=0;
     if(!init){ for(int q=0;q<64;++q) rev[q]=-1;
                for(int q=0;q<16;++q) rev[s8[q]]=q; init=1; }
-    int a=(i%4)?m[i-1]:(l?2:-1);
-    int tp=rev[s8[i]-8], b=(tp>=0)?m[tp]:(t?2:-1);
+    /* x264 x264_mb_predict_intra4x4_mode: read left/top neighbours from
+     * the scan8 cache by absolute cache index. */
+    int li=rev[s8[i]-1], tp=rev[s8[i]-8];
+    int a=(li>=0)?m[li]:(l?2:-1);
+    int b=(tp>=0)?m[tp]:(t?2:-1);
     int p=(vk_i4x4_fix(a)<vk_i4x4_fix(b))?vk_i4x4_fix(a):vk_i4x4_fix(b);
     return p<0?2:p;
 }

@@ -1909,3 +1909,25 @@ Reverted. The remaining 18 NAL-count mismatches need a faithful sequential
 lookahead simulation (b-adapt FAST vs TRELLIS, candidate pruning, and the
 per-preset `i_max_search` / keyint limit), not just a wider flash window.
 
+### E91 ? I4 predicted-mode cache lookup fixed (veryfast first-diff 80 -> 84)
+
+With matched presets the next divergent bin after E89 is 550 / ctx 68
+(`b_prev_intra4x4_pred_mode`): x264 1, oracle 0. Located at MB10: the chosen
+I4 modes match, but the predicted mode differs for block 2 (x264 2 == mode 2,
+oracle 4 != mode 2).
+
+`i4_pred()` in `cabac_enc.c` used `i%4` to decide whether a left neighbour
+exists and took `m[i-1]` ? wrong for x264's scan8 layout (e.g. block 2 at
+(0,4) has no left neighbour, block 6 at (8,4) has one at index 3). x264's
+`x264_mb_predict_intra4x4_mode` reads `cache[scan8[idx]-1]` and
+`cache[scan8[idx]-8]` by absolute cache index. Replaced the heuristic with
+`rev[s8[i]-1]` / `rev[s8[i]-8]` lookups into the current MB's fixed modes.
+
+Verified: veryfast first-diff **80 -> 84** (+4 matching bytes); faster 30,
+fast+ 41/42 unchanged; `recon c004 0/4096`, CAVLC 1360/1360, slicetype 16/16,
+CTest 29/29+65/65 all green.
+
+An attempt to also model the top MB's I4 modes (per-MB `mbmodes4` array,
+cache index 4/5/6/7 mapping) regressed first-diff back to 80, so only the
+principled cache-index lookup fix is kept.
+
