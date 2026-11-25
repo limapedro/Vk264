@@ -1069,3 +1069,16 @@ E45 had already verified that enabling the correct trellis values changes
 bitstreams but does **not** regress audit/first-diff, so alignment is kept
 even though the write-time implementation is still incomplete.
 
+### E47 ? b_fast_pskip parameter aligned (subme>=3 probes unconditionally)
+
+x264 `analyse.c:3002-3013`: with `analyse.b_fast_pskip`, subme>=3 sets
+`b_try_skip=1` (P_SKIP probe for every MB); subme<3 probes only when a
+neighbour is P_SKIP. The oracle probed only on neighbour P_SKIP for all
+presets. Added `vk_cur_fast_pskip` (0 only for placebo, as x264) and wired
+the subme>=3 path in `pframe.c`.
+
+Verified: audit 12/120, NAL2 3/20, first-diff unchanged, all gates green
+(CTest 29/29+65/65, CAVLC 1360/1360, slicetype 16/16, recon c004 0/4096).
+This is parameter alignment, not a metric gain ? the remaining P-slice gap
+is the ME/analysis path, not the skip probe gating.
+
