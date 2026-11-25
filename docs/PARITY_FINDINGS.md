@@ -1275,3 +1275,22 @@ Diagnostic: disabling the I4 early exit changed later IDR bytes (128->136
 for fast) but not first-diff, so the real fix is adding x264's chroma SATD
 cost to the analysis costs/threshold, not bypassing the exit. Reverted.
 
+### E73 ? correction: chroma-cost hypothesis does not apply to faster
+
+Checked x264 `analyse.c:3189-3199`: the `i_satd_chroma` addition to
+`i_satd_i16/i8/i4` is inside `if( h->mb.b_psy || h->mb.b_trellis )`-style
+gating (the branch at 3189 is reached only when psy/trellis analysis is
+active). For `--preset faster --trellis 1` at subme=4, x264's `b_psy=0`,
+so that branch is **not** taken ? E72's proposed chroma-cost fix would be
+wrong for the preset where the divergence is observed.
+
+Instrumented x264's non-psy branch (analyse.c:3197) for MB5:
+`XCO i16=4067 i8=COST_MAX i4=COST_MAX`. The dumped analysis costs do not
+explain the final MB type `I_4x4` seen at header write, so the dump likely
+comes from a different analysis pass than the final MB-type decision
+(`analyse.c:3221-3223`).
+
+No chroma-cost change was made. Next: instrument the exact final
+`COPY2_IF_LT` sequence at `analyse.c:3221-3223` for MB5 to see which costs
+actually select I_4x4 in x264.
+
