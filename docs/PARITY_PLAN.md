@@ -17,8 +17,8 @@ Sources of truth: `build/x264-ref-src/` (x264, authoritative), `Vk264-rewrite/`
 CTest 29/29 + 65/65     CAVLC P-slice 1360/1360     MP4 56/56
 audit                    12/120 byte-exact (ultrafast only)
 NAL2 pairs               3/20 byte-exact
-CABAC first-diff bytes   veryfast 79, faster 17, fast/medium/slow/slower 15,
-                         veryslow/placebo 16
+CABAC first-diff bytes   veryfast 79, faster 30, fast/medium/slow/slower 41,
+                         veryslow/placebo 42  (E70 DC-shortcut fix)
 compare_slicetype        16/16 frame types agree (decision parity only)
 recon c004 / c064        0/4096  /  2209/4096
 ```

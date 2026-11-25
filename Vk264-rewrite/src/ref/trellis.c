@@ -126,7 +126,7 @@ static int trellis_dc_shortcut(int sign_coef, int quant_coef, int deq0, int qp, 
         int unquant_abs_level = (unquant_mf * abs_level + 128) >> 8;
         int d = sign_coef - ((SIGN(unquant_abs_level, sign_coef) + 8) & ~15);
         uint64_t score = (uint64_t)((int64_t)d*d * coef_weight);
-        unsigned f8_bits = 0;
+        unsigned f8_bits = cost_sig;  /* x264 rdo.c:480 includes sig/last cost */
         if (abs_level) {
             int prefix = X264_MIN(abs_level - 1, 14);
             f8_bits += vk_cabac_size_decision_noup2(cabac_state+1, prefix > 0);
