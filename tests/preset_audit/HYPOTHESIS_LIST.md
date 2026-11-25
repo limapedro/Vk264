@@ -1802,3 +1802,23 @@ the earliest CBP-luma divergence (bin 82, ctx 73) is elsewhere; this fix is
 kept because it removes a clear indexing bug and makes four more MBs' nnz
 and reconstruction exact.
 
+### E85 ? top-left neighbour availability fixed (MB10 now exact)
+
+`cabac_enc.c` passed `have_tl=0` and used `lt4=128` unconditionally for a
+MB's top-left 4x4 block, even when both left and top neighbour MBs exist.
+MB10 (my=2,mx=2) therefore chose I4 mode 1 (H) for block 0 while x264 chose
+mode 4 (DDR), which uses the real top-left sample.
+
+Passed `left&&top` as `have_tl` to `vk_i4x4_decide` and used
+`rbase[(my*16-1)*rs+mx*16-1]` for `lt4` when both neighbours exist.
+
+Verified with `build/nnz_scan.py`: MB10 now has x264's `cbp=9` and nnz vector
+`0,1,1,1,0,0,0,0,0,0,0,0,1,0,1,1` (was cbp=13 with three extra nonzero
+blocks). All six MBs whose I4 path is instrumented (0,1,5,6,10,14) now match
+x264's CBP and nnz exactly.
+
+First-diff bytes did not move (veryfast 48, faster 30, fast+ 41/42; bin 82
+ctx 73 still the first divergent bin) and audit stays 12/120, so the
+remaining CBP-luma bin difference is not in these MB-level CBP arrays.
+All gates green. Kept as a correctness fix with verified MB-level gain.
+
