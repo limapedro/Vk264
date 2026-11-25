@@ -17,8 +17,8 @@ Sources of truth: `build/x264-ref-src/` (x264, authoritative), `Vk264-rewrite/`
 CTest 29/29 + 65/65     CAVLC P-slice 1360/1360     MP4 56/56
 audit                    12/120 byte-exact (ultrafast only)
 NAL2 pairs               3/20 byte-exact
-CABAC first-diff bytes   veryfast 80, faster 30, fast/medium/slow/slower 41,
-                         veryslow/placebo 42  (E70 + E74 + E79 + E89 I8 cost)
+CABAC first-diff bytes   veryfast 84, faster 30, fast/medium/slow/slower 41,
+                         veryslow/placebo 42  (E70/E74/E79/E89/E91)
 compare_slicetype        16/16 frame types agree (decision parity only)
 scenecut                 24 -> 18 NAL-count mismatches (E81 flash detection)
 CAVLC IDR                 I4/I8 decisions now shared with byte-exact CABAC (E77);
