@@ -1868,3 +1868,16 @@ alone; reproducing x264's `last_nonb` / b-adapt FAST coding-order walk is
 required. No production change; the frame-type sequence and candidate set are
 recorded for the next implementation attempt.
 
+### E100 ? faster first divergent CABAC bin: 186, ctx 259 (level contexts)
+
+With both sides on `--preset faster`, `build/bincompare_faster.py` shows the
+first divergent decision at bin 186: x264 `(ctx=259, b=1)` vs oracle
+`(ctx=259, b=0)`, followed by a different context sequence (x264 262/257/263
+vs oracle 260/262/257...). `build/bin82_locate.py` places oracle bin 187 at
+MB1. Contexts 257-264 are coefficient `abs_level_minus1` contexts, so the
+divergence is in **level coding of a MB1 block**, not the earlier CBP / pred
+mode issues (E70/E91/E95).
+
+This is the concrete next target for pushing `faster` past first-diff byte 30.
+No production change made.
+
