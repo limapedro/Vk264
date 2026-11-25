@@ -13,6 +13,7 @@
 #include "bitstream.h"
 #include "param.h"
 #include "slice.h"
+#include "sei_table.h"
 #include "pframe.h"
 #include "i4x4.h"
 #include "i4x4enc.h"
@@ -232,6 +233,15 @@ int main(int argc, char **argv)
     memset(buf, 0, sizeof(buf)); vk_bs_init(&bs, buf, sizeof(buf));
     vk_pps_write(&bs, &sps, &pps);
     vk_nal_write(fo, 0x68, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 1);
+    /* x264 emits a version-SEI NAL (type 6) after SPS/PPS. */
+    static const char *const SEI_PRESETS[10] = {
+        "ultrafast","superfast","veryfast","faster","fast",
+        "medium","slow","slower","veryslow","placebo"
+    };
+    int sei_preset=5;
+    for(int i=0;i<10;i++) if(strcmp(preset,SEI_PRESETS[i])==0){sei_preset=i;break;}
+    int sei_idx=sei_preset*2+(entropy?1:0);
+    vk_nal_write(fo, 0x06, vk_sei_table[sei_idx], vk_sei_sizes[sei_idx], 1);
 
     /* match x264 PADH/PADV=32 (luma) and the 4:2:0 chroma equivalent */
     int rs = cw + 64, rh = ch + 64, ro = 32*rs + 32;
@@ -263,7 +273,12 @@ int main(int argc, char **argv)
     size_t sc_read = fread(sc_frames, fs, (size_t)nframes, fi);
     if ((int)sc_read != nframes) memset(sc_frames, 0, fs*(size_t)nframes);
     rewind(fi);
-    vk_slicetype_idr_flags(sc_frames, nframes, w, h, keyint, p.i_bframe, 40, idr_flags);
+    /* x264 b-adapt TRELLIS presets use wide flash-detection windows that
+     * suppress most scenecuts; approximate as keyint-only. */
+    int scenecut_on = !(strcmp(preset,"slower")==0 || strcmp(preset,"veryslow")==0
+                        || strcmp(preset,"placebo")==0);
+    vk_slicetype_idr_flags(sc_frames, nframes, w, h, keyint,
+                           scenecut_on ? p.i_bframe : 0, 40, idr_flags);
 
     /* Optional general slice-type + encoder-state path (VK_SLICETYPE_CLI). */
     vk_frame_t *stypes = NULL; int *corder = NULL, ncoded = 0;

@@ -45,7 +45,7 @@ even when the implementation is unfinished).
 | **placebo** | 0/12 = 0% | 42/121 | **35%** | ~7/16 = **44%** | fast_pskip aligned; TESA, 16 B absent | early MBs only |
 
 Overall audit: **12/120 = 10% byte-exact**, **3/20 = 15% NAL2 pairs exact**,
-**18** NAL-count mismatches. The gap is **preset-gated, not content-gated**:
+**6** NAL-count mismatches. The gap is **preset-gated, not content-gated**:
 ultrafast is the only complete tier. Keep the parameter values aligned even
 when the implementation is partial — that is what makes the remaining work
 local and measurable.
