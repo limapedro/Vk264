@@ -1,0 +1,171 @@
+/* Standalone consistency test for the per-MB analysis driver.
+ *
+ * Builds a synthetic luma frame, loads a fresh neighbour cache, analyses one
+ * MB and checks that every field of phx_mb_decision_t is in range and that
+ * nnz flags / CBP agree with the emitted coefficients.  Repeating the same
+ * call from freshly reset inputs must produce a byte-identical decision.
+ *
+ * SHADER: B — host-side test of the per-MB workgroup output boundary.
+ */
+#include "phx_analysis.h"
+#include "phx_param.h"
+#include "phx_frame.h"
+#include "phx_mbcache.h"
+#include "phx_mb_decision.h"
+
+#include <stdio.h>
+#include <string.h>
+
+static int fails = 0;
+#define CHECK(cond, msg) do { if (!(cond)) { \
+    printf("FAIL %s (line %d)\n", msg, __LINE__); ++fails; } } while (0)
+
+/* Deterministic 32x32 ramp: enough AC energy for all three intra modes. */
+static void fill_frame(phx_frame_t *f)
+{
+    for (int y = 0; y < f->i_height; y++)
+        for (int x = 0; x < f->i_width; x++)
+            f->plane[x + y*f->i_stride] = (uint8_t)((x*17 + y*29 + 11) & 0xff);
+}
+
+static int any_nonzero(const int16_t *c, int n)
+{
+    for (int i = 0; i < n; i++) if (c[i]) return 1;
+    return 0;
+}
+
+static void check_decision(const phx_mb_decision_t *d, const char *tag)
+{
+    CHECK(d->mb_type == PHX_I_4x4 || d->mb_type == PHX_I_8x8 ||
+          d->mb_type == PHX_I_16x16, "mb_type is a supported intra type");
+    CHECK(d->i_partition == 16, "i_partition == D_16x16");
+    CHECK(d->i_qp >= 0 && d->i_qp <= 51, "i_qp range");
+    CHECK(d->intra16_pred_mode >= 0 && d->intra16_pred_mode <= 3,
+          "intra16_pred_mode range");
+    CHECK(d->chroma_pred_mode >= 0 && d->chroma_pred_mode <= 3,
+          "chroma_pred_mode range");
+    CHECK(d->cbp_luma >= 0 && d->cbp_luma <= 15, "cbp_luma range");
+    CHECK(d->cbp_chroma >= 0 && d->cbp_chroma <= 3, "cbp_chroma range");
+    CHECK(d->i_cbp == ((d->cbp_chroma << 4) | d->cbp_luma | 0x1700),
+          "i_cbp matches cbp_luma/chroma");
+    CHECK(d->skip == 0, "intra decision is not a skip");
+    CHECK(d->b_transform_8x8 == (d->mb_type == PHX_I_8x8),
+          "transform size matches mb_type");
+    for (int i = 0; i < 4; i++)
+        CHECK(d->intra8x8_pred_mode[i] >= 0 && d->intra8x8_pred_mode[i] <= 8,
+              "intra8x8_pred_mode range");
+    for (int i = 0; i < 16; i++) {
+        CHECK(d->intra4x4_pred_mode[i] >= 0 && d->intra4x4_pred_mode[i] <= 8,
+              "intra4x4_pred_mode range");
+        CHECK(d->ref[0][i] == -1 && d->ref[1][i] == -1, "intra refs are -1");
+        CHECK(d->mv[0][i][0] == 0 && d->mv[0][i][1] == 0, "intra mv is zero");
+    }
+    for (int k = 0; k < 48; k++) CHECK(d->nnz[k] <= 1, "nnz is boolean");
+
+    /* nnz/CBP must agree with the quantized coefficients that were emitted. */
+    for (int idx = 0; idx < 16; idx++) {
+        int nz = any_nonzero(d->dct[idx], 16);
+        int flag = d->nnz[phx_scan8[idx]];
+        CHECK(flag == (d->mb_type == PHX_I_8x8 ? (d->nnz[phx_scan8[4*(idx>>2)]] ? 1 : 0) : nz),
+              "nnz matches emitted coefficients");
+        if (d->mb_type == PHX_I_4x4)
+            CHECK(((d->cbp_luma >> (idx >> 2)) & 1) == nz, "I4 cbp bit matches nnz");
+    }
+    if (d->mb_type == PHX_I_8x8) {
+        for (int i = 0; i < 4; i++) {
+            int nz = 0;
+            for (int j = 0; j < 4; j++) nz |= any_nonzero(d->dct[4*i+j], 16);
+            CHECK(((d->cbp_luma >> i) & 1) == nz, "I8 cbp bit matches nnz");
+            for (int j = 0; j < 4; j++)
+                CHECK(d->nnz[phx_scan8[4*i+j]] == nz, "I8 four nnz flags agree");
+        }
+    } else if (d->mb_type == PHX_I_16x16) {
+        int nz = 0;
+        for (int i = 0; i < 16; i++) nz |= any_nonzero(d->dct[i], 16);
+        CHECK(d->cbp_luma == (nz ? 0xf : 0), "I16 cbp is all-or-nothing");
+    }
+    /* Chroma slots are an explicit TODO; they must at least be quiet.
+     * Slot 16 is the luma DC block for I16x16 (phx_analysis.h). */
+    int first_chroma_slot = (d->mb_type == PHX_I_16x16) ? 17 : 16;
+    for (int k = first_chroma_slot; k < 48; k++)
+        CHECK(!any_nonzero(d->dct[k], 16), "chroma coefficient slots are zero");
+    CHECK(d->cbp_chroma == 0, "chroma cbp is zero (TODO)");
+    (void)tag;
+}
+
+int main(void)
+{
+    phx_param_t p;
+    phx_frame_t *f;
+    phx_mb_state_t *s;
+    phx_mb_cache_t cache;
+    phx_mb_decision_t d1, d2;
+    int rc1, rc2;
+
+    phx_param_default(&p);
+    f = phx_frame_new(32, 32, 0);
+    s = phx_mb_state_new(2, 2);
+    if (!f || !s) {
+        printf("FAIL allocation\n");
+        return 1;
+    }
+    fill_frame(f);
+    phx_frame_init_lowres(f);
+    s->slice_type = 2;                 /* I slice */
+    s->first_mb = 0;
+
+    memset(&d1, 0, sizeof(d1));
+    memset(&cache, 0, sizeof(cache));
+    phx_macroblock_cache_load(s, &cache, 0, 0, 0);
+    rc1 = phx_macroblock_analyse(&p, f, &cache, 0, 0, 26, &d1);
+    CHECK(rc1 == 0, "analysis returns success");
+    if (!rc1) check_decision(&d1, "first");
+
+    /* Reset every input the driver reads, then analyse the same MB again. */
+    fill_frame(f);
+    phx_frame_init_lowres(f);
+    phx_mb_state_delete(s);
+    s = phx_mb_state_new(2, 2);
+    s->slice_type = 2;
+    s->first_mb = 0;
+    memset(&d2, 0, sizeof(d2));
+    memset(&cache, 0, sizeof(cache));
+    phx_macroblock_cache_load(s, &cache, 0, 0, 0);
+    rc2 = phx_macroblock_analyse(&p, f, &cache, 0, 0, 26, &d2);
+    CHECK(rc2 == 0, "second analysis returns success");
+    if (!rc2) {
+        check_decision(&d2, "second");
+        CHECK(memcmp(&d1, &d2, sizeof(d1)) == 0, "decision is reproducible");
+    }
+
+    /* Interior MB with all four intra neighbours available: exercises the
+     * neighbour-proxy path of phx_setup_fdec and the full mode lists. */
+    phx_mb_state_delete(s);
+    s = phx_mb_state_new(2, 2);
+    s->slice_type = 2;
+    s->first_mb = 0;
+    for (int i = 0; i < 4; i++) s->type[i] = PHX_I_16x16;
+    memset(&cache, 0, sizeof(cache));
+    phx_macroblock_cache_load(s, &cache, 1, 1, 0);
+    /* (1,1) is the right-edge MB of a 2x2 MB frame, so TOPRIGHT is absent. */
+    /* x264 sets MB_TOPLEFT in i_neighbour but not in i_neighbour_intra
+     * (macroblock.c:816-824). */
+    CHECK(cache.i_neighbour_intra == (PHX_MB_LEFT|PHX_MB_TOP),
+          "left/top intra neighbours available at MB(1,1)");
+    memset(&d2, 0, sizeof(d2));
+    rc2 = phx_macroblock_analyse(&p, f, &cache, 1, 1, 26, &d2);
+    CHECK(rc2 == 0, "interior MB analysis returns success");
+    if (!rc2) check_decision(&d2, "interior");
+
+    /* Bad arguments must fail cleanly without touching the decision. */
+    CHECK(phx_macroblock_analyse(NULL, f, &cache, 0, 0, 26, &d2) == -1,
+          "NULL param rejected");
+    CHECK(phx_macroblock_analyse(&p, f, &cache, 2, 0, 26, &d2) == -1,
+          "out-of-range MB rejected");
+
+    phx_mb_state_delete(s);
+    phx_frame_delete(f);
+    printf("%s: per-MB analysis %s, %d failures\n",
+           fails ? "FAILED" : "OK", fails ? "FAILED" : "PASSED", fails);
+    return fails ? 1 : 0;
+}

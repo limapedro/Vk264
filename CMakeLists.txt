@@ -29,6 +29,7 @@ add_library(phx STATIC
     src/phx_quant.c
     src/phx_cavlc.c
     src/phx_mbencode.c
+    src/phx_analysis.c
 )
 target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -91,3 +92,7 @@ add_test(NAME phx_cavlc COMMAND phx_test_cavlc)
 add_executable(phx_test_mbencode tests/test_phx_mbencode.c)
 target_link_libraries(phx_test_mbencode PRIVATE phx)
 add_test(NAME phx_mbencode COMMAND phx_test_mbencode)
+
+add_executable(phx_test_analysis tests/test_phx_analysis.c)
+target_link_libraries(phx_test_analysis PRIVATE phx)
+add_test(NAME phx_analysis COMMAND phx_test_analysis)
