@@ -31,15 +31,17 @@ static uint8_t  cabac_transition_5ones[128];
 static uint16_t cabac_size_5ones[128];
 static int trellis_inited = 0;
 
+/* x264 common/cabac.h:108-124: the state byte is used directly as the
+ * transition/entropy table index (0..127), NOT state>>1. */
 static inline int vk_cabac_size_decision2(uint8_t *state, int b)
 {
-    int i_state = *state >> 1;
+    int i_state = *state;
     *state = vk_cabac_transition[i_state][b];
-    return vk_cabac_entropy[(i_state ^ b) & 127];
+    return vk_cabac_entropy[i_state ^ b];
 }
 static inline int vk_cabac_size_decision_noup2(const uint8_t *state, int b)
 {
-    return vk_cabac_entropy[((*state >> 1) ^ b) & 127];
+    return vk_cabac_entropy[*state ^ b];
 }
 
 void vk_trellis_init(void)
@@ -48,12 +50,7 @@ void vk_trellis_init(void)
     for (int i_prefix = 0; i_prefix < 15; i_prefix++) {
         for (int i_ctx = 0; i_ctx < 128; i_ctx++) {
             int f8_bits = 0;
-            uint8_t ctx = (uint8_t)(i_ctx << 1); /* x264 stores state as pstate<<1|mps; but tables indexed by i_ctx=state>>1? */
-            /* x264: uint8_t ctx = i_ctx; uses ctx as state (pstate<<1|mps form?) */
-            /* In x264, cabac state is uint8_t where value is (pstate<<1)|mps, range 0-127 for valid? */
-            /* x264_cabac_transition is indexed by i_state=*state>>1 (0-63) and returns new state byte. */
-            /* x264_rdo_init: uint8_t ctx = i_ctx; then x264_cabac_size_decision2(&ctx,1) does i_state=ctx>>1 etc. */
-            ctx = (uint8_t)i_ctx;
+            uint8_t ctx = (uint8_t)i_ctx;  /* x264_rdo_init: state byte used directly */
             for (int i = 1; i < i_prefix; i++)
                 f8_bits += vk_cabac_size_decision2(&ctx, 1);
             if (i_prefix > 0 && i_prefix < 14)
@@ -169,7 +166,7 @@ static inline int trellis_coef(int j, int const_level, int abs_level, int prefix
         else if (j >= 3)
             M32_write(nodes_cur[node_ctx].cabac_state, M32_read(nodes_prev[j].cabac_state));
         if (j >= 3)
-            nodes_cur[node_ctx].cabac_state[level1_ctx>>2] = vk_cabac_transition[level1_state>>1][(const_level > 1) ? 1 : 0];
+            nodes_cur[node_ctx].cabac_state[level1_ctx>>2] = vk_cabac_transition[level1_state][(const_level > 1) ? 1 : 0];
         if (const_level > 1 && node_ctx == 7)
             nodes_cur[node_ctx].cabac_state[levelgt1_ctx-6] = vk_cabac_transition_unary[prefix][levelgt1_state];
         nodes_cur[node_ctx].level_idx = nodes_prev[j].level_idx;
@@ -317,7 +314,7 @@ int vk_trellis_quant_4x4(int dct[16], const int orig[16],
     for (int i = b_ac; i < 16; i++) {
         int sign = orig[i] < 0 ? -1 : 1;
         int a = abs(orig[i]);
-        int qv = (a * mf[i] + bias[i]) >> 16;
+        int qv = ((a + bias[i]) * mf[i]) >> 16;  /* x264 quant_one: (bias+abs)*mf>>16 */
         dct[i] = qv ? qv * sign : 0;
         nz |= dct[i] != 0;
     }
@@ -399,9 +396,11 @@ int vk_trellis_quant_4x4(int dct[16], const int orig[16],
         uint64_t ssd0[2], ssd1[2]; \
         for( int k = 0; k < 2; k++ ) { \
             int abs_level = q-1+k; \
-            int qb = qp/6 - 4; int unquant_abs_level = 0; \
-            if (qb >= 0) unquant_abs_level = (deq[zigzag4[i]] * abs_level) << qb; \
-            else { int f = 1 << (-qb-1); unquant_abs_level = (deq[zigzag4[i]] * abs_level + f) >> (-qb); } \
+            /* x264 rdo.c:819: (unquant_mf * level + 128)>>8, with \
+             * unquant_mf = dequant4_mf<<6 for the 4x4 DCT scale. */ \
+            int is_dc = (ctx_block_cat==1); \
+            int unquant_mf = (deq[zigzag4[i]] << 6) * (is_dc ? 2 : 1); \
+            int unquant_abs_level = (unquant_mf * abs_level + 128) >> 8; \
             int d = abs_coef - unquant_abs_level; \
             ssd1[k] = (uint64_t)((int64_t)d*d * (int)dct4_weight2_tab[zigzag4[i]]); \
             ssd0[k] = ssd1[k]; \
@@ -432,6 +431,7 @@ int vk_trellis_quant_4x4(int dct[16], const int orig[16],
         if( nodes_cur[j].score < bnode->score ) bnode = &nodes_cur[j];
 
     TRELLIS_LOOP(0);
+
 
     if (bnode == &nodes_cur[0]) {
         if (!b_ac) memset(dct, 0, 16*sizeof(int));

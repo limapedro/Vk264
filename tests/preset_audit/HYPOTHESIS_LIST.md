@@ -936,3 +936,40 @@ it needs the full x264 I4/I8 cost construction (including chroma-cost
 addition and bit costs) before the metric can be switched. Tracked as plan
 item 5/6.
 
+### E41 ? trellis primitive correctness bugs found by unit test
+
+`build/trellis_oracle_probe.py` patches x264's `x264_mb_encode_i4x4` to dump
+the pre-quant DCT and final coefficients for MB1 block2 (faster, QP28):
+
+```
+TIN  d=54,46,10,18,-60,-60,-4,-20,26,18,-10,-6,-30,-20,18,20
+TOUT trellis=0: q=1,0,0,0,-1,0,...
+TOUT trellis=1: q=1,1,0,0,-1,0,...   (one extra level at index 1)
+```
+
+`build/trellis_unit.c` (compiled against `vk264_rewrite_ref.lib`) feeds the
+same DCT into `vk_trellis_quant_4x4`. **Before the fixes it returned all
+zeros.** Three real bugs were found and fixed in `trellis.c`:
+
+1. deadzone quant was `(abs*mf + bias)>>16`; x264 `quant_one` is
+   `((bias + abs)*mf)>>16` (the bias must be added *before* multiplying).
+2. CABAC size-decision helpers used `*state >> 1`; x264 `cabac.h:108-124`
+   indexes `x264_cabac_transition`/`x264_cabac_entropy` with the **full state
+   byte** (`int i_state = *state;`), so the `>>1` halved every context index.
+   Same error in the node-state transition in `trellis_coef`.
+3. unquant for the RD SSD used the oracle's `deq` directly; x264 `rdo.c:819`
+   uses `unquant_mf = dequant4_mf<<6` and `(unquant_mf*level+128)>>8`.
+   Oracle `deq` is `dequant4_mf*4`, so the correct scale is `deq<<6`.
+   DC blocks additionally use `unquant_mf[0]<<1` and weight 256.
+
+After the fixes the unit test returns `q=1,0,0,0,-1,0,...`, matching x264's
+trellis=0 deadzone output exactly. It does not yet reproduce the extra
+trellis=1 level because the test initializes CABAC contexts from qp rather
+than using x264's live state at that block ? which is the remaining
+integration gap.
+
+**Parity impact**: default is unchanged (`VK_TRELLIS` still off). With
+`VK_TRELLIS=1`, `build/trellis_probe.py` still regresses faster 17?11, i.e.
+analysis-time state timing remains the blocker even with a correct primitive.
+Write-time integration (plan items 1-2) is still required.
+
