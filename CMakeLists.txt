@@ -27,6 +27,7 @@ add_library(phx STATIC
     src/phx_predict.c
     src/phx_dct.c
     src/phx_quant.c
+    src/phx_cavlc.c
 )
 target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -81,3 +82,7 @@ add_test(NAME phx_predict COMMAND phx_test_predict)
 add_executable(phx_test_quant tests/test_phx_quant.c)
 target_link_libraries(phx_test_quant PRIVATE phx)
 add_test(NAME phx_quant_dequant COMMAND phx_test_quant)
+
+add_executable(phx_test_cavlc tests/test_phx_cavlc.c)
+target_link_libraries(phx_test_cavlc PRIVATE phx)
+add_test(NAME phx_cavlc COMMAND phx_test_cavlc)
