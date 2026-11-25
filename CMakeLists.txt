@@ -20,6 +20,7 @@ add_library(phx STATIC
     src/phx_mbcache.c
     src/phx_bitstream.c
     src/phx_cabac.c
+    src/phx_headers.c
 )
 target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -48,3 +49,6 @@ add_test(NAME phx_bitstream COMMAND phx_test_bitstream)
 add_executable(phx_test_cabac tests/test_cabac.c)
 target_link_libraries(phx_test_cabac PRIVATE phx)
 add_test(NAME phx_cabac COMMAND phx_test_cabac)
+
+add_executable(phx_header_dump tools/header_dump.c)
+target_link_libraries(phx_header_dump PRIVATE phx)

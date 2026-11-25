@@ -1008,7 +1008,7 @@ Total x264 C functions indexed: **1386**.
 | `x264_nal_encode` | `encoder/api.c:138` | **PORTED** | REALIGN_STACK void x264_nal_encode |
 | `x264_encoder_reconfig` | `encoder/api.c:145` | **MISSING** | REALIGN_STACK int x264_encoder_reconfig |
 | `x264_encoder_parameters` | `encoder/api.c:152` | **MISSING** | REALIGN_STACK void x264_encoder_parameters |
-| `x264_encoder_headers` | `encoder/api.c:159` | **MISSING** | REALIGN_STACK int x264_encoder_headers |
+| `x264_encoder_headers` | `encoder/api.c:159` | **PORTED** | REALIGN_STACK int x264_encoder_headers |
 | `x264_encoder_encode` | `encoder/api.c:166` | **MISSING** | REALIGN_STACK int x264_encoder_encode |
 | `x264_encoder_delayed_frames` | `encoder/api.c:173` | **MISSING** | REALIGN_STACK int x264_encoder_delayed_frames |
 | `x264_encoder_maximum_delayed_frames` | `encoder/api.c:180` | **MISSING** | REALIGN_STACK int x264_encoder_maximum_delayed_frames |
@@ -1099,7 +1099,7 @@ Total x264 C functions indexed: **1386**.
 | `nal_end` | `encoder/encoder.c:2010` | **MISSING** | static int nal_end |
 | `check_encapsulated_buffer` | `encoder/encoder.c:2025` | **MISSING** | static int check_encapsulated_buffer |
 | `encoder_encapsulate_nals` | `encoder/encoder.c:2051` | **MISSING** | static int encoder_encapsulate_nals |
-| `x264_encoder_headers` | `encoder/encoder.c:2096` | **MISSING** | int x264_encoder_headers |
+| `x264_encoder_headers` | `encoder/encoder.c:2096` | **PORTED** | int x264_encoder_headers |
 | `reference_check_reorder` | `encoder/encoder.c:2138` | **MISSING** | static inline void reference_check_reorder |
 | `weighted_reference_duplicate` | `encoder/encoder.c:2163` | **MISSING** | static int weighted_reference_duplicate |
 | `weighted_pred_init` | `encoder/encoder.c:2202` | **MISSING** | static void weighted_pred_init |
@@ -1297,13 +1297,13 @@ Total x264 C functions indexed: **1386**.
 | `transpose` | `encoder/set.c:36` | **MISSING** | static void transpose |
 | `scaling_list_write` | `encoder/set.c:43` | **MISSING** | static void scaling_list_write |
 | `x264_sei_write` | `encoder/set.c:80` | **MISSING** | void x264_sei_write |
-| `x264_sps_init` | `encoder/set.c:101` | **MISSING** | void x264_sps_init |
+| `x264_sps_init` | `encoder/set.c:101` | **PORTED** | void x264_sps_init |
 | `X264_MIN` | `encoder/set.c:151` | **MISSING** | sps->i_num_ref_frames = X264_MIN |
 | `x264_sps_init_reconfigurable` | `encoder/set.c:249` | **MISSING** | void x264_sps_init_reconfigurable |
 | `x264_sps_init_scaling_list` | `encoder/set.c:267` | **MISSING** | void x264_sps_init_scaling_list |
-| `x264_sps_write` | `encoder/set.c:305` | **MISSING** | void x264_sps_write |
-| `x264_pps_init` | `encoder/set.c:479` | **MISSING** | void x264_pps_init |
-| `x264_pps_write` | `encoder/set.c:505` | **MISSING** | void x264_pps_write |
+| `x264_sps_write` | `encoder/set.c:305` | **PORTED** | void x264_sps_write |
+| `x264_pps_init` | `encoder/set.c:479` | **PORTED** | void x264_pps_init |
+| `x264_pps_write` | `encoder/set.c:505` | **PORTED** | void x264_pps_write |
 | `x264_sei_recovery_point_write` | `encoder/set.c:574` | **MISSING** | void x264_sei_recovery_point_write |
 | `x264_sei_version_write` | `encoder/set.c:593` | **MISSING** | int x264_sei_version_write |
 | `x264_sei_buffering_period_write` | `encoder/set.c:625` | **MISSING** | void x264_sei_buffering_period_write |
