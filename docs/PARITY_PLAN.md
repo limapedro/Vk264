@@ -17,7 +17,7 @@ Sources of truth: `build/x264-ref-src/` (x264, authoritative), `Vk264-rewrite/`
 CTest 29/29 + 65/65     CAVLC P-slice 1360/1360     MP4 56/56
 audit                    12/120 byte-exact (ultrafast only)
 NAL2 pairs               3/20 byte-exact
-CABAC first-diff bytes   veryfast 49, faster 17, fast/medium/slow/slower 15,
+CABAC first-diff bytes   veryfast 79, faster 17, fast/medium/slow/slower 15,
                          veryslow/placebo 16
 compare_slicetype        16/16 frame types agree (decision parity only)
 recon c004 / c064        0/4096  /  2209/4096
@@ -25,7 +25,7 @@ recon c004 / c064        0/4096  /  2209/4096
 
 Current verdict counts (120 cases, fresh audit): `BYTE-EXACT 12`, `NAL2 byte4
 20`, `byte5 15`, `byte6 7`, `byte10 15`, `byte15 9`, `byte16 6`, `byte17 2`,
-`byte49 2`, `NAL COUNT mismatches 24`, `NAL3 byte7/byte2 2`.
+`byte79 2`, `NAL COUNT mismatches 24`, `NAL3 byte7/byte2 2`.
 
 2-frame first-diff signature (current):
 
@@ -33,7 +33,7 @@ Current verdict counts (120 cases, fresh audit): `BYTE-EXACT 12`, `NAL2 byte4
 |---|---|---|
 | ultrafast | EXACT | EXACT |
 | superfast | NAL2 b4 | NAL3 b7 |
-| veryfast | NAL2 b4 | **NAL2 b49** |
+| veryfast | NAL2 b4 | **NAL2 b79** |
 | faster | NAL2 b4 | **NAL2 b17** |
 | fast / medium / slow / slower | NAL2 b10 | NAL2 b15 |
 | veryslow / placebo | NAL2 b10 | NAL2 b16 |
@@ -51,11 +51,13 @@ Work = add the missing tiers, not fix arbitrary content bugs.
 - **PR #288: SATD for subme>1 in I4 analysis** (`encoder.c:1409 mbcmp_init`) — first-diff sum +58 bytes; veryfast 16→49, faster 16→17, fast+ 11→15, veryslow/placebo 12→16
 - **PR #289: mod2/mod16 resolution handling** — SPS frame cropping + CLI padding; 1920x1080/640x360 now emit NALs (were 0) and decode
 - PR #290/#291: trellis foundation (`trellis.c/h`) retained but **disabled by default** after E18b regression (see below)
+- **E37: SATD for chroma intra mode decision (subme>1)** — veryfast first-diff **49 → 79** (2f and 8f); bin-level first diff moved from bin313 (ctx64 chroma) to bin541 (ctx400 transform-size flag); all gates green
 
 ### Evidence notes
 - E18: faster's byte-17 divergence is **trellis=1** (x264 default from `base.c:455`), not subme/refs/lookahead: `--preset faster --trellis 0` matches veryfast, `--preset veryfast --trellis 1` matches faster.
 - **E18b (PR #291)**: analysis-time trellis wiring regressed faster 17→11 and veryfast 49→11. x264 applies trellis at CABAC **write** time with live `h->cabac.state`; oracle applied it during analysis with stale state. Foundation is opt-in via `VK_TRELLIS=1/2`; default off.
 - Resolution probe on `D:\02 PehdrewTV\Videos` (2f, qp28, cabac, after PR #289): 1280x720 and 720x1280 ultrafast **EXACT**; veryfast/medium diverge at IDR byte 6/8; 1920x1080/640x360 now encode (mod16 bug fixed).
+- `build/bincompare_veryfast.py` logs `(ctx,bin)` from both encoders' C `cabac.c` handlers and compares directly (no bitstream decoder). Post-E37 first diff = bin541 ctx400 (transform_size_8x8 flag), i.e. a later MB's I8-vs-I4 decision, not chroma.
 
 ---
 
@@ -65,7 +67,7 @@ Work = add the missing tiers, not fix arbitrary content bugs.
 |---|---|---|---|---|---|
 | ultrafast | 0 | 0 | 0 | **none — EXACT** | — (complete tier) |
 | superfast | 1 | 0 | 0 | P-slice NAL3 byte7 | fast-pskip early termination |
-| veryfast | 2 | 0 | 0 | NAL2 byte49 | HEX ME, Mb-tree, I16 SATD, tail localization |
+| veryfast | 2 | 0 | 0 | NAL2 byte79 | HEX ME, Mb-tree, I8/I4 transform-size decision (bin541 ctx400) |
 | faster | 4 | 1 | **0 (disabled)** | NAL2 byte17 | write-time trellis, HEX ME, lookahead |
 | fast | 6 | 1 | **0 (disabled)** | NAL2 byte15 | RD intra refine, psy-RD, write-time trellis, HEX ME |
 | medium | 7 | 1 | **0 (disabled)** | NAL2 byte15 | same as fast |
@@ -98,14 +100,15 @@ Work = add the missing tiers, not fix arbitrary content bugs.
 ## 3. Where the residual divergence is
 
 The byte-11 bin-level trace (PR #285) was for the **pre-SATD** state. After
-PR #288 the first CABAC mismatch moved: veryfast byte49, faster byte17,
-fast+ byte15. Known facts:
+PR #288 the first CABAC mismatch moved to byte49; after E37 (chroma SATD)
+veryfast moved to **byte79**. Current first diffs: veryfast 79, faster 17,
+fast+ 15/16. Known facts:
 
 - MB0 header/residual and MB1 start are byte-identical for all presets.
 - veryfast: MB1 I4 mode array now matches x264 exactly
-  (`2,2,4,5,2,2,2,2,2,5,2,4,2,2,5,2`); divergence at byte49 is therefore
-  **later** (coefficient/chroma/MB2+), not pred-mode. Harness: `build/find_nal2_bitdiff.py`
-  reports first bit diff at bit 391 for veryfast 8f.
+  (`2,2,4,5,2,2,2,2,2,5,2,4,2,2,5,2`). E37 fixed the next mismatch (ctx64
+  chroma pred mode, bin313). Bin trace now first differs at **bin541 ctx400**
+  = transform_size_8x8 flag of a later MB. Harness: `build/bincompare_veryfast.py`.
 - faster: byte17 is trellis-driven (E18/E18b); without a correct write-time
   trellis this tier cannot be closed.
 - fast..placebo: byte15/16 is MB1 block pred-mode/RD driven; earlier trace
@@ -130,13 +133,13 @@ One change per experiment; revert on no metric gain; keep all gates green.
 |---|---|---|---|---|---|---|
 | 1 | P0 | **Write-time CABAC trellis** | E18 + E18b: trellis is the faster+ gap, but analysis-time wiring regresses. Foundation exists in `trellis.c/h`. | Apply trellis inside `cabac_coeffs`/write path with **live** `cb->state`; keep recon in sync. Unit-test one block vs x264 `quant_trellis_cabac` first. | faster first-diff 17→higher; audit cases for faster..placebo | c004 recon 0, slicetype 16/16, CTest 29+65 |
 | 2 | P0 | **Trellis-aware RD / live state plumbing** | Trellis decisions depend on context state; oracle RD quantizes without it. | Snapshot/pass `vk_cabac_t` state through RD trials and final write; use `x264_cabac_size_decision2`/entropy costs. | same as #1 | all gates |
-| 3 | P0 | **Veryfast byte-49 tail localization** | veryfast 16→49 after PR #288; MB1 modes now match. | Bit/bin trace at bit 391 (`build/find_nal2_bitdiff.py`) → identify pred-mode vs coefficient vs chroma; port missing piece. | veryfast first-diff 49→higher | c004 recon 0 |
+| 3 | P0 | **Veryfast byte-79 tail (ctx400 transform-size)** | E37 moved 49→79; new bin-level first diff = bin541 ctx400 (transform-size_8x8 flag of a later MB). | Use `build/bincompare_veryfast.py` to trace MB type / I8-vs-I4 decision after bin541; compare I8 candidate costs. | veryfast first-diff 79→higher | c004 recon 0 |
 | 4 | P0 | **I16 mode decision SATD for subme>1** | `cabac_enc.c:505` uses plain SAD; x264 `mbcmp_init` uses SATD at subme>1; `vk_i16x16_decide` (SATD) exists but unused. | Wire SATD16 (x264-equivalent) into I16 loop gated `vk_cur_subme>1`; compare MB0 costs to x264. | 720p diff moves; veryfast/faster first-diff | c004 recon 0, ultrafast exact |
 | 5 | P1 | **I8x8 analysis metric SA8D/SATD parity** | x264 `intra_sa8d_x3_8x8` when mbcmp==satd; oracle I8 metric approximate. | Faithful 8x8 SA8D gated subme>1; keep shortcut table behavior. | fast+ IDR first-diff | all gates |
 | 6 | P1 | **MB-level RD (`intra_rd`/`intra_rd_refine`) exact port** | Rough RD gave no gain; need exact `rd_cost_mb` (SSD+psy+f8 CABAC bits) and fenc SATD cache. | Port exact costs; gate subme>=6. | fast..placebo 15/16→higher | c004 recon 0, superfast exact |
 | 7 | P1 | **Psy-RD / psy-trellis terms** | x264 psy-rd=1.0; oracle has no psy cost. Needed for exact RD/trellis. | Add fenc hadamard/satd cache + psy cost; check x264 gating for psy-trellis (i_trellis>=2?). | RD decisions match on traced MBs | all gates |
 | 8 | **DONE** | ~~Mod16/mod8 resolution handling~~ | PR #289: SPS crop + CLI padding; 1920x1080/640x360 now encode. | None. Add follow-up cross-res regression suite (item 16). | — | gates green |
-| 9 | P1 | **Chroma mode/CBP/DC-AC parity** | Early 720p diffs (byte6/8); I16 chroma/CBP differences in traces. | Dump x264 vs oracle chroma pred, cbp, DC/AC cost at first differing MB. | 720p diff moves | recon/gates |
+| 9 | P1 | **Chroma mode/CBP/DC-AC parity** | **E37 done for mode decision** (SATD at subme>1); chroma CBP/DC-AC and 720p diff@6/8 remain. | Dump x264 vs oracle chroma cbp/DC/AC cost at first differing MB. | 720p diff moves | recon/gates |
 | 10 | P1 | **P-slice fast P-skip / ME early termination** | superfast P-slice byte7; x264 `analyse.c:3002` uses b_fast_pskip + ME probe. | Port ME-based P_SKIP gated by preset/subme. | superfast P-slice improves | CAVLC 1360 green |
 | 11 | P2 | **B-slice emission / NAL count (24 cases)** | 30f clips: x264 34/36/40 NALs vs oracle 32. | Trace NAL type sequences; compare b-adapt + B encode path + headers. | NAL counts equal | slicetype 16/16 |
 | 12 | P2 | **HEX/UMH/TESA ME per preset** | x264: veryfast+ HEX, slower UMH, placebo TESA; oracle DIA only. | Implement HEX (subme>=2), then UMH/TESA; gate by preset. | P-slice/NAL2 first-diff | recon/gates |
