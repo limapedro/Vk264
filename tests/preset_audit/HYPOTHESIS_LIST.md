@@ -1566,3 +1566,21 @@ The change was reverted; E74 remains the verified state. Any future I16 cost
 work must first establish the exact x264 SATD scaling used by the reference
 build before wiring it into the analysis path.
 
+### E76 ? CAVLC IDR path encodes every MB as I16 (major structural gap)
+
+Traced the CAVLC superfast/veryfast/faster first-diff=4 to the IDR CAVLC
+writer in `tests/oracle_video_cli.c`: `encode_idr_cavlc` defaults **every MB**
+to `vk_encode_i16_mb`. I4/I8 encoders are only reachable behind the
+`ORACLE_I4X4` / `ORACLE_I8X8` env-var test paths (which hard-code modes), so
+x264's I4/I8 IDR MBs are encoded as I16 by the oracle. This explains the large
+NAL-size gap (superfast CAVLC IDR 210 bytes oracle vs 130 x264) and why
+ultrafast CAVLC is byte-exact (subme=0 disables I4/I8 in x264 too).
+
+Superfast CABAC is now byte-exact after E74; the CAVLC first divergence is
+in MB0's intra-prediction bits (slice data bit 30), consistent with the
+missing I4/I8 decision rather than a header bug (SPS/PPS match exactly).
+
+Next: make `encode_idr_cavlc` use the same I4/I8 mode/CBP decisions as the
+byte-exact CABAC IDR path instead of the I16 fallback. This is the highest
+remaining structural gap for CAVLC parity.
+
