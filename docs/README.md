@@ -74,7 +74,7 @@ Current, runnable gates for this repository:
 ```
 python tools/run_tests.py       CMake configure + build + ctest (all unit tests)
 python tools/gen_function_inventory.py   regenerate the 1386-function inventory
-python tools/parity_harness.py  20-case byte-exact x264 comparison (needs X264_EXE)
+python tools/parity_harness.py  100-case byte-exact comparison (5 fixtures x 10 x 2)
 ```
 
 Historical baseline from the discarded incremental oracle (its harness scripts

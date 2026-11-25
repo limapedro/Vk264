@@ -302,8 +302,8 @@ Total x264 C functions indexed: **1386**.
 | `prefetch_fenc` | `common/macroblock.c:557` | **MISSING** | h->mc.prefetch_fenc |
 | `x264_copy_column8` | `common/macroblock.c:561` | **MISSING** | NOINLINE void x264_copy_column8 |
 | `macroblock_load_pic_pointers` | `common/macroblock.c:568` | **MISSING** | static ALWAYS_INLINE void macroblock_load_pic_pointers |
-| `macroblock_cache_load_neighbours` | `common/macroblock.c:673` | **MISSING** | static ALWAYS_INLINE void macroblock_cache_load_neighbours |
-| `macroblock_cache_load` | `common/macroblock.c:855` | **MISSING** | static ALWAYS_INLINE void macroblock_cache_load |
+| `macroblock_cache_load_neighbours` | `common/macroblock.c:673` | **PORTED** | static ALWAYS_INLINE void macroblock_cache_load_neighbours |
+| `macroblock_cache_load` | `common/macroblock.c:855` | **PORTED** | static ALWAYS_INLINE void macroblock_cache_load |
 | `exist` | `common/macroblock.c:1147` | **MISSING** | * above diagram do not exist, but the entries d, e and f exist |
 | `i_neighbour_skip` | `common/macroblock.c:1299` | **MISSING** | h->mb.cache.i_neighbour_skip = |
 | `i_neighbour_skip` | `common/macroblock.c:1304` | **MISSING** | h->mb.cache.i_neighbour_skip = |
@@ -315,7 +315,7 @@ Total x264 C functions indexed: **1386**.
 | `x264_macroblock_deblock_strength` | `common/macroblock.c:1438` | **MISSING** | void x264_macroblock_deblock_strength |
 | `macroblock_store_pic` | `common/macroblock.c:1624` | **MISSING** | static ALWAYS_INLINE void macroblock_store_pic |
 | `macroblock_backup_intra` | `common/macroblock.c:1638` | **MISSING** | static ALWAYS_INLINE void macroblock_backup_intra |
-| `x264_macroblock_cache_save` | `common/macroblock.c:1680` | **MISSING** | void x264_macroblock_cache_save |
+| `x264_macroblock_cache_save` | `common/macroblock.c:1680` | **PORTED** | void x264_macroblock_cache_save |
 | `x264_macroblock_bipred_init` | `common/macroblock.c:1883` | **MISSING** | void x264_macroblock_bipred_init |
 | `pack16to32` | `common/macroblock.h:371` | **MISSING** | static ALWAYS_INLINE uint32_t pack16to32 |
 | `pack8to16` | `common/macroblock.h:379` | **MISSING** | static ALWAYS_INLINE uint32_t pack8to16 |

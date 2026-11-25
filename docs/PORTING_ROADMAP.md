@@ -26,14 +26,18 @@ x264 goldens, lowres planes vs independent filter computation). Remaining gate:
 SPS/PPS byte-exact for all 20 preset×entropy cases once the encoder exists;
 `tools/parity_harness.py` implements that comparison.
 
-## WP2 — Neighbour caches and MB state
+## WP2 — Neighbour caches and MB state (progressive path ✓)
 
-Port: `x264_scan8` layout, `x264_macroblock_cache_load`, `_save`,
-`STORE_8x8_NNZ`, intra4x4 pred-mode cache, nnz cache.
+Ported: `x264_scan8`, `x264_left_table_t`/`left_indices`,
+`macroblock_cache_load_neighbours`, `macroblock_cache_load`,
+`macroblock_cache_save`, `STORE_8x8_NNZ`, intra4x4 pred-mode and nnz caches,
+plus ref/mv/mvd caches for the progressive path. Interlaced (MBAFF) paths and
+the deblock-strength cache are still pending.
 
-Gate: E83–E95 probes show identical neighbour arrays at every MB; extension
-`c004 recon diff 0/4096` preserved; no long-clip stack overflow (the
-`b_scenecut` fix from E101 must be superseded by the real array ownership).
+Gate: `python tools/run_tests.py` → 4/4 passing, including a load/save
+round-trip over neighbour arrays (`tests/test_mbcache.c`). Byte-exact MB
+decisions remain gated on WP4–WP7; the rebuild parity harness is described in
+`docs/PARITY_HARNESS.md`.
 
 ## WP3 — Lookahead / slice-type state machine
 

@@ -20,13 +20,16 @@ what the eventual **shader version of Vk264** will be derived from.
     phx_tables.h/.c          generated x264 tables (lambda, ue, chroma) [done]
     phx_cost.h/.c            analyse.c cost tables + QP init      [WP1 — done]
     phx_frame.h/.c           frame allocation + lowres planes     [WP1 — done]
+    phx_mbcache.h/.c         scan8 + progressive MB cache load/save [WP2 — done]
   tests/                     unit tests for ported functions
     test_param.c             10-preset parameter parity          [passing]
     test_cost.c              cost tables against x264 goldens    [passing]
     test_frame.c             lowres planes + border expansion    [passing]
+    test_mbcache.c           scan8 + cache load/save round-trip  [passing]
   tools/
     gen_function_inventory.py   regenerate docs/FUNCTION_INVENTORY.md
     gen_tables.py              regenerate src/phx_tables.{h,c} from x264 source
+    make_video_fixtures.py      crop D:\Videos MP4s into raw YUV fixtures
     parity_harness.py          20-case byte-exact x264 comparison
     run_tests.py               configure + build + ctest (CMake)
     close_branches.py          one-time branch cleanup utility
