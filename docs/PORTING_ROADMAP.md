@@ -104,7 +104,7 @@ review document for the shader backend derived from it.
 - WP0 complete; WP1 complete; WP2 progressive+MBAFF caches complete;
   entropy/predictor/DCT/quant primitives ported by 8 parallel workers;
   WP3–WP9 still pending (lookahead, MB analysis driver, frame loop, CRF).
-  Function inventory: 178 PORTED rows of 1386 (12.8%); `ctest` 14/14.
+  Function inventory: 201 PORTED rows of 1386 (14.5%); `ctest` 17/17.
 - Headers are byte-exact 20/20 against the saved x264 streams; full-stream
   parity is 0/100 because `phx_encode()` still returns
   `PHX_ERR_UNIMPLEMENTED` — the ported primitives are not yet wired into a

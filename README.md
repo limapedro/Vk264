@@ -33,6 +33,9 @@ what the eventual **shader version of Vk264** will be derived from.
     phx_dct.h/.c              DCT/Hadamard/IDCT family                [done]
     phx_quant.h/.c            deadzone quant/dequant + CQM tables     [done]
     phx_encoder.h/.c          full I-frame loop + slice/entropy      [wired]
+    phx_chroma.h/.c           4:2:0 chroma DC/AC encode               [wired]
+    phx_sei.h/.c               version SEI NAL (byte-exact)           [wired]
+    phx_lookahead.h/.c         slicetype/scenecut state machine       [ported]
     tools/phx_cli.c            raw-YUV CLI, emits Annex-B I frames    [wired]
   tests/                     unit tests for ported functions
     test_param.c             10-preset parameter parity          [passing]
@@ -71,7 +74,7 @@ what the eventual **shader version of Vk264** will be derived from.
 - **WP1 complete**: `phx_param` (10/10 presets), the analyse cost tables, and
   frame allocation / `x264_frame_init_lowres` are ported with source-line
   comments; x264 tables are generated mechanically. All unit tests pass
-  (`ctest`: 14/14).
+  (`ctest`: 17/17).
 - **Parity harness rebuilt**: `tools/parity_harness.py` compares 10 presets ×
   2 entropies byte-for-byte once `X264_EXE` (and later `PHX_EXE`) is supplied;
   see `docs/PARITY_HARNESS.md`. No Phoenix encoder exists yet, so no byte-exact
@@ -84,13 +87,12 @@ what the eventual **shader version of Vk264** will be derived from.
   CAVLC residual syntax with verbatim x264 tables, 46 predictors, DCT/Hadamard/
   IDCT, quant/dequant, slice header, encoder/CLI scaffold, and two shader
   design documents (`docs/FUNCTION_PORTS.md`, `docs/SHADER_NOTES.md`).
-- `phx_cli` now emits real Annex-B streams (SPS+PPS+IDR slice) using the
-  ported analysis/encode/entropy/slice modules. All 100 cases run with
-  `phx rc=0`, but none is byte-exact yet (0/100). `tools/first_frame_probe.py`
-  localises divergences: SPS/PPS exact, IDR slice header exact through byte 9,
-  first mismatch now at slice byte 10 (first MB syntax).
-- Next: fix the first-MB divergence source-aligned, then P/B frames, SEI and
-  the remaining 7 slices per stream.
+- `phx_cli` now emits Annex-B SPS+PPS+SEI+IDR slice. The first three NALs are
+  byte-exact (SPS 23/23, PPS 6/6, SEI 624/624); the IDR slice's first diff is
+  at payload byte 11. First-MB luma coefficients match x264 16/16 when x264
+  runs with `--trellis 0`; the remaining gap is trellis QNS, chroma and P/B.
+- Next: port trellis QNS (`rdo.c:1142`), finish chroma CBP alignment, then
+  P/B frame decision and the remaining slices.
 - The CABAC coder matches x264 golden bytes; porting it also exposed and fixed
   a `PHX_CLIP3` argument-order bug in the cost tables.
 

@@ -61,7 +61,7 @@ Total x264 C functions indexed: **1386**.
 | `sprintf` | `common/base.c:1518` | **MISSING** | s += sprintf |
 | `sprintf` | `common/base.c:1521` | **MISSING** | s += sprintf |
 | `sprintf` | `common/base.c:1547` | **MISSING** | s += sprintf |
-| `x264_clip3` | `common/base.h:206` | **MISSING** | static ALWAYS_INLINE int x264_clip3 |
+| `x264_clip3` | `common/base.h:206` | **PORTED** | static ALWAYS_INLINE int x264_clip3 |
 | `x264_clip3f` | `common/base.h:211` | **MISSING** | static ALWAYS_INLINE double x264_clip3f |
 | `x264_exp2fix8` | `common/base.h:218` | **MISSING** | static ALWAYS_INLINE int x264_exp2fix8 |
 | `x264_log2` | `common/base.h:226` | **PORTED** | static ALWAYS_INLINE float x264_log2 |
@@ -218,7 +218,7 @@ Total x264 C functions indexed: **1386**.
 | `x264_frame_expand_border` | `common/frame.c:556` | **MISSING** | void x264_frame_expand_border |
 | `x264_frame_expand_border_filtered` | `common/frame.c:599` | **MISSING** | void x264_frame_expand_border_filtered |
 | `x264_frame_expand_border_lowres` | `common/frame.c:627` | **PORTED** | void x264_frame_expand_border_lowres |
-| `x264_frame_expand_border_chroma` | `common/frame.c:633` | **MISSING** | void x264_frame_expand_border_chroma |
+| `x264_frame_expand_border_chroma` | `common/frame.c:633` | **PORTED** | void x264_frame_expand_border_chroma |
 | `x264_frame_expand_border_mod16` | `common/frame.c:640` | **MISSING** | void x264_frame_expand_border_mod16 |
 | `x264_expand_border_mbpair` | `common/frame.c:668` | **MISSING** | void x264_expand_border_mbpair |
 | `x264_frame_cond_broadcast` | `common/frame.c:683` | **MISSING** | void x264_frame_cond_broadcast |
@@ -243,11 +243,11 @@ Total x264 C functions indexed: **1386**.
 | `weight_cache_lsx` | `common/loongarch/mc-c.c:60` | **MISSING** | static void weight_cache_lsx |
 | `weight_cache_lasx` | `common/loongarch/mc-c.c:99` | **MISSING** | static void weight_cache_lasx |
 | `get_ref_lsx` | `common/loongarch/mc-c.c:140` | **MISSING** | static uint8_t *get_ref_lsx |
-| `width` | `common/loongarch/mc-c.c:162` | **MISSING** | pixel_avg_wtab_lsx[width] |
+| `width` | `common/loongarch/mc-c.c:162` | **PORTED** | pixel_avg_wtab_lsx[width] |
 | `mc_luma_lsx` | `common/loongarch/mc-c.c:184` | **MISSING** | static void mc_luma_lsx |
 | `i_width` | `common/loongarch/mc-c.c:204` | **MISSING** | pixel_avg_wtab_lsx[i_width >> 2] |
 | `get_ref_lasx` | `common/loongarch/mc-c.c:233` | **MISSING** | static uint8_t *get_ref_lasx |
-| `width` | `common/loongarch/mc-c.c:255` | **MISSING** | pixel_avg_wtab_lasx[width] |
+| `width` | `common/loongarch/mc-c.c:255` | **PORTED** | pixel_avg_wtab_lasx[width] |
 | `mc_luma_lasx` | `common/loongarch/mc-c.c:277` | **MISSING** | static void mc_luma_lasx |
 | `i_width` | `common/loongarch/mc-c.c:297` | **MISSING** | pixel_avg_wtab_lasx[i_width >> 2] |
 | `x264_mc_init_loongarch` | `common/loongarch/mc-c.c:326` | **MISSING** | void x264_mc_init_loongarch |
@@ -282,7 +282,7 @@ Total x264 C functions indexed: **1386**.
 | `x264_predict_4x4_init_loongarch` | `common/loongarch/predict-c.c:92` | **MISSING** | void x264_predict_4x4_init_loongarch |
 | `mc_luma` | `common/macroblock.c:32` | **MISSING** | h->mc.mc_luma |
 | `mb_mc_0xywh` | `common/macroblock.c:37` | **MISSING** | static NOINLINE void mb_mc_0xywh |
-| `width` | `common/macroblock.c:71` | **MISSING** | h->sh.weight[i_ref][2].weightfn[width>>1] |
+| `width` | `common/macroblock.c:71` | **PORTED** | h->sh.weight[i_ref][2].weightfn[width>>1] |
 | `mb_mc_1xywh` | `common/macroblock.c:76` | **MISSING** | static NOINLINE void mb_mc_1xywh |
 | `get_ref` | `common/macroblock.c:107` | **MISSING** | src1 = h->mc.get_ref |
 | `i_mode` | `common/macroblock.c:109` | **MISSING** | h->mc.avg[i_mode] |
@@ -825,8 +825,8 @@ Total x264 C functions indexed: **1386**.
 | `x264_predict_4x4_dc_c` | `common/predict.c:495` | **MISSING** | void x264_predict_4x4_dc_c |
 | `PIXEL_SPLAT_X4` | `common/predict.c:497` | **MISSING** | pixel4 dc = PIXEL_SPLAT_X4 |
 | `x264_predict_4x4_h_c` | `common/predict.c:501` | **MISSING** | void x264_predict_4x4_h_c |
-| `x264_predict_4x4_v_c` | `common/predict.c:508` | **MISSING** | void x264_predict_4x4_v_c |
-| `SRC` | `common/predict.c:528` | **MISSING** | int t6 = SRC |
+| `x264_predict_4x4_v_c` | `common/predict.c:508` | **PORTED** | void x264_predict_4x4_v_c |
+| `SRC` | `common/predict.c:528` | **PORTED** | int t6 = SRC |
 | `predict_4x4_ddl_c` | `common/predict.c:534` | **PORTED** | static void predict_4x4_ddl_c |
 | `predict_4x4_ddr_c` | `common/predict.c:546` | **MISSING** | static void predict_4x4_ddr_c |
 | `predict_4x4_vr_c` | `common/predict.c:560` | **MISSING** | static void predict_4x4_vr_c |
@@ -950,7 +950,7 @@ Total x264 C functions indexed: **1386**.
 | `mb_analyse_init_qp` | `encoder/analyse.c:255` | **PORTED** | static void mb_analyse_init_qp |
 | `mb_analyse_init` | `encoder/analyse.c:294` | **PORTED** | static void mb_analyse_init |
 | `predict_16x16_mode_available` | `encoder/analyse.c:530` | **MISSING** | static ALWAYS_INLINE const int8_t *predict_16x16_mode_available |
-| `predict_chroma_mode_available` | `encoder/analyse.c:537` | **MISSING** | static ALWAYS_INLINE const int8_t *predict_chroma_mode_available |
+| `predict_chroma_mode_available` | `encoder/analyse.c:537` | **PORTED** | static ALWAYS_INLINE const int8_t *predict_chroma_mode_available |
 | `predict_8x8_mode_available` | `encoder/analyse.c:544` | **MISSING** | static ALWAYS_INLINE const int8_t *predict_8x8_mode_available |
 | `predict_4x4_mode_available` | `encoder/analyse.c:552` | **MISSING** | static ALWAYS_INLINE const int8_t *predict_4x4_mode_available |
 | `psy_trellis_init` | `encoder/analyse.c:561` | **MISSING** | static inline void psy_trellis_init |
@@ -968,8 +968,8 @@ Total x264 C functions indexed: **1386**.
 | `mb_analyse_inter_p16x8` | `encoder/analyse.c:1480` | **MISSING** | static void mb_analyse_inter_p16x8 |
 | `mb_analyse_inter_p8x16` | `encoder/analyse.c:1546` | **MISSING** | static void mb_analyse_inter_p8x16 |
 | `mb_analyse_inter_p4x4_chroma_internal` | `encoder/analyse.c:1611` | **MISSING** | static ALWAYS_INLINE int mb_analyse_inter_p4x4_chroma_internal |
-| `width` | `encoder/analyse.c:1642` | **MISSING** | weight[1].weightfn[width>>2] |
-| `width` | `encoder/analyse.c:1644` | **MISSING** | weight[2].weightfn[width>>2] |
+| `width` | `encoder/analyse.c:1642` | **PORTED** | weight[1].weightfn[width>>2] |
+| `width` | `encoder/analyse.c:1644` | **PORTED** | weight[2].weightfn[width>>2] |
 | `chromapix` | `encoder/analyse.c:1671` | **MISSING** | return h->pixf.mbcmp[chromapix] |
 | `mb_analyse_inter_p4x4_chroma` | `encoder/analyse.c:1675` | **MISSING** | static int mb_analyse_inter_p4x4_chroma |
 | `mb_analyse_inter_p4x4` | `encoder/analyse.c:1685` | **MISSING** | static void mb_analyse_inter_p4x4 |
@@ -1140,16 +1140,16 @@ Total x264 C functions indexed: **1386**.
 | `lookahead_slicetype_decide` | `encoder/lookahead.c:68` | **MISSING** | static void lookahead_slicetype_decide |
 | `lookahead_thread` | `encoder/lookahead.c:90` | **MISSING** | REALIGN_STACK static void *lookahead_thread |
 | `x264_lookahead_init` | `encoder/lookahead.c:132` | **MISSING** | int x264_lookahead_init |
-| `x264_lookahead_delete` | `encoder/lookahead.c:171` | **MISSING** | void x264_lookahead_delete |
-| `x264_lookahead_put_frame` | `encoder/lookahead.c:192` | **MISSING** | void x264_lookahead_put_frame |
+| `x264_lookahead_delete` | `encoder/lookahead.c:171` | **PORTED** | void x264_lookahead_delete |
+| `x264_lookahead_put_frame` | `encoder/lookahead.c:192` | **PORTED** | void x264_lookahead_put_frame |
 | `x264_lookahead_is_empty` | `encoder/lookahead.c:200` | **MISSING** | int x264_lookahead_is_empty |
 | `lookahead_encoder_shift` | `encoder/lookahead.c:210` | **MISSING** | static void lookahead_encoder_shift |
-| `x264_lookahead_get_frames` | `encoder/lookahead.c:223` | **MISSING** | void x264_lookahead_get_frames |
-| `zigzag_scan_2x2_dc` | `encoder/macroblock.c:35` | **MISSING** | static inline void zigzag_scan_2x2_dc |
+| `x264_lookahead_get_frames` | `encoder/lookahead.c:223` | **PORTED** | void x264_lookahead_get_frames |
+| `zigzag_scan_2x2_dc` | `encoder/macroblock.c:35` | **PORTED** | static inline void zigzag_scan_2x2_dc |
 | `zigzag_scan_2x4_dc` | `encoder/macroblock.c:44` | **MISSING** | static inline void zigzag_scan_2x4_dc |
-| `idct_dequant_2x2_dc` | `encoder/macroblock.c:63` | **MISSING** | static inline void idct_dequant_2x2_dc |
-| `idct_dequant_2x2_dconly` | `encoder/macroblock.c:72` | **MISSING** | static inline void idct_dequant_2x2_dconly |
-| `dct2x2dc` | `encoder/macroblock.c:82` | **MISSING** | static inline void dct2x2dc |
+| `idct_dequant_2x2_dc` | `encoder/macroblock.c:63` | **PORTED** | static inline void idct_dequant_2x2_dc |
+| `idct_dequant_2x2_dconly` | `encoder/macroblock.c:72` | **PORTED** | static inline void idct_dequant_2x2_dconly |
+| `dct2x2dc` | `encoder/macroblock.c:82` | **PORTED** | static inline void dct2x2dc |
 | `array_non_zero` | `encoder/macroblock.c:98` | **MISSING** | static ALWAYS_INLINE int array_non_zero |
 | `mb_encode_i16x16` | `encoder/macroblock.c:126` | **PORTED** | static void mb_encode_i16x16 |
 | `mb_optimize_chroma_dc` | `encoder/macroblock.c:245` | **MISSING** | static ALWAYS_INLINE int mb_optimize_chroma_dc |
@@ -1296,7 +1296,7 @@ Total x264 C functions indexed: **1386**.
 | `x264_quant_8x8_trellis` | `encoder/rdo.c:1159` | **MISSING** | int x264_quant_8x8_trellis |
 | `transpose` | `encoder/set.c:36` | **MISSING** | static void transpose |
 | `scaling_list_write` | `encoder/set.c:43` | **MISSING** | static void scaling_list_write |
-| `x264_sei_write` | `encoder/set.c:80` | **MISSING** | void x264_sei_write |
+| `x264_sei_write` | `encoder/set.c:80` | **PORTED** | void x264_sei_write |
 | `x264_sps_init` | `encoder/set.c:101` | **PORTED** | void x264_sps_init |
 | `X264_MIN` | `encoder/set.c:151` | **MISSING** | sps->i_num_ref_frames = X264_MIN |
 | `x264_sps_init_reconfigurable` | `encoder/set.c:249` | **MISSING** | void x264_sps_init_reconfigurable |
@@ -1305,7 +1305,7 @@ Total x264 C functions indexed: **1386**.
 | `x264_pps_init` | `encoder/set.c:479` | **PORTED** | void x264_pps_init |
 | `x264_pps_write` | `encoder/set.c:505` | **PORTED** | void x264_pps_write |
 | `x264_sei_recovery_point_write` | `encoder/set.c:574` | **MISSING** | void x264_sei_recovery_point_write |
-| `x264_sei_version_write` | `encoder/set.c:593` | **MISSING** | int x264_sei_version_write |
+| `x264_sei_version_write` | `encoder/set.c:593` | **PORTED** | int x264_sei_version_write |
 | `x264_sei_buffering_period_write` | `encoder/set.c:625` | **MISSING** | void x264_sei_buffering_period_write |
 | `x264_sei_pic_timing_write` | `encoder/set.c:647` | **MISSING** | void x264_sei_pic_timing_write |
 | `x264_sei_frame_packing_write` | `encoder/set.c:678` | **MISSING** | void x264_sei_frame_packing_write |
@@ -1340,17 +1340,17 @@ Total x264 C functions indexed: **1386**.
 | `weight_cost_chroma444` | `encoder/slicetype.c:257` | **MISSING** | static NOINLINE unsigned int weight_cost_chroma444 |
 | `x264_weights_analyse` | `encoder/slicetype.c:284` | **MISSING** | void x264_weights_analyse |
 | `slicetype_mb_cost` | `encoder/slicetype.c:514` | **MISSING** | static void slicetype_mb_cost |
-| `slicetype_slice_cost` | `encoder/slicetype.c:814` | **MISSING** | static void slicetype_slice_cost |
+| `slicetype_slice_cost` | `encoder/slicetype.c:814` | **PORTED** | static void slicetype_slice_cost |
 | `slicetype_frame_cost` | `encoder/slicetype.c:836` | **MISSING** | static int slicetype_frame_cost |
 | `slicetype_frame_cost_recalculate` | `encoder/slicetype.c:999` | **MISSING** | static int slicetype_frame_cost_recalculate |
 | `macroblock_tree_finish` | `encoder/slicetype.c:1029` | **MISSING** | static void macroblock_tree_finish |
 | `macroblock_tree_propagate` | `encoder/slicetype.c:1051` | **MISSING** | static void macroblock_tree_propagate |
 | `mbtree_propagate_list` | `encoder/slicetype.c:1078` | **MISSING** | h->mc.mbtree_propagate_list |
-| `macroblock_tree` | `encoder/slicetype.c:1091` | **MISSING** | static void macroblock_tree |
+| `macroblock_tree` | `encoder/slicetype.c:1091` | **PORTED** | static void macroblock_tree |
 | `vbv_frame_cost` | `encoder/slicetype.c:1186` | **MISSING** | static int vbv_frame_cost |
 | `calculate_durations` | `encoder/slicetype.c:1199` | **MISSING** | static void calculate_durations |
-| `vbv_lookahead` | `encoder/slicetype.c:1225` | **MISSING** | static void vbv_lookahead |
-| `slicetype_path_cost` | `encoder/slicetype.c:1288` | **MISSING** | static uint64_t slicetype_path_cost |
+| `vbv_lookahead` | `encoder/slicetype.c:1225` | **PORTED** | static void vbv_lookahead |
+| `slicetype_path_cost` | `encoder/slicetype.c:1288` | **PORTED** | static uint64_t slicetype_path_cost |
 | `slicetype_path` | `encoder/slicetype.c:1333` | **MISSING** | static void slicetype_path |
 | `scenecut_internal` | `encoder/slicetype.c:1384` | **MISSING** | static int scenecut_internal |
 | `pcost` | `encoder/slicetype.c:1424` | **MISSING** | icost, pcost, 1. - |
