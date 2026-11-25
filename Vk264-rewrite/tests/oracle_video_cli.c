@@ -255,6 +255,15 @@ int main(int argc, char **argv)
     memset(refintra, 1, (size_t)mw*mh);
     memset(curintra, 0, (size_t)mw*mh);
     int idr_count = 0;
+    uint8_t *idr_flags = malloc((size_t)nframes);
+    /* scenecut needs all display frames contiguous, not the single padded
+     * frame buffer reused by the encoder. */
+    uint8_t *sc_frames = malloc(fs*(size_t)nframes);
+    rewind(fi);
+    size_t sc_read = fread(sc_frames, fs, (size_t)nframes, fi);
+    if ((int)sc_read != nframes) memset(sc_frames, 0, fs*(size_t)nframes);
+    rewind(fi);
+    vk_slicetype_idr_flags(sc_frames, nframes, w, h, keyint, p.i_bframe, 40, idr_flags);
 
     /* Optional general slice-type + encoder-state path (VK_SLICETYPE_CLI). */
     vk_frame_t *stypes = NULL; int *corder = NULL, ncoded = 0;
@@ -274,7 +283,7 @@ int main(int argc, char **argv)
     for (int f = 0; f < nframes; ++f) {
         if (allframes) pad420(frames,cw,ch,allframes+(size_t)f*fs,w,h);
         else { if (fread(srcf, 1, fs, fi) != fs) { fprintf(stderr, "short input at frame %d\n", f); break; } pad420(frames,cw,ch,srcf,w,h); }
-        int is_idr = stypes ? (stypes[f].type == VK_FRAME_IDR) : (f % keyint == 0);
+        int is_idr = stypes ? (stypes[f].type == VK_FRAME_IDR) : idr_flags[f];
         if (crf >= 0) {
             vk_lowres_luma(frames, cw, ch, lo_cur, dw, dh);
             uint16_t *ic = mb_intra + (size_t)f*n_mbs;
@@ -317,6 +326,15 @@ int main(int argc, char **argv)
         memset(buf, 0, sizeof(buf)); vk_bs_init(&bs, buf, sizeof(buf));
         if (is_idr) {
             int idr_pic_id = idr_count & 1;
+            /* x264 repeats SPS and PPS before every IDR slice. */
+            if (idr_count > 0) {
+                memset(buf, 0, sizeof(buf)); vk_bs_init(&bs, buf, sizeof(buf));
+                vk_sps_write(&bs, &sps);
+                vk_nal_write(fo, 0x67, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 1);
+                memset(buf, 0, sizeof(buf)); vk_bs_init(&bs, buf, sizeof(buf));
+                vk_pps_write(&bs, &sps, &pps);
+                vk_nal_write(fo, 0x68, buf, (size_t)((vk_bs_pos(&bs)+7)/8), 1);
+            }
             ++idr_count;
             if (entropy) {
                 vk_slice_header_t sh;

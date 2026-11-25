@@ -318,6 +318,108 @@ int vk_lowres_b_cost(const uint8_t *cur,const uint8_t *r0,const uint8_t *r1,
     return total;
 }
 
+/* x264-exact satd_8x4 (pixel.c:276-309). */
+static void x264_had4(int o[4],int a,int b,int c,int d)
+{
+    int t0=a+b,t1=a-b,t2=c+d,t3=c-d;
+    o[0]=t0+t2;o[1]=t1+t3;o[2]=t0-t2;o[3]=t1-t3;
+}
+static int x264_satd8x4(const uint8_t *p,int sp,const uint8_t *q,int sq)
+{
+    int lo[4][4],hi[4][4],sum=0;
+    for(int i=0;i<4;i++){
+        int a0=p[i*sp+0]-q[i*sq+0],a1=p[i*sp+1]-q[i*sq+1];
+        int a2=p[i*sp+2]-q[i*sq+2],a3=p[i*sp+3]-q[i*sq+3];
+        int a4=p[i*sp+4]-q[i*sq+4],a5=p[i*sp+5]-q[i*sq+5];
+        int a6=p[i*sp+6]-q[i*sq+6],a7=p[i*sp+7]-q[i*sq+7];
+        x264_had4(lo[i],a0,a1,a2,a3);x264_had4(hi[i],a4,a5,a6,a7);
+    }
+    for(int i=0;i<4;i++){
+        int t0[4],t1[4];x264_had4(t0,lo[0][i],lo[1][i],lo[2][i],lo[3][i]);
+        x264_had4(t1,hi[0][i],hi[1][i],hi[2][i],hi[3][i]);
+        for(int k=0;k<4;k++)sum+=(t0[k]<0?-t0[k]:t0[k])+(t1[k]<0?-t1[k]:t1[k]);
+    }
+    return sum>>1;
+}
+/* x264 x264_pixel_satd_8x8 = 2 satd_8x4 blocks at by 0 and 4. */
+static int x264_satd8x8(const uint8_t *p,int sp,const uint8_t *q,int sq)
+{
+    return x264_satd8x4(p,sp,q,sq)+x264_satd8x4(p+4*sp,sp,q+4*sq,sq);
+}
+/* x264 intra_mbcmp_x3_8x8c: H/V/DC predictors, min SATD, +9 penalty.
+ * Interior MBs only, matching vk_lowres_p_cost_mb gating. */
+int vk_lowres_i_cost_exact(const uint8_t *cur,int dw,int dh)
+{
+    int cost=0,nbx=dw/8,nby=dh/8;
+    for(int by=0;by+8<=dh;by+=8) for(int bx=0;bx+8<=dw;bx+=8){
+        int mx=bx/8,my=by/8;
+        if(nbx<=2||nby<=2||(mx>0&&mx<nbx-1&&my>0&&my<nby-1)){
+            uint8_t pr[64];
+            int s=0;for(int y=0;y<8;++y)for(int x=0;x<8;++x)s+=cur[(by+y)*dw+bx+x];
+            int dc=(s+32)>>6;
+            for(int i=0;i<64;i++)pr[i]=(uint8_t)dc;
+            int best=x264_satd8x8(cur+by*dw+bx,dw,pr,8);
+            for(int x=0;x<8;++x){for(int y=0;y<8;++y)pr[y*8+x]=cur[(by-1)*dw+bx+x];}
+            int c=x264_satd8x8(cur+by*dw+bx,dw,pr,8); if(c<best)best=c;
+            for(int y=0;y<8;++y){for(int x=0;x<8;++x)pr[y*8+x]=cur[(by+y)*dw+bx-1];}
+            c=x264_satd8x8(cur+by*dw+bx,dw,pr,8); if(c<best)best=c;
+            cost+=best+9;
+        }
+    }
+    return cost;
+}
+/* x264 lowres P cost with exact SATD metric and DIA ME (interior MBs). */
+int vk_lowres_p_cost_exact(const uint8_t *cur,const uint8_t *ref,int dw,int dh)
+{
+    int nbx=dw/8,nby=dh/8,total=0;
+    int16_t mvs[VK_LOWRES_MAX_MBS][2];
+    memset(mvs,0,sizeof(mvs));
+    for(int my=nby-1;my>=0;--my) for(int mx=nbx-1;mx>=0;--mx){
+        int mb=my*nbx+mx,bx=mx*8,by=my*8;
+        int mc[4][2],n=0;
+        if(mx<nbx-1){mc[n][0]=mvs[mb+1][0];mc[n][1]=mvs[mb+1][1];n++;}
+        if(my<nby-1){
+            mc[n][0]=mvs[mb+nbx][0];mc[n][1]=mvs[mb+nbx][1];n++;
+            if(mx>0){mc[n][0]=mvs[mb+nbx-1][0];mc[n][1]=mvs[mb+nbx-1][1];n++;}
+            if(mx<nbx-1){mc[n][0]=mvs[mb+nbx+1][0];mc[n][1]=mvs[mb+nbx+1][1];n++;}
+        }
+        int px=0,py=0;
+        if(n==1){px=mc[0][0];py=mc[0][1];}
+        else if(n>=2){px=median3(mc[0][0],mc[1][0],mc[2][0]);py=median3(mc[0][1],mc[1][1],mc[2][1]);}
+        int vx=px,vy=py;
+        int maxx=dw-8-bx,maxy=dh-8-by;
+        if(vx<-bx)vx=-bx; if(vx>maxx)vx=maxx;
+        if(vy<-by)vy=-by; if(vy>maxy)vy=maxy;
+        int best=x264_satd8x8(cur+bx*1+by*dw,dw,ref+(by+vy)*dw+bx+vx,dw)
+                 +mv_cost(vx)+mv_cost(vy);
+        if(vx||vy){int c=x264_satd8x8(cur+by*dw+bx,dw,ref+by*dw+bx,dw)+2*mv_cost(0);
+                   if(c<best){best=c;vx=vy=0;}}
+        if(best>800){
+            for(int gy=-by;gy<=maxy;gy+=4) for(int gx=-bx;gx<=maxx;gx+=4){
+                int c=x264_satd8x8(cur+by*dw+bx,dw,ref+(by+gy)*dw+bx+gx,dw)
+                      +mv_cost(gx)+mv_cost(gy);
+                if(c<best){best=c;vx=gx;vy=gy;}
+            }
+        }
+        static const int dd[4][2]={{0,-1},{0,1},{-1,0},{1,0}};
+        for(int it=0;it<64;++it){
+            int bk=-1;
+            for(int k=0;k<4;k++){
+                int nx=vx+dd[k][0],ny=vy+dd[k][1];
+                if(nx<-bx||ny<-by||nx>maxx||ny>maxy) continue;
+                int c=x264_satd8x8(cur+by*dw+bx,dw,ref+(by+ny)*dw+bx+nx,dw)
+                      +mv_cost(nx)+mv_cost(ny);
+                if(c<best){best=c;bk=k;}
+            }
+            if(bk<0)break; vx+=dd[bk][0]; vy+=dd[bk][1];
+        }
+        mvs[mb][0]=vx; mvs[mb][1]=vy;
+        if(nbx>2&&nby>2&&mx>0&&mx<nbx-1&&my>0&&my<nby-1)
+            total += best - mv_cost(0) + (vx||vy ? 5*LAMBDA : 0) + LOWRES_PENALTY;
+    }
+    return total;
+}
+
 /* Intra cost: DC predictor + 5*lambda intra penalty + lowres penalty. */
 int vk_lowres_i_cost(const uint8_t *cur,int dw,int dh)
 {

@@ -33,6 +33,12 @@ void vk_slicetype_decide(const uint8_t *frames, int n, int w, int h,
                          int b_pyramid, int scenecut_threshold,
                          vk_frame_t *out, int *coding_order, int *n_coded);
 
+/* Display-order IDR flags from x264-style scenecut with lowres flash
+ * detection. flags[n] is 1 for IDR frames. */
+void vk_slicetype_idr_flags(const uint8_t *frames, int n, int w, int h,
+                            int keyint_max, int bframes,
+                            int scenecut_threshold, uint8_t *flags);
+
 /* SATD of a w*h luma plane against another (used by scenecut costs). */
 uint64_t vk_slicetype_satd(const uint8_t *a, const uint8_t *b, int w, int h);
 
