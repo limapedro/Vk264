@@ -2,6 +2,7 @@
  * CABAC trellis quantization, ported from x264 encoder/rdo.c (C fallback).
  * Keeps the same algorithm/structure; adapted to oracle types (int dct). */
 #include "trellis.h"
+#include "cavlc.h"
 #include "cabac_tables.h"
 #include <string.h>
 #include <stdint.h>
@@ -289,6 +290,72 @@ int vk_trellis_lambda2(int qp, int b_intra) { if(qp<0)qp=0; if(qp>63)qp=63; retu
 static const uint32_t dct4_weight2_tab[16] = {
     800,320,800,320, 320,128,320,128, 800,320,800,320, 320,128,320,128
 };
+
+
+static const uint32_t cavlc_d4w1[16] = {
+    0,256,0,256, 256,512,256,512, 0,256,0,256, 256,512,256,512
+};
+static const uint32_t cavlc_d4w2[16] = {
+    800,320,800,320, 320,128,320,128, 800,320,800,320, 320,128,320,128
+};
+int vk_trellis_quant_4x4_cavlc(int dct[16], const int orig[16],
+                               const int mf[16], const int unquant_mf[16],
+                               int lambda2, int b_ac, int nC, int cat)
+{
+    vk_trellis_init();
+    const int f=1<<15;
+    int q[2][16], coefs[16];
+    int64_t delta_dist[16], score;
+    uint32_t coef_mask=0, round_mask=0;
+    int last=-1;
+    lambda2 <<= 4;
+    for(int i=15;i>=b_ac;i--){ int z=zigzag4[i];
+        if(abs(orig[z])*mf[z]>=f){last=i;break;} }
+    if(last<b_ac){ memset(dct,0,16*sizeof(int)); return 0; }
+    for(int i=b_ac;i<=last;i++){
+        int z=zigzag4[i], c=orig[z], ac=abs(c), sign=c<0?-1:1;
+        int nq=(f+ac*mf[z])>>16;
+        q[0][i]=q[1][i]=sign*nq; coefs[i]=q[1][i];
+        if(nq){
+            int dq=(f/2+ac*mf[z])>>16;
+            int u1=((unquant_mf[z]*nq+128)>>8);
+            int u0=((unquant_mf[z]*(nq-1)+128)>>8);
+            int d1=ac-u1,d0=ac-u0;
+            delta_dist[i]=(int64_t)(d0*d0-d1*d1)*cavlc_d4w2[z];
+            q[0][i]=sign*(nq-1);
+            if(dq!=nq)coefs[i]=q[0][i]; else round_mask|=1u<<i;
+        } else delta_dist[i]=0;
+        coef_mask|=(!!coefs[i])<<i;
+    }
+    score=(int64_t)(coef_mask?vk_cavlc_block_bits(coefs,cat,nC,16)
+                             :vk_cavlc_coeff0_bits(nC))*lambda2;
+    for(;;){
+        int64_t iscore=score,idd=0; int ibest=-1;
+        uint32_t imask=coef_mask,iround=round_mask;
+        for(int i=b_ac;i<=last;i++){
+            if(!delta_dist[i])continue;
+            int rc=(round_mask^(1u<<i))>>i&1;
+            int old=coefs[i], neu=q[rc][i];
+            uint32_t cm=(coef_mask&~(1u<<i))|((!!neu)<<i);
+            int64_t dd=delta_dist[i]*(rc?-1:1);
+            coefs[i]=neu;
+            int64_t sc=dd+(int64_t)(cm?vk_cavlc_block_bits(coefs,cat,nC,16)
+                                      :vk_cavlc_coeff0_bits(nC))*lambda2;
+            coefs[i]=old;
+            if(sc<iscore){iscore=sc;ibest=i;imask=cm;iround=round_mask^(1u<<i);idd=dd;}
+        }
+        if(ibest<0)break;
+        score=iscore-idd; coef_mask=imask; round_mask=iround;
+        coefs[ibest]=q[(round_mask>>ibest)&1][ibest];
+        delta_dist[ibest]=0;
+    }
+    if(coef_mask){
+        for(int i=b_ac;i<=last;i++) dct[zigzag4[i]]=coefs[i];
+        for(int i=last+1;i<16;i++) dct[zigzag4[i]]=0;
+        return 1;
+    }
+    memset(dct,0,16*sizeof(int)); return 0;
+}
 
 /* x264 zigzag scan: scan_4x4 gives quant_coefs[i]=dct[zigzag4[i]] */
 static void scan4(const int dct[16], int out[16]) { for(int i=0;i<16;i++) out[i]=dct[zigzag4[i]]; }

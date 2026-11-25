@@ -16,6 +16,11 @@ int vk_trellis_quant_4x4(int dct[16], const int orig[16],
                          uint8_t *cabac_state, int ctx_block_cat,
                          int b_interlaced);
 
+/* x264 quant_trellis_cavlc with bounded CAVLC bit counts. */
+int vk_trellis_quant_4x4_cavlc(int dct[16], const int orig[16],
+                               const int mf[16], const int unquant_mf[16],
+                               int lambda2, int b_ac, int nC, int cat);
+
 /* Trellis-quantize 4x4 DC (16 coeffs, luma I16 DC). */
 int vk_trellis_quant_4x4_dc(int dct[16], const int orig[16],
                             int dcmf, int dcbias, int dcunquant_mf,

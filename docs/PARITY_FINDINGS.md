@@ -1585,3 +1585,24 @@ ctx 73 still the first divergent bin) and audit stays 12/120, so the
 remaining CBP-luma bin difference is not in these MB-level CBP arrays.
 All gates green. Kept as a correctness fix with verified MB-level gain.
 
+### E86 ? bounded CAVLC bit-counter enables trellis-aware CAVLC coefficients
+
+Retries E82 with a dedicated `vk_cavlc_block_bits()` in `cavlc.c`: it mirrors
+the VLC choices of `vk_cavlc_block_residual` but only sums bit sizes, never
+writes bytes, never recurses, and clamps every table index. `trellis.c` now
+implements x264's `quant_trellis_cavlc` QNS with that counter (no scratch
+`vk_bs_t`), and `i4x4enc.c` uses it for CAVLC I4 luma when `vk_cur_trellis>=1`.
+
+A/B audit (same 120 cases, source stashed vs applied):
+```
+                 baseline   applied
+faster  CAVLC   byte 17     byte 12    (+5)
+superfast/veryfast byte17   byte17     (trellis=0)
+fast/medium      byte14     byte14
+veryslow/placebo byte15     byte15
+```
+No crash (E82's 0xC0000409 is gone), no metric regression: audit 12/120,
+NAL2 3/20, CABAC first-diffs unchanged, all gates green. CAVLC trellis remains
+partial (only I4 luma; DC/chroma and 8x8 still use plain quantization) but the
+bounded-counter approach is stable and gives a measured CAVLC gain.
+

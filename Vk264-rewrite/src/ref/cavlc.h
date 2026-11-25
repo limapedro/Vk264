@@ -22,6 +22,7 @@ typedef struct {
 } vk_run_level_t;
 
 void vk_cavlc_init(void);
+int vk_cavlc_coeff0_bits(int nC);
 void vk_cavlc_block_residual(vk_bs_t *s, int cat, const int *coef, int nC,
                              int chroma_v_shift, int count);
 
