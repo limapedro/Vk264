@@ -189,7 +189,10 @@ implementation; **ROADMAP** = planned, not started.
 Retracted (do not repeat): unconditional SA8D (E74 — breaks superfast recon),
 direct naive SATD_16x16 (E75 — buggy cross-check, retried correctly in E79),
 per-frame scenecut ratio without flash detection (E78/E80 — over-triggers),
-I16-only CAVLC IDR fallback (E76 — replaced in E77).
+I16-only CAVLC IDR fallback (E76 — replaced in E77), CAVLC trellis QNS via a
+scratch `vk_bs_t` (E82 — stack-buffer-overrun crash; needs a dedicated bounded
+bit-counter). E83's "recon feedback" diagnosis was corrected in E83b: MB5's
+neighbours actually match; the gap is I4 mode selection.
 
 ---
 
