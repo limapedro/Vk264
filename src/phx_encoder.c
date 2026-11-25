@@ -445,6 +445,26 @@ static int phx_encoder_block_nz(const int16_t *coef, int ncoeff)
     return 0;
 }
 
+/* common/macroblock.h:444-461 — x264_mb_transform_8x8_allowed().
+ * x264_transform_allowed[] disables the 8x8 transform for I_4x4, I_16x16,
+ * I_PCM and skips, and makes P_8x8 conditional on all four subpartitions
+ * being D_L0_8x8.  Both entropy writers gate the post-cbp transform-size
+ * flag on this predicate (cabac.c:973, cavlc.c:555); the PPS flag alone is
+ * NOT sufficient.  SHADER: C — pure lookup over the explicit decision. */
+static int phx_mb_transform_8x8_allowed(const phx_t *h,
+                                        const phx_mb_decision_t *d)
+{
+    static const uint8_t allowed[19] = {
+        0,0,0,0,1,2,0,1,1,1,1,1,1,1,1,1,1,1,0
+    };                                             /* macroblock.h:445-448 */
+    if (!h->pps.b_transform_8x8_mode) return 0;    /* :456 */
+    if (d->mb_type != PHX_P_8x8)                   /* :458 */
+        return d->mb_type >= 0 && d->mb_type < 19 ? allowed[d->mb_type] : 0;
+    for (int i = 0; i < 4; i++)                    /* :460 */
+        if (d->i_partition != PHX_D_L0_8x8) return 0;
+    return 1;
+}
+
 /* cabac.c:892-916 (cabac_block_residual_cbf) wrapper.
   * SHADER: C — serial bin writer. */
 static void phx_encoder_cabac_block(phx_t *h, phx_cabac_mb_t *mb, int cat,
@@ -611,8 +631,8 @@ static void phx_encoder_write_cavlc_mb(phx_t *h, const phx_mb_decision_t *d,
         unsigned cbp = (unsigned)((d->cbp_chroma << 4) | d->cbp_luma);
         phx_bs_write_ue(bs, (unsigned)cbp_golomb[1][intra][cbp]); /* :552 */
     }
-    if (h->pps.b_transform_8x8_mode && d->cbp_luma)
-        phx_bs_write1(bs, (unsigned)(d->b_transform_8x8 & 1)); /* cavlc.c:556 */
+    if (phx_mb_transform_8x8_allowed(h, d) && d->cbp_luma)
+        phx_bs_write1(bs, (unsigned)(d->b_transform_8x8 & 1)); /* cavlc.c:555-556 */
 
     if (mt == PHX_I_16x16) {
         phx_encoder_cavlc_qp_delta(bs, d->i_qp, last_qp); /* cavlc.c:560 */
@@ -687,8 +707,8 @@ static void phx_encoder_write_cabac_mb(phx_t *h, phx_cabac_mb_t *mb,
         phx_cabac_cbp_luma(cb, mb);                     /* :968 */
         phx_cabac_cbp_chroma(cb, mb);                   /* :970 */
     }
-    if (h->pps.b_transform_8x8_mode && d->cbp_luma)
-        phx_cabac_transform_size(cb, mb);               /* :975 */
+    if (phx_mb_transform_8x8_allowed(h, d) && d->cbp_luma)
+        phx_cabac_transform_size(cb, mb);               /* cabac.c:973-975 */
 
     if (d->cbp_luma || d->cbp_chroma || mt == PHX_I_16x16) { /* :978 */
         int b_intra = (mt == PHX_I_4x4 || mt == PHX_I_8x8 ||
