@@ -1294,3 +1294,26 @@ No chroma-cost change was made. Next: instrument the exact final
 `COPY2_IF_LT` sequence at `analyse.c:3221-3223` for MB5 to see which costs
 actually select I_4x4 in x264.
 
+### E74 ? I8x8 mode cost: x264 switches SAD->SA8D at subme>1 (verified gain)
+
+Traced the remaining MB5 frame0 type mismatch (x264 I4, oracle I8) to the
+I8x8 analysis metric. x264 `encoder.c:1411` sets `mbcmp = satd` only when
+`subpel_refine > 1`; `analyse.c:749` then selects SA8D for I8x8 mode costs
+when `mbcmp == satd`, otherwise plain SAD. The oracle hard-coded SAD for the
+gated (`mx>0 && my>0`) path and SATD for the non-gated path, ignoring the
+`use_satd` argument entirely.
+
+Added an exact `vk_sa8d8` (full 8x8 Hadamard, `(sum+2)>>2`) and wired
+`use_satd = vk_cur_subme > 1` from `cabac_enc.c`. Both I8 decision paths now
+select SA8D only at subme>1, SAD otherwise.
+
+Evidence:
+- x264 MB5 per-block I8 costs: `4, 407, -12, 316`; oracle after fix:
+  `4, 407, -12, 316` (exact match, including the -3*lambda pred-mode discount).
+- MB5 MB type now I4 in both (was x264 I4 / oracle I8).
+- Veryfast first-diff: **79 -> 38** (best gain since E70); faster 30,
+  fast..slower 41, veryslow/placebo 42 unchanged.
+- Critical: using SA8D unconditionally broke `recon c004` (0 -> 912/4096)
+  because x264 superfast (subme=1) uses SAD. The subme gate restores recon to
+  0/4096. All gates green.
+

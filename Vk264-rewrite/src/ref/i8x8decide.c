@@ -108,6 +108,28 @@ static int satd4(const uint8_t *a, int sa, const uint8_t *b, int sb)
     return s>>1;
 }
 
+/* x264 x264_pixel_sa8d_8x8: full 8x8 Hadamard, sum|coeff|, (sum+2)>>2. */
+static int vk_sa8d8(const uint8_t a[64], const uint8_t b[64])
+{
+    int t[8][8], total=0;
+    for(int y=0;y<8;y++) for(int x=0;x<8;x++) t[y][x]=(int)a[y*8+x]-(int)b[y*8+x];
+    for(int y=0;y<8;y++){
+        int v[8]; for(int x=0;x<8;x++) v[x]=t[y][x];
+        for(int st=1;st<8;st<<=1)
+            for(int i=0;i<8;i+=st*2)
+                for(int j=0;j<st;j++){ int p=v[i+j],q=v[i+j+st]; v[i+j]=p+q; v[i+j+st]=p-q; }
+        for(int x=0;x<8;x++) t[y][x]=v[x];
+    }
+    for(int x=0;x<8;x++){
+        int v[8]; for(int y=0;y<8;y++) v[y]=t[y][x];
+        for(int st=1;st<8;st<<=1)
+            for(int i=0;i<8;i+=st*2)
+                for(int j=0;j<st;j++){ int p=v[i+j],q=v[i+j+st]; v[i+j]=p+q; v[i+j+st]=p-q; }
+        for(int k=0;k<8;k++) total+=v[k]<0?-v[k]:v[k];
+    }
+    return (total+2)>>2;
+}
+
 int vk_satd8(const uint8_t a[64], const uint8_t b[64])
 {
     int total=0;
@@ -301,7 +323,7 @@ int vk_i8x8_decide_ex(const uint8_t src[64], const uint8_t l[8],
                    int have_l, int have_t, int lambda, int *cost_out,
                    int use_satd, int mb_gate, int have_tr, int pred8)
 {
-    (void)use_satd;
+    /* use_satd selects x264 SA8D (analyse.c:816) */
     /* Exact x264 filtered-edge x3 + shortcut, only for MBs with all
      * three neighbours (mx>0 && my>0). Edge MBs keep the original
      * baseline all-candidate path — verified byte-exact for MB3/MB4. */
@@ -311,7 +333,7 @@ int vk_i8x8_decide_ex(const uint8_t src[64], const uint8_t l[8],
         for(int i=0;i<8;++i) t16[8+i]=tr[i];
         i8_build_edge(e,l,t16,lt_in,have_tr);
         int pred_mode=pred8, satd[3];
-        for(int m=0;m<3;++m){ i8_pred_edge(pred,m,e); satd[m]=i8_sad(src,pred); }
+        for(int m=0;m<3;++m){ i8_pred_edge(pred,m,e); satd[m]=(use_satd?vk_sa8d8(src,pred):i8_sad(src,pred)); }
         int favor=satd[1]>satd[0];
         if(pred_mode<3) satd[pred_mode]-=3*lambda;
         int best=satd[2], bm=2;
@@ -323,7 +345,7 @@ int vk_i8x8_decide_ex(const uint8_t src[64], const uint8_t l[8],
             for(int k=0;cands[k]>=0;++k){
                 int m=cands[k];
                 i8_pred_edge(pred,m,e);
-                int c=i8_sad(src,pred);
+                int c=(use_satd?vk_sa8d8(src,pred):i8_sad(src,pred));
                 if(pred_mode==(m<=8?m:2)){ c-=3*lambda; if(c<=0){best=c;bm=m;break;} }
                 if(c<best){best=c;bm=m;}
             }
@@ -350,7 +372,7 @@ int vk_i8x8_decide_ex(const uint8_t src[64], const uint8_t l[8],
          * exist), not a positive per-mode bit penalty. */
         int pred_mode = (have_l && have_t) ? 2 : (have_l ? 9 : (have_t ? 10 : 11));
         int cost;
-        if(use_satd) cost=vk_satd8(src,pred);
+        if(use_satd) cost=vk_sa8d8(src,pred);
         else { cost=0; for(int i=0;i<64;++i){int d=src[i]-pred[i];cost+=d<0?-d:d;} }
         cost -= (m==pred_mode ? 3*lambda : 0);
         if (cost < best) { best=cost; best_mode=m; }
