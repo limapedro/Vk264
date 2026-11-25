@@ -1394,3 +1394,20 @@ those helpers also feed b-adapt and mb-tree. Reverted; 16/16 restored.
 Next: put the interior-MB scoring and intra-clamp in **scenecut-only** local
 helpers (or add explicit flags), so b-adapt/mb-tree stay untouched.
 
+### E66 ? scenecut-only helpers: intra clamp causes false positives
+
+Implemented scenecut-local lowres cost helpers in `slicetype.c` (interior-MB
+scoring, min-SATD multi-mode intra, and the x264 per-MB P->intra clamp at
+`slicetype.c:764-770`), leaving shared lowres helpers untouched.
+
+Result: the frame-9 costs matched x264 (ic=1928/pc=1947 vs x264 1929/1929),
+but because the clamp makes `pcost >= icost` for every MB, the scenecut test
+`pcost >= (1-bias)*icost` fires at **frame 1** and then at every subsequent
+frame (gop=1, bias=0.025). x264 does not: its per-MB intra costs are smaller
+relative to its inter costs, so most MBs keep the unclamped inter value.
+Without the clamp, no scenecut fires at all (oracle pcost 1140 vs icost 1928
+at frame 9). Thus the remaining gap is **per-MB intra/inter cost calibration**,
+not the scenecut decision rule itself.
+
+Reverted; `compare_slicetype.py` back to 16/16, all gates green.
+
