@@ -1207,3 +1207,20 @@ is walked / signs restored** relative to x264's `dct` state at that point.
 This is now the precise blocker for the last 5 vectors and for write-time
 trellis. No production change; baseline unchanged.
 
+### E56 ? trellis zigzag permutation was wrong (x264 frame scan restored)
+
+Found the oracle `trellis.c` used zigzag4 = `{0,1,4,8,5,2,3,6,9,12,13,10,7,11,14,15}`,
+but x264's `common/macroblock.h:x264_zigzag_scan4[0]` (frame) is
+`{0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15}` ? which the oracle's own
+`vk_ref_zigzag4` already used elsewhere. Replaced it.
+
+Decisive effect in the `(qc,state)` replay probe: vector 1 changed from
+`BAD (levels/signs swapped)` to **exact match** once the correct scan was
+used. This confirms E55's mismatch was partly a scan-order error, not only
+a DP issue. The main batch harness still reports 26/31 because its full
+deadzone path also differs from x264's `quant4_bias0` candidate set; bias0
+alone still regresses (26->25), so both must be aligned before retrying
+write-time integration.
+
+No metric change with trellis disabled; all gates green.
+

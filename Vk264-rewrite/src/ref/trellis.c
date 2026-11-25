@@ -273,7 +273,10 @@ static int trellis_coefn_1(int abs_level, uint64_t ssd0, uint64_t ssd1, const in
 }
 
 
-static const uint8_t zigzag4[16] = {0,1,4,8,5,2,3,6,9,12,13,10,7,11,14,15};
+/* x264 common/macroblock.h: x264_zigzag_scan4[0] (frame) — required here
+ * because quant_coefs are stored in zigzag order. The previous permutation
+ * was a different zigzag variant and scrambled level-tree positions. */
+static const uint8_t zigzag4[16] = {0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15};
 
 
 static const int trellis_lambda2_inter[64] = {
