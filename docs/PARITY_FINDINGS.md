@@ -1347,3 +1347,26 @@ Next: make `encode_idr_cavlc` use the same I4/I8 mode/CBP decisions as the
 byte-exact CABAC IDR path instead of the I16 fallback. This is the highest
 remaining structural gap for CAVLC parity.
 
+### E77 ? CAVLC IDR now uses the byte-exact CABAC I4/I8 decisions
+
+Implemented E76: `vk_cabac_encode_idr_recon_frame` accepts an optional
+`vk_idr_decisions_t` output (`mbtype_i4`, `mbts8`, `cmode_fix`, `modes4[16]`,
+`modes8[4]` per MB). The CAVLC IDR path in `oracle_video_cli.c` runs this
+analyser (discarding its CABAC bitstream) and then emits I8/I4 MBs via
+`vk_encode_i8x8_mb` / `vk_encode_i4x4_mb` instead of the previous I16-only
+fallback.
+
+Evidence (audit NAL2 first-diff, 2f CAVLC, before -> after):
+```
+warzone2020: superfast/veryfast/faster  byte4 -> byte17
+             fast/medium                byte4 -> byte14
+forza:       superfast/veryfast/faster  byte4 -> byte10
+```
+Superfast CABAC remains byte-exact (130-byte IDR in both). Audit stays
+12/120 byte-exact; all gates green (recon c004 0/4096, CTest 29/29+65/65,
+CAVLC P-slice 1360/1360, slicetype 16/16).
+
+Remaining CAVLC divergence is no longer MB-type selection: it is inside MB0
+coefficient syntax (byte 17), and fast/medium still diverge at byte 4 because
+their CAVLC coefficient path does not use x264's trellis quantization.
+
