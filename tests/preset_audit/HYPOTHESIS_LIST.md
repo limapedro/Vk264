@@ -2066,3 +2066,27 @@ The six remaining superfast mismatches need the actual x264 lookahead state
 machine (b-adapt FAST candidate selection with per-preset `i_max_search` and
 the flash-detection pruning), not just a different lowres cost metric.
 
+### E98 ? x264 superfast scenecut: only a few frames are ever checked
+
+`build/x264_scenecut_super.py` logged every `scenecut_internal` call for
+superfast on the three remaining mismatch clips. The `real=1` calls (actual
+IDR decisions) are rare:
+
+```
+clip 043 (warzone 30f): frame 23 only  (ic=2089 pc=2089 bias=0.3222 gop=23)
+clip 083 (forza 8f):    frame 4 only   (ic=924  pc=846  bias=0.1111 gop=4)
+clip 103 (forza 30f):   frames 4, 13, 17, 23 (ic/pc 924/846, 595/542,
+                        733/668, 1164/1114; biases 0.1111/0.1667/0.1111/0.1333)
+```
+
+All other calls are `real=0` flash-detection pruning. x264's
+`x264_slicetype_analyse` checks only `frames[1]` ? the first display frame
+after `h->lookahead->last_nonb` ? on each invocation, so the candidate set is
+determined by the sequential b-adapt coding order, not "every frame" as in
+`vk_slicetype_idr_flags`. That is why a global per-frame ratio rule either
+over- or under-triggers depending on the clip.
+
+No production change. A faithful fix needs to replay `last_nonb` accounting
+(b-adapt FAST, bframes=3, lookahead=0 for superfast) to reproduce the exact
+candidate frames above before applying the ratio test.
+
