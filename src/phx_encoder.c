@@ -329,9 +329,9 @@ static int phx_encoder_slice_qp(const phx_t *h, int slice_type)
     if (qp < 0) qp = h->pps.i_pic_init_qp;                   /* set.c:494 */
     double offset = 0.0;
     if (slice_type == PHX_SLICE_I)
-        offset = 6.0 * log2(h->param.f_ip_factor);          /* ratecontrol.c:821 */
+        offset = -6.0 * log2(h->param.f_ip_factor);         /* ratecontrol.c:821/824 */
     else if (slice_type == PHX_SLICE_B)
-        offset = 6.0 * log2(h->param.f_pb_factor);          /* ratecontrol.c:822 */
+        offset = 6.0 * log2(h->param.f_pb_factor);          /* ratecontrol.c:822/825 */
     qp = (int)(qp + offset + 0.5);                          /* :824-825 */
     if (qp < 0) qp = 0;
     if (qp > PHX_QP_MAX_SPEC) qp = PHX_QP_MAX_SPEC;
@@ -800,7 +800,10 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     /* encoder.c:3521/3529/3538/3553 — IDR/I/P are reference pictures, plain
       * B frames are disposable (no BREF/B-pyramid in this port). */
     fc.i_type = phx_encoder_slice_type(decided_type);  /* encoder.c:225 */
-    fc.i_nal_ref_idc = fc.i_type == PHX_SLICE_B ? 0 : 3; /* encoder.c:328 */
+    /* encoder.c:3521/3529/3538 — IDR/I ref_idc=3, P reference slice=2,
+     * non-reference B=0. */
+    fc.i_nal_ref_idc = fc.i_type == PHX_SLICE_B ? 0
+                     : (fc.b_idr ? 3 : 2);
     fc.i_first_mb = 0;                                 /* encoder.c:132 */
     fc.i_last_mb = h->mb_state->mb_count - 1;           /* encoder.c:133 */
     /* ratecontrol.c:823-825 — CQP maps the constant QP through the IP factor:
