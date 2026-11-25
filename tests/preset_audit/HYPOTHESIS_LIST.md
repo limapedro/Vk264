@@ -1425,3 +1425,21 @@ suggests x264's written coefficient contexts are effectively those from
 before the current MB's syntax bins (RD state copies), which the analysis-time
 path approximates better than the naive live-state write path.
 
+### E68 ? I4 DC-variant fix (fidelity) and per-MB state emulation (no gain)
+
+Compared final MB1 state for faster: x264 `cbp=7, nnz=1,0,1,0,0,1,0,0,1,0,1,...`,
+oracle `cbp=7, nnz=1,0,1,0,1,0,0,0,1,0,1,...` ? the two encoders put the
+nonzero block in a different 4x4 position within the same 8x8 quadrant (the
+byte-24 CBP-luma divergence from E67).
+
+Found one real fidelity gap in `vk_i4x4_decide`: the x3 DC candidate always
+used mode 2 (DC with top=128) even when the top neighbour is unavailable;
+x264 uses DC_LEFT(9)/DC_TOP(10)/DC_128(11) according to **block-level**
+availability. Fixed with block-level `bl/bt`; raw modes now match x264
+(`9,9,4,5,9,9,...`). No first-diff change (veryfast 79, faster 24).
+
+Also tried emulating x264's live state by advancing a CABAC snapshot with
+each I4 block's coefficients during analysis ? no gain (faster stayed 24);
+reverted. The nnz mismatch is therefore not explained by coefficient-context
+state alone.
+
