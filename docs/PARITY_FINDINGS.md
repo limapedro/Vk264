@@ -869,3 +869,15 @@ Added `vk_cur_psy_rd` (256 fast+, 0 else), `satd16_zeroref` /
 Verified: audit 12/120, NAL2 3/20, first-diff unchanged, all gates green.
 No metric gain on the current clips; retained as parameter alignment.
 
+### E50 ? b_fast_pskip alignment also needed in the CABAC P-slice writer
+
+PR #302 aligned the `pframe.c` (CAVLC) P_SKIP probe gate, but
+`vk_cabac_encode_p_recon_frame` in `cabac_enc.c` has a **second** copy of the
+same logic that still used `skip_neigh` only. Applied the same x264 gate
+(`try_skip = skip_neigh || (b_fast_pskip && subme>=3)`) there.
+
+Verified: audit 12/120, NAL2 3/20, first-diff unchanged, all gates green.
+No metric gain on the current clips (first P-slice MB has no skip
+neighbours), but parameter alignment is now complete across both P-slice
+writers.
+
