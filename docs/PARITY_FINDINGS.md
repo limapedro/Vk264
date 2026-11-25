@@ -1393,3 +1393,21 @@ count gap persists. Correct fix requires x264-exact `x264_pixel_satd_8x8`
 (`mbcmp`) inside the lowres intra/pcost helpers before the scenecut comparison
 is meaningful.
 
+### E79 ? x264-exact SATD_16x16 fixes I16 costs (retries E75)
+
+Root cause of the E75 failure found: the standalone cross-check used the
+wrong 8x4 sub-block positions (bx 0,4,8,12 with width 8 reads out of bounds)
+and pre-summed the packed 16-bit halves before the Hadamard. Correct x264
+`x264_pixel_satd_16x16` = 8 `satd_8x4` blocks at bx in {0,8}, by in {0,4,8,12},
+with the two packed halves kept separate through both Hadamard passes. The
+corrected standalone test (`build/test_satd16_fixed.c`) matches x264 exactly
+on 5 random blocks and gives 0 for identical inputs.
+
+Implemented `i16_satd8x4`/`i16_satd` in `cabac_enc.c` and used them for I16
+mode costs when `vk_cur_subme > 1` (SAD otherwise, per x264 `mbcmp`).
+
+Evidence: x264 vs oracle MB I16 costs now match exactly for MB5 2653, MB6
+839, MB14 1831 (were 2559/517/1241 with SAD). MB6/MB10/MB14 MB types now
+agree with x264; only MB11 and MB15 remain. Veryfast first-diff improved
+**38 -> 48**; recon c004 still 0/4096, all gates green.
+
