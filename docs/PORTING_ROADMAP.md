@@ -7,21 +7,24 @@ passes **and** all existing gates stay green.
 ## WP0 — Branch + authoritative reference ✓
 
 - Branch `vk264-phoenix`; copy `build/x264-ref-src/` → `reference/x264/`.
-- Generate `docs/FUNCTION_INVENTORY.md` (1049 functions, mechanical).
+- Generate `docs/FUNCTION_INVENTORY.md` (1386 functions, mechanical).
 - Write pipeline / data-structure / design / shader docs.
 - Gate: PR merged; inventory reproducible via `tools/gen_function_inventory.py`.
 
-## WP1 — Parameters, cost tables ✓ (frame plumbing pending)
+## WP1 — Parameters, cost tables, frame plumbing ✓
 
 Ported: `x264_param_default`, `param_apply_preset`, `x264_param_apply_profile`,
 `init_costs`, `x264_analyse_init_costs`, `x264_analyse_free_costs`,
-`mb_analyse_load_costs`, `mb_analyse_init_qp`, `bs_size_te`; x264 tables are
-generated mechanically by `tools/gen_tables.py`. Still pending in this package:
-frame allocation and `x264_frame_init_lowres`.
+`mb_analyse_load_costs`, `mb_analyse_init_qp`, `bs_size_te`,
+`align_stride`, `align_plane_size`, `frame_new`, `x264_frame_delete`,
+`plane_expand_border`, `x264_frame_expand_border_lowres`,
+`frame_init_lowres_core`, `x264_frame_init_lowres`. x264 tables are generated
+mechanically by `tools/gen_tables.py`.
 
-Gate: `python tools/run_tests.py` → 2/2 passing (10 presets, cost tables vs
-x264 goldens). Remaining gate: SPS/PPS byte-exact for all 20 preset×entropy
-cases once frame plumbing lands.
+Gate: `python tools/run_tests.py` → 3/3 passing (10 presets, cost tables vs
+x264 goldens, lowres planes vs independent filter computation). Remaining gate:
+SPS/PPS byte-exact for all 20 preset×entropy cases once the encoder exists;
+`tools/parity_harness.py` implements that comparison.
 
 ## WP2 — Neighbour caches and MB state
 

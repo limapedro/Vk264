@@ -19,7 +19,7 @@ def defs(path):
         s=l.strip()
         if not s or s.startswith('#') or s.startswith('//') or s.endswith(';'):
             continue
-        if '(' not in s or ')' not in s:
+        if '(' not in s:
             continue
         # Collect a multi-line signature: keep going until a line is `{`.
         j, head = i, s

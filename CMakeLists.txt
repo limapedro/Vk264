@@ -16,6 +16,7 @@ add_library(phx STATIC
     src/phx_param.c
     src/phx_tables.c
     src/phx_cost.c
+    src/phx_frame.c
 )
 target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -28,3 +29,7 @@ add_test(NAME phx_param_presets COMMAND phx_test_param)
 add_executable(phx_test_cost tests/test_cost.c)
 target_link_libraries(phx_test_cost PRIVATE phx)
 add_test(NAME phx_cost_tables COMMAND phx_test_cost)
+
+add_executable(phx_test_frame tests/test_frame.c)
+target_link_libraries(phx_test_frame PRIVATE phx)
+add_test(NAME phx_frame_lowres COMMAND phx_test_frame)

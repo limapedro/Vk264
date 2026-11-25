@@ -19,12 +19,15 @@ what the eventual **shader version of Vk264** will be derived from.
     phx_param.h/.c           x264_param_t defaults + 10 presets  [WP1 — done]
     phx_tables.h/.c          generated x264 tables (lambda, ue, chroma) [done]
     phx_cost.h/.c            analyse.c cost tables + QP init      [WP1 — done]
+    phx_frame.h/.c           frame allocation + lowres planes     [WP1 — done]
   tests/                     unit tests for ported functions
     test_param.c             10-preset parameter parity          [passing]
     test_cost.c              cost tables against x264 goldens    [passing]
+    test_frame.c             lowres planes + border expansion    [passing]
   tools/
     gen_function_inventory.py   regenerate docs/FUNCTION_INVENTORY.md
     gen_tables.py              regenerate src/phx_tables.{h,c} from x264 source
+    parity_harness.py          20-case byte-exact x264 comparison
     run_tests.py               configure + build + ctest (CMake)
     close_branches.py          one-time branch cleanup utility
     archive_old_branches.py    one-time archival of old branches as tags
@@ -32,24 +35,27 @@ what the eventual **shader version of Vk264** will be derived from.
     README.md                  mission, rules, gates
     X264_PIPELINE.md           how x264 encodes, function by function
     DATA_STRUCTURES.md         structs that must be ported, field by field
-    FUNCTION_INVENTORY.md      mechanical inventory of 1049 x264 C functions + status
+    FUNCTION_INVENTORY.md      mechanical inventory of 1386 x264 C functions + status
     ORACLE_DESIGN.md           required structure and API of the new oracle
     SHADER_MAPPING.md          CPU->shader classes A/B/C (the main goal)
+    PARITY_HARNESS.md          byte-exact comparison procedure and status
     PORTING_ROADMAP.md         WP0-WP9 with acceptance gates
 ```
 
 ## Current state
 
 - **WP0 complete**: x264 reference copied, seven documents written, mechanical
-  function inventory generated (1049 functions), old repository contents removed.
-- **WP1 complete**: `phx_param` ported from `reference/x264/common/base.c`
-  (10/10 presets verified) and the analyse cost tables ported from
-  `reference/x264/encoder/analyse.c` with mechanically generated x264 tables;
-  all unit tests pass (`ctest`: 2/2).
-- Historical baseline from the discarded incremental oracle: 12/120 short-clip
-  byte-exact, 0/240 extended, first-diff 84/30/41/42. Its harnesses are gone
-  from this branch (they remain in git history); Phoenix will rebuild parity
-  checks as part of each work package.
+  function inventory generated (1386 functions), old repository contents removed.
+- **WP1 complete**: `phx_param` (10/10 presets), the analyse cost tables, and
+  frame allocation / `x264_frame_init_lowres` are ported with source-line
+  comments; x264 tables are generated mechanically. All unit tests pass
+  (`ctest`: 3/3).
+- **Parity harness rebuilt**: `tools/parity_harness.py` compares 10 presets ×
+  2 entropies byte-for-byte once `X264_EXE` (and later `PHX_EXE`) is supplied;
+  see `docs/PARITY_HARNESS.md`. No Phoenix encoder exists yet, so no byte-exact
+  number can be reported — the historical 12/120 short and 0/240 extended are
+  context, not Phoenix results.
+- Next: WP2 neighbour caches (`x264_scan8`, cache load/save).
 
 ## Rules
 
