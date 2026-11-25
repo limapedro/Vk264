@@ -764,3 +764,29 @@ Next: unit-test more blocks against x264 to find the remaining DP mismatch
 before any further integration. Do not wire trellis into the encoder until
 the primitive matches x264 on a block-by-block basis.
 
+### E43 ? trellis primitive batch validation: two more bugs fixed
+
+`build/trellis_vectors.py` dumps x264 test vectors (`pre-quant DCT + live
+significant/last/level context bytes + final coefficients`) for I4 luma
+blocks; `build/trellis_batch.py` compiles a C harness that replays each
+vector through `vk_trellis_quant_4x4` and compares.
+
+Two further real bugs found and fixed:
+
+1. **`nz` return value**: x264 `quant_trellis_cabac` returns 0/1 (block empty
+   or not) ? `rdo.c:878/894` ? not the count of nonzero coefficients. The
+   primitive returned the count, breaking `i4cbp`-style consumers.
+2. **`trellis_dc_shortcut` unquant**: still used the old qb/deq scaling while
+   the main RD loop had been fixed in E41. Now uses `unquant_mf = deq0<<6`,
+   `(unquant_mf*level+128)>>8` for both candidate levels.
+
+Validation after fixes: **26/31 vectors match exactly** (coefficients + nz).
+The 5 remaining mismatches are blocks where x264 keeps extra levels; some
+are dump-pairing artifacts between RD-trial and final-write passes, so they
+are not yet treated as primitive bugs.
+
+**Parity effect**: with `VK_TRELLIS=1` the earlier faster regression is gone
+(faster first-diff 11 ? **17**, equal to trellis=0) and fast/medium stay at
+15. Default remains trellis-off; no byte-exact gain yet, but the primitive
+is now close enough that write-time integration can be revisited.
+

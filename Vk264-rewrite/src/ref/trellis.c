@@ -120,15 +120,14 @@ static int trellis_dc_shortcut(int sign_coef, int quant_coef, int deq0, int qp, 
     uint64_t bscore = TRELLIS_SCORE_MAX;
     int ret = 0;
     int q = abs(quant_coef);
-    int qb = qp/6 - 4;
+    (void)qp;
+    int unquant_mf = deq0 << 6;  /* x264 rdo.c: unquant_mf = dequant4_mf<<6 */
     for (int abs_level = q-1; abs_level <= q; abs_level++) {
-        int unquant_abs_level;
-        if (qb >= 0) unquant_abs_level = (deq0 * abs_level) << qb;
-        else { int f = 1 << (-qb-1); unquant_abs_level = (deq0 * abs_level + f) >> (-qb); }
+        int unquant_abs_level = (unquant_mf * abs_level + 128) >> 8;
         int d = sign_coef - ((SIGN(unquant_abs_level, sign_coef) + 8) & ~15);
         uint64_t score = (uint64_t)((int64_t)d*d * coef_weight);
+        unsigned f8_bits = 0;
         if (abs_level) {
-            unsigned f8_bits = cost_sig;
             int prefix = X264_MIN(abs_level - 1, 14);
             f8_bits += vk_cabac_size_decision_noup2(cabac_state+1, prefix > 0);
             f8_bits += vk_cabac_size_unary[prefix][cabac_state[5]];
@@ -455,9 +454,10 @@ int vk_trellis_quant_4x4(int dct[16], const int orig[16],
         if (b_ac) dct[0] = 0;
     }
 
-    int nnz = 0;
-    for (int k = b_ac; k < 16; k++) if (dct[k]) nnz++;
-    return nnz;
+    /* x264 quant_trellis_cabac returns 0/1 (block empty or not), not the
+     * number of nonzero coefficients (rdo.c:878/894). */
+    for (int k = b_ac; k < 16; k++) if (dct[k]) return 1;
+    return 0;
 }
 
 
