@@ -1966,3 +1966,23 @@ encoders even though the final nnz vectors match at the MBs we instrument.
 No production change. Next: dump MB6's `non_zero_count[0..15]` in both
 encoders at MB10 write time to find which block differs.
 
+### E92c ? top MB6 nnz arrays differ; no gain from I8 nnz synthesis
+
+`build/mb6_nnz_probe.py` dumped MB6's nnz array at MB10 write time:
+
+```
+x264   non_zero_count[0..15] = 00,00,01,01,00,00,01,01,01,01,00,00,01,01,00,00
+oracle (before) nnzc[0..15]  = 00,...,00
+```
+
+x264's `STORE_8x8_NNZ` marks the 4x4 sub-blocks of each coded 8x8 block; the
+oracle never filled `nnzc[]` for I8 MBs, so the top-neighbour CBF contexts
+were all zero. Synthesising per-4x4 nnz from the oracle's `i8nnz[]` filled the
+array (`00,00,00,00,01,01,01,01,01,01,01,01,00,00,00,00`) but **did not
+change first-diff** (veryfast stayed 84) ? the 8x8 blocks carrying residual
+differ between the encoders, so this is a coefficient-level gap, not just a
+cache-fill omission. Reverted.
+
+No production change. The remaining byte divergence is driven by I8
+coefficient content at MB6, not by the nnz cache bookkeeping.
+
