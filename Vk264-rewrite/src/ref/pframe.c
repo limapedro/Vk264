@@ -19,6 +19,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern int vk_cur_subme;
+
 #define LPAD 32   /* luma reference border: mirror x264 PADH/PADV=32 */
 #define CPAD 16   /* chroma reference border (half of luma, 4:2:0) */
 
@@ -990,13 +992,17 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                             : (have_tl ? mv_ref[idx-mw-1] : -2),
                      &psk_x, &psk_y);
 
-            /* Fast P_SKIP is only probed when a neighbour is already P_SKIP. */
+            /* x264 analyse.c:3002-3013: with b_fast_pskip, subme>=3 sets
+             * b_try_skip=1 (probe unconditionally); subme<3 probes only
+             * when a neighbour is P_SKIP. */
             int skip_neigh = (have_l && is_skip[idx-1])
                            || (have_t && is_skip[idx-mw])
                            || (have_tl && is_skip[idx-mw-1])
                            || (have_c && is_skip[idx-mw+1]);
+            int try_skip = skip_neigh ||
+                           (vk_cur_fast_pskip && vk_cur_subme >= 3);
             int do_skip = 0, fast_skip = 0;
-            if (skip_neigh &&
+            if (try_skip &&
                 probe(cur, refp, w, h, rs, mx*16, my*16, psk_x, psk_y, qp)) {
                 do_skip = 1;
                 fast_skip = 1;
