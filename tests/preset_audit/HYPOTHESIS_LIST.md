@@ -2053,3 +2053,16 @@ build (`Vk264-rewrite/src/ref/sei_table.h`, `build/gen_sei_table.py`). This is
 a byte-fidelity fix; the audit's NAL comparison filters SEI, so metrics are
 unaffected. It is tied to this x264 build's parameters (qp=28, keyint=30).
 
+### E97 ? SAD-based lowres costs for superfast scenecut: no net gain
+
+x264's lowres `mbcmp` is SAD when subpel_refine <= 1 (superfast), SATD
+otherwise. Switched `vk_slicetype_idr_flags` to the existing SAD-based
+`vk_lowres_i_cost`/`vk_lowres_p_cost_mb` for superfast, passing `p.i_subme`
+into the helper. Result: NAL-COUNT mismatches stayed at 6, but the direction
+changed (warzone 34/36 -> 34/32 ? oracle now under-triggers instead of
+over-triggering). No net improvement; reverted.
+
+The six remaining superfast mismatches need the actual x264 lookahead state
+machine (b-adapt FAST candidate selection with per-preset `i_max_search` and
+the flash-detection pruning), not just a different lowres cost metric.
+
