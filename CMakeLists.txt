@@ -18,6 +18,7 @@ add_library(phx STATIC
     src/phx_cost.c
     src/phx_frame.c
     src/phx_mbcache.c
+    src/phx_bitstream.c
 )
 target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -38,3 +39,7 @@ add_test(NAME phx_frame_lowres COMMAND phx_test_frame)
 add_executable(phx_test_mbcache tests/test_mbcache.c)
 target_link_libraries(phx_test_mbcache PRIVATE phx)
 add_test(NAME phx_macroblock_cache COMMAND phx_test_mbcache)
+
+add_executable(phx_test_bitstream tests/test_bitstream.c)
+target_link_libraries(phx_test_bitstream PRIVATE phx)
+add_test(NAME phx_bitstream COMMAND phx_test_bitstream)

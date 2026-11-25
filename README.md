@@ -21,11 +21,13 @@ what the eventual **shader version of Vk264** will be derived from.
     phx_cost.h/.c            analyse.c cost tables + QP init      [WP1 — done]
     phx_frame.h/.c           frame allocation + lowres planes     [WP1 — done]
     phx_mbcache.h/.c         scan8 + progressive MB cache load/save [WP2 — done]
+    phx_bitstream.h/.c       bs_* Golomb writer + NAL escape        [done]
   tests/                     unit tests for ported functions
     test_param.c             10-preset parameter parity          [passing]
     test_cost.c              cost tables against x264 goldens    [passing]
     test_frame.c             lowres planes + border expansion    [passing]
     test_mbcache.c           scan8 + cache load/save round-trip  [passing]
+    test_bitstream.c         Exp-Golomb patterns + NAL escape     [passing]
   tools/
     gen_function_inventory.py   regenerate docs/FUNCTION_INVENTORY.md
     gen_tables.py              regenerate src/phx_tables.{h,c} from x264 source
@@ -52,7 +54,7 @@ what the eventual **shader version of Vk264** will be derived from.
 - **WP1 complete**: `phx_param` (10/10 presets), the analyse cost tables, and
   frame allocation / `x264_frame_init_lowres` are ported with source-line
   comments; x264 tables are generated mechanically. All unit tests pass
-  (`ctest`: 3/3).
+  (`ctest`: 5/5).
 - **Parity harness rebuilt**: `tools/parity_harness.py` compares 10 presets ×
   2 entropies byte-for-byte once `X264_EXE` (and later `PHX_EXE`) is supplied;
   see `docs/PARITY_HARNESS.md`. No Phoenix encoder exists yet, so no byte-exact

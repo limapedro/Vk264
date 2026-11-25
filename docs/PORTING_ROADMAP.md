@@ -35,7 +35,8 @@ plus ref/mv/mvd caches for the progressive path. Interlaced (MBAFF) paths and
 the deblock-strength cache are still pending.
 
 Gate: `python tools/run_tests.py` → 4/4 passing, including a load/save
-round-trip over neighbour arrays (`tests/test_mbcache.c`). Byte-exact MB
+round-trip over neighbour arrays (`tests/test_mbcache.c`) and the
+bitstream/NAL writer (`tests/test_bitstream.c`). Byte-exact MB
 decisions remain gated on WP4–WP7; the rebuild parity harness is described in
 `docs/PARITY_HARNESS.md`.
 

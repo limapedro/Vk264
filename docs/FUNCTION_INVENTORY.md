@@ -70,29 +70,29 @@ Total x264 C functions indexed: **1386**.
 | `x264_predictor_difference` | `common/base.h:248` | **MISSING** | static ALWAYS_INLINE int x264_predictor_difference |
 | `abs` | `common/base.h:253` | **MISSING** | sum += abs |
 | `x264_cabac_mvd_sum` | `common/base.h:259` | **MISSING** | static ALWAYS_INLINE uint16_t x264_cabac_mvd_sum |
-| `nal_escape_c` | `common/bitstream.c:29` | **MISSING** | static uint8_t *nal_escape_c |
-| `x264_nal_encode` | `common/bitstream.c:55` | **MISSING** | void x264_nal_encode |
+| `nal_escape_c` | `common/bitstream.c:29` | **PORTED** | static uint8_t *nal_escape_c |
+| `x264_nal_encode` | `common/bitstream.c:55` | **PORTED** | void x264_nal_encode |
 | `x264_bitstream_init` | `common/bitstream.c:106` | **MISSING** | void x264_bitstream_init |
 | `code` | `common/bitstream.h:81` | **MISSING** | * plenty of room for both the code |
-| `bs_init` | `common/bitstream.h:86` | **MISSING** | static inline void bs_init |
-| `bs_pos` | `common/bitstream.h:100` | **MISSING** | static inline int bs_pos |
+| `bs_init` | `common/bitstream.h:86` | **PORTED** | static inline void bs_init |
+| `bs_pos` | `common/bitstream.h:100` | **PORTED** | static inline int bs_pos |
 | `bs_flush` | `common/bitstream.h:106` | **MISSING** | static inline void bs_flush |
 | `bs_realign` | `common/bitstream.h:113` | **MISSING** | static inline void bs_realign |
-| `bs_write` | `common/bitstream.h:125` | **MISSING** | static inline void bs_write |
+| `bs_write` | `common/bitstream.h:125` | **PORTED** | static inline void bs_write |
 | `bs_write32` | `common/bitstream.h:163` | **MISSING** | static inline void bs_write32 |
-| `bs_write1` | `common/bitstream.h:169` | **MISSING** | static inline void bs_write1 |
-| `bs_align_0` | `common/bitstream.h:182` | **MISSING** | static inline void bs_align_0 |
+| `bs_write1` | `common/bitstream.h:169` | **PORTED** | static inline void bs_write1 |
+| `bs_align_0` | `common/bitstream.h:182` | **PORTED** | static inline void bs_align_0 |
 | `bs_align_1` | `common/bitstream.h:187` | **MISSING** | static inline void bs_align_1 |
-| `bs_align_10` | `common/bitstream.h:192` | **MISSING** | static inline void bs_align_10 |
-| `bs_write_ue_big` | `common/bitstream.h:221` | **MISSING** | static inline void bs_write_ue_big |
-| `bs_write_ue` | `common/bitstream.h:241` | **MISSING** | static inline void bs_write_ue |
-| `bs_write_se` | `common/bitstream.h:246` | **MISSING** | static inline void bs_write_se |
+| `bs_align_10` | `common/bitstream.h:192` | **PORTED** | static inline void bs_align_10 |
+| `bs_write_ue_big` | `common/bitstream.h:221` | **PORTED** | static inline void bs_write_ue_big |
+| `bs_write_ue` | `common/bitstream.h:241` | **PORTED** | static inline void bs_write_ue |
+| `bs_write_se` | `common/bitstream.h:246` | **PORTED** | static inline void bs_write_se |
 | `than` | `common/bitstream.h:249` | **MISSING** | /* Faster than |
-| `bs_write_te` | `common/bitstream.h:264` | **MISSING** | static inline void bs_write_te |
-| `bs_rbsp_trailing` | `common/bitstream.h:272` | **MISSING** | static inline void bs_rbsp_trailing |
-| `bs_size_ue` | `common/bitstream.h:278` | **MISSING** | static ALWAYS_INLINE int bs_size_ue |
+| `bs_write_te` | `common/bitstream.h:264` | **PORTED** | static inline void bs_write_te |
+| `bs_rbsp_trailing` | `common/bitstream.h:272` | **PORTED** | static inline void bs_rbsp_trailing |
+| `bs_size_ue` | `common/bitstream.h:278` | **PORTED** | static ALWAYS_INLINE int bs_size_ue |
 | `bs_size_ue_big` | `common/bitstream.h:283` | **MISSING** | static ALWAYS_INLINE int bs_size_ue_big |
-| `bs_size_se` | `common/bitstream.h:291` | **MISSING** | static ALWAYS_INLINE int bs_size_se |
+| `bs_size_se` | `common/bitstream.h:291` | **PORTED** | static ALWAYS_INLINE int bs_size_se |
 | `bs_size_te` | `common/bitstream.h:301` | **PORTED** | static ALWAYS_INLINE int bs_size_te |
 | `x264_cabac_init` | `common/cabac.c:32` | **MISSING** | void x264_cabac_init |
 | `int8_t` | `common/cabac.c:37` | **MISSING** | const int8_t |
@@ -1005,7 +1005,7 @@ Total x264 C functions indexed: **1386**.
 | `analyse_update_cache` | `encoder/analyse.c:3734` | **MISSING** | static void analyse_update_cache |
 | `x264_encoder_open` | `encoder/api.c:76` | **MISSING** | REALIGN_STACK x264_t *x264_encoder_open |
 | `x264_encoder_close` | `encoder/api.c:130` | **MISSING** | REALIGN_STACK void x264_encoder_close |
-| `x264_nal_encode` | `encoder/api.c:138` | **MISSING** | REALIGN_STACK void x264_nal_encode |
+| `x264_nal_encode` | `encoder/api.c:138` | **PORTED** | REALIGN_STACK void x264_nal_encode |
 | `x264_encoder_reconfig` | `encoder/api.c:145` | **MISSING** | REALIGN_STACK int x264_encoder_reconfig |
 | `x264_encoder_parameters` | `encoder/api.c:152` | **MISSING** | REALIGN_STACK void x264_encoder_parameters |
 | `x264_encoder_headers` | `encoder/api.c:159` | **MISSING** | REALIGN_STACK int x264_encoder_headers |
@@ -1117,7 +1117,7 @@ Total x264 C functions indexed: **1386**.
 | `bitstream_restore` | `encoder/encoder.c:2723` | **MISSING** | static ALWAYS_INLINE void bitstream_restore |
 | `slice_write` | `encoder/encoder.c:2752` | **MISSING** | static intptr_t slice_write |
 | `M16` | `encoder/encoder.c:3021` | **MISSING** | int nnz8x8 = M16 |
-| `bs_pos` | `encoder/encoder.c:3098` | **MISSING** | h->stat.frame.i_misc_bits = bs_pos |
+| `bs_pos` | `encoder/encoder.c:3098` | **PORTED** | h->stat.frame.i_misc_bits = bs_pos |
 | `thread_sync_context` | `encoder/encoder.c:3132` | **MISSING** | static void thread_sync_context |
 | `thread_sync_stat` | `encoder/encoder.c:3153` | **MISSING** | static void thread_sync_stat |
 | `slices_write` | `encoder/encoder.c:3159` | **MISSING** | static void *slices_write |
