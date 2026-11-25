@@ -1027,3 +1027,18 @@ are not yet treated as primitive bugs.
 15. Default remains trellis-off; no byte-exact gain yet, but the primitive
 is now close enough that write-time integration can be revisited.
 
+### E44 ? residual ctx_block_cat mapping: I4 luma = 2, I16 DC = 0, I16 AC = 1
+
+`build/trellis_vectors.py` showed x264's `x264_quant_4x4` for I4 luma uses
+`ctx_cat_plane[DCT_LUMA_4x4][0]` = **2**, whose sig/last/level context bases
+are 134/195/247. The oracle's I4 trellis call passed `ctx_block_cat=0`
+(offsets 105/166/227) ? wrong contexts. Fixed to 2. Also removed the
+analysis-time I16 AC trellis call from PR #290: x264 uses `DCT_LUMA_AC=1`
+for I16 AC and `DCT_LUMA_DC=0` for I16 DC, so passing cat=2 there was wrong.
+
+Retried write-time-equivalent state replay with the improved primitive
+(E43): I16 DC (cat0) + AC (cat1) replayed through a temporary `vk_cabac_t`
+in x264's write order. fast/medium first-diff **regressed 15 -> 9**, so the
+I16 replay was reverted. Default remains trellis-off; a fully faithful
+write-time integration is still required before trellis can be enabled.
+

@@ -283,13 +283,7 @@ static void compute_i16_full(const uint8_t *cur, int w, int x, int y,
         vk_ref_dct4x4(dct[b], s, p);
         dc[b] = dct[b][0];
         dct[b][0] = 0;
-        if (cabac_state && vk_cur_trellis >= 1) {
-            int orig16[16]; memcpy(orig16, dct[b], sizeof(orig16));
-            int lam2 = vk_trellis_lambda2(qp, 1);
-            vk_trellis_quant_4x4(dct[b], orig16, mf, bias, deq, qp, lam2, 1, cabac_state, 2, 0);
-        } else {
-            for (int i = 0; i < 16; ++i) dct[b][i] = vk_ref_quant_one(dct[b][i], mf[i], bias[i]);
-        }
+        for (int i = 0; i < 16; ++i) dct[b][i] = vk_ref_quant_one(dct[b][i], mf[i], bias[i]);
         for (int i = 0; i < 15; ++i) acq[b][i] = dct[b][zz[i+1]];
         nnz[b] = 0;
         for (int i = 0; i < 16; ++i) nnz[b] += dct[b][i] != 0;
@@ -681,7 +675,10 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                     if (vk_cur_trellis >= 1) {
                         int od4[16]; memcpy(od4,d4,sizeof(od4));
                         int lam2 = vk_trellis_lambda2(qp,1);
-                        vk_trellis_quant_4x4(d4, od4, mf4, bi4, dq4, qp, lam2, 0, cb->state, 0, 0);
+                        /* x264 I4 luma uses ctx_block_cat DCT_LUMA_4x4=2
+                         * (ctx_cat_plane[DCT_LUMA_4x4][0]); cat=0 has wrong
+                         * sig/last/level context offsets. */
+                        vk_trellis_quant_4x4(d4, od4, mf4, bi4, dq4, qp, lam2, 0, cb->state, 2, 0);
                         for(int k=0;k<16;++k){ i4q[i][k]=d4[k]; if(i4q[i][k]) nz4=1; }
                     } else {
                         for(int k=0;k<16;++k){
