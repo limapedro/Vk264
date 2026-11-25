@@ -26,6 +26,10 @@ CAVLC IDR                 I4/I8 decisions now shared with byte-exact CABAC (E77)
 recon c004 / c064        0/4096  /  2209/4096
 ```
 
+**Extended map (E101):** 0/240 byte-exact (0%) and 120/240 NAL-count
+mismatches over 2 clips x 3 regions x 60/120f ? the 12/120 short-clip figure
+does not generalize.
+
 **Parity percentages:** byte-exact cases **12/120 = 10%**; NAL2 pairs
 **3/20 = 15%**; CABAC IDR byte-prefix (veryfast 84/128 = 66%, faster 30/130 =
 23%, fast…slower 41/120 ≈ 34%, veryslow/placebo 42/121 = 35%); superfast

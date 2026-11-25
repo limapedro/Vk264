@@ -1881,3 +1881,27 @@ mode issues (E70/E91/E95).
 This is the concrete next target for pushing `faster` past first-diff byte 30.
 No production change made.
 
+### E101 ? extended dataset map: 240 cases, 0% byte-exact, 50% NAL-count mismatch
+
+`build/extended_audit.py` expands the verification territory from 120 short
+cases to **240 cases**: 2 source clips x 3 crop regions ((1200,600),(400,300),
+(800,500)) x 2 frame counts (60,120) x 10 presets x 2 entropies. Report:
+`tests/preset_audit/EXTENDED_REPORT.md`, raw data `build/extended_results.json`.
+
+Result: **0/240 byte-exact (0%)**, **120/240 NAL-count mismatches (50%)**.
+The original 12/120 (10%) was measured only at one crop region with 2/8/30
+frames ? byte-exact parity does not generalize to longer clips or other
+regions. Per preset: 0/24 byte-exact everywhere; NAL-count mismatches 0/24
+for ultrafast, 10-14/24 for other presets.
+
+The extended run also exposed a long-clip stack overflow:
+`vk_slicetype_idr_flags` used a fixed `b_scenecut[X264_LOOKAHEAD_MAX+4]` (64)
+array while indexing up to frame n-1, crashing 120-frame encodes. Replaced
+with `malloc(n+2)` + free ? encode failures dropped from 90 to 54, and all
+gates stayed green (CTest 29/29+65/65, CAVLC 1360/1360, recon 0/4096).
+
+Remaining 54 failures are all **120f CAVLC** and were localised by stubbing:
+they disappear when `vk_me16_dia`'s initial `sad16()` call is skipped and
+reappear with instrumentation (a stack-corruption signature). Culprit not
+yet identified; 120f CABAC works. No other source change kept.
+

@@ -83,8 +83,11 @@ void vk_slicetype_idr_flags(const uint8_t *frames, int n, int w, int h,
         lo[f]=malloc((size_t)dw*dh*VK_LOWRES_PLANES);
         vk_lowres_luma(frames+(size_t)f*(size_t)w*h*3/2,w,h,lo[f],dw,dh);
     }
-    uint8_t b_scenecut[X264_LOOKAHEAD_MAX+4];
-    memset(b_scenecut, 1, sizeof(b_scenecut));
+    /* Must cover every display frame: the flash loops index b_scenecut[p]
+     * and [p+1] for p up to n-1 (x264 uses lookahead-max-sized frame arrays,
+     * but our caller can pass arbitrarily long clips). */
+    uint8_t *b_scenecut = malloc((size_t)n + 2);
+    memset(b_scenecut, 1, (size_t)n + 2);
     /* x264 disables scenecut lookahead when there are no B-frames. */
     int kmin = 6, last_keyframe = 0;
     flags[0] = 1;
@@ -92,6 +95,7 @@ void vk_slicetype_idr_flags(const uint8_t *frames, int n, int w, int h,
         for (int p=1; p<n; ++p) if (p % keyint_max == 0) flags[p] = 1;
         for (int f=0; f<n; ++f) free(lo[f]);
         free(lo);
+        free(b_scenecut);
         return;
     }
     float tmax = scenecut_threshold / 100.0f, tmin = tmax * 0.25f;
@@ -131,6 +135,7 @@ void vk_slicetype_idr_flags(const uint8_t *frames, int n, int w, int h,
     }
     for (int f=0; f<n; ++f) free(lo[f]);
     free(lo);
+    free(b_scenecut);
 }
 
 void vk_slicetype_decide(const uint8_t *frames, int n, int w, int h,
