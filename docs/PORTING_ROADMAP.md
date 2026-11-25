@@ -39,8 +39,8 @@ pixel write-back) and the deblock-strength cache.
 Gate: `python tools/run_tests.py` → 4/4 passing, including a load/save
 round-trip over neighbour arrays (`tests/test_mbcache.c`) and the
 bitstream/NAL writer (`tests/test_bitstream.c`) and the CABAC coder
-against x264 golden bytes (`tests/test_cabac.c`). SPS/PPS writing is in
-progress (`tests/compare_headers.py` currently 0/20 exact). Byte-exact MB
+against x264 golden bytes (`tests/test_cabac.c`). SPS writing is byte-exact (20/20) and SPS+PPS is 2/20 exact
+(`tests/compare_headers.py`); PPS word-flush padding is still pending. Byte-exact MB
 decisions remain gated on WP4–WP7; the rebuild parity harness is described in
 `docs/PARITY_HARNESS.md`.
 

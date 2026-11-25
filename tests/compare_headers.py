@@ -20,7 +20,8 @@ def nals(data):
         s = j+3
         k = data.find(b'\x00\x00\x01', s)
         if k < 0: k = len(data)
-        out.append(data[s:k]); i = k
+        nal = data[s:k].rstrip(b'\x00')   # Annex-B trailing_zero_8bits
+        out.append(nal); i = k
     return out
 
 

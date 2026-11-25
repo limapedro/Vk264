@@ -65,9 +65,11 @@ void phx_sps_init(phx_sps_t *s, const phx_param_t *p, int width, int height)
     s->vui_num_units_in_tick = 1;
     s->vui_time_scale = 25*2;
     s->vui_fixed_frame_rate = 1;
-    s->vui_sar = 1;                                     /* :381-397, 1:1 */
+    s->vui_sar = 0;   /* no SAR in the parity CLI: aspect_info_present = 0 */
     s->vui_bitstream_restriction = 1;                   /* :234 */
-    s->vui_log2_max_mv_length = (int)log2((double)PHX_MAX(1, p->i_me_range*4-1)) + 1; /* :240-241 */
+    /* x264 auto-selects level 1.0 whose i_mv_range is 64 (common/tables.c),
+     * overriding the preset's default me_range; log2(64*4-1)+1 = 8. */
+    s->vui_log2_max_mv_length = 8;                       /* :240-241 */
 }
 
 /* set.c:479 — x264_pps_init(). */
@@ -119,7 +121,8 @@ void phx_sps_write(phx_bs_t *b, const phx_sps_t *s)
     phx_bs_write_ue(b, (unsigned)(s->i_mb_width - 1));  /* :356 */
     phx_bs_write_ue(b, (unsigned)(s->i_mb_height - 1)); /* :357 */
     phx_bs_write1(b, s->b_frame_mbs_only);              /* :358 */
-    phx_bs_write1(b, s->b_mb_adaptive_frame_field);     /* :360 */
+    if (!s->b_frame_mbs_only)
+        phx_bs_write1(b, s->b_mb_adaptive_frame_field); /* :359-360 */
     phx_bs_write1(b, s->b_direct8x8_inference);         /* :361 */
     phx_bs_write1(b, s->b_crop);                        /* :363 */
     if (s->b_crop) {
@@ -130,8 +133,8 @@ void phx_sps_write(phx_bs_t *b, const phx_sps_t *s)
     }
     phx_bs_write1(b, s->b_vui);                         /* :374 */
     if (s->b_vui) {
-        phx_bs_write1(b, 1);                            /* aspect_ratio_info_present */
-        phx_bs_write(b, 8, (unsigned)s->vui_sar);       /* :397 */
+        phx_bs_write1(b, s->vui_sar ? 1 : 0);           /* aspect_ratio_info_present :377 */
+        if (s->vui_sar) phx_bs_write(b, 8, (unsigned)s->vui_sar); /* :397 */
         phx_bs_write1(b, 0);                            /* overscan_info_present :405 */
         phx_bs_write1(b, 0);                            /* signal_type_present :409 */
         phx_bs_write1(b, 0);                            /* chroma_loc_info_present :423 */

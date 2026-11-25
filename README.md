@@ -33,7 +33,7 @@ what the eventual **shader version of Vk264** will be derived from.
     test_mbcache.c           scan8 + cache load/save round-trip  [passing]
     test_bitstream.c         Exp-Golomb patterns + NAL escape     [passing]
     test_cabac.c             decision/bypass vs x264 golden bytes [passing]
-    tests/compare_headers.py SPS/PPS vs 20 reference streams (0/20 exact)
+    tests/compare_headers.py SPS 20/20 exact; SPS+PPS 2/20 exact
   tools/
     gen_function_inventory.py   regenerate docs/FUNCTION_INVENTORY.md
     gen_tables.py              regenerate src/phx_tables.{h,c} from x264 source
@@ -68,8 +68,9 @@ what the eventual **shader version of Vk264** will be derived from.
   context, not Phoenix results.
 - MBAFF cache paths ported (field-pair neighbour selection, cbp/MV/MVD
   conversion, skip flag, intra border backup) with unit tests.
-- SPS/PPS writer emits Annex-B headers; first 6-8 bytes match x264 but full
-  header parity is not yet achieved (0/20 in `tests/compare_headers.py`).
+- SPS writer is byte-exact for all 20 reference streams; SPS+PPS is 2/20
+  exact. PPS differences are trailing word-flush padding in x264's shared
+  bitstream buffer (`tests/compare_headers.py`).
 - Next: finish SPS/PPS parity, then CABAC/CAVLC slice syntax and phx_cli.
 - The CABAC coder matches x264 golden bytes; porting it also exposed and fixed
   a `PHX_CLIP3` argument-order bug in the cost tables.
