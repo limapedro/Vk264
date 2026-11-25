@@ -318,7 +318,8 @@ int vk_trellis_quant_4x4(int dct[16], const int orig[16],
         int sign = orig[i] < 0 ? -1 : 1;
         int a = abs(orig[i]);
         int mfi = is_dc_block ? (mf[0]>>1) : mf[i];
-        int bii = is_dc_block ? (bias[0]<<1) : bias[i];
+        /* x264 trellis uses quant4_bias0 = (1<<15)/mf (rdo.c:1149) */
+        int bii = mfi ? ((1<<15)/mfi) : 0;
         int qv = ((a + bii) * mfi) >> 16;  /* x264 quant_one: (bias+abs)*mf>>16 */
         dct[i] = qv ? qv * sign : 0;
         nz |= dct[i] != 0;

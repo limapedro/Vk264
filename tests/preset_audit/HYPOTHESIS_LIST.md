@@ -1224,3 +1224,19 @@ write-time integration.
 
 No metric change with trellis disabled; all gates green.
 
+### E57 ? trellis deadzone bias0 aligned (source-faithful candidate set)
+
+Confirmed numerically that with `quant4_bias0 = (1<<15)/mf` the oracle's
+deadzone quant_coefs match x264's exactly for the RDO vectors (vector 2:
+`qc=1,-1,1,0,-1,1,0,...` in both). Applied bias0 in `trellis.c` instead of
+the plain-path deadzone bias.
+
+Together with E56's zigzag fix, the authoritative `(qc,state)` replay probe
+now matches 1/4 vectors exactly (previously 0/4) and produces the same
+selections/signs for the first two vectors; 2 vectors still differ in DP
+level decisions. The older 31-vector batch harness still reports 26/31 ? its
+macroblock-level dump pairs RD-trial and final passes less reliably than the
+new sequence-numbered RDO dump.
+
+Full audit with bias0: 12/120, first-diff unchanged, no regression.
+
