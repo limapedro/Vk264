@@ -15,6 +15,19 @@
 
 extern int vk_cur_subme;
 extern int vk_cur_trellis;
+
+/* x264 mbcmp_init (encoder.c:1409): chroma mode decision uses SATD when
+ * subme>1, SAD otherwise. vk_satd8 = four 4x4 SATDs. */
+static int satd8_strided(const uint8_t *a, int sa, const uint8_t *b)
+{
+    uint8_t aa[64], bb[64];
+    for (int y = 0; y < 8; ++y)
+        for (int x = 0; x < 8; ++x) {
+            aa[y*8+x] = a[y*sa+x];
+            bb[y*8+x] = b[y*8+x];
+        }
+    return vk_satd8(aa, bb);
+}
 static const int vk_lambda2_tab[52] = {
     14,18,22,28,36,45,57,72,91,115,145,182,230,290,365,460,
     580,731,921,1161,1462,1843,2322,2925,3686,4644,5851,7372,9289,
@@ -735,15 +748,21 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                 int fix = m <= 3 ? m : 0;
                 int sad = 0;
                 vk_predict_chroma8(cp, tu, lu, tlu, m);
-                for (int yy=0; yy<8; ++yy) for (int xx=0; xx<8; ++xx) {
-                    int dv = cu[(my*8+yy)*(w/2)+mx*8+xx] - cp[yy*8+xx];
-                    sad += dv<0?-dv:dv;
-                }
+                if (vk_cur_subme > 1)
+                    sad += satd8_strided(cu+(my*8)*(w/2)+mx*8, w/2, cp);
+                else
+                    for (int yy=0; yy<8; ++yy) for (int xx=0; xx<8; ++xx) {
+                        int dv = cu[(my*8+yy)*(w/2)+mx*8+xx] - cp[yy*8+xx];
+                        sad += dv<0?-dv:dv;
+                    }
                 vk_predict_chroma8(cp, tv, lv, tlv, m);
-                for (int yy=0; yy<8; ++yy) for (int xx=0; xx<8; ++xx) {
-                    int dv = cv[(my*8+yy)*(w/2)+mx*8+xx] - cp[yy*8+xx];
-                    sad += dv<0?-dv:dv;
-                }
+                if (vk_cur_subme > 1)
+                    sad += satd8_strided(cv+(my*8)*(w/2)+mx*8, w/2, cp);
+                else
+                    for (int yy=0; yy<8; ++yy) for (int xx=0; xx<8; ++xx) {
+                        int dv = cv[(my*8+yy)*(w/2)+mx*8+xx] - cp[yy*8+xx];
+                        sad += dv<0?-dv:dv;
+                    }
                 int c = sad + lambda*vk_mode_bits(fix);
                 if (c < cbest) { cbest = c; cmode = m; }
             }

@@ -634,3 +634,42 @@ approximation compounds this.
 experiments. Do not claim trellis parity until it is applied at write
 time in `cabac_coeffs` with live `cb->state` and recon updated to match.
 
+### E37 ? SATD for chroma intra mode decision (subme>1): veryfast 49 -> 79
+
+**Localization**: `build/bincompare_veryfast.py` patches both `cabac.c` files
+to log `(ctx,bin)` decision sequences, then compares x264 vs oracle directly
+(no bitstream decoder involved). Before the fix the first differing bin was
+**313, ctx64**: x264 `0`, oracle `1`. ctx64 is the first chroma intra pred
+mode bin (`x264_cabac_encode_decision_noup(cb, 64+ctx, i_mode>0)` in
+`encoder/cabac.c:98-115`): x264 chose DC, oracle chose a non-DC mode.
+
+**Root cause**: x264 `mb_analyse_intra_chroma` (`encoder/analyse.c:622-623`)
+uses `pixf.intra_mbcmp_x3_chroma`, i.e. **SATD when `mbcmp==satd`** (subme>1).
+The oracle's chroma mode loop (`cabac_enc.c`, `pcav` candidate table) used
+plain SAD for both U and V planes.
+
+**Change**: added `satd8_strided()` and used `vk_satd8` for the U+V chroma
+mode cost when `vk_cur_subme > 1`; SAD retained for subme<=1 (ultrafast/superfast
+stay byte-exact).
+
+**Result**: veryfast CABAC first-diff **49 -> 79** (2f and 8f); bin-level first
+diff moved from bin313 (ctx64 chroma) to **bin541 (ctx400, transform_size_8x8
+flag)**. faster/fast/medium/slow/slower/veryslow/placebo first-diff unchanged
+(17/15/15/15/15/16/16). Gates: audit 12/120, NAL2 3/20, CAVLC 1360/1360,
+CTest 29/29+65/65, slicetype 16/16, c004 recon 0/4096.
+
+**Next gap**: bin541 ctx400 indicates a later MB's I8-vs-I4 transform-size
+decision, not chroma. Keep tracing with the same harness.
+
+### E38/E39 ? two no-gain metric experiments (reverted)
+
+- **E38 I16 SATD**: replaced the SAD metric in the `cabac_enc.c` I16 mode loop
+  with `satd16` (four `vk_satd8`), gated subme>1. First-diff unchanged
+  (veryfast 49, faster 17, fast/medium 15); IDR lengths unchanged. Reverted.
+  Conclusion: I16 mode selection was not the residual gap at these bytes.
+- **E39 I8 SATD gate**: passed `vk_cur_subme>1` as `use_satd` into
+  `vk_i8x8_decide_ex` and used `vk_satd8` in its `mb_gate` path. Result:
+  veryfast **regressed 49 -> 38** (IDR len 129 -> 141); others unchanged.
+  `vk_satd8` (four 4x4 SATDs) is not x264's SA8D scale, and the `-3*lambda`
+  discount is SAD-calibrated. Reverted; a faithful SA8D port is needed.
+

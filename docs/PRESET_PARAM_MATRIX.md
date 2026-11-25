@@ -55,7 +55,7 @@ Source of truth: `build/x264-ref-src/common/base.c:384-602` (defaults + `x264_pa
 Current verdict tiers (fresh 120-case audit at `main @ c7f5ea2`):
 - ultrafast: subme=0, trellis=0, no I4 analysis, no B — **12/12 byte-exact** (the oracle implements precisely this tier).
 - superfast: subme=1 — IDR NAL2 byte4 (CAVLC), P-slice NAL3 byte7 (CABAC).
-- veryfast: subme=2, trellis=0 — CABAC NAL2 **byte49** after PR #288 SATD; MB1 I4 modes match x264 exactly; tail is coefficients/chroma/MB2+.
+- veryfast: subme=2, trellis=0 — CABAC NAL2 **byte79** after PR #288 SATD + E37 chroma SATD; MB1 I4 modes match x264 exactly; next gap is a later MB's I8-vs-I4 transform-size flag (bin541 ctx400).
 - faster: subme=4, x264 trellis=1 — CABAC NAL2 **byte17**; E18/E18b: trellis is the cause; oracle trellis foundation exists but is disabled until write-time integration lands.
 - fast/medium/slow/slower: subme=6..9, x264 trellis=1/2 — CABAC NAL2 **byte15** (MB-level RD/pred-mode tier); oracle trellis disabled.
 - veryslow/placebo: subme=10/11, ME range 24, TESA — CABAC NAL2 **byte16**.
