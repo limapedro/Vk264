@@ -818,3 +818,17 @@ primitive does affect output, but no byte-exact or first-diff gain. Reverted
 to `vk_cur_trellis=0` default. Trellis must not be enabled until a faithful
 write-time integration exists.
 
+### E46 ? parameter parity enforced (trellis aligned to x264 defaults)
+
+Per the requirement that the oracle use the **same parameters as x264** for
+100% parity, `vk_cur_trellis` now follows x264 `common/base.c` defaults
+(0 ultra/super/veryfast, 1 faster/fast/medium, 2 slow+) instead of being
+hardcoded to 0. `docs/PRESET_PARAM_MATRIX.md` now has an explicit
+parameter-alignment audit: SPS/PPS-relevant values are ALIGNED; analysis
+knobs still MISSING/PARTIAL are `i_me_method`, `i_me_range`, `b_fast_pskip`,
+`i_bframe_adaptive`, `b_mb_tree`, `i_lookahead`, `i_weighted_pred`, `i_psy_rd`.
+
+E45 had already verified that enabling the correct trellis values changes
+bitstreams but does **not** regress audit/first-diff, so alignment is kept
+even though the write-time implementation is still incomplete.
+
