@@ -1,5 +1,7 @@
 # Vk264 Phoenix
 
+![Phoenix parity progress — x264 weapon level](docs/phoenix-progress.svg)
+
 A from-scratch, function-for-function CPU port of x264. This repository **is**
 the Phoenix project: the old incremental oracle and its harnesses were removed from this branch.
 `vk264-phoenix` is the single, default branch; the 362 old branches were
