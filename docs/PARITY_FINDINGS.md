@@ -1411,3 +1411,27 @@ Evidence: x264 vs oracle MB I16 costs now match exactly for MB5 2653, MB6
 agree with x264; only MB11 and MB15 remain. Veryfast first-diff improved
 **38 -> 48**; recon c004 still 0/4096, all gates green.
 
+### E80 ? exact lowres costs now match x264's scenecut ratios; lookahead pruning is the blocker
+
+With x264-exact `satd_8x4` wired into lowres costs (correct block positions
+and separate packed halves, as in E79), the scenecut ratio inputs match x264
+closely at the two real scene changes of the 30f clip:
+```
+frame 9 : oracle ic=2181 pc(prev)=1985  -> ratio 0.91
+          x264   ic=1929 pc=1929        -> ratio 1.00  (bias 0.1667)
+frame 23: oracle ic=3114 pc(prev)=2560  -> ratio 0.82
+          x264   ic=3128 pc=2646        -> ratio 0.85  (bias 0.2222)
+```
+`keyint_min = MIN(keyint_max/10, bframes+1) = 3` reproduces both biases.
+
+A per-frame ratio rule still over-triggers (frames 4,7,17,20,25,28) because
+x264 does not evaluate `scenecut_internal(..., real_scenecut=1)` on every
+frame: `slicetype.c:1447-1461` prunes frames via flash detection using
+`scenecut_internal(...,0)` on a lookahead window anchored at `last_nonb`, and
+the main loop (line 1523) only checks `frames[1]` per lookahead step. That
+sequential pruning ? not cost calibration ? is the remaining gap.
+
+The exact-lowres helper experiment was reverted (no production gain); IDR
+placement remains 0-only. Next: replicate x264's lookahead/flash pruning
+around these now-calibrated costs.
+
