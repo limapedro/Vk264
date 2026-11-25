@@ -6,6 +6,49 @@
 #define PHX_CLIP3(a,v,b) ((v) < (a) ? (a) : ((v) > (b) ? (b) : (v)))
 #define PHX_MIN(a,b) ((a) < (b) ? (a) : (b))
 
+/* PHX_CABAC_BIN_TRACE is a compile-time-only debug mode (never an env switch).
+ * A debug build with -DPHX_CABAC_BIN_TRACE writes one line per ordered bin to
+ * phx_bins.txt using the same text format as the x264 golden trace harness in
+ * tools/cabac_bin_diff.py.  Off by default: no file I/O and no state changes.
+ * SHADER: C — strictly serial, read-only observation of the coder state. */
+#ifdef PHX_CABAC_BIN_TRACE
+#include <stdio.h>
+static FILE *phx_trace_fp;
+static int phx_trace_n;
+static void phx_trace_open(void)
+{
+    if (!phx_trace_fp) phx_trace_fp = fopen("phx_bins.txt", "w");
+}
+static void phx_trace_decision(int ctx, int b, int st,
+                               int lo, int rg, int lo2, int rg2)
+{
+    phx_trace_open();
+    if (!phx_trace_fp || phx_trace_n++ > 40000) return;
+    fprintf(phx_trace_fp, "dec %d %d %d %d %d %d %d\n",
+            ctx, b, st, lo, rg, lo2, rg2);
+}
+static void phx_trace_bypass(int b, int lo, int rg, int lo2, int rg2)
+{
+    phx_trace_open();
+    if (!phx_trace_fp || phx_trace_n++ > 40000) return;
+    fprintf(phx_trace_fp, "byp %d 0 %d %d %d %d\n", b, lo, rg, lo2, rg2);
+}
+static void phx_trace_ue(int exp_bits, int val, int nbins,
+                         int lo, int rg, int lo2, int rg2)
+{
+    phx_trace_open();
+    if (!phx_trace_fp || phx_trace_n++ > 40000) return;
+    fprintf(phx_trace_fp, "ue %d %d %d 0 %d %d %d %d\n",
+            exp_bits, val, nbins, lo, rg, lo2, rg2);
+}
+static void phx_trace_terminal(int lo, int rg, int lo2, int rg2)
+{
+    phx_trace_open();
+    if (!phx_trace_fp || phx_trace_n++ > 40000) return;
+    fprintf(phx_trace_fp, "term 0 %d %d %d %d\n", lo, rg, lo2, rg2);
+}
+#endif /* PHX_CABAC_BIN_TRACE */
+
 /* cabac.c:32 — x264_cabac_init()/context computation, inlined into our init
  * so no hidden global cache is needed. */
 void phx_cabac_context_init(phx_cabac_t *cb, int slice_type, int qp, int model)
@@ -75,6 +118,9 @@ static void phx_cabac_encode_renorm(phx_cabac_t *cb)
 void phx_cabac_encode_decision(phx_cabac_t *cb, int ctx, int b)
 {
     int i_state = cb->state[ctx];                        /* :115 */
+#ifdef PHX_CABAC_BIN_TRACE
+    int t_low = cb->i_low, t_range = cb->i_range;
+#endif
     int range_lps = phx_cabac_range_lps[i_state>>1][(cb->i_range>>6)-4]; /* :116 */
     cb->i_range -= range_lps;                            /* :117 */
     if (b != (i_state & 1)) {                            /* :118 */
@@ -82,15 +128,25 @@ void phx_cabac_encode_decision(phx_cabac_t *cb, int ctx, int b)
     }
     cb->state[ctx] = phx_cabac_transition[i_state][b];   /* :123 */
     phx_cabac_encode_renorm(cb);                         /* :124 */
+#ifdef PHX_CABAC_BIN_TRACE
+    phx_trace_decision(ctx, b, i_state, t_low, t_range,
+                       cb->i_low, cb->i_range);
+#endif
 }
 
 /* cabac.c:128 — x264_cabac_encode_bypass_c() (b is negated by the caller). */
 void phx_cabac_encode_bypass(phx_cabac_t *cb, int b)
 {
+#ifdef PHX_CABAC_BIN_TRACE
+    int t_low = cb->i_low, t_range = cb->i_range;
+#endif
     cb->i_low <<= 1;                    /* :130 */
     cb->i_low += b & cb->i_range;       /* :131 */
     cb->i_queue += 1;                   /* :132 */
     phx_cabac_putbyte(cb);              /* :133 */
+#ifdef PHX_CABAC_BIN_TRACE
+    phx_trace_bypass(!b, t_low, t_range, cb->i_low, cb->i_range);
+#endif
 }
 
 /* Count leading zeros of a nonzero 32-bit value (x264_clz). */
@@ -111,10 +167,16 @@ static const int bypass_lut[16] = {
 /* cabac.c:142 — x264_cabac_encode_ue_bypass(). */
 void phx_cabac_encode_ue_bypass(phx_cabac_t *cb, int exp_bits, int val)
 {
+#ifdef PHX_CABAC_BIN_TRACE
+    int t_low = cb->i_low, t_range = cb->i_range;
+#endif
     uint32_t v = (uint32_t)(val + (1<<exp_bits));       /* :144 */
     int k = 31 - phx_clz(v);                            /* :145 */
     uint32_t x = (uint32_t)(bypass_lut[k-exp_bits] << exp_bits) + v; /* :146 */
     k = 2*k+1-exp_bits;                                 /* :147 */
+#ifdef PHX_CABAC_BIN_TRACE
+    int t_nbins = k;
+#endif
     int i = ((k-1)&7)+1;                                /* :148 */
     do {
         k -= i;                                         /* :150 */
@@ -124,13 +186,23 @@ void phx_cabac_encode_ue_bypass(phx_cabac_t *cb, int exp_bits, int val)
         phx_cabac_putbyte(cb);                          /* :154 */
         i = 8;                                          /* :155 */
     } while (k > 0);                                    /* :156 */
+#ifdef PHX_CABAC_BIN_TRACE
+    phx_trace_ue(exp_bits, val, t_nbins, t_low, t_range,
+                 cb->i_low, cb->i_range);
+#endif
 }
 
 /* cabac.c:159 — x264_cabac_encode_terminal_c(). */
 void phx_cabac_encode_terminal(phx_cabac_t *cb)
 {
+#ifdef PHX_CABAC_BIN_TRACE
+    int t_low = cb->i_low, t_range = cb->i_range;
+#endif
     cb->i_range -= 2;                    /* :161 */
     phx_cabac_encode_renorm(cb);         /* :162 */
+#ifdef PHX_CABAC_BIN_TRACE
+    phx_trace_terminal(t_low, t_range, cb->i_low, cb->i_range);
+#endif
 }
 
 /* cabac.c:165 — x264_cabac_encode_flush(). */

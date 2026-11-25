@@ -18,6 +18,10 @@
 #include "phx_cabac_syntax.h"
 #include "phx_tables.h"
 #include <string.h>
+#ifdef PHX_CABAC_BIN_TRACE
+#include <stdio.h>
+FILE *phx_trace_block_fp;   /* compile-time-only coefficient-array diagnostic */
+#endif
 
 /* cabac.h:92 — x264_cabac_encode_decision_noup is an alias, not a coder. */
 #define DEC(cb, ctx, b)      phx_cabac_encode_decision((cb), (ctx), (b))
@@ -864,6 +868,24 @@ void phx_cabac_block_residual_cbf(phx_cabac_t *cb, phx_cabac_mb_t *mb,
 {
     int ctxidxinc = phx_cabac_cbf_ctxidxinc(mb, ctx_block_cat, i_idx,
                                              b_intra, b_dc);        /* :895 */
+#ifdef PHX_CABAC_BIN_TRACE
+    {
+        /* Compile-time-only diagnostic: the ordered coefficient array fed to
+         * the residual bin writer.  SHADER: C — read-only observation. */
+        extern FILE *phx_trace_block_fp; /* defined below under the same macro */
+        if (!phx_trace_block_fp) phx_trace_block_fp = fopen("phx_blocks.txt", "w");
+        if (phx_trace_block_fp) {
+            int n = (ctx_block_cat == PHX_DCT_LUMA_8x8 ||
+                     ctx_block_cat == PHX_DCT_CHROMAU_8x8 ||
+                     ctx_block_cat == PHX_DCT_CHROMAV_8x8) ? 64 : 16;
+            fprintf(phx_trace_block_fp, "blk %d %d %d:", ctx_block_cat,
+                    i_idx, ctxidxinc);
+            for (int k = 0; k < n; k++)
+                fprintf(phx_trace_block_fp, " %d", l[k]);
+            fprintf(phx_trace_block_fp, "\n");
+        }
+    }
+#endif
     if (mb->cache->non_zero_count[phx_scan8[i_idx]])
     {
         DEC(cb, ctxidxinc, 1);                                     /* :898 */

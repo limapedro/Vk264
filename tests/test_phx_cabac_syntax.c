@@ -47,6 +47,8 @@ static void setup(phx_cabac_t *cb, int slice_type, int qp)
     mb.i_frame = 0;
     mb.i_qp = qp;
     mb.i_last_qp = qp;
+    mb.b_transform_8x8_mode = 0;
+    cache.b_transform_8x8 = 0;
 }
 
 static void check(const char *name, phx_cabac_t *cb,
@@ -92,6 +94,23 @@ int main(void)
     cache.type_top = PHX_I_16x16;
     phx_cabac_mb_header_i(&cb, &mb, PHX_I_4x4, PHX_SLICE_I, 1);
     check("mb_header_i_I4", &cb, (const uint8_t[]){0xE6,0xFF,0xFC,0x3B,0x21}, 5);
+
+    /* Regression (worker L1): I_4x4 with PPS transform_8x8_mode=1 must emit
+     * transform_size_8x8_flag exactly once, from inside mb_header_i, at the
+     * x264 cabac.c:419-420 position.  Golden bytes come from a harness that
+     * #includes reference/x264/encoder/cabac.c and calls cabac_mb_header_i()
+     * with the same state/context setup; phx_encoder.c must NOT emit the flag
+     * a second time after cbp_luma/chroma (x264_transform_allowed[I_4x4]==0,
+     * common/macroblock.h:443-460).  SHADER: C. */
+    setup(&cb, PHX_SLICE_I, 26);
+    mb.i_type = PHX_I_4x4;
+    mb.b_transform_8x8_mode = 1;
+    cache.b_transform_8x8 = 0;
+    for (int i = 0; i < 16; i++)
+        cache.intra4x4_pred_mode[phx_scan8[i]] = 2;  /* FIX4(2) == DC == pred */
+    phx_cabac_mb_header_i(&cb, &mb, PHX_I_4x4, PHX_SLICE_I, 1);
+    check("mb_header_i_I4_t8x8_once", &cb,
+          (const uint8_t[]){0xB4,0x24,0x8D,0xD1,0xF0,0x8F,0x85}, 7);
 
     /* P-slice intra suffix. */
     setup(&cb, PHX_SLICE_P, 26);
