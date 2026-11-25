@@ -28,7 +28,10 @@
 #define PHX_CAVLC_LEVEL_TABLE_HALF 64             /* LEVEL_TABLE_SIZE/2 */
 #define PHX_PROFILE_HIGH 100                      /* x264.h PROFILE_HIGH */
 
-/* DCT block categories: common/macroblock.h:275-289. */
+/* DCT block categories: common/macroblock.h:275-289.
+ * phx_cabac_syntax.h defines the same constants as macros; when that header is
+ * included first, use those macros instead of redeclaring an enum. */
+#ifndef PHX_DCT_LUMA_DC
 enum {
     PHX_DCT_LUMA_DC      = 0,
     PHX_DCT_LUMA_AC      = 1,
@@ -45,6 +48,7 @@ enum {
     PHX_DCT_CHROMAV_4x4  = 12,
     PHX_DCT_CHROMAV_8x8  = 13
 };
+#endif
 
 /* tables.h:30-34. */
 typedef struct {
