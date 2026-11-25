@@ -1061,3 +1061,24 @@ all-zero baseline or the sign/coefficient setup. This narrows E59 further:
 the remaining 4 vectors differ in per-node entropy cost updates.
 No production change; instrumentation reverted.
 
+### E61 ? cost dump: entropy costs match, SSD values diverge
+
+Instrumented `trellis_coef` in both encoders to log j, const_level,
+level1_state, f8_bits, ssd and score for every nonzero-path candidate.
+For the first I4 block, **f8_bits and level1_state match x264 exactly**
+(e.g. j=0 cl=1 st=78 f8=848 in both), but the `ssd` argument differs:
+
+```
+candidate   x264 ssd   oracle ssd
+j=0 cl=1    2949120    3872000
+j=0 cl=2     216320     933120
+j=1 cl=2     737280    1848320
+```
+
+Since the entropy side is confirmed correct, the remaining 4-vector gap is
+in the **SSD computation** (`unquant_abs_level * coef_weight2` vs the
+original coefficient), despite the weight table and `unquant_mf = deq<<6`
+having been verified separately. Next: dump `orig_coefs`, `unquant_abs_level`
+and the weight per coefficient from both encoders for one failing block.
+No production change; instrumentation reverted.
+
