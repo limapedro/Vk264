@@ -68,7 +68,7 @@ Total x264 C functions indexed: **1386**.
 | `x264_median` | `common/base.h:232` | **MISSING** | static ALWAYS_INLINE int x264_median |
 | `x264_median_mv` | `common/base.h:242` | **MISSING** | static ALWAYS_INLINE void x264_median_mv |
 | `x264_predictor_difference` | `common/base.h:248` | **MISSING** | static ALWAYS_INLINE int x264_predictor_difference |
-| `abs` | `common/base.h:253` | **MISSING** | sum += abs |
+| `abs` | `common/base.h:253` | **PORTED** | sum += abs |
 | `x264_cabac_mvd_sum` | `common/base.h:259` | **PORTED** | static ALWAYS_INLINE uint16_t x264_cabac_mvd_sum |
 | `nal_escape_c` | `common/bitstream.c:29` | **PORTED** | static uint8_t *nal_escape_c |
 | `x264_nal_encode` | `common/bitstream.c:55` | **PORTED** | void x264_nal_encode |
@@ -108,9 +108,9 @@ Total x264 C functions indexed: **1386**.
 | `x264_cabac_encode_flush` | `common/cabac.c:165` | **PORTED** | void x264_cabac_encode_flush |
 | `x264_cabac_pos` | `common/cabac.h:94` | **MISSING** | static ALWAYS_INLINE int x264_cabac_pos |
 | `x264_cabac_size_decision` | `common/cabac.h:101` | **MISSING** | static ALWAYS_INLINE void x264_cabac_size_decision |
-| `x264_cabac_size_decision2` | `common/cabac.h:108` | **MISSING** | static ALWAYS_INLINE int x264_cabac_size_decision2 |
+| `x264_cabac_size_decision2` | `common/cabac.h:108` | **PORTED** | static ALWAYS_INLINE int x264_cabac_size_decision2 |
 | `x264_cabac_size_decision_noup` | `common/cabac.h:115` | **MISSING** | static ALWAYS_INLINE void x264_cabac_size_decision_noup |
-| `x264_cabac_size_decision_noup2` | `common/cabac.h:121` | **MISSING** | static ALWAYS_INLINE int x264_cabac_size_decision_noup2 |
+| `x264_cabac_size_decision_noup2` | `common/cabac.h:121` | **PORTED** | static ALWAYS_INLINE int x264_cabac_size_decision_noup2 |
 | `x264_log` | `common/common.c:32` | **MISSING** | void x264_log |
 | `x264_clip_pixel` | `common/common.h:145` | **PORTED** | static ALWAYS_INLINE pixel x264_clip_pixel |
 | `x264_predictor_roundclip` | `common/common.h:774` | **MISSING** | static ALWAYS_INLINE int x264_predictor_roundclip |
@@ -1104,7 +1104,7 @@ Total x264 C functions indexed: **1386**.
 | `weighted_reference_duplicate` | `encoder/encoder.c:2163` | **MISSING** | static int weighted_reference_duplicate |
 | `weighted_pred_init` | `encoder/encoder.c:2202` | **MISSING** | static void weighted_pred_init |
 | `reference_distance` | `encoder/encoder.c:2286` | **MISSING** | static inline int reference_distance |
-| `abs` | `encoder/encoder.c:2289` | **MISSING** | return abs |
+| `abs` | `encoder/encoder.c:2289` | **PORTED** | return abs |
 | `reference_build_list` | `encoder/encoder.c:2295` | **MISSING** | static inline void reference_build_list |
 | `fdec_filter_row` | `encoder/encoder.c:2413` | **MISSING** | static void fdec_filter_row |
 | `x264_pixel_ssd_wxh` | `encoder/encoder.c:2499` | **MISSING** | h->stat.frame.i_ssd[p] += x264_pixel_ssd_wxh |
@@ -1177,14 +1177,14 @@ Total x264 C functions indexed: **1386**.
 | `only` | `encoder/macroblock.c:1383` | **PORTED** | * RD only, luma only |
 | `macroblock_encode_p4x4_internal` | `encoder/macroblock.c:1385` | **MISSING** | static ALWAYS_INLINE void macroblock_encode_p4x4_internal |
 | `x264_macroblock_encode_p4x4` | `encoder/macroblock.c:1419` | **MISSING** | void x264_macroblock_encode_p4x4 |
-| `x264_quant_8x8_trellis` | `encoder/macroblock.h:84` | **MISSING** | int x264_quant_8x8_trellis |
+| `x264_quant_8x8_trellis` | `encoder/macroblock.h:84` | **PORTED** | int x264_quant_8x8_trellis |
 | `x264_quant_4x4` | `encoder/macroblock.h:90` | **PORTED** | static ALWAYS_INLINE int x264_quant_4x4 |
 | `x264_quant_8x8` | `encoder/macroblock.h:101` | **PORTED** | static ALWAYS_INLINE int x264_quant_8x8 |
 | `x264_mb_encode_i4x4` | `encoder/macroblock.h:132` | **PORTED** | static ALWAYS_INLINE void x264_mb_encode_i4x4 |
 | `x264_mb_encode_i8x8` | `encoder/macroblock.h:168` | **PORTED** | static ALWAYS_INLINE void x264_mb_encode_i8x8 |
 | `x264_me_search_ref` | `encoder/me.c:182` | **MISSING** | void x264_me_search_ref |
 | `cost` | `encoder/me.c:260` | **MISSING** | else /* Otherwise just copy the cost |
-| `abs` | `encoder/me.c:492` | **MISSING** | mvd = abs |
+| `abs` | `encoder/me.c:492` | **PORTED** | mvd = abs |
 | `i_pixel` | `encoder/me.c:659` | **MISSING** | int bsad = h->pixf.sad[i_pixel] |
 | `i_pixel` | `encoder/me.c:668` | **MISSING** | xn = h->pixf.ads[i_pixel] |
 | `i_pixel` | `encoder/me.c:691` | **MISSING** | int sad = h->pixf.sad[i_pixel] |
@@ -1264,7 +1264,7 @@ Total x264 C functions indexed: **1386**.
 | `cached_satd` | `encoder/rdo.c:94` | **MISSING** | static ALWAYS_INLINE int cached_satd |
 | `cache_index` | `encoder/rdo.c:99` | **MISSING** | int cache_index = |
 | `ssd_plane` | `encoder/rdo.c:123` | **MISSING** | static inline int ssd_plane |
-| `abs` | `encoder/rdo.c:135` | **MISSING** | satd = abs |
+| `abs` | `encoder/rdo.c:135` | **PORTED** | satd = abs |
 | `ssd_mb` | `encoder/rdo.c:150` | **MISSING** | static inline int ssd_mb |
 | `rd_cost_mb` | `encoder/rdo.c:162` | **MISSING** | static int rd_cost_mb |
 | `rd_cost_subpart` | `encoder/rdo.c:201` | **MISSING** | static uint64_t rd_cost_subpart |
@@ -1277,23 +1277,23 @@ Total x264 C functions indexed: **1386**.
 | `ssd_plane` | `encoder/rdo.c:330` | **MISSING** | int chromassd = ssd_plane |
 | `rd_cost_chroma` | `encoder/rdo.c:349` | **MISSING** | static uint64_t rd_cost_chroma |
 | `ssd_plane` | `encoder/rdo.c:357` | **MISSING** | i_ssd = ssd_plane |
-| `x264_rdo_init` | `encoder/rdo.c:384` | **MISSING** | void x264_rdo_init |
-| `trellis_dc_shortcut` | `encoder/rdo.c:463` | **MISSING** | int trellis_dc_shortcut |
-| `trellis_coef` | `encoder/rdo.c:495` | **MISSING** | int trellis_coef |
-| `trellis_coef0_0` | `encoder/rdo.c:538` | **MISSING** | int trellis_coef0_0 |
-| `trellis_coef0_1` | `encoder/rdo.c:554` | **MISSING** | int trellis_coef0_1 |
-| `trellis_coef1_0` | `encoder/rdo.c:578` | **MISSING** | int trellis_coef1_0 |
-| `trellis_coef1_1` | `encoder/rdo.c:592` | **MISSING** | int trellis_coef1_1 |
-| `trellis_coefn_0` | `encoder/rdo.c:609` | **MISSING** | int trellis_coefn_0 |
-| `trellis_coefn_1` | `encoder/rdo.c:624` | **MISSING** | int trellis_coefn_1 |
+| `x264_rdo_init` | `encoder/rdo.c:384` | **PORTED** | void x264_rdo_init |
+| `trellis_dc_shortcut` | `encoder/rdo.c:463` | **PORTED** | int trellis_dc_shortcut |
+| `trellis_coef` | `encoder/rdo.c:495` | **PORTED** | int trellis_coef |
+| `trellis_coef0_0` | `encoder/rdo.c:538` | **PORTED** | int trellis_coef0_0 |
+| `trellis_coef0_1` | `encoder/rdo.c:554` | **PORTED** | int trellis_coef0_1 |
+| `trellis_coef1_0` | `encoder/rdo.c:578` | **PORTED** | int trellis_coef1_0 |
+| `trellis_coef1_1` | `encoder/rdo.c:592` | **PORTED** | int trellis_coef1_1 |
+| `trellis_coefn_0` | `encoder/rdo.c:609` | **PORTED** | int trellis_coefn_0 |
+| `trellis_coefn_1` | `encoder/rdo.c:624` | **PORTED** | int trellis_coefn_1 |
 | `quant_trellis_cabac` | `encoder/rdo.c:642` | **MISSING** | int quant_trellis_cabac |
 | `quant_trellis_cavlc` | `encoder/rdo.c:921` | **MISSING** | int quant_trellis_cavlc |
 | `roundings` | `encoder/rdo.c:966` | **MISSING** | * We only search two roundings |
-| `x264_quant_luma_dc_trellis` | `encoder/rdo.c:1098` | **MISSING** | int x264_quant_luma_dc_trellis |
-| `x264_quant_chroma_dc_trellis` | `encoder/rdo.c:1114` | **MISSING** | int x264_quant_chroma_dc_trellis |
+| `x264_quant_luma_dc_trellis` | `encoder/rdo.c:1098` | **PORTED** | int x264_quant_luma_dc_trellis |
+| `x264_quant_chroma_dc_trellis` | `encoder/rdo.c:1114` | **PORTED** | int x264_quant_chroma_dc_trellis |
 | `quant_trellis_cavlc` | `encoder/rdo.c:1137` | **MISSING** | return quant_trellis_cavlc |
-| `x264_quant_4x4_trellis` | `encoder/rdo.c:1142` | **MISSING** | int x264_quant_4x4_trellis |
-| `x264_quant_8x8_trellis` | `encoder/rdo.c:1159` | **MISSING** | int x264_quant_8x8_trellis |
+| `x264_quant_4x4_trellis` | `encoder/rdo.c:1142` | **PORTED** | int x264_quant_4x4_trellis |
+| `x264_quant_8x8_trellis` | `encoder/rdo.c:1159` | **PORTED** | int x264_quant_8x8_trellis |
 | `transpose` | `encoder/set.c:36` | **MISSING** | static void transpose |
 | `scaling_list_write` | `encoder/set.c:43` | **MISSING** | static void scaling_list_write |
 | `x264_sei_write` | `encoder/set.c:80` | **PORTED** | void x264_sei_write |
