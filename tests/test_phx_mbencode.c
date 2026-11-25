@@ -133,6 +133,24 @@ static void phx_test_run(int mb_type, phx_mb_decision_t *out_d,
     CHECK(phx_macroblock_encode(&p, f, &cache, 0, 0, &d) == 0,
           mb_type == PHX_I_16x16 ? "encode I16" : "encode I4");
 
+    /* Golden B->C handoff values, source-derived from x264's
+     * block_idx_xy_fenc/fdec (common/macroblock.h:225-246), predict_4x4_v_c
+     * (common/predict.c:508-511) and x264_mb_encode_i4x4
+     * (encoder/macroblock.h:132-166).  These slots are at block rows 1 and 3,
+     * so they fail with the old one-pixel-row offset tables. */
+    if (mb_type == PHX_I_4x4) {
+        static const int16_t golden_b4[16] = {
+            -14, -5, 13, 5, 3, -12, 5, 0, 3, 17, 11, -2, 0, 1, -8, 5
+        };
+        static const int16_t golden_b15[16] = {
+            -6, -1, 2, 8, -5, -2, 3, 7, -3, 4, -14, -12, -3, -1, -4, -7
+        };
+        CHECK(memcmp(d.dct[phx_scan8[4]], golden_b4, sizeof(golden_b4)) == 0,
+              "I4 golden coefficients at block 4 (second block row)");
+        CHECK(memcmp(d.dct[phx_scan8[15]], golden_b15, sizeof(golden_b15)) == 0,
+              "I4 golden coefficients at block 15 (last block row)");
+    }
+
     *out_nz = phx_test_check_nnz(&d, &cache, mb_type);
     CHECK(*out_nz > 0, "at least one quantized coefficient block");
     CHECK(d.cbp_luma != 0, "cbp_luma set");

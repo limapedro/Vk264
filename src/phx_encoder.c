@@ -712,23 +712,11 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 if (d.intra16_pred_mode < 0 || d.intra16_pred_mode > 6)
                     d.intra16_pred_mode = 2;
             }
-            /* phx_analysis writes PHX_MODE4_FIX values (0..8), but a few
-             * raw predictor indices can leave that range in the current
-             * analysis port.  Clamp them so both the reconstruction predictor
-             * and the CABAC/CAVLC FIX4 tables agree on a legal mode.  */
-            if (d.mb_type == PHX_I_4x4)
-                for (int i = 0; i < 16; i++)
-                    if (d.intra4x4_pred_mode[i] < 0 ||
-                        d.intra4x4_pred_mode[i] > 8)
-                        d.intra4x4_pred_mode[i] = 2;    /* I_PRED_4x4_DC */
-
-            /* phx_analysis writes its trial coefficients at dct[block], while
-             * phx_mbencode publishes the final quantised blocks at
-             * dct[phx_scan8[block]].  Clear the trial data before the final
-             * encode so the entropy stage never reads a stale overlap slot.
-             * TODO(worker-analysis): align both stages on one layout. */
-            memset(d.dct, 0, sizeof(d.dct));
-            memset(d.nnz, 0, sizeof(d.nnz));
+            /* phx_analysis now publishes trial coefficients at dct[phx_scan8[k]]
+             * (the same scan8 cache layout phx_mbencode writes), so no stale
+             * overlap slots remain.  Intra predictor fields carry x264's raw
+             * mode indices (analyse.c:3739-3751); the FIX4/FIX16 mapping is
+             * applied only by the CABAC/CAVLC syntax writers. */
             d.b_transform_8x8 = 0;                     /* pps transform flag is 0 below */
             rc = phx_macroblock_encode(&h->param, h->fenc, c,
                                        mb_x, mb_y, &d); /* :2865 */

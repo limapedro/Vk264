@@ -36,16 +36,20 @@ extern "C" {
  * (mb_x, mb_y) with QP `qp` and write the complete decision into `d`.
  * Returns 0 on success, -1 on invalid arguments / allocation failure.
  *
- * Decision layout (consequence of phx_mb_decision_t's 48x16 dct array):
+ * Decision layout (x264 common/base.h:180 scan8 cache layout, shared with
+ * phx_mbencode.c and the entropy stage):
  *   nnz[k]  = non_zero_count[phx_scan8[k]] for k in [0,48) (x264 macroblock.c
  *             :1761); the three DC nnz flags are not representable (TODO).
- *   dct[i]  = zigzag-scanned 4x4 coefficients of 4x4 block i (I4/I16 AC).
- *   dct[16] = the 4x4 Hadamard of the 16 I16x16 luma DC values (macroblock.c
- *             :215/:224).
- *   dct[4i..4i+3] = the 64 zigzag-scanned coefficients of 8x8 block i for
- *             I_8x8, packed four 16-entry slots per 8x8 block (TODO: the
- *             shared struct has no 8x8 coefficient field).
- *   Slots 16..47 (chroma) are zero until chroma planes are exposed (TODO).
+ *   dct[phx_scan8[k]] = zigzag-scanned 4x4 coefficients of luma block k.
+ *   dct[phx_scan8[48]] = dct[0] = the 4x4 Hadamard of the 16 I16x16 luma DC
+ *             values (macroblock.c:215/:224).
+ *   dct[phx_scan8[4i+j]] (j=0..3) = the 64 zigzag-scanned coefficients of
+ *             8x8 block i, four 16-entry slots per 8x8 block.
+ *   Intra predictor fields carry x264's raw mode indices: intra16_pred_mode
+ *             in 0..6, intra4x4_pred_mode/intra8x8_pred_mode in 0..11.
+ *             The signalled FIX4/FIX16 mapping is applied by the entropy
+ *             stage, not by analysis (analyse.c:3739-3751).
+ *   Chroma slots are zero until chroma planes are exposed (TODO).
  *
  * Intra prediction neighbours: if cache->p_fdec is non-NULL it is used as
  * x264's FDEC_STRIDE reconstruction buffer; otherwise a private buffer seeded

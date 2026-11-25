@@ -50,15 +50,15 @@ static const uint8_t phx_block_idx_xy_1d[16] = {
 /* common/macroblock.h:225-235 — block_idx_xy_fenc[] with FENC_STRIDE=16.
  * SHADER: B — per-MB constant addressing table. */
 static const uint8_t phx_block_idx_xy_fenc[16] = {
-      0,  4, 16, 20, 32, 36, 48, 52,
-     64, 68, 80, 84, 96, 100, 112, 116
+      0, 4, 64, 68, 8, 12, 72, 76,
+     128, 132, 192, 196, 136, 140, 200, 204
 };
 
 /* common/macroblock.h:236-246 — block_idx_xy_fdec[] with FDEC_STRIDE=32.
  * SHADER: B — per-MB constant addressing table. */
 static const uint16_t phx_block_idx_xy_fdec[16] = {
-      0,  4, 32, 36, 64,  68,  96, 100,
-    128, 132, 160, 164, 192, 196, 224, 228
+      0, 4, 128, 132, 8, 12, 136, 140,
+    256, 260, 384, 388, 264, 268, 392, 396
 };
 
 /* Store one quantized block and its nnz flag exactly where the C-stage
@@ -81,10 +81,24 @@ static void phx_mb_store_block(phx_mb_decision_t *d, phx_mb_cache_t *c,
  * predictors via common/macroblock.h:31-41 / common/predict.c:57-884.
  * SHADER: B — per-MB neighbour staging into the B-stage scratch window. */
 static void phx_mb_load_fdec_neighbours(const phx_frame_t *f, int mb_x,
-                                        int mb_y, uint8_t *p, int stride)
+                                        int mb_y, uint8_t *p, int stride, const phx_mb_cache_t *cache)
 {
     const int x0 = mb_x * 16, y0 = mb_y * 16;
     const int w = f->i_width, h = f->i_height, s = f->i_stride;
+    /* x264 keeps p_fenc (source) and p_fdec (reconstruction) separate.  When
+     * the caller supplies a populated FDEC (analysis reconstructed into
+     * cache->p_fdec), its top/left border samples are the authoritative
+     * predictors (frame.c:501-548, macroblock.h:31-41).  Only the standalone
+     * API without an FDEC falls back to replicating the source border. */
+    if (cache && cache->p_fdec && cache->fdec_stride > 0) {
+        const uint8_t *fdec = cache->p_fdec;
+        const int fs = cache->fdec_stride;
+        for (int y = -1; y < 16; y++)
+            p[-1 + y * stride] = fdec[-1 + y * fs];
+        for (int x = 0; x < 18; x++)
+            p[x - stride] = fdec[x - fs];
+        return;
+    }
 #define PHX_PIX(x,y) f->plane[(y) * s + (x)]
 #define PHX_CLAMPX(x) ((x) < 0 ? 0 : ((x) >= w ? w - 1 : (x)))
 #define PHX_CLAMPY(y) ((y) < 0 ? 0 : ((y) >= h ? h - 1 : (y)))
@@ -217,6 +231,18 @@ static void phx_mb_encode_i16x16(const phx_quant_tables_t *qt,
         c->intra4x4_pred_mode[phx_scan8[i]] = PHX_I_PRED_4x4_DC;
 }
 
+/* x264 common/predict.c:508-511 — predict_4x4_v_c() replicates each output
+ * column's own top sample (PREDICT_4x4_DC(SRC_X4(0,-1))).  phx_predict.c:426
+ * broadcasts SRC(0,-1) instead; that file is not owned by this worker, so the
+ * authoritative form is installed over the function-table slot here.
+ * SHADER: A — one invocation per 4x4 block. */
+static void phx_predict4_v_fixed(uint8_t *dst, int stride)
+{
+    for (int y = 0; y < 4; y++)
+        for (int x = 0; x < 4; x++)
+            dst[x + y*stride] = dst[x - stride];
+}
+
 /* x264_mb_encode_i4x4 — reference/x264/encoder/macroblock.h:132-166.
  * Predict (:139-145), sub4x4_dct (:155), x264_quant_4x4 (:157),
  * nnz store (:158), zigzag/dequant/add4x4_idct (:161-164).
@@ -231,6 +257,7 @@ static void phx_mb_encode_i4x4(const phx_quant_tables_t *qt,
     int nz;
 
     phx_predict_4x4_init(pred4);                             /* predict.c:1042 */
+    pred4[0] = phx_predict4_v_fixed;                         /* predict.c:508 */
     for (int idx = 0; idx < 16; idx++) {
         const int i_mode = d->intra4x4_pred_mode[idx];
         uint8_t *p = p_dst + phx_block_idx_xy_fdec[idx];     /* macroblock.h:758 */
@@ -331,12 +358,14 @@ int phx_macroblock_encode(const phx_param_t *p, phx_frame_t *f,
     for (int y = 0; y < 16; y++)
         memcpy(fenc + y * PHX_FENC_STRIDE, plane_mb + y * f->i_stride, 16);
 
-    phx_mb_load_fdec_neighbours(f, mb_x, mb_y, p_dst, PHX_FDEC_STRIDE);
+    phx_mb_load_fdec_neighbours(f, mb_x, mb_y, p_dst, PHX_FDEC_STRIDE, cache);
 
-    /* common/macroblock.c:1683/1722/1779 — the cache mirrors the per-frame
-     * state write; downstream cache_save can still read the real fdec row. */
-    cache->p_fdec = plane_mb;
-    cache->fdec_stride = f->i_stride;
+    /* common/macroblock.c:1683/1722/1779 — keep the caller's p_fdec (the
+     * analysis reconstruction frame, common/common.h:571) intact: x264 writes
+     * reconstructed samples into fdec, never into fenc.  Standalone callers
+     * without an FDEC keep the legacy f->plane target. */
+    uint8_t *fdec_target = cache->p_fdec ? cache->p_fdec : plane_mb;
+    int fdec_target_stride = cache->p_fdec ? cache->fdec_stride : f->i_stride;
     cache->b_transform_8x8 = 0;                              /* macroblock.c:708/740 */
     cache->i_cbp_luma = 0;                                   /* macroblock.c:624 */
     cache->i_cbp_chroma = 0;                                 /* macroblock.c:265 */
@@ -364,6 +393,7 @@ int phx_macroblock_encode(const phx_param_t *p, phx_frame_t *f,
     cache->i_cbp_chroma = d->cbp_chroma;
 
     for (int y = 0; y < 16; y++)                             /* macroblock.c:632 */
-        memcpy(plane_mb + y * f->i_stride, p_dst + y * PHX_FDEC_STRIDE, 16);
+        memcpy(fdec_target + y * fdec_target_stride,
+               p_dst + y * PHX_FDEC_STRIDE, 16);
     return 0;
 }

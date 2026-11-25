@@ -40,8 +40,8 @@ static void check_decision(const phx_mb_decision_t *d, const char *tag)
           d->mb_type == PHX_I_16x16, "mb_type is a supported intra type");
     CHECK(d->i_partition == 16, "i_partition == D_16x16");
     CHECK(d->i_qp >= 0 && d->i_qp <= 51, "i_qp range");
-    CHECK(d->intra16_pred_mode >= 0 && d->intra16_pred_mode <= 3,
-          "intra16_pred_mode range");
+    CHECK(d->intra16_pred_mode >= 0 && d->intra16_pred_mode <= 6,
+          "intra16_pred_mode is x264's raw I_PRED_16x16 index (0..6)");
     CHECK(d->chroma_pred_mode >= 0 && d->chroma_pred_mode <= 3,
           "chroma_pred_mode range");
     CHECK(d->cbp_luma >= 0 && d->cbp_luma <= 15, "cbp_luma range");
@@ -52,19 +52,20 @@ static void check_decision(const phx_mb_decision_t *d, const char *tag)
     CHECK(d->b_transform_8x8 == (d->mb_type == PHX_I_8x8),
           "transform size matches mb_type");
     for (int i = 0; i < 4; i++)
-        CHECK(d->intra8x8_pred_mode[i] >= 0 && d->intra8x8_pred_mode[i] <= 8,
-              "intra8x8_pred_mode range");
+        CHECK(d->intra8x8_pred_mode[i] >= 0 && d->intra8x8_pred_mode[i] <= 11,
+              "intra8x8_pred_mode is a raw I_PRED_8x8 index (0..11)");
     for (int i = 0; i < 16; i++) {
-        CHECK(d->intra4x4_pred_mode[i] >= 0 && d->intra4x4_pred_mode[i] <= 8,
-              "intra4x4_pred_mode range");
+        CHECK(d->intra4x4_pred_mode[i] >= 0 && d->intra4x4_pred_mode[i] <= 11,
+              "intra4x4_pred_mode is a raw I_PRED_4x4 index (0..11)");
         CHECK(d->ref[0][i] == -1 && d->ref[1][i] == -1, "intra refs are -1");
         CHECK(d->mv[0][i][0] == 0 && d->mv[0][i][1] == 0, "intra mv is zero");
     }
     for (int k = 0; k < 48; k++) CHECK(d->nnz[k] <= 1, "nnz is boolean");
 
-    /* nnz/CBP must agree with the quantized coefficients that were emitted. */
+    /* nnz/CBP must agree with the quantized coefficients that were emitted.
+     * Both stages use x264's scan8 cache layout (common/base.h:180). */
     for (int idx = 0; idx < 16; idx++) {
-        int nz = any_nonzero(d->dct[idx], 16);
+        int nz = any_nonzero(d->dct[phx_scan8[idx]], 16);
         int flag = d->nnz[phx_scan8[idx]];
         CHECK(flag == (d->mb_type == PHX_I_8x8 ? (d->nnz[phx_scan8[4*(idx>>2)]] ? 1 : 0) : nz),
               "nnz matches emitted coefficients");
@@ -74,21 +75,26 @@ static void check_decision(const phx_mb_decision_t *d, const char *tag)
     if (d->mb_type == PHX_I_8x8) {
         for (int i = 0; i < 4; i++) {
             int nz = 0;
-            for (int j = 0; j < 4; j++) nz |= any_nonzero(d->dct[4*i+j], 16);
+            for (int j = 0; j < 4; j++) nz |= any_nonzero(d->dct[phx_scan8[4*i+j]], 16);
             CHECK(((d->cbp_luma >> i) & 1) == nz, "I8 cbp bit matches nnz");
             for (int j = 0; j < 4; j++)
                 CHECK(d->nnz[phx_scan8[4*i+j]] == nz, "I8 four nnz flags agree");
         }
     } else if (d->mb_type == PHX_I_16x16) {
         int nz = 0;
-        for (int i = 0; i < 16; i++) nz |= any_nonzero(d->dct[i], 16);
+        for (int i = 0; i < 16; i++)
+            nz |= any_nonzero(d->dct[phx_scan8[i]], 16);
         CHECK(d->cbp_luma == (nz ? 0xf : 0), "I16 cbp is all-or-nothing");
     }
     /* Chroma slots are an explicit TODO; they must at least be quiet.
-     * Slot 16 is the luma DC block for I16x16 (phx_analysis.h). */
-    int first_chroma_slot = (d->mb_type == PHX_I_16x16) ? 17 : 16;
-    for (int k = first_chroma_slot; k < 48; k++)
-        CHECK(!any_nonzero(d->dct[k], 16), "chroma coefficient slots are zero");
+     * The luma slots are exactly phx_scan8[0..15] plus phx_scan8[48]==0. */
+    uint8_t used[48];
+    memset(used, 0, sizeof(used));
+    for (int i = 0; i < 16; i++) used[phx_scan8[i]] = 1;
+    used[phx_scan8[48]] = 1;
+    for (int k = 0; k < 48; k++)
+        if (!used[k])
+            CHECK(!any_nonzero(d->dct[k], 16), "chroma coefficient slots are zero");
     CHECK(d->cbp_chroma == 0, "chroma cbp is zero (TODO)");
     (void)tag;
 }
@@ -119,7 +125,23 @@ int main(void)
     phx_macroblock_cache_load(s, &cache, 0, 0, 0);
     rc1 = phx_macroblock_analyse(&p, f, &cache, 0, 0, 26, &d1);
     CHECK(rc1 == 0, "analysis returns success");
-    if (!rc1) check_decision(&d1, "first");
+    if (!rc1) {
+        check_decision(&d1, "first");
+        /* Golden first-MB decision, derived from x264's analyse.c tables:
+         * no neighbours => I16 mode 6 (DC_128) and I4 mode 11 at block 0;
+         * block 15 gets n4[15]=LEFT|TOP|TOPLEFT (macroblock.c:493-498) and
+         * mode 3.  Coefficients are published at scan8 slots, not block
+         * indices (macroblock.h:199). */
+        CHECK(d1.mb_type == PHX_I_4x4, "golden first MB is I_4x4");
+        CHECK(d1.intra16_pred_mode == 6, "golden raw I16 mode is DC_128");
+        CHECK(d1.intra4x4_pred_mode[0] == 11, "golden raw I4 mode at block 0");
+        CHECK(d1.intra4x4_pred_mode[15] == 3, "golden raw I4 mode at block 15");
+        CHECK(d1.nnz[phx_scan8[0]] == 1 && d1.dct[phx_scan8[0]][0] == -15 &&
+              d1.dct[phx_scan8[0]][1] == -6 && d1.dct[phx_scan8[0]][2] == -10,
+              "golden coefficients at scan8[0] (luma block 0)");
+        CHECK(d1.dct[phx_scan8[4]][0] == -1 && d1.dct[phx_scan8[4]][1] == 10,
+              "golden coefficients at scan8[4] (second block row)");
+    }
 
     /* Reset every input the driver reads, then analyse the same MB again. */
     fill_frame(f);

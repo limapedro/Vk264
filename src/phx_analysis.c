@@ -324,12 +324,24 @@ static void phx_predict16(int mode, uint8_t *dst, int stride)
     default: phx_predict_16x16_dc_128(dst, stride); break;
     }
 }
+/* x264 common/predict.c:508-511 — predict_4x4_v_c() uses
+ * PREDICT_4x4_DC(SRC_X4(0,-1)): each output column replicates *its own* top
+ * sample.  phx_predict.c:426 currently broadcasts SRC(0,-1) to all columns;
+ * until that owned file is corrected, use the source-exact form locally.
+ * SHADER: A — one invocation per 4x4 block. */
+static void phx_predict4_v_fixed(uint8_t *dst, int stride)
+{
+    for (int y = 0; y < 4; y++)
+        for (int x = 0; x < 4; x++)
+            dst[x + y*stride] = dst[x - stride];
+}
+
 /* x264 common/predict.c:481-610 — predict_4x4[mode].
  * SHADER: A — one invocation per 4x4 block. */
 static void phx_predict4(int mode, uint8_t *dst, int stride)
 {
     switch (mode) {
-    case 0: phx_predict_4x4_v(dst, stride); break;
+    case 0: phx_predict4_v_fixed(dst, stride); break;
     case 1: phx_predict_4x4_h(dst, stride); break;
     case 2: phx_predict_4x4_dc(dst, stride); break;
     case 3: phx_predict_4x4_ddl(dst, stride); break;
@@ -376,8 +388,8 @@ static void phx_init_neighbours(phx_analysis_ctx_t *c)
     /* macroblock.c:489-498 — blocks that always have all four neighbours. */
     c->n4[6] = c->n4[9] = c->n4[12] = c->n4[14] =
         PHX_MB_LEFT|PHX_MB_TOP|PHX_MB_TOPLEFT|PHX_MB_TOPRIGHT;
-    c->n4[3] = c->n4[7] = c->n4[11] = c->n4[13] = c->n8[3] =
-        PHX_MB_LEFT|PHX_MB_TOP|PHX_MB_TOPLEFT;
+    c->n4[3] = c->n4[7] = c->n4[11] = c->n4[13] = c->n4[15] = c->n8[3] =
+        PHX_MB_LEFT|PHX_MB_TOP|PHX_MB_TOPLEFT;   /* macroblock.c:493-498 */
     /* macroblock.c:1340-1351 — progressive branch. */
     c->n4[0] = c->n8[0] = (in & m) | ((in & PHX_MB_TOP) ? PHX_MB_TOPRIGHT : 0);
     c->n4[4] = c->n4[1] = PHX_MB_LEFT |
@@ -489,7 +501,9 @@ static void phx_encode_i16(phx_analysis_ctx_t *c, phx_mb_decision_t *d)
         for (int j = 0; j < 4; j++) {
             int idx = i8*4 + j;
             if (!(nz & (1 << j))) continue;
-            phx_zigzag_scan4(d->dct[idx], dct4[idx]);
+            /* x264 encoder/macroblock.h:199 stores the zigzag-scanned block at
+             * scan8[idx] in the shared per-MB cache layout. */
+            phx_zigzag_scan4(d->dct[phx_scan8[idx]], dct4[idx]);
             d->nnz[phx_scan8[idx]] = 1;
             block_cbp = 0xf;                        /* macroblock.c:193 */
         }
@@ -499,7 +513,8 @@ static void phx_encode_i16(phx_analysis_ctx_t *c, phx_mb_decision_t *d)
     dc_nz = phx_quant_4x4_dc(dcdc,
                              c->quant->quant4_mf[0][qp][0] >> 1,
                              c->quant->quant4_bias[0][qp][0] << 1);
-    phx_zigzag_scan4(d->dct[16], dcdc);              /* luma16x16_dc[0] */
+    /* LUMA_DC == 48 -> scan8[48] == 0 (common/base.h:180). */
+    phx_zigzag_scan4(d->dct[phx_scan8[48]], dcdc);  /* luma16x16_dc[0] */
     if (dc_nz) {
         phx_idct4x4dc(dcdc);                        /* macroblock.c:227 */
         phx_dequant_4x4_dc(dcdc, c->quant->dequant4_mf[0], qp);
@@ -687,7 +702,7 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d)
     if (type == PHX_I_16x16) {
         phx_predict16(c->pred16, c->fdec, c->fdec_stride);
         phx_encode_i16(c, d);
-        d->intra16_pred_mode = (int8_t)phx_mode16_fix[c->pred16];
+        d->intra16_pred_mode = (int8_t)c->pred16;
     } else if (type == PHX_I_8x8) {
         d->b_transform_8x8 = 1;                      /* macroblock.c:715 */
         for (int idx = 0; idx < 4; idx++) {
@@ -702,8 +717,9 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d)
             if (phx_encode_i8(c, idx, coef)) {
                 c->cbp_luma |= 1 << idx;            /* macroblock.h:205 */
                 for (int i = 0; i < 4; i++) {
-                    d->dct[4*idx+i][0] = coef[16*i];
-                    memcpy(&d->dct[4*idx+i][1], &coef[16*i+1],
+                    int slot = phx_scan8[4*idx+i];  /* shared scan8 cache layout */
+                    d->dct[slot][0] = coef[16*i];
+                    memcpy(&d->dct[slot][1], &coef[16*i+1],
                            15*sizeof(coef[0]));
                 }
                 /* x264 encoder/macroblock.h:112-117 (STORE_8x8_NNZ): four
@@ -714,13 +730,14 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d)
                 d->nnz[phx_scan8[4*idx]+0] = d->nnz[phx_scan8[4*idx]+1] =
                 d->nnz[phx_scan8[4*idx]+8] = d->nnz[phx_scan8[4*idx]+9] = 0;
             }
-            d->intra8x8_pred_mode[idx] = (int8_t)PHX_MODE4_FIX(c->pred8[idx]);
-            /* The 4x4-mode slot uses the H.264-signalled (fixed) value:
-             * DC_LEFT/DC_TOP/DC_128 all map to DC (predict.h:84-92). */
-            d->intra4x4_pred_mode[4*idx] =
-                (int8_t)PHX_MODE4_FIX(c->pred8[idx]);
+            /* analyse.c:3744-3746 stores the raw 8x8 predictor in both the
+             * 8x8 decision and the four 4x4 cache slots (rectangle.h:157).
+             * The entropy stage applies x264_mb_pred_mode4x4_fix itself. */
+            d->intra8x8_pred_mode[idx] = (int8_t)c->pred8[idx];
+            for (int j = 0; j < 4; j++)
+                d->intra4x4_pred_mode[4*idx+j] = (int8_t)c->pred8[idx];
         }
-        d->intra16_pred_mode = (int8_t)phx_mode16_fix[c->pred16];
+        d->intra16_pred_mode = (int8_t)c->pred16;
     } else { /* PHX_I_4x4 */
         for (int idx = 0; idx < 16; idx++) {
             uint8_t *dst = c->fdec + phx_block_xy[idx][0]
@@ -731,12 +748,14 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d)
             phx_predict4(c->pred4[idx], dst, c->fdec_stride);
             if (phx_encode_i4(c, idx, coef)) {
                 c->cbp_luma |= 1 << (idx >> 2);     /* macroblock.h:161 */
-                memcpy(d->dct[idx], coef, sizeof(coef));
+                memcpy(d->dct[phx_scan8[idx]], coef, sizeof(coef));
                 d->nnz[phx_scan8[idx]] = 1;         /* macroblock.h:158 */
             }
-            d->intra4x4_pred_mode[idx] = (int8_t)PHX_MODE4_FIX(c->pred4[idx]);
+            /* analyse.c:3739-3740 publishes the raw predictor (0..11); the
+             * signalled FIX4 mapping is applied by the entropy stage. */
+            d->intra4x4_pred_mode[idx] = (int8_t)c->pred4[idx];
         }
-        d->intra16_pred_mode = (int8_t)phx_mode16_fix[c->pred16];
+        d->intra16_pred_mode = (int8_t)c->pred16;
     }
 
     phx_analysis_intra_chroma(c, d);
