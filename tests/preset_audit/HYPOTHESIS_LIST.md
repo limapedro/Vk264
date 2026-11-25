@@ -1480,3 +1480,19 @@ veryslow/placebo  16       42
 Audit still 12/120 byte-exact, but CABAC prefix agreement grew substantially
 (sum of 8 preset first-diffs: 232 -> 328, +96 bytes). All gates green.
 
+### E71 ? CABAC state fully matches; E70 fixed MB0/MB1 nnz
+
+State scan (`build/state_scan.py`) dumped sig/last/level contexts at every
+I4 trellis call for frame0 MBs 0..3: **0 state differences across 32
+calls**. This disproves the context-state hypothesis from E69.
+
+After the E70 DC-shortcut fix, the final cbp+nnz of MB0 and MB1 match x264
+exactly (`build/nnz_scan.py`): MB0 `cbp=1, nnz=1,0,...`, MB1 `cbp=7,
+nnz=1,0,1,0,0,1,0,0,0,1,0,1,...` in both. So the faster first-diff=30
+divergence now lies beyond MB1 (in I16/I8 MBs or later rows), not in the
+I4 coefficient state.
+
+This reframes plan item 1: the trellis primitive and its CABAC state inputs
+are correct; the remaining work is matching the surrounding mode/recon
+decisions in later MBs.
+
