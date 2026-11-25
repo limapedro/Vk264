@@ -1607,3 +1607,26 @@ Remaining CAVLC divergence is no longer MB-type selection: it is inside MB0
 coefficient syntax (byte 17), and fast/medium still diverge at byte 4 because
 their CAVLC coefficient path does not use x264's trellis quantization.
 
+### E78 ? scenecut calibration: x264 icost/pcost measured; heuristic retracted
+
+Instrumented x264 `scenecut_internal` (slicetype.c:1417) on the 30f clip and
+measured the exact decisions:
+```
+gop=9 : icost=1929 pcost=1929 bias=0.1667 -> IDR (frame 9)
+gop=14: icost=3128 pcost=2646 bias=0.2222 -> IDR (frame 23)
+```
+`keyint_min = MIN(keyint_max/10, bframes+1) = MIN(3,4) = 3` reproduces both
+bias values exactly.
+
+Trying to drive IDR placement from the oracle's existing lowres costs failed:
+`vk_lowres_i_cost_interior` / `vk_lowres_p_cost_mb` give frame-9 ic=36,
+pc=1527 (x264 1929/1929) and frame-23 ic=7322, pc=5462 (x264 3128/2646).
+The oracle's intra SATD is not x264's `mbcmp` (same scaling gap as E75), so
+near-flat frames get icost=36 (pure penalty) while pcost explodes, producing
+spurious IDRs at ~every third frame even after enforcing `gop >= keyint_min`.
+
+The IDR-flag change was reverted; IDR placement remains 0-only and the NAL
+count gap persists. Correct fix requires x264-exact `x264_pixel_satd_8x8`
+(`mbcmp`) inside the lowres intra/pcost helpers before the scenecut comparison
+is meaningful.
+
