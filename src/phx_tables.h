@@ -21,4 +21,9 @@ extern const int phx_trellis_lambda2_tab[2][PHX_QP_MAX_MAX+1];
 extern const uint16_t phx_chroma_lambda2_offset_tab[PHX_MAX_CHROMA_LAMBDA_OFFSET+1];
 extern const uint8_t phx_ue_size_tab[256];
 extern const uint8_t phx_chroma_qp_base[76];
+extern const uint8_t phx_cabac_range_lps[64][4];
+extern const uint8_t phx_cabac_transition[128][2];
+extern const uint8_t phx_cabac_renorm_shift[64];
+extern const int8_t phx_cabac_context_init_I[1024][2];
+extern const int8_t phx_cabac_context_init_PB[3][1024][2];
 #endif

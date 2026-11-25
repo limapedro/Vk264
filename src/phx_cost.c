@@ -105,8 +105,8 @@ void phx_mb_analyse_init_qp(const phx_param_t *p, int qp,
 {
     int spec_qp = PHX_MIN(qp, PHX_QP_MAX_SPEC);       /* SPEC_QP, common.h:64 */
     int chroma_base = phx_chroma_qp_base[
-        PHX_CLIP3(PHX_CHROMA_QP_BASE_OFFSET + chroma_qp_index_offset + spec_qp,
-                  0, (int)(sizeof(phx_chroma_qp_base)-1))]; /* encoder.c:1585 */
+        PHX_CLIP3(0, PHX_CHROMA_QP_BASE_OFFSET + chroma_qp_index_offset + spec_qp,
+                  (int)(sizeof(phx_chroma_qp_base)-1))]; /* encoder.c:1585 */
     int effective_chroma_qp = chroma_base + PHX_MAX(qp - PHX_QP_MAX_SPEC, 0);
                                                      /* analyse.c:257 */
     a->i_lambda = phx_lambda_tab[qp];                 /* analyse.c:258 */
@@ -136,7 +136,7 @@ void phx_mb_analyse_load_costs(phx_cost_tables_t *t, phx_mb_analysis_t *a,
                                int num_ref_l0, int num_ref_l1)
 {
     a->p_cost_mv = t->cost_mv[a->i_qp];               /* analyse.c:250 */
-    a->p_cost_ref[0] = t->cost_ref[a->i_qp][PHX_CLIP3(num_ref_l0-1, 0, 2)];
-    a->p_cost_ref[1] = t->cost_ref[a->i_qp][PHX_CLIP3(num_ref_l1-1, 0, 2)];
+    a->p_cost_ref[0] = t->cost_ref[a->i_qp][PHX_CLIP3(0, num_ref_l0-1, 2)];
+    a->p_cost_ref[1] = t->cost_ref[a->i_qp][PHX_CLIP3(0, num_ref_l1-1, 2)];
                                                      /* analyse.c:251-252 */
 }

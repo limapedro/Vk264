@@ -94,18 +94,18 @@ Total x264 C functions indexed: **1386**.
 | `bs_size_ue_big` | `common/bitstream.h:283` | **MISSING** | static ALWAYS_INLINE int bs_size_ue_big |
 | `bs_size_se` | `common/bitstream.h:291` | **PORTED** | static ALWAYS_INLINE int bs_size_se |
 | `bs_size_te` | `common/bitstream.h:301` | **PORTED** | static ALWAYS_INLINE int bs_size_te |
-| `x264_cabac_init` | `common/cabac.c:32` | **MISSING** | void x264_cabac_init |
-| `int8_t` | `common/cabac.c:37` | **MISSING** | const int8_t |
-| `x264_cabac_context_init` | `common/cabac.c:48` | **MISSING** | void x264_cabac_context_init |
-| `x264_cabac_encode_init_core` | `common/cabac.c:53` | **MISSING** | void x264_cabac_encode_init_core |
-| `x264_cabac_encode_init` | `common/cabac.c:61` | **MISSING** | void x264_cabac_encode_init |
-| `cabac_putbyte` | `common/cabac.c:69` | **MISSING** | static inline void cabac_putbyte |
-| `cabac_encode_renorm` | `common/cabac.c:101` | **MISSING** | static inline void cabac_encode_renorm |
-| `x264_cabac_encode_decision_c` | `common/cabac.c:113` | **MISSING** | void x264_cabac_encode_decision_c |
-| `x264_cabac_encode_bypass_c` | `common/cabac.c:128` | **MISSING** | void x264_cabac_encode_bypass_c |
-| `x264_cabac_encode_ue_bypass` | `common/cabac.c:142` | **MISSING** | void x264_cabac_encode_ue_bypass |
-| `x264_cabac_encode_terminal_c` | `common/cabac.c:159` | **MISSING** | void x264_cabac_encode_terminal_c |
-| `x264_cabac_encode_flush` | `common/cabac.c:165` | **MISSING** | void x264_cabac_encode_flush |
+| `x264_cabac_init` | `common/cabac.c:32` | **PORTED** | void x264_cabac_init |
+| `int8_t` | `common/cabac.c:37` | **PORTED** | const int8_t |
+| `x264_cabac_context_init` | `common/cabac.c:48` | **PORTED** | void x264_cabac_context_init |
+| `x264_cabac_encode_init_core` | `common/cabac.c:53` | **PORTED** | void x264_cabac_encode_init_core |
+| `x264_cabac_encode_init` | `common/cabac.c:61` | **PORTED** | void x264_cabac_encode_init |
+| `cabac_putbyte` | `common/cabac.c:69` | **PORTED** | static inline void cabac_putbyte |
+| `cabac_encode_renorm` | `common/cabac.c:101` | **PORTED** | static inline void cabac_encode_renorm |
+| `x264_cabac_encode_decision_c` | `common/cabac.c:113` | **PORTED** | void x264_cabac_encode_decision_c |
+| `x264_cabac_encode_bypass_c` | `common/cabac.c:128` | **PORTED** | void x264_cabac_encode_bypass_c |
+| `x264_cabac_encode_ue_bypass` | `common/cabac.c:142` | **PORTED** | void x264_cabac_encode_ue_bypass |
+| `x264_cabac_encode_terminal_c` | `common/cabac.c:159` | **PORTED** | void x264_cabac_encode_terminal_c |
+| `x264_cabac_encode_flush` | `common/cabac.c:165` | **PORTED** | void x264_cabac_encode_flush |
 | `x264_cabac_pos` | `common/cabac.h:94` | **MISSING** | static ALWAYS_INLINE int x264_cabac_pos |
 | `x264_cabac_size_decision` | `common/cabac.h:101` | **MISSING** | static ALWAYS_INLINE void x264_cabac_size_decision |
 | `x264_cabac_size_decision2` | `common/cabac.h:108` | **MISSING** | static ALWAYS_INLINE int x264_cabac_size_decision2 |
@@ -644,7 +644,7 @@ Total x264 C functions indexed: **1386**.
 | `endian_fix` | `common/osdep.h:493` | **MISSING** | static ALWAYS_INLINE uintptr_t endian_fix |
 | `endian_fix16` | `common/osdep.h:497` | **MISSING** | static ALWAYS_INLINE uint16_t endian_fix16 |
 | `x264_ctz_4bit` | `common/osdep.h:504` | **MISSING** | static ALWAYS_INLINE int x264_ctz_4bit |
-| `x264_clz` | `common/osdep.h:514` | **MISSING** | static ALWAYS_INLINE int x264_clz |
+| `x264_clz` | `common/osdep.h:514` | **PORTED** | static ALWAYS_INLINE int x264_clz |
 | `x264_ctz` | `common/osdep.h:526` | **MISSING** | static ALWAYS_INLINE int x264_ctz |
 | `x264_prefetch` | `common/osdep.h:542` | **MISSING** | static ALWAYS_INLINE void x264_prefetch |
 | `x264_pixel_ssd_wxh` | `common/pixel.c:112` | **MISSING** | uint64_t x264_pixel_ssd_wxh |

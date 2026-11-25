@@ -24,12 +24,14 @@ what the eventual **shader version of Vk264** will be derived from.
     phx_frame.h/.c           frame allocation + lowres planes     [WP1 — done]
     phx_mbcache.h/.c         scan8 + progressive MB cache load/save [WP2 — done]
     phx_bitstream.h/.c       bs_* Golomb writer + NAL escape        [done]
+    phx_cabac.h/.c           CABAC arithmetic coder + context init  [done]
   tests/                     unit tests for ported functions
     test_param.c             10-preset parameter parity          [passing]
     test_cost.c              cost tables against x264 goldens    [passing]
     test_frame.c             lowres planes + border expansion    [passing]
     test_mbcache.c           scan8 + cache load/save round-trip  [passing]
     test_bitstream.c         Exp-Golomb patterns + NAL escape     [passing]
+    test_cabac.c             decision/bypass vs x264 golden bytes [passing]
   tools/
     gen_function_inventory.py   regenerate docs/FUNCTION_INVENTORY.md
     gen_tables.py              regenerate src/phx_tables.{h,c} from x264 source
@@ -56,13 +58,15 @@ what the eventual **shader version of Vk264** will be derived from.
 - **WP1 complete**: `phx_param` (10/10 presets), the analyse cost tables, and
   frame allocation / `x264_frame_init_lowres` are ported with source-line
   comments; x264 tables are generated mechanically. All unit tests pass
-  (`ctest`: 5/5).
+  (`ctest`: 6/6).
 - **Parity harness rebuilt**: `tools/parity_harness.py` compares 10 presets ×
   2 entropies byte-for-byte once `X264_EXE` (and later `PHX_EXE`) is supplied;
   see `docs/PARITY_HARNESS.md`. No Phoenix encoder exists yet, so no byte-exact
   number can be reported — the historical 12/120 short and 0/240 extended are
   context, not Phoenix results.
-- Next: WP2 neighbour caches (`x264_scan8`, cache load/save).
+- Next: MBAFF cache paths, then CABAC/CAVLC syntax and the encoder modules.
+- The CABAC coder matches x264 golden bytes; porting it also exposed and fixed
+  a `PHX_CLIP3` argument-order bug in the cost tables.
 
 ## Rules
 
