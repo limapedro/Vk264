@@ -17,8 +17,8 @@ Sources of truth: `build/x264-ref-src/` (x264, authoritative), `Vk264-rewrite/`
 CTest 29/29 + 65/65     CAVLC P-slice 1360/1360     MP4 56/56
 audit                    12/120 byte-exact (ultrafast only)
 NAL2 pairs               3/20 byte-exact
-CABAC first-diff bytes   veryfast 38, faster 30, fast/medium/slow/slower 41,
-                         veryslow/placebo 42  (E70 + E74 subme-gated SA8D)
+CABAC first-diff bytes   veryfast 48, faster 30, fast/medium/slow/slower 41,
+                         veryslow/placebo 42  (E70 + E74 + E79 exact I16 SATD)
 compare_slicetype        16/16 frame types agree (decision parity only)
 CAVLC IDR                 I4/I8 decisions now shared with byte-exact CABAC (E77);
                           warzone2020 2f first-diff byte4 -> byte17

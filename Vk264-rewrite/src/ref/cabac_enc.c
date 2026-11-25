@@ -470,6 +470,48 @@ static void compute_chroma_dc(const uint8_t *src, int cs, int x, int y,
     }
 }
 
+/* x264-exact satd_8x4: packed 4x4 Hadamard on two 4-column halves kept
+ * separate (common/pixel.c:276-309), sum|coeff| >> 1. */
+static void i16_had4(int o[4],int a,int b,int c,int d)
+{
+    int t0=a+b,t1=a-b,t2=c+d,t3=c-d;
+    o[0]=t0+t2; o[1]=t1+t3; o[2]=t0-t2; o[3]=t1-t3;
+}
+static int i16_satd8x4(const uint8_t *p,int sp,const uint8_t *q,int sq)
+{
+    int lo[4][4],hi[4][4],sum=0;
+    for(int i=0;i<4;i++){
+        int a0=p[i*sp+0]-q[i*sq+0], a1=p[i*sp+1]-q[i*sq+1];
+        int a2=p[i*sp+2]-q[i*sq+2], a3=p[i*sp+3]-q[i*sq+3];
+        int a4=p[i*sp+4]-q[i*sq+4], a5=p[i*sp+5]-q[i*sq+5];
+        int a6=p[i*sp+6]-q[i*sq+6], a7=p[i*sp+7]-q[i*sq+7];
+        /* x264 packs (d0,d4) into one 32-bit word; the Hadamard keeps the
+         * two 16-bit halves separate. */
+        i16_had4(lo[i],a0,a1,a2,a3);
+        i16_had4(hi[i],a4,a5,a6,a7);
+    }
+    for(int i=0;i<4;i++){
+        int t0[4],t1[4];
+        i16_had4(t0,lo[0][i],lo[1][i],lo[2][i],lo[3][i]);
+        i16_had4(t1,hi[0][i],hi[1][i],hi[2][i],hi[3][i]);
+        for(int k=0;k<4;k++) sum+=(t0[k]<0?-t0[k]:t0[k])+(t1[k]<0?-t1[k]:t1[k]);
+    }
+    return sum>>1;
+}
+/* x264 x264_pixel_satd_16x16: 8 satd_8x4 blocks (bx 0/8, by 0/4/8/12). */
+static int i16_satd(const uint8_t p[256],const uint8_t q[256])
+{
+    int s=0;
+    static const int BY[4]={0,4,8,12}, BX[2]={0,8};
+    for(int i=0;i<4;i++) for(int j=0;j<2;j++)
+        s += i16_satd8x4(p+BY[i]*16+BX[j],16,q+BY[i]*16+BX[j],16);
+    return s;
+}
+static int i16_sad(const uint8_t p[256],const uint8_t q[256])
+{
+    int s=0; for(int i=0;i<256;i++){int d=p[i]-q[i];s+=d<0?-d:d;} return s;
+}
+
 int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                                     const uint8_t *frame, int w, int h, int qp,
                                     uint8_t *recon_out, int frame_idx,
@@ -538,12 +580,13 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
             for (int pk = 0; pi16av[pmidx][pk] >= 0; ++pk) {
                 int m = pi16av[pmidx][pk];
                 vk_predict16(trial, t, l, tl, m);
-                int sad = 0;
-                for (int yy = 0; yy < 16; ++yy)
-                    for (int xx = 0; xx < 16; ++xx) {
-                        int dv = frame[(my*16+yy)*w + mx*16+xx] - trial[yy*16+xx];
-                        sad += dv < 0 ? -dv : dv;
-                    }
+                uint8_t src16[256];
+                for (int yy=0; yy<16; ++yy)
+                    for (int xx=0; xx<16; ++xx)
+                        src16[yy*16+xx]=frame[(my*16+yy)*w + mx*16+xx];
+                /* x264 mbcmp = satd when subpel_refine > 1. */
+                int sad = (vk_cur_subme>1) ? i16_satd(src16,trial)
+                                          : i16_sad(src16,trial);
                 int c = sad + lambda*vk_mode_bits(m);
                 if (c < best) { best = c; bestmode = m; }
             }
