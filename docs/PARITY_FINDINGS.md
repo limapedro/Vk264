@@ -1259,3 +1259,19 @@ This reframes plan item 1: the trellis primitive and its CABAC state inputs
 are correct; the remaining work is matching the surrounding mode/recon
 decisions in later MBs.
 
+### E72 ? first true MB-type divergence: MB5 I4 vs I8
+
+With a corrected MB-type dump (oracle `use_i8 -> type=1`), the first
+frame0 divergence after MB0/MB1 is **MB5**: x264 `type=0` (I4) vs oracle
+`type=1` (I8); CBP matches (10,2). MB2-4 are I8 in both.
+
+Oracle costs at MB5: `i16=2559, i8=442, i4=COST_MAX` ? the I4 analysis
+aborted via `total > i4thresh` where `i4thresh = min(i16,i8) = 442`.
+x264 `analyse.c:3193-3195` adds `i_satd_chroma` to **all** intra costs,
+including that threshold, so its I4 analysis completes and wins. The oracle
+does not add chroma cost to the I16/I8/I4 path costs.
+
+Diagnostic: disabling the I4 early exit changed later IDR bytes (128->136
+for fast) but not first-diff, so the real fix is adding x264's chroma SATD
+cost to the analysis costs/threshold, not bypassing the exit. Reverted.
+
