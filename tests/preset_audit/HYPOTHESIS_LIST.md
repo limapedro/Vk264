@@ -1896,3 +1896,16 @@ NAL2 3/20, recon c004 0/4096, CAVLC 1360/1360, slicetype 16/16, CTest
 An additional `+7*lambda` I4-cost adjustment was tested but gave no further
 metric gain, so only the principled I8 double-count removal is kept.
 
+### E90 ? widening the scenecut flash window gives no net NAL-count gain
+
+x264's b-adapt TRELLIS presets (slower/veryslow/placebo) use a wider flash
+window (`origmaxp1 = p0+1+bframes`) than FAST presets (`p0+2`). Widening the
+oracle's `vk_slicetype_idr_flags` window from `p+1` to `p+bframes` changed
+*which* presets mismatch but not the count: 18 NAL-COUNT mismatches before and
+after (veryfast..slow started over-triggering while slower improved from
+32/36 to 32/34). No metric or gate improved.
+
+Reverted. The remaining 18 NAL-count mismatches need a faithful sequential
+lookahead simulation (b-adapt FAST vs TRELLIS, candidate pruning, and the
+per-preset `i_max_search` / keyint limit), not just a wider flash window.
+
