@@ -1455,3 +1455,25 @@ remains 12/120, all gates green. Remaining mismatches are preset/clip
 dependent (superfast over-triggers on forza, slower/veryslow under-trigger),
 so the rule is not yet a faithful replica of x264's sequential lookahead.
 
+### E82 ? retracted: CAVLC trellis QNS quantizer crashes the encoder
+
+Implemented x264's `quant_trellis_cavlc` (rdo.c:921-1096) as
+`vk_trellis_quant_4x4_cavlc` in `trellis.c`, using `vk_cavlc_block_residual`
+on a scratch bitstream for the per-candidate CAVLC bit counts, and wired it
+into the `i4x4enc.c` luma quant loop at `vk_cur_trellis >= 1`.
+
+Result: the oracle CLI exits with `0xC0000409` (STATUS_STACK_BUFFER_OVERRUN)
+on every CAVLC faster/fast/medium/slow encode; the audit reports ENCODE FAIL
+for those cases. Instrumentation showed the crash inside the scratch
+`vk_cavlc_block_residual` call; printed candidate levels alternated between
+sane values (-5/-6) and corrupted values (288/3072) depending only on stack
+layout, i.e. an out-of-bounds access / recursion in the bit-count helper.
+Enlarging the scratch buffer and clamping `vk_bs_write` recursion did not
+stabilise it.
+
+Reverted in full (no source change retained). Gate baseline restored:
+`recon c004 0/4096`, `CAVLC P-slice 1360/1360`, audit 12/120, all CTest green.
+CAVLC coefficient trellis remains the highest-priority unimplemented tier;
+any retry needs a dedicated CAVLC bit-counter with bounded VLC sizes rather
+than reusing the bitstream writer on a scratch buffer.
+
