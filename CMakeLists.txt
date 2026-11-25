@@ -21,6 +21,8 @@ add_library(phx STATIC
     src/phx_bitstream.c
     src/phx_cabac.c
     src/phx_headers.c
+    src/phx_encoder.c
+    src/phx_slice.c
 )
 target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -52,3 +54,14 @@ add_test(NAME phx_cabac COMMAND phx_test_cabac)
 
 add_executable(phx_header_dump tools/header_dump.c)
 target_link_libraries(phx_header_dump PRIVATE phx)
+
+add_executable(phx_cli tools/phx_cli.c)
+target_link_libraries(phx_cli PRIVATE phx)
+
+add_executable(phx_test_encoder tests/test_phx_encoder.c)
+target_link_libraries(phx_test_encoder PRIVATE phx)
+add_test(NAME phx_encoder COMMAND phx_test_encoder)
+
+add_executable(phx_test_slice tests/test_phx_slice.c)
+target_link_libraries(phx_test_slice PRIVATE phx)
+add_test(NAME phx_slice_header COMMAND phx_test_slice)
