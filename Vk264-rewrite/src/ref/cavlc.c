@@ -180,3 +180,81 @@ void vk_cavlc_block_residual(vk_bs_t *s, int cat, const int *coef, int nC,
     uint32_t code = run_before[rl.mask];
     vk_bs_write(s, code & 0x1f, code >> 5);
 }
+
+/* Bounded CAVLC residual bit counter. Mirrors vk_cavlc_block_residual's
+ * VLC choices but only sums bit sizes — no bitstream, no recursion, all
+ * table indices clamped. Used by the CAVLC trellis QNS search. */
+int vk_cavlc_block_bits(const int *coef, int cat, int nC, int count)
+{
+    static const uint8_t ctz_index[8] = {3,0,1,0,2,0,1,0};
+    static const uint8_t count_cat[14] = {16,15,16,0,15,64,16,15,16,64,16,15,16,64};
+    vk_run_level_t rl;
+    int total = coeff_level_run(coef, &rl, count);
+    if (total <= 0) return vk_coeff0_token[nC & 5].i_size;
+    if (total > 16) total = 16;
+    int total_zero = rl.last + 1 - total;
+    if (total_zero < 0) total_zero = 0;
+
+    rl.level[total+0] = 2;
+    rl.level[total+1] = 2;
+    int trailing = ((((rl.level[0]+1) | (1-rl.level[0])) >> 31) & 1)
+                 | ((((rl.level[1]+1) | (1-rl.level[1])) >> 31) & 2)
+                 | ((((rl.level[2]+1) | (1-rl.level[2])) >> 31) & 4);
+    trailing = ctz_index[trailing & 7];
+    if (trailing > total) trailing = total;
+
+    int nc = nC & 5;
+    int bits = vk_coeff_token[nc][total-1][trailing].i_size + trailing;
+    int suffix = (total > 10 && trailing < 3);
+    if (suffix < 0 || suffix > 6) suffix = 0;
+    for (int i=trailing; i<total; ++i) {
+        int val = rl.level[i];
+        int original = val + VK_LEVEL_TABLE_SIZE/2;
+        val -= ((val >> 31) | 1) & -(trailing < 3);
+        val += VK_LEVEL_TABLE_SIZE/2;
+        if (val < 0) val = 0;
+        if (val >= VK_LEVEL_TABLE_SIZE) val = VK_LEVEL_TABLE_SIZE-1;
+        if (original >= 0 && original < VK_LEVEL_TABLE_SIZE)
+            bits += level_token[suffix][original].i_size;
+        else if (original >= 0 && original < VK_LEVEL_TABLE_SIZE)
+            bits += level_token[suffix][val].i_size;
+        else {
+            /* x264 escape: prefix 15 + suffix bits, bounded */
+            int lv = original - VK_LEVEL_TABLE_SIZE/2;
+            if (lv < 0) lv = -lv;
+            int c = lv*2 - 2;
+            if (c < 0) c = 0;
+            bits += 16;
+            if (c >= 32768) bits += 16;
+        }
+        if (original >= 0 && original < VK_LEVEL_TABLE_SIZE)
+            suffix = level_token[suffix][original].i_next;
+        if (suffix < 0 || suffix > 6) suffix = 0;
+    }
+    if (cat == VK_DCT_CHROMA_DC) {
+        if (total < 4 && total_zero >= 0 && total_zero < 4)
+            bits += vk_total_zeros_2x2_dc[total-1][total_zero].i_size;
+    } else if ((uint8_t)total < count_cat[cat & 13]) {
+        if (total_zero >= 0 && total_zero < 16)
+            bits += vk_total_zeros[total-1][total_zero].i_size;
+    }
+    uint32_t mask = (uint32_t)rl.mask;
+    int zeros = total_zero, guard = 0;
+    while (zeros > 0 && guard++ < 16) {
+        int run = clz32(mask);
+        if (run >= 16) run = 15;
+        int idx = zeros < 7 ? zeros-1 : 6;
+        if (idx < 0) idx = 0;
+        bits += vk_run_before_init[idx][run].i_size;
+        zeros -= run;
+        if (run == 0) break;
+        mask <<= run + 1;
+    }
+    return bits;
+}
+
+/* Bit size of coeff_token for an all-zero 4x4 block. */
+int vk_cavlc_coeff0_bits(int nC)
+{
+    return vk_coeff0_token[nC & 5].i_size;
+}

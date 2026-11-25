@@ -2,6 +2,7 @@
  * CAVLC I4x4 macroblock encoder — x264 encoder/macroblock.c::x264_mb_encode_i4x4
  * + encoder/cavlc.c::cavlc_mb_header_i. I-slice, transform_8x8_mode=0. */
 #include "i4x4enc.h"
+#include "trellis.h"
 #include "i4x4.h"
 #include "intra16.h"
 #include "cavlc.h"
@@ -84,7 +85,14 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
     vk_bs_write1(bs,0);
     int cidx[64]; for(int i=0;i<64;++i)cidx[i]=-1;
     for(int i=0;i<16;++i)cidx[SCAN8[i]]=i;
-    int dct[16][16],nnz[16]={0};
+    int dct[16][16],nnz[16]={0},orig4[16][16];
+    uint8_t qcache[64]; memset(qcache,0x80,sizeof(qcache));
+    static const int QPOS[4]={11,19,27,35},TPOS[4]={4,5,6,7};
+    for(int i=0;i<4;++i){
+        if(nb&&nb->top_luma) qcache[TPOS[i]]=nb->top_luma[i];
+        if(nb&&nb->left_luma) qcache[QPOS[i]]=nb->left_luma[i];
+    }
+    extern int vk_cur_trellis;
     uint8_t pred[256];
     /* recon_y is a TIGHT 16x16 block (stride 16) in this oracle path — the
      * caller's stride_y is the source stride and must not be used for fdec
@@ -112,7 +120,18 @@ void vk_encode_i4x4_mb(vk_bs_t *bs, const uint8_t *src_y,
         for(int y=0;y<4;++y)for(int x=0;x<4;++x)s[y*4+x]=src_y[(by+y)*stride_y+bx+x];
         for(int y=0;y<4;++y)for(int x=0;x<4;++x) pred[by*16+bx+y*4+x]=p[y*4+x];
         vk_ref_dct4x4(dct[idx],s,p);
-        nnz[idx]=vk_ref_quant4x4(dct[idx],mf,bias);
+        memcpy(orig4[idx],dct[idx],sizeof(dct[idx]));
+        if(vk_cur_trellis>=1){
+            int q8=SCAN8[idx];
+            int sum=qcache[q8-1]+qcache[q8-8];
+            int pr=sum<0x80?(sum+1)>>1:sum&0x7f;
+            static const int CTI[17]={0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,3};
+            int nC=CTI[pr&0x7f];
+            nnz[idx]=vk_trellis_quant_4x4_cavlc(dct[idx],orig4[idx],mf,deq,
+                        vk_trellis_lambda2(qp,1),0,nC,VK_DCT_LUMA_4x4);
+        } else
+            nnz[idx]=vk_ref_quant4x4(dct[idx],mf,bias);
+        qcache[SCAN8[idx]]=(uint8_t)nnz[idx];
         /* x264 x264_mb_encode_i4x4: write prediction to fdec for EVERY block,
          * then add the dequantised residual inline, so later 4x4 blocks in
          * this MB predict from already-reconstructed samples. */
