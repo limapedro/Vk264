@@ -2090,3 +2090,18 @@ No production change. A faithful fix needs to replay `last_nonb` accounting
 (b-adapt FAST, bframes=3, lookahead=0 for superfast) to reproduce the exact
 candidate frames above before applying the ratio test.
 
+### E99 ? superfast scenecut candidates align with display frames after P frames
+
+ffprobe of clip 103 superfast gives display-order frame types
+`I B B P I B B P P B B B P I B B P I P P P B P I B B P P B P`.
+x264's real scenecut checks (E98) at frames 4, 13, 17, 23 are each the
+display frame immediately following a P frame (3, 12, 16, 22). Other frames
+following P (8, 9, 19, 20, 21, 27, 28) were not checked as real scenecuts ?
+the sequential b-adapt FAST state machine suppresses them via flash pruning
+and `frames[1]` availability.
+
+This confirms the candidate set cannot be derived from display-frame position
+alone; reproducing x264's `last_nonb` / b-adapt FAST coding-order walk is
+required. No production change; the frame-type sequence and candidate set are
+recorded for the next implementation attempt.
+
