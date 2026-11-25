@@ -447,7 +447,9 @@ int vk_trellis_quant_4x4(int dct[16], const int orig[16],
     {
         int level = bnode->level_idx;
         for (i = b_ac; i <= last_nnz; i++) {
-            dct[zigzag4[i]] = SIGN((int)level_tree[level].abs_level, orig_coefs[zigzag4[i]]);
+            /* x264 rdo.c:890 uses the sign of the deadzone-quantized dct,
+             * not the original coefficient, when restoring trellis levels. */
+            dct[zigzag4[i]] = SIGN((int)level_tree[level].abs_level, dct[zigzag4[i]]);
             level = level_tree[level].next;
         }
         /* zero others in AC range / all if not b_ac handled above */

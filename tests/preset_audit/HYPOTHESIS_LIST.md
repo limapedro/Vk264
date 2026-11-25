@@ -1156,3 +1156,21 @@ the primitive keeps the source-faithful lambda2 and its 26/31 match count.
 Next: audit `trellis_coef`/`COEF` f8-bit accumulation against
 `encoder/rdo.c:494-531` line by line with a traced vector.
 
+### E53 ? line-by-line trellis DP audit: source-identical, 5 vectors still differ
+
+Audited the oracle `trellis_coef`, `COEF` macro, `trellis_coef0/1/n_*`,
+`TRELLIS_LOOP` ssd/cost_siglast construction, node init, output level-tree
+walk and all tables against `encoder/rdo.c:494-895`:
+- `x264_cabac_entropy[128]`: byte-identical (128/128)
+- `x264_cabac_transition[128][2]`: byte-identical (256/256)
+- lambda2 for qp25: x264 live value 8721, oracle 8721 ? identical
+- `trellis_coef` f8-bit accumulation, SSD weights, DC-only rounding: identical
+- output sign now uses the deadzone-quantized `dct` like x264 (was orig)
+
+Batch still matches **26/31** vectors. Since halving lambda2 empirically
+reaches 28/31 while x264's real lambda is 8721, the remaining difference is
+likely in the *candidate set* (deadzone bias0 vs oracle bias) interacting with
+the DP, not in the audited functions. No speculative change committed.
+Next: replay x264's exact `quant_coefs` vector into the primitive to
+separate deadzone from DP.
+
