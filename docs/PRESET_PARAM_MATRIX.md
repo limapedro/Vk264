@@ -62,7 +62,7 @@ as x264** for every preset. Current alignment (verified at `main @ 8f9112e`):
 | `i_chroma_qp_offset` | 0 ultra..faster, -2 fast+ | same | **ALIGNED** |
 | `analyse.i_trellis` | 0/0/0/1/1/1/2/2/2/2 | now same (`vk_cur_trellis`) | **ALIGNED** since E45; primitive still partial |
 | `analyse.i_me_method` | DIA/DIA/HEX/HEX/HEX/HEX/HEX/UMH/UMH/TESA | DIA only | **MISSING** — plan item 12 |
-| `analyse.i_me_range` | 16..16/24/24 | 16 | **PARTIAL** — plan item 12 |
+| `analyse.i_me_range` | 16..16/24/24 | same (24 veryslow/placebo, E48) | **ALIGNED** (ME method still DIA) |
 | `analyse.b_fast_pskip` | 1..1/0 placebo | same; subme>=3 probes unconditionally (E47) | **ALIGNED** (ME path still partial) |
 | `i_bframe_adaptive` | NONE/FAST/FAST/.../TRELLIS | FAST only | **PARTIAL** — plan item 11 |
 | `rc.b_mb_tree` | 0/0/1... | not wired into lookahead | **PARTIAL** — plan item 14 |

@@ -1082,3 +1082,13 @@ Verified: audit 12/120, NAL2 3/20, first-diff unchanged, all gates green
 This is parameter alignment, not a metric gain ? the remaining P-slice gap
 is the ME/analysis path, not the skip probe gating.
 
+### E48 ? i_me_range parameter aligned
+
+x264 uses `analyse.i_me_range=24` for veryslow/placebo, 16 for all other
+presets. The oracle hardcoded 16 in both `pframe.c` and `cabac_enc.c` ME
+calls. Added `vk_cur_me_range` set from the preset (24 for veryslow/placebo)
+and passed it to both `vk_me16_dia` call sites.
+
+Verified: audit 12/120, NAL2 3/20, first-diff unchanged, all gates green.
+Parameter alignment only ? the ME method itself is still DIA (plan item 12).
+

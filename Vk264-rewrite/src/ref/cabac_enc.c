@@ -15,6 +15,7 @@
 
 extern int vk_cur_subme;
 extern int vk_cur_trellis;
+extern int vk_cur_me_range;
 
 /* x264 mbcmp_init (encoder.c:1409): chroma mode decision uses SATD when
  * subme>1, SAD otherwise. vk_satd8 = four 4x4 SATDs. */
@@ -1451,7 +1452,7 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                     }
                 }
                 inter_cost = vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
-                            mvpx/4, mvpy/4, 16,
+                            mvpx/4, mvpy/4, vk_cur_me_range,
                             lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
                             cand, nc, &mvx, &mvy, h);
                 /* x264 stores the inter MV in mvr immediately after inter
