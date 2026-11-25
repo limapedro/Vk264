@@ -208,13 +208,19 @@ int vk_i4x4_decide(const uint8_t *src_y, uint8_t *recon_y, int rs,
          * by the intra_analysis_shortcut table. Replicate that exactly. */
         const int8_t *loop=cands; int loop_n=nc;
         if (nc>=6) {
-            int s3[3];  /* indexed by mode 0=V, 1=H, 2=DC */
+            int s3[3];  /* indexed by V=0, H=1, DC=2 */
+            /* x264 predict_mode_available: DC variant depends on neighbour
+             * availability — DC_LEFT(9), DC_TOP(10) or DC_128(11). */
+            int bl = (bx>0) || have_l;
+            int bt = (by>0) || have_t;
+            int dcm = (!bl && !bt) ? 11 : (!bt ? 9 : (!bl ? 10 : 2));
+            int m3[3] = {0,1,dcm};
             for (int m=0;m<3;++m) {
-                vk_predict4(p,m,left,top,lt,tr);
+                vk_predict4(p,m3[m],left,top,lt,tr);
                 s3[m]=i4cmp(srcblock,p);
             }
             if (pred<3) s3[pred]-=3*lambda;
-            best=s3[2]; bestm=2;
+            best=s3[2]; bestm=dcm;
             if (s3[1]<best){best=s3[1];bestm=1;}
             if (s3[0]<best){best=s3[0];bestm=0;}
             int favor_vertical = s3[1] > s3[0];
