@@ -1514,3 +1514,21 @@ That is an **I4 intra mode-selection divergence** for MB5, not a trellis or
 reconstruction-feedback problem. Any fix belongs in `vk_i4x4_decide` /
 `i4x4.c` (pred-mode costs, neighbour availability, early-terminate threshold).
 
+### E83c ? correction: MB5 I4 modes also match; divergence is coefficient reconstruction
+
+Dumping all 16 I4 prediction modes at MB5 (x264 `intra4x4_pred_mode` cache vs
+oracle `modes4`) gives an **exact match**:
+`2,2,2,2,5,2,4,5,2,2,2,2,2,4,2,6`.
+So E83b's "I4 mode-selection divergence" is also wrong. What still differs is
+the reconstructed right column:
+```
+x264  68,68,68,68,68,68,68,68,70,65,53,41,20,17,16,16
+oracle 68,68,68,68,71,71,71,71,75,66,51,37,21,19,17,17
+```
+combined with E83's nnz scan (MB5 block 5: x264 0, oracle 1). With modes and
+neighbour samples identical, the remaining gap is in **coefficient
+quantization / dequant-IDCT reconstruction** at MB5, not mode selection or
+input prediction. The earlier `trellis_dc_shortcut` `cost_sig` fix (E70)
+addressed the same class of bug at MB1; an analogous discrepancy remains at
+MB5. No production change made.
+
