@@ -620,7 +620,7 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                     if(I8T[idx]>=0) pb=vk_i4x4_fix(modes8[I8T[idx]]);
                     int pred8 = (pa<pb)?pa:pb;
                     int m=vk_i8x8_decide_ex(src8,l8,t8,tr8,lt8,hl,ht,lambda,
-                                            &bc,0,mx>0&&my>0,have_tr8,pred8);
+                                            &bc,vk_cur_subme>1,mx>0&&my>0,have_tr8,pred8);
                     modes8[idx]=(uint8_t)m;
                     i8cost += bc + 3*lambda;
                     if(mx>0 && my>0){
