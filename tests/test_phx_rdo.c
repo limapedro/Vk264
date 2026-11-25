@@ -186,12 +186,35 @@ int main(void)
         check_vector_n("luma_dc_q26", phx_quant_luma_dc_trellis, &cb, dct, 16,
                        0, 26, PHX_DCT_LUMA_DC, 1, 1, want);
     }
-    /* Chroma DC, 4:2:0 2x2 (rdo.c:1114-1140). */
+    /* Chroma DC, 4:2:0 2x2 (rdo.c:1114-1140).  Golden vectors were taken from
+     * an instrumented x264 build with h->mb.i_trellis_lambda2[1][1] forced to
+     * x264_trellis_lambda2_tab[1][qp] (analyse.c:266-267).  With the correct
+     * chroma-QP lambda2 the first vector's best trellis node is the empty one:
+     * x264 returns nz=0 but, as at rdo.c:874-878, leaves the quantized 2x2
+     * array in place. */
     {
         int16_t dct[4] = { 63,-41,27,-13 };
         static const int16_t want[4] = { 1,0,0,0 };
         check_vector_n("chroma_dc_q26", chroma_dc_wrapper, &cb, dct, 4,
-                       2, 26, PHX_DCT_CHROMA_DC, 1, 1, want);
+                       2, 26, PHX_DCT_CHROMA_DC, 1, 0, want);
+    }
+    /* MB0 of the 64x64 synth fixture (preset medium, qp=28 -> MB qp=25,
+     * chroma qp=23): this is the first chroma DC block whose ordered CABAC
+     * bins diverge at bin 594 when the trellis lambda2 is double-mapped or
+     * the dc unquantization omits rdo.c:819's <<1. */
+    {
+        int16_t dct[4] = { 1120,0,-640,0 };
+        static const int16_t want[4] = { 15,0,-9,0 };
+        check_vector_n("chroma_dc_mb0_q23", chroma_dc_wrapper, &cb, dct, 4,
+                       2, 23, PHX_DCT_CHROMA_DC, 1, 1, want);
+    }
+    /* MB0 chroma 4x4 AC block of the synth fixture (qp=23 chroma).  Golden
+     * from an instrumented x264 build with lambda2[1][1] = tab[1][23]. */
+    {
+        int16_t dct[16] = { 120,0,0,0,-140,0,0,0,0,0,0,0,-20,0,0,0 };
+        static const int16_t want[16] = { 3,0,0,0,-2,0,0,0,0,0,0,0,0,0,0,0 };
+        check_vector("chroma4x4_mb0_q23", &cb, dct, 2, 23,
+                     PHX_DCT_CHROMA_AC, 1, 1, want);
     }
     /* 8x8 CABAC trellis (rdo.c:1159-1168): structural smoke test only.
      *KNOWN LIMITATION: the 64-coefficient state machine has a residual

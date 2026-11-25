@@ -60,6 +60,17 @@ int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
                              phx_mb_cache_t *cache, int mb_x, int mb_y,
                              phx_mb_decision_t *d, phx_cabac_t *cb);
 
+/* x264's chroma DC path uses x264_quant_chroma_dc_trellis() (macroblock.c:420,
+ * rdo.c:1114-1140) whenever trellis is enabled, and zigzag_scan_2x2_dc()
+ * (macroblock.c:35-41) before handing the 2x2 block to CABAC.  Route the
+ * phase-B chroma entry point through the trellis-aware wrapper so the entropy
+ * stage sees the same coefficients as x264.  Plain/non-trellis callers fall
+ * through to phx_chroma.c unchanged.  SHADER: B — serial per MB. */
+#define phx_macroblock_encode_chroma phx_mb_encode_chroma_trellis
+int phx_mb_encode_chroma_trellis(const phx_param_t *p, phx_frame_t *f,
+                                 phx_mb_cache_t *cache, int mb_x, int mb_y,
+                                 phx_mb_decision_t *d);
+
 #ifdef __cplusplus
 }
 #endif

@@ -287,11 +287,127 @@ static void phx_test_first_mb_handoff(void)
  * exercised through both intra branches and checked against the nnz rule of
  * encoder/macroblock.c:115-121.
  * SHADER: B — B-stage verification entry point. */
+/* Golden first-MB chroma-DC handoff from tools/first_frame_probe.py's
+ * synth fixture (preset medium, MB qp 25, chroma qp 23).  x264's instrumented
+ * encoder produces natural 2x2 arrays U={15,0,-9,0}, V={-26,-23,-12,0}; after
+ * macroblock.c:35-41's zigzag_scan_2x2_dc() the arrays handed to CABAC are
+ * U={15,-9,0,0}, V={-26,-12,-23,0}.  SHADER: B — one MB, serial. */
+static void phx_test_first_mb_chroma_trellis(void)
+{
+    static const uint8_t y0[16][16] = {
+        {0,7,14,21,28,35,42,49,56,63,70,77,84,91,98,105},
+        {13,20,27,34,41,48,55,62,69,76,83,90,97,104,111,118},
+        {26,33,40,47,54,61,68,75,82,89,96,103,110,117,124,131},
+        {39,46,53,60,67,74,81,88,95,102,109,116,123,130,137,144},
+        {52,59,66,73,80,87,94,101,108,115,122,129,136,143,150,157},
+        {65,72,79,86,93,100,107,114,121,128,135,142,149,156,163,170},
+        {78,85,92,99,106,113,120,127,134,141,148,155,162,169,176,183},
+        {91,98,105,112,119,126,133,140,147,154,161,168,175,182,189,196},
+        {104,111,118,125,132,139,146,153,160,167,174,181,188,195,202,209},
+        {117,124,131,138,145,152,159,166,173,180,187,194,201,208,215,222},
+        {130,137,144,151,158,165,172,179,186,193,200,207,214,221,228,235},
+        {143,150,157,164,171,178,185,192,199,206,213,220,227,234,241,248},
+        {156,163,170,177,184,191,198,205,212,219,226,233,240,247,254,5},
+        {169,176,183,190,197,204,211,218,225,232,239,246,253,4,11,18},
+        {182,189,196,203,210,217,224,231,238,245,252,3,10,17,24,31},
+        {195,202,209,216,223,230,237,244,251,2,9,16,23,30,37,44}
+    };
+    /* I420 planes of the synth fixture's first MB, before NV12 interleave:
+     * U = 128+5x, V = (29+7x+13y) & 0xff (tools/make_video_fixtures.py). */
+    static const uint8_t uv0[8][8] = {
+        {128,133,138,143,148,153,158,163},
+        {128,133,138,143,148,153,158,163},
+        {128,133,138,143,148,153,158,163},
+        {128,133,138,143,148,153,158,163},
+        {128,133,138,143,148,153,158,163},
+        {128,133,138,143,148,153,158,163},
+        {128,133,138,143,148,153,158,163},
+        {128,133,138,143,148,153,158,163}
+    };
+    static const uint8_t vv0[8][8] = {
+        {29,36,43,50,57,64,71,78},
+        {42,49,56,63,70,77,84,91},
+        {55,62,69,76,83,90,97,104},
+        {68,75,82,89,96,103,110,117},
+        {81,88,95,102,109,116,123,130},
+        {94,101,108,115,122,129,136,143},
+        {107,114,121,128,135,142,149,156},
+        {120,127,134,141,148,155,162,169}
+    };
+    phx_param_t p;
+    phx_param_default(&p);
+    phx_param_apply_preset(&p, "medium");
+    p.b_cabac = 1;
+    phx_param_finalize(&p);            /* chroma QP offset -2 (subme>=6) */
+    CHECK(p.i_trellis > 0, "medium preset enables trellis");
+
+    phx_frame_t *f = phx_frame_new(TEST_W, TEST_H, 0);
+    CHECK(f != NULL, "trellis handoff frame allocation");
+    if (!f) return;
+    for (int y = 0; y < 16; y++)
+        for (int x = 0; x < 16; x++)
+            f->plane[y*f->i_stride + x] = y0[y][x];
+    const int s = f->i_stride_planes[1];
+    for (int y = 0; y < 8; y++)
+        for (int x = 0; x < 8; x++) {
+            f->plane_chroma[y*s + 2*x] = uv0[y][x];
+            f->plane_chroma[y*s + 2*x + 1] = vv0[y][x];
+        }
+    phx_frame_init_lowres(f);
+
+    phx_mb_state_t *st = phx_mb_state_new(1, 1);
+    CHECK(st != NULL, "trellis handoff MB state");
+    if (!st) { phx_frame_delete(f); return; }
+    st->slice_type = 2; st->first_mb = 0;
+    phx_mb_cache_t c;
+    phx_mb_decision_t d;
+    memset(&c, 0, sizeof(c));
+    memset(&d, 0, sizeof(d));
+    phx_macroblock_cache_load(st, &c, 0, 0, 0);
+    d.i_qp = 25;
+    CHECK(phx_macroblock_analyse(&p, f, &c, 0, 0, d.i_qp, &d) == 0,
+          "trellis handoff analysis");
+    if (d.mb_type == PHX_I_8x8) d.mb_type = PHX_I_4x4;
+    d.chroma_pred_mode = 6;            /* x264 MB0 golden: chroma=6 */
+    d.b_transform_8x8 = 0;
+
+    phx_cabac_t cb;
+    memset(&cb, 0, sizeof(cb));
+    phx_cabac_context_init(&cb, PHX_SLICE_I, d.i_qp, 0);
+    CHECK(phx_macroblock_encode_ex(&p, f, &c, 0, 0, &d, &cb) == 0,
+          "trellis handoff luma encode");
+    CHECK(phx_macroblock_encode_chroma(&p, f, &c, 0, 0, &d) == 0,
+          "trellis handoff chroma encode");
+
+    static const int16_t want_u[4] = { 15, -9, 0, 0 };
+    static const int16_t want_v[4] = { -26, -12, -23, 0 };
+    CHECK(memcmp(d.chroma_dct[0][0], want_u, sizeof(want_u)) == 0,
+          "trellis handoff U DC golden");
+    CHECK(memcmp(d.chroma_dct[1][0], want_v, sizeof(want_v)) == 0,
+          "trellis handoff V DC golden");
+    CHECK(d.chroma_nnz[0][0] == 1 && d.chroma_nnz[1][0] == 1,
+          "trellis handoff chroma DC nnz");
+    /* x264 L1BLK cat=4 idx=16..19 (the 15-bin window after +1): U's four
+     * trellis AC blocks each reduce to a single coeff at scan index 1. */
+    for (int i = 0; i < 4; i++)
+        CHECK(d.chroma_dct[1][1+i][0] == -2 && d.chroma_dct[1][1+i][1] == 0,
+              "trellis handoff U AC golden");
+    CHECK(c.non_zero_count[phx_scan8[49]] == 1 &&
+          c.non_zero_count[phx_scan8[50]] == 1,
+          "trellis handoff cache DC nnz");
+    printf("trellis handoff: U=%d,%d V=%d,%d cbp=%d\n",
+           d.chroma_dct[0][0][0], d.chroma_dct[0][0][1],
+           d.chroma_dct[1][0][0], d.chroma_dct[1][0][1], d.cbp_chroma);
+    phx_mb_state_delete(st);
+    phx_frame_delete(f);
+}
+
 int main(void)
 {
     phx_test_case(PHX_I_16x16, "I16");
     phx_test_case(PHX_I_4x4, "I4");
     phx_test_first_mb_handoff();
+    phx_test_first_mb_chroma_trellis();
 
     if (fails) {
         printf("FAIL %d check(s)\n", fails);

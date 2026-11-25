@@ -582,7 +582,7 @@ static int phx_trellis_coefn_1(int abs_level, uint64_t ssd0, uint64_t ssd1,
         uint64_t ssd0[2], ssd1[2];                            /* :815 */ \
         for (int k = 0; k < 2; k++) { \
             int abs_level = q-1+k;                            /* :818 */ \
-            int unquant_abs_level = (((dc ? unquant_mf[0] : unquant_mf[zigzag[i]]) * abs_level + 128) >> 8); /* :819 */ \
+            int unquant_abs_level = (((dc ? (unquant_mf[0] << 1) : unquant_mf[zigzag[i]]) * abs_level + 128) >> 8); /* :819 */ \
             int d = abs_coef - unquant_abs_level;             /* :820 */ \
             if (i_psy_trellis && i && !dc && !b_chroma) {     /* :822 */ \
                 int orig_coef = psy_fenc ? psy_fenc[zigzag[i]] : 0; /* :824 */ \
@@ -921,7 +921,12 @@ int phx_quant_4x4_trellis(phx_cabac_t *cb, int16_t *dct, int i_quant_cat,
         phx_rdo_quant4_mf(i_quant_cat, i_qp),
         phx_rdo_quant4_bias0(i_quant_cat, i_qp),
         phx_rdo_unquant4_mf(i_quant_cat, i_qp), zigzag, cat,
-        phx_rdo_lambda2(b_chroma, b_intra, i_qp), b_ac, b_chroma, 0, 16, idx,
+        /* rdo.c:1151 reads h->mb.i_trellis_lambda2[b_chroma][b_intra], already
+         * indexed with the effective chroma QP at analyse.c:266-267.  Passing
+         * a chroma QP through phx_rdo_lambda2() would remap it twice. */
+        (b_chroma ? phx_trellis_lambda2_tab[b_intra][i_qp]
+                  : phx_rdo_lambda2(0, b_intra, i_qp)),
+        b_ac, b_chroma, 0, 16, idx,
         phx_cfg.i_psy_trellis, fenc, phx_cfg.b_interlaced);    /* rdo.c:1147-1151 */
 }
 
@@ -980,6 +985,9 @@ int phx_quant_chroma_dc_trellis(phx_cabac_t *cb, int16_t *dct, int i_qp,
         phx_rdo_quant4_mf(quant_cat, i_qp),
         phx_rdo_quant4_bias0(quant_cat, i_qp),
         phx_rdo_unquant4_mf(quant_cat, i_qp), zigzag, cat,
-        phx_rdo_lambda2(1, b_intra, i_qp), 0, 1, 1, 4,
+        /* rdo.c:1135 uses h->mb.i_trellis_lambda2[1][b_intra], which analyse.c:266-267
+         * already indexed with the *effective chroma* QP.  phx_rdo_lambda2() would
+         * map chroma QP a second time (analyse.c:257), so index the table directly. */
+        phx_trellis_lambda2_tab[b_intra][i_qp], 0, 1, 1, 4,
         phx_cfg.idx, 0, NULL, phx_cfg.b_interlaced);           /* rdo.c:1131-1135 */
 }

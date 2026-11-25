@@ -503,7 +503,9 @@ static const int16_t *phx_encoder_block(const phx_mb_decision_t *d, int kind,
      * block 0 of plane ch is the 2x2 DC, blocks 1..4 the 4x4 AC blocks. */
     case PHX_BLK_CHROMA_DC: *ncoeff = 4;  return d->chroma_dct[idx][0];
     case PHX_BLK_CHROMA_AC: *ncoeff = 15;
-        return d->chroma_dct[idx >> 4][1 + (idx & 3)];
+        /* chroma AC scan8 indices are 16..19 (U) and 32..35 (V), so the
+         * plane index is idx/16 - 1, not idx/16 (which would be 2 for V). */
+        return d->chroma_dct[(idx >> 4) - 1][1 + (idx & 3)];
     default: *ncoeff = 0; return NULL;
     }
 }

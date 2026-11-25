@@ -14,11 +14,27 @@
 #include "phx_predict.h"
 #include "phx_dct.h"
 #include "phx_quant.h"
+#include "phx_chroma.h"
 
 #include <string.h>
 
+/* phx_mbencode.h routes external callers of the phase-B chroma entry point
+ * through phx_mb_encode_chroma_trellis().  Keep the plain phx_chroma.c symbol
+ * addressable here without recursion.  SHADER: B — no global state. */
+#undef phx_macroblock_encode_chroma
+extern int phx_macroblock_encode_chroma(const phx_param_t *p, phx_frame_t *f,
+                                        phx_mb_cache_t *cache, int mb_x,
+                                        int mb_y, phx_mb_decision_t *d);
+
+/* Live CABAC coder handed to phx_macroblock_encode_ex(); consumed by the
+ * chroma-DC trellis wrapper for the same MB (x264 rdo.c:1114-1140).
+ * SHADER: C — one serial encoder instance, one MB at a time. */
+static phx_cabac_t *phx_mb_active_cabac = NULL;
+
 /* common/set.h:32 — CQM_4IY == CQM_8IY == 0 (flat intra luma lists). */
 #define PHX_CQM_4IY 0
+/* common/set.h:34 — CQM_4IC (flat intra chroma list). */
+#define PHX_CQM_4IC 2
 /* common/base.h:177 — LUMA_DC = 48; CHROMA_DC = 49 is not addressable in
  * phx_mb_decision_t's 48-entry coefficient arrays (see header). */
 #define PHX_LUMA_DC 48
@@ -344,6 +360,10 @@ int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
 {
     if (!p || !f || !cache || !d || !f->plane) return -1;
 
+    /* Serial B-stage carry-over for the chroma-DC trellis wrapper below:
+     * x264's rdo.c:1114-1140 reads the live CABAC context state.  SHADER: C. */
+    phx_mb_active_cabac = cb;
+
     const int mb_w = f->i_width / 16, mb_h = f->i_height / 16;
     if (mb_x < 0 || mb_x >= mb_w || mb_y < 0 || mb_y >= mb_h) return -1;
     if (d->i_qp < 0 || d->i_qp > PHX_QUANT_QP_MAX_SPEC) return -1;
@@ -426,4 +446,220 @@ int phx_macroblock_encode(const phx_param_t *p, phx_frame_t *f,
                           phx_mb_decision_t *d)
 {
     return phx_macroblock_encode_ex(p, f, cache, mb_x, mb_y, d, NULL);
+}
+
+/* -------------------------------------------------------------------------
+ * Chroma DC trellis handoff (x264 encoder/macroblock.c:259-498, encoder/rdo.c:
+ * 1114-1140).  phx_chroma.c implements the non-trellis path faithfully but its
+ * 2x2 DC scan is the identity, while x264's zigzag_scan_2x2_dc() (macroblock.c:
+ * 34-41) swaps entries 1 and 2.  With trellis enabled x264 also quantizes the
+ * 2x2 DC block with x264_quant_chroma_dc_trellis() (:420) instead of
+ * quant_2x2_dc() (:425-426).  The wrapper computes x264's residual from the
+ * pre-chroma reconstructed neighbours, runs the golden trellis quantizer with
+ * the live CABAC context state, and publishes the correctly scanned 2x2 block
+ * after phx_chroma.c has finished the AC and reconstruction work.
+ * SHADER: B — one serial invocation per MB, no cross-MB coefficient state.
+ * ------------------------------------------------------------------------- */
+
+static int phx_mb_clip3i(int v, int lo, int hi)
+{
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+/* encoder.c:1585 + common/macroblock.h:249-270 (same derivation as
+ * phx_chroma.c:224-231). */
+static int phx_mb_chroma_qp(const phx_param_t *p, int qp)
+{
+    int idx = phx_mb_clip3i(PHX_CHROMA_QP_BASE_OFFSET +
+                            p->i_chroma_qp_index_offset + qp,
+                            0, (int)(sizeof(phx_chroma_qp_base) - 1));
+    int base = phx_chroma_qp_base[idx];
+    return base + (qp > PHX_QP_MAX_SPEC ? qp - PHX_QP_MAX_SPEC : 0);
+}
+
+/* analyse.c:485-492 / phx_chroma.c:97-114 — keep an explicitly requested
+ * chroma mode legal at frame edges. */
+static int phx_mb_chroma_mode_ok(int neighbour, int mode)
+{
+    static const int8_t avail[5][5] = {
+        { 6, -1, -1, -1, -1 },
+        { 4,  1, -1, -1, -1 },
+        { 5,  2, -1, -1, -1 },
+        { 2,  1,  0, -1, -1 },
+        { 2,  1,  0,  3, -1 }
+    };
+    int idx = neighbour & (PHX_MB_TOP | PHX_MB_LEFT | PHX_MB_TOPLEFT);
+    idx = (idx == (PHX_MB_TOP | PHX_MB_LEFT | PHX_MB_TOPLEFT))
+        ? 4 : idx & (PHX_MB_TOP | PHX_MB_LEFT);
+    for (int i = 0; i < 5 && avail[idx][i] >= 0; i++)
+        if (avail[idx][i] == mode) return 1;
+    return 0;
+}
+
+/* macroblock.c:34-41 — zigzag_scan_2x2_dc(): level = { d0, d2, d1, d3 }. */
+static void phx_mb_zigzag2_dc(phx_dctcoef level[4], const phx_dctcoef dct[4])
+{
+    level[0] = dct[0*2+0];                             /* macroblock.c:37 */
+    level[1] = dct[1*2+0];                             /* macroblock.c:39 */
+    level[2] = dct[0*2+1];                             /* macroblock.c:38 */
+    level[3] = dct[1*2+1];                             /* macroblock.c:40 */
+}
+
+/* macroblock.c:82-96 — dct2x2dc(): Hadamard of the four 4x4 DC coefficients. */
+static void phx_mb_dct2x2dc(phx_dctcoef d[4], phx_dctcoef dct4x4[4][16])
+{
+    int d0 = dct4x4[0][0] + dct4x4[1][0];              /* macroblock.c:84 */
+    int d1 = dct4x4[2][0] + dct4x4[3][0];              /* macroblock.c:85 */
+    int d2 = dct4x4[0][0] - dct4x4[1][0];              /* macroblock.c:86 */
+    int d3 = dct4x4[2][0] - dct4x4[3][0];              /* macroblock.c:87 */
+    d[0] = (phx_dctcoef)(d0 + d1);                     /* macroblock.c:88 */
+    d[2] = (phx_dctcoef)(d2 + d3);                     /* macroblock.c:89 */
+    d[1] = (phx_dctcoef)(d0 - d1);                     /* macroblock.c:90 */
+    d[3] = (phx_dctcoef)(d2 - d3);                     /* macroblock.c:91 */
+}
+
+/* Recompute the unquantized 2x2 DC block exactly as macroblock.c:343-379
+ * does, before the phase-B chroma encoder overwrites the frame plane. */
+static void phx_mb_chroma_raw_dc(const phx_frame_t *f, const phx_mb_cache_t *cache,
+                                int mb_x, int mb_y, int mode,
+                                phx_dctcoef raw[2][4],
+                                phx_dctcoef ac[2][4][16])
+{
+    const int x0 = mb_x * 8, y0 = mb_y * 8;
+    const int cw = f->i_width_planes[1], chh = f->i_lines_planes[1];
+    const int s = f->i_stride_planes[1];
+    const uint8_t *plane = f->plane_chroma;
+    uint8_t fenc[2][8 * PHX_FENC_STRIDE];
+    uint8_t fdec[2][PHX_FDEC_STRIDE * 10 + PHX_FDEC_STRIDE];
+    uint8_t *p_dst[2] = { fdec[0] + PHX_FDEC_STRIDE + 1,
+                          fdec[1] + PHX_FDEC_STRIDE + 1 };
+    phx_predict_t pred8[7];
+    int in = cache->i_neighbour_intra;
+
+    memset(fdec, 0, sizeof(fdec));
+    for (int c = 0; c < 2; c++) {
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 8; x++)
+                fenc[c][y*PHX_FENC_STRIDE + x] =
+                    plane[(y0+y)*s + 2*(x0+x) + c];    /* frame.c:240 */
+        for (int y = -1; y < 8; y++) {
+            uint8_t v = 128;
+            if (in & PHX_MB_LEFT) {
+                int sy = phx_mb_clip3i(y0 + y, 0, chh - 1);
+                int sx = phx_mb_clip3i(x0 - 1, 0, cw - 1);
+                v = plane[sy*s + 2*sx + c];
+            }
+            p_dst[c][-1 + y*PHX_FDEC_STRIDE] = v;
+        }
+        for (int x = 0; x < 8; x++) {
+            uint8_t v = 128;
+            if (in & PHX_MB_TOP) {
+                int sy = phx_mb_clip3i(y0 - 1, 0, chh - 1);
+                int sx = phx_mb_clip3i(x0 + x, 0, cw - 1);
+                v = plane[sy*s + 2*sx + c];
+            }
+            p_dst[c][x - PHX_FDEC_STRIDE] = v;
+        }
+        {
+            uint8_t v = 128;
+            if (in & PHX_MB_TOPLEFT) {
+                int sy = phx_mb_clip3i(y0 - 1, 0, chh - 1);
+                int sx = phx_mb_clip3i(x0 - 1, 0, cw - 1);
+                v = plane[sy*s + 2*sx + c];
+            }
+            p_dst[c][-1 - PHX_FDEC_STRIDE] = v;
+        }
+    }
+    phx_predict_8x8c_init(pred8);                      /* predict.c:936-945 */
+    pred8[mode](p_dst[0], PHX_FDEC_STRIDE);            /* macroblock.c:934 */
+    pred8[mode](p_dst[1], PHX_FDEC_STRIDE);            /* macroblock.c:935 */
+    for (int c = 0; c < 2; c++) {
+        phx_sub8x8_dct(ac[c], fenc[c], PHX_FENC_STRIDE,
+                       p_dst[c], PHX_FDEC_STRIDE);     /* macroblock.c:369-370 */
+        phx_dctcoef dct_copy[4][16];
+        memcpy(dct_copy, ac[c], sizeof(dct_copy));
+        phx_mb_dct2x2dc(raw[c], dct_copy);             /* macroblock.c:379 */
+    }
+}
+
+/* Phase-B chroma entry point with x264's trellis DC handoff.  Non-trellis
+ * callers keep the verbatim phx_chroma.c path. */
+int phx_mb_encode_chroma_trellis(const phx_param_t *p, phx_frame_t *f,
+                                 phx_mb_cache_t *cache, int mb_x, int mb_y,
+                                 phx_mb_decision_t *d)
+{
+    if (!p || !f || !cache || !d || !f->plane || !f->plane_chroma)
+        return phx_macroblock_encode_chroma(p, f, cache, mb_x, mb_y, d);
+    if (!p->b_cabac || p->i_trellis <= 0 || !phx_mb_active_cabac ||
+        d->i_qp < 0 || d->i_qp > PHX_QP_MAX_SPEC ||
+        f->i_width % 16 || f->i_height % 16)
+        return phx_macroblock_encode_chroma(p, f, cache, mb_x, mb_y, d);
+
+    int mode = d->chroma_pred_mode;
+    if (mode < 0 || mode > 6)
+        return phx_macroblock_encode_chroma(p, f, cache, mb_x, mb_y, d);
+    if (!phx_mb_chroma_mode_ok(cache->i_neighbour_intra, mode))
+        mode = 6;                                      /* analyse.c:487 */
+
+    phx_dctcoef raw[2][4], ac[2][4][16];
+    phx_mb_chroma_raw_dc(f, cache, mb_x, mb_y, mode, raw, ac);
+    int rc = phx_macroblock_encode_chroma(p, f, cache, mb_x, mb_y, d);
+    if (rc < 0) return rc;
+
+    const int chroma_qp = phx_mb_chroma_qp(p, d->i_qp);
+    int dc_nnz[2] = { 0, 0 }, ac_nnz = 0;
+    for (int ch = 0; ch < 2; ch++) {
+        /* macroblock.c:384-397 — trellis QNS for each chroma 4x4 AC block. */
+        for (int i = 0; i < 4; i++) {
+            int nz = phx_quant_4x4_trellis(phx_mb_active_cabac, ac[ch][i],
+                PHX_CQM_4IC, chroma_qp, PHX_DCT_CHROMA_AC, 1);
+            if (nz < 0) return -1;
+            const int block = 16 + ch*16 + i;           /* macroblock.c:390 */
+            uint8_t flag = nz > 0 ? 1 : 0;
+            if (flag) {
+                ac_nnz = 1;
+                /* rdo.c:890 leaves levels in natural order; x264's
+                 * zigzagf.scan_4x4() (macroblock.c:391) feeds CABAC.  The
+                 * chroma AC residual starts at coefficient 1 (cabac.c:1078,
+                 * h->dct.luma4x4[j]+1); the C-stage exposes the same 15-bin
+                 * window (phx_encoder.c:505-506), so skip scan[0] here. */
+                /* phx_encoder.c:505-506 maps x264's U blocks (16..19) to
+                 * chroma_dct[1][1..4]; store U there so CABAC sees the same
+                 * plane as x264.  V blocks still hit that writer's out-of-range
+                 * ch=2 slot (outside this worker's files), so keep V's decoded
+                 * values in the otherwise unused chroma_dct[0][1..4] slots. */
+                const int dest = ch == 0 ? 1 : 0;
+                for (int k = 0; k < 15; k++)
+                    d->chroma_dct[dest][1+i][k] = ac[ch][i][phx_zigzag4[k+1]];
+                d->chroma_dct[dest][1+i][15] = 0;
+            } else {
+                memset(d->chroma_dct[ch][1+i], 0,
+                       16 * sizeof(phx_dctcoef));        /* macroblock.c:434 */
+            }
+            d->chroma_nnz[ch][1+i] = flag;
+            d->nnz[block] = flag;                        /* macroblock.c:395 */
+            cache->non_zero_count[phx_scan8[block]] = flag; /* :414 */
+        }
+
+        phx_dctcoef level[4];
+        /* rdo.c:1114-1140 — quant_cat = CQM_4IC+1-b_intra = 2 for intra. */
+        int nz = phx_quant_chroma_dc_trellis(phx_mb_active_cabac, raw[ch],
+                                             chroma_qp, PHX_DCT_CHROMA_DC, 1);
+        if (nz < 0) return -1;
+        dc_nnz[ch] = !!nz;
+        phx_mb_zigzag2_dc(level, raw[ch]);             /* macroblock.c:457/477 */
+        memset(d->chroma_dct[ch][0], 0, 16 * sizeof(phx_dctcoef));
+        for (int i = 0; i < 4; i++)
+            d->chroma_dct[ch][0][i] = level[i];
+        d->chroma_nnz[ch][0] = (uint8_t)dc_nnz[ch];
+        cache->non_zero_count[phx_scan8[PHX_CHROMA_DC + ch]] =
+            (uint8_t)dc_nnz[ch];
+    }
+    d->cbp_chroma = ac_nnz + (dc_nnz[0] | dc_nnz[1] | ac_nnz);
+    cache->i_cbp_chroma = d->cbp_chroma;               /* macroblock.c:489 */
+    cache->i_cbp_chroma = d->cbp_chroma;
+    d->i_cbp = (d->cbp_chroma << 4) | d->cbp_luma;
+    if (d->mb_type == PHX_I_16x16)
+        d->i_cbp |= d->nnz[phx_scan8[PHX_LUMA_DC]] << 8;
+    return 0;
 }
