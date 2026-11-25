@@ -1784,3 +1784,18 @@ CBF-context gap is in the **nnz cache slot semantics** (which neighbour
 values land in slots 4..7 for an I8 top neighbour), not in coefficient
 content. All attempts reverted; no production change.
 
+### E95 ? nnz cache slot sweep: no mapping fixes bin584
+
+`build/nnz_slot_sweep.py` swept six candidate source-index mappings for the
+oracle's top-neighbour nnz cache load `nnzc4[4..7]` (including x264's scan8
+orders `{0,1,4,5}`, `{12,13,14,15}`, `{14,15,22,23}`) and measured the
+veryfast first-diff byte after each build. **All six gave 84** ? the current
+baseline. So the `ctx95 vs ctx93` difference reported by `bincompare_faster.py`
+at bin584 is not caused by which source indices are copied into `nnzc4[4..7]`.
+
+Given E94 showed the coded I8 blocks match exactly on a common zigzag basis,
+the bin584 signal is likely a bin-index alignment artifact between the two
+logging harnesses (x264 logs 1050 decisions, the oracle 1220; indices drift
+once earlier syntax differs). Do not chase bin584 by changing nnz cache loads.
+All mappings reverted; no production change.
+
