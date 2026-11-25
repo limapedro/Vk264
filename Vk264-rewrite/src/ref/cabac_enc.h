@@ -36,6 +36,16 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                                   const int (*ref_mv)[2], int (*cur_mv)[2],
                                   const uint8_t *ref_intra, uint8_t *cur_intra);
 
+/* Per-MB intra decisions captured by the CABAC IDR analyser so the CAVLC
+ * IDR writer can emit the same I4/I8 MBs (E76). Arrays are [mw*mh]. */
+typedef struct {
+    uint8_t *mbtype_i4;      /* 1 = I4 or I8 */
+    uint8_t *mbts8;          /* 1 = I8 */
+    uint8_t *cmode_fix;      /* fixed chroma prediction mode */
+    uint8_t (*modes4)[16];   /* I4 intra modes, [mb][block] */
+    uint8_t (*modes8)[4];    /* I8 intra modes, [mb][block] */
+} vk_idr_decisions_t;
+
 /* Write an IDR slice and optionally copy out the reconstructed YUV420 frame. */
 int vk_cabac_encode_idr_recon(vk_bs_t *bs, vk_cabac_t *cb,
                               const uint8_t *frame, int w, int h, int qp,
@@ -44,6 +54,7 @@ int vk_cabac_encode_idr_recon(vk_bs_t *bs, vk_cabac_t *cb,
  * depends on h->i_frame & 31). */
 int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                                     const uint8_t *frame, int w, int h, int qp,
-                                    uint8_t *recon_out, int frame_idx);
+                                    uint8_t *recon_out, int frame_idx,
+                                    vk_idr_decisions_t *dec);
 
 #endif

@@ -472,26 +472,28 @@ static void compute_chroma_dc(const uint8_t *src, int cs, int x, int y,
 
 int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                                     const uint8_t *frame, int w, int h, int qp,
-                                    uint8_t *recon_out, int frame_idx);
+                                    uint8_t *recon_out, int frame_idx,
+                                    vk_idr_decisions_t *dec);
 
 int vk_cabac_encode_idr(vk_bs_t *bs, vk_cabac_t *cb,
                         const uint8_t *frame, int w, int h, int qp,
                         int frame_num)
 {
     (void)frame_num;
-    return vk_cabac_encode_idr_recon_frame(bs, cb, frame, w, h, qp, NULL, 0);
+    return vk_cabac_encode_idr_recon_frame(bs, cb, frame, w, h, qp, NULL, 0, NULL);
 }
 
 int vk_cabac_encode_idr_recon(vk_bs_t *bs, vk_cabac_t *cb,
                               const uint8_t *frame, int w, int h, int qp,
                               uint8_t *recon_out)
 {
-    return vk_cabac_encode_idr_recon_frame(bs, cb, frame, w, h, qp, recon_out, 0);
+    return vk_cabac_encode_idr_recon_frame(bs, cb, frame, w, h, qp, recon_out, 0, NULL);
 }
 
 int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                                     const uint8_t *frame, int w, int h, int qp,
-                                    uint8_t *recon_out, int frame_idx)
+                                    uint8_t *recon_out, int frame_idx,
+                                    vk_idr_decisions_t *dec)
 {
     int mw = w/16, mh = h/16;
     uint8_t *data = bs->p;
@@ -981,6 +983,10 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
             for (int i = 0; i < 4; ++i) { nu_dc |= qu[i] != 0; nv_dc |= qv[i] != 0; }
             mbtype_i4[my*mw+mx] = (uint8_t)(use_i4||use_i8);
             mbts8[my*mw+mx] = (uint8_t)use_i8;
+            if (dec) {
+                memcpy(dec->modes4[my*mw+mx], modes4, 16);
+                memcpy(dec->modes8[my*mw+mx], modes8, 4);
+            }
             /* x264 packs chroma CBP in bits 4-5 (i_cbp_chroma << 4). */
             mbcbp[my*mw+mx] = cbp_luma | (cbp_chroma << 4)
                             | (nz ? 0x100 : 0)
@@ -1003,6 +1009,13 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                    rcv + co + y*cs, w/2);
         }
     }
+    if (dec) {
+        memcpy(dec->mbtype_i4, mbtype_i4, (size_t)mw*mh);
+        memcpy(dec->mbts8, mbts8, (size_t)mw*mh);
+        memcpy(dec->cmode_fix, cmode_fix, (size_t)mw*mh);
+    }
+    free(mbtype_i4);
+    free(mbts8);
     free(nnzc);
     free(cnnzc);
     free(mbcbp);

@@ -51,7 +51,8 @@ static void encode_idr_cavlc(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
                              uint8_t *dcnz_c,
                              uint8_t *ry, int rs, int ro,
                              uint8_t *ru, uint8_t *rv, int cs, int co,
-                             uint8_t *recon, int use_i4x4)
+                              uint8_t *recon, int use_i4x4,
+                              const vk_idr_decisions_t *dec)
 {
     int mw = w/16, mh = h/16;
     vk_slice_header_t sh;
@@ -101,7 +102,18 @@ static void encode_idr_cavlc(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t *p
             const uint8_t *su = frame + (size_t)w*h + (py/2)*(w/2) + px/2;
             const uint8_t *sv = su + (w/2)*(h/2);
             uint8_t oy[256], ou[64], ov[64], on[16], oc[2][4], od;
-            if (use_i4x4 && mx==0 && my==0 && getenv("ORACLE_I4X4")) {
+            int mbidx = my*mw+mx;
+            if (dec && dec->mbts8[mbidx]) {
+                uint8_t sy16[256];
+                for (int yy=0; yy<16; ++yy)
+                    memcpy(sy16+yy*16, sy+yy*w, 16);
+                vk_encode_i8x8_mb(bs, sy16, su, sv, oy, ou, ov, qp, &nb,
+                                  16, 8, dec->modes8[mbidx],
+                                  dec->cmode_fix[mbidx], on, oc, &od, 0);
+            } else if (dec && dec->mbtype_i4[mbidx]) {
+                vk_encode_i4x4_mb(bs, sy, su, sv, oy, ou, ov, qp, &nb, w, w/2,
+                                  dec->modes4[mbidx], on, oc, &od, 0);
+            } else if (use_i4x4 && mx==0 && my==0 && getenv("ORACLE_I4X4")) {
                 uint8_t modes[16];
                 uint8_t *tmp = malloc((size_t)rs*(h+64));
                 memset(tmp, 128, (size_t)rs*(h+64));
@@ -313,9 +325,24 @@ int main(int argc, char **argv)
                 vk_slice_header_write(&bs, &sh, &sps, &pps, 3);
                 vk_bs_align_1(&bs);
                 vk_cabac_init_ctx(&cb, 2, qp_i, 0);
-                vk_cabac_encode_idr_recon_frame(&bs, &cb, frames, cw, ch, qp_i, recon, f);
+                vk_cabac_encode_idr_recon_frame(&bs, &cb, frames, cw, ch, qp_i, recon, f, NULL);
                 memset(curintra, 1, (size_t)mw*mh);  /* IDR: all MBs intra */
             } else {
+                /* Reuse the byte-exact CABAC IDR analysis to decide which
+                 * MBs are I4/I8; the CABAC bitstream is discarded. */
+                uint8_t (*m4)[16] = malloc((size_t)mw*mh*16);
+                uint8_t (*m8)[4]  = malloc((size_t)mw*mh*4);
+                uint8_t *t4 = malloc((size_t)mw*mh);
+                uint8_t *t8 = malloc((size_t)mw*mh);
+                uint8_t *cf = malloc((size_t)mw*mh);
+                vk_idr_decisions_t dec = {t4, t8, cf, m4, m8};
+                size_t dbsz = (size_t)mw*mh*128 + 4096;
+                uint8_t *dbuf = malloc(dbsz);
+                vk_bs_t dbs; vk_bs_init(&dbs, dbuf, dbsz);
+                vk_cabac_init_ctx(&cb, 2, qp_i, 0);
+                vk_cabac_encode_idr_recon_frame(&dbs, &cb, frames, cw, ch,
+                                                qp_i, NULL, f, &dec);
+                free(dbuf);
                 memset(nnz_c, 0, (size_t)mw*mh*16);
                 memset(cnnz_c, 0, (size_t)mw*mh*8);
                 memset(dcnz_c, 0, (size_t)mw*mh);
@@ -324,7 +351,9 @@ int main(int argc, char **argv)
                 memset(rv, 128, (size_t)cs*(ch/2+32));
                 encode_idr_cavlc(&bs, &sps, &pps, frames, cw, ch, qp_i,
                                  idr_pic_id, nnz_c, cnnz_c, dcnz_c,
-                                 ry, rs, ro, ru, rv, cs, co, recon, p.i_subme > 0);
+                                 ry, rs, ro, ru, rv, cs, co, recon,
+                                 p.i_subme > 0, &dec);
+                free(m4); free(m8); free(t4); free(t8); free(cf);
                 memset(curintra, 1, (size_t)mw*mh);  /* IDR: all MBs intra */
             }
             vk_nal_write(fo, 0x65, buf,

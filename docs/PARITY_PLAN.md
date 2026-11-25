@@ -20,6 +20,8 @@ NAL2 pairs               3/20 byte-exact
 CABAC first-diff bytes   veryfast 38, faster 30, fast/medium/slow/slower 41,
                          veryslow/placebo 42  (E70 + E74 subme-gated SA8D)
 compare_slicetype        16/16 frame types agree (decision parity only)
+CAVLC IDR                 I4/I8 decisions now shared with byte-exact CABAC (E77);
+                          warzone2020 2f first-diff byte4 -> byte17
 recon c004 / c064        0/4096  /  2209/4096
 ```
 
