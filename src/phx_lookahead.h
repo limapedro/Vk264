@@ -26,7 +26,8 @@
  *
  * Not ported (explicit TODOs in the .c file): MB-tree propagation,
  * trellis B-adapt, VBV lookahead, intra refresh, forced frame types,
- * B-pyramid/BREF, weighted prediction, full lowres motion search.
+ * B-pyramid parameter (normal-mode BREF insertion at slicetype.c:1892-1895
+ * IS ported), weighted prediction, full lowres motion search.
  * No claim of bitstream or decision parity with x264 is made.
  *
  * SHADER: C -- serial lookahead; one ordered queue, one decision per
@@ -85,6 +86,22 @@ void phx_lookahead_put_frame(phx_lookahead_t *l, phx_frame_t *f);
  * is available yet.  Call with a NULL frame_types to query without consuming.
  * SHADER: C -- serial lookahead, one minigop at a time. */
 int phx_lookahead_get_frames(phx_lookahead_t *l, int *frame_types, int n);
+
+/* lookahead.c:223-254 / slicetype.c:1892-1895 — same coded-order output as
+ * phx_lookahead_get_frames(), but preserves the BREF tag on the reference B
+ * frame of a pyramid minigop.  The plain API keeps its documented B/BREF -> B
+ * mapping (phx_lookahead.h:46-47); the encoder needs the raw type so that
+ * encoder.c:3546 can give BREF nal_ref_idc=2 and encoder.c:3882 can advance
+ * frame_num.  SHADER: C — serial lookahead, one minigop at a time. */
+int phx_lookahead_get_frames_ex(phx_lookahead_t *l, int *frame_types, int n);
+
+/* lookahead.c:223-254 with frame.h:56 i_frame numbers alongside the raw
+ * types.  The reorder at slicetype.c:1950-1964 moves frames out of display
+ * order (the BREF goes to slot 1 while the first B goes to slot 2), so a
+ * caller must not infer display order from the output slot.  frame_numbers
+ * may be NULL.  SHADER: C — serial lookahead, one minigop at a time. */
+int phx_lookahead_get_frames_full(phx_lookahead_t *l, int *frame_types,
+                                  int *frame_numbers, int n);
 
 /* lookahead.c:177-187 (x264_lookahead_delete).  Frees only the lookahead;
  * borrowed frames remain the caller's responsibility.

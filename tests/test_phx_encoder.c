@@ -1,12 +1,13 @@
 /* Smoke test for the Phoenix public encoder API: open/close, SPS+PPS+SEI
-  * emission, a one-frame encode and a four-frame lookahead/P-B encode.
-  * Standalone main, 0 on pass.
+  * emission, a one-frame encode, a four-frame lookahead/P-B encode and
+  * golden multi-frame slice-header fields decoded from the saved x264
+  * synthesis stream.  Standalone main, 0 on pass.
   *
   * Source: reference/x264/encoder/api.c:76/159/166/130 (public entry points),
   *         reference/x264/encoder/encoder.c:1507 (open), :2096 (headers),
   *         :213-364 (slice header), :2791-3093 (slice header + MB loop),
   *         :3323 (encode), :3368-3454 (put_frame/lookahead/shift),
-  *         :3504/:3513/:3882 (frame_num/POC), :4196 (close),
+  *         :3504/:3505/:3513/:3882 (frame_num/POC/last IDR), :4196 (close),
   *         reference/x264/encoder/lookahead.c:192/223 (put/get frames),
   *         reference/x264/encoder/slicetype.c:1950-1964 (coded-order reorder),
   *         reference/x264/encoder/ratecontrol.c:821-825 (CQP QP),
@@ -20,6 +21,7 @@
   * SHADER: C — serial host-side smoke test; no rendering or pixel shaders.
   */
 #include "phx_encoder.h"
+#include "phx_slice.h"
 #include "phx_tables.h"
 #include <stdio.h>
 #include <string.h>
@@ -244,7 +246,9 @@ static int parse_slice(const uint8_t *payload, int len, const phx_sps_t *sps,
 {
     uint8_t rbsp[1024];
     int n = deescape(payload + 5, len - 5, rbsp);       /* skip start code + NAL */
-    if (n < 8) return -1;
+    /* Only first_mb/slice_type/pps_id/frame_num/idr_pic_id/POC are read here,
+     * so a header-only golden NAL (3-4 RBSP bytes) is enough. */
+    if (n < 3) return -1;
     phx_test_br_t b = { rbsp, 0 };
     if (br_ue(&b) < 0) return -1;                       /* first_mb_in_slice */
     int st = br_ue(&b);
@@ -264,8 +268,10 @@ static int parse_slice(const uint8_t *payload, int len, const phx_sps_t *sps,
 }
 
 /* Four frames through the lookahead: at least four slice NALs, first IDR and
-  * the rest non-IDR, at least one P/B slice, and monotonically increasing
-  * frame_num/POC in coding order (encoder.c:3504/3513/3882).
+  * the rest non-IDR, at least one P/B slice.  frame_num is non-decreasing in
+  * coding order and advances only on reference NALs (encoder.c:3882); POC is
+  * a display-order value (encoder.c:3513) and therefore is NOT monotonic in
+  * coding order when B frames are reordered by slicetype.c:1950-1964.
   * SHADER: C — serial stream collection and header parse. */
 static int check_multiframe(const char *label, phx_param_t *p)
 {
@@ -324,7 +330,8 @@ static int check_multiframe(const char *label, phx_param_t *p)
         ++fails;
     }
 
-    int prev_fn = -1, prev_poc = -1, saw_pb = 0;
+    int prev_fn = -1, saw_pb = 0;
+    int poc_seen[8] = { 0 };
     for (int i = 0; i < nslice && i < MAX_NALS; i++) {
         if (types[i] != 5 && i == 0) {
             printf("FAIL %s: first slice is not IDR\n", label);
@@ -338,14 +345,26 @@ static int check_multiframe(const char *label, phx_param_t *p)
             continue;
         }
         if (st == 0 || st == 1) saw_pb = 1;             /* x264 base.h:111-112 */
-        if (fn <= prev_fn || poc <= prev_poc) {
-            printf("FAIL %s: slice %d non-monotonic fn/poc %d/%d (prev %d/%d)\n",
-                   label, i, fn, poc, prev_fn, prev_poc);
+        /* encoder.c:3882 — only reference NALs advance frame_num. */
+        int ref_idc = (stream[offs[i] + 4] >> 5) & 3;   /* bitstream.c:73 */
+        if (fn < prev_fn || (ref_idc && fn != prev_fn + 1 && i > 0)) {
+            printf("FAIL %s: slice %d frame_num %d (prev %d, ref_idc %d)\n",
+                   label, i, fn, prev_fn, ref_idc);
             ++fails;
         }
-        prev_fn = fn; prev_poc = poc;
-        printf("  %s: slice %d NAL=%d type=%d fn=%d poc=%d\n",
-               label, i, types[i], st, fn, poc);
+        /* encoder.c:3513 — POC is 2*(display frame - last IDR).  With one
+         * IDR at display frame 0 the four frames must carry 0,2,4,6 in
+         * display order, regardless of the coding order of the NALs. */
+        if (poc < 0 || (poc & 1) || poc / 2 >= 8 || poc_seen[poc / 2]) {
+            printf("FAIL %s: slice %d POC %d is not a distinct display number\n",
+                   label, i, poc);
+            ++fails;
+        } else {
+            poc_seen[poc / 2] = 1;
+        }
+        prev_fn = fn;
+        printf("  %s: slice %d NAL=%d type=%d ref_idc=%d fn=%d poc=%d\n",
+               label, i, types[i], st, ref_idc, fn, poc);
     }
     if (!saw_pb) {
         printf("FAIL %s: no P/B slice from the lookahead\n", label);
@@ -353,6 +372,86 @@ static int check_multiframe(const char *label, phx_param_t *p)
     }
 
     phx_encoder_close(h);                              /* api.c:130 */
+    return fails;
+}
+
+/* ---- golden multi-frame slice-header fields ---------------------------- */
+/* The table below was decoded from the saved x264 reference stream
+ * build/parity/synth-medium-cabac.ref.h264 (--preset medium --cabac --qp 28,
+ * 64x64 synth fixture, keyint=30, scenecut=0, bframes=3, normal B-pyramid)
+ * with tools/first_frame_probe.py, H.264 7.3.3 order of encoder.c:213-364.
+ * Columns: decided frame type, display-order frame number, nal_ref_idc,
+ * slice_type (PHX_SLICE_*), frame_num, pic_order_cnt_lsb, in *coding* order.
+ * The frame types/POC come from the reference stream; the values under test
+ * are produced by phx_encoder_frame_context(), i.e. the same derivation the
+ * encoder uses for whatever frame-type sequence phx_lookahead decides.
+ * SHADER: C — serial golden comparison of one NAL at a time. */
+static int check_slice_context_golden(void)
+{
+    static const struct {
+        int type, display, ref_idc, slice_type, frame_num, poc;
+    } golden[] = {
+        { PHX_TYPE_IDR, 0, 3, PHX_SLICE_I, 0,  0 },  /* ref slice #1 */
+        { PHX_TYPE_P,   1, 2, PHX_SLICE_P, 1,  2 },  /* ref slice #2 */
+        { PHX_TYPE_P,   2, 2, PHX_SLICE_P, 2,  4 },  /* ref slice #3 */
+        { PHX_TYPE_P,   6, 2, PHX_SLICE_P, 3, 12 },  /* ref slice #4 */
+        { PHX_TYPE_BREF,4, 2, PHX_SLICE_B, 4,  8 },  /* ref slice #5 */
+        { PHX_TYPE_B,   3, 0, PHX_SLICE_B, 5,  6 },  /* ref slice #6 */
+        { PHX_TYPE_B,   5, 0, PHX_SLICE_B, 5, 10 },  /* ref slice #7 */
+        { PHX_TYPE_P,   7, 2, PHX_SLICE_P, 5, 14 }   /* ref slice #8 */
+    };
+
+    phx_param_t p;
+    make_param(&p, "medium", 28, 1);
+    phx_t *h = phx_encoder_open(&p);                  /* encoder.c:1507 */
+    if (!h) { printf("FAIL golden context: open\n"); return 1; }
+    phx_sps_t sps;
+    phx_pps_t pps;
+    phx_sps_init(&sps, &p, TW, TH);                   /* encoder.c:1579 */
+    phx_pps_init(&pps, &sps, &p);                     /* encoder.c:1581 */
+
+    int fails = 0;
+    for (size_t i = 0; i < sizeof(golden)/sizeof(golden[0]); i++) {
+        phx_slice_frame_t fc;
+        phx_encoder_frame_context(h, golden[i].type,
+                                  golden[i].display, &fc); /* :3504/3513/3882 */
+
+        /* Write exactly the slice header the encoder writes, then decode it
+         * with the same field order as the probe (encoder.c:213-364). */
+        phx_slice_header_t sh;
+        phx_slice_header_init(&sh, &p, &sps, &pps, &fc); /* encoder.c:2791 */
+        uint8_t rbsp[256], packet[512];
+        phx_bs_t bs;
+        phx_bs_init(&bs, rbsp, (int)sizeof(rbsp));
+        phx_slice_header_write(&bs, &p, &sh);          /* encoder.c:2791 */
+        phx_nal_t nal;
+        nal.p_payload = rbsp;
+        nal.i_payload = (int)(bs.p - rbsp);
+        nal.i_ref_idc = fc.i_nal_ref_idc;              /* encoder.c:328 */
+        nal.i_type = fc.b_idr ? 5 : 1;                 /* encoder.c:236 */
+        nal.b_long_startcode = 1;                      /* bitstream.c:63 */
+        phx_nal_encode(packet, &nal, 1);               /* encoder.c:2124 */
+
+        int st = -1, fn = -1, poc = -1;
+        int ref_idc = (packet[4] >> 5) & 3;            /* bitstream.c:73 */
+        if (parse_slice(packet, nal.i_payload, &sps, nal.i_type,
+                        &st, &fn, &poc)) {
+            printf("FAIL golden context: parse frame %d\n", (int)i);
+            ++fails;
+            continue;
+        }
+        if (ref_idc != golden[i].ref_idc || st != golden[i].slice_type ||
+            fn != golden[i].frame_num || poc != golden[i].poc) {
+            printf("FAIL golden context: frame %d ref_idc=%d/%d st=%d/%d "
+                   "fn=%d/%d poc=%d/%d\n", (int)i,
+                   ref_idc, golden[i].ref_idc, st, golden[i].slice_type,
+                   fn, golden[i].frame_num, poc, golden[i].poc);
+            ++fails;
+        }
+        printf("  golden: frame %d ref_idc=%d st=%d fn=%d poc=%d\n",
+               (int)i, ref_idc, st, fn, poc);
+    }
+    phx_encoder_close(h);                             /* api.c:130 */
     return fails;
 }
 
@@ -604,6 +703,9 @@ int main(void)
         make_param(&p, cases[i][0], 28, !strcmp(cases[i][1], "cavlc") ? 0 : 1);
         fails += check_multiframe(label, &p);
     }
+
+    /* Multi-frame slice-header fields decoded from the saved x264 ref stream. */
+    fails += check_slice_context_golden();
 
     fails += check_mb0_sequence();
 

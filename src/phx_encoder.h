@@ -34,6 +34,7 @@
 #include "phx_cost.h"
 #include "phx_cabac.h"
 #include "phx_lookahead.h"
+#include "phx_slice.h"
 
 /* Legacy sentinel kept only so old callers still compile: phx_encode() no
  * longer returns it once the per-MB pipeline is wired.  Source: the old
@@ -96,9 +97,11 @@ typedef struct phx_t {
     uint8_t *recon;                 /* reconstructed plane, FDEC_STRIDE layout */
     int i_frame;                    /* encoder.c:1563 */
     int i_frame_num;                /* encoder.c:1564 */
-    int i_poc;                      /* encoder.c:1629 (fenc->i_poc) */
+    int i_poc;                      /* encoder.c:3513 (fenc->i_poc) */
     int i_idr_pic_id;               /* encoder.c:142 */
     int i_input;                    /* encoder.c:1630 */
+    int i_last_idr;                 /* encoder.c:1628/3505 (frames.i_last_idr),
+                                     * display-order frame number of last IDR */
 } phx_t;
 
 /* x264_encoder_open (api.c:76 -> encoder.c:1507): validate params, copy them
@@ -124,6 +127,21 @@ int phx_headers(phx_t *h, phx_nal_t **out, int *nnal);
  * SHADER: C — serial header stage. */
 int phx_encoder_header_bytes(phx_t *h, uint8_t *dst, int capacity);
 
+/* encoder.c:3499-3513 / 3881-3882 / 2613-2637 — derive one frame's slice
+ * context from the decided frame type and the picture's *display-order*
+ * number.  `h` owns the two counters (i_frame_num, i_last_idr) and the two
+ * are advanced here exactly where x264 advances them: an IDR resets
+ * frame_num before its header (encoder.c:3504) and stores i_last_idr (:3505);
+ * POC is 2*(display_frame - max(i_last_idr,0)) (:3513); frame_num is
+ * incremented only for reference pictures (:3882).  nal_ref_idc and the
+ * slice type come from the frame-type branches at :3517-3554 (BREF keeps
+ * NAL_PRIORITY_HIGH for normal B-pyramid, :3546).  Exposed so the golden
+ * slice-header assertions in tests/test_phx_encoder.c can drive the same
+ * derivation the encoder uses, with types/POC decoded from the x264 streams.
+ * SHADER: C — serial scalar state advance; no hidden threading state. */
+void phx_encoder_frame_context(phx_t *h, int decided_type, int display_frame,
+                               phx_slice_frame_t *fc);
+
 /* x264_encoder_encode (api.c:166 -> encoder.c:3323): stage order is
  *   put_frame/copy picture (encoder.c:3368-3426) ->
  *   lowres (mc.c:458) -> lookahead (lookahead.c:192/223, encoder.c:3445-3454)
@@ -134,8 +152,9 @@ int phx_encoder_header_bytes(phx_t *h, uint8_t *dst, int capacity);
  *
  * The wired path feeds each picture into phx_lookahead_put_frame()
  * (encoder.c:3426) and consumes decided frame types in coding order via
- * phx_lookahead_get_frames() (encoder.c:3447, lookahead.c:223,
- * slicetype.c:1950-1964).  One slice NAL is emitted per call once a decided
+ * phx_lookahead_get_frames_full() (encoder.c:3447, lookahead.c:223,
+ * slicetype.c:1950-1964), keeping the BREF tag and each frame's display
+ * number.  One slice NAL is emitted per call once a decided
  * frame is available; early calls may return zero NALs while the lookahead
  * window fills, exactly like x264's i_delay gate (encoder.c:3428-3433).
  * SPS/PPS are NOT repeated here (x264.c:1977 emits them once).

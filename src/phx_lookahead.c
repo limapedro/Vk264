@@ -570,10 +570,12 @@ static void phx_lh_slicetype_decide(phx_lookahead_t *l)
          * slicetype.c:1795-1802 is therefore unreachable.  TODO: expose
          * forced frame types. */
 
-        /* No B-pyramid field in phx_param_t: BREF is demoted to B.
-         * TODO: add i_bframe_pyramid and port slicetype.c:1805-1820. */
-        if (frm->i_type == PHX_TYPE_BREF)
-            frm->i_type = PHX_TYPE_B;
+        /* Normal B-pyramid (base.c:391, i_bframe_pyramid == 2) keeps BREF
+         * frames as reference B slices; only strict/low pyramid demotes them
+         * (slicetype.c:1805-1824).  phx_param_t has no i_bframe_pyramid, so
+         * this port keeps the medium default and never demotes here.  The
+         * FAST branch above never emits BREF itself; one is inserted at
+         * slicetype.c:1892-1895 after the minigop is decided. */
 
         if (frm->i_type == PHX_TYPE_KEYFRAME)
             frm->i_type = l->p.b_open_gop ? PHX_TYPE_I : PHX_TYPE_IDR;
@@ -625,6 +627,19 @@ static void phx_lh_slicetype_decide(phx_lookahead_t *l)
 
     if (bframes) l->next[bframes-1].b_last_minigop_bframe = 1; /* :1882 */
     l->next[bframes].i_bframes = bframes;          /* slicetype.c:1883 */
+
+    /* slicetype.c:1892-1895 — insert one BREF into the minigop when B-pyramid
+     * is enabled and more than one B frame was decided.  x264's medium
+     * default is X264_B_PYRAMID_NORMAL == 2 (base.c:391); phx_param_t has no
+     * i_bframe_pyramid field, so this port keeps that default explicitly
+     * (TODO: expose i_bframe_pyramid and apply the strict/low demotion at
+     * slicetype.c:1810-1824).  BREF is still a B slice in the bitstream, but
+     * nal_ref_idc=2 and frame_num advances for it (encoder.c:3546/3882).
+     * SHADER: C — serial metadata tag, no new queue or threading state. */
+    if (bframes > 1 && !brefs) {                   /* slicetype.c:1892 */
+        l->next[(bframes-1)/2].i_type = PHX_TYPE_BREF; /* :1894 */
+        brefs++;                                   /* :1895 */
+    }
 
     /* TODO: RC pre-analysis (slicetype.c:1886-1915), weighted P (:1918-1924),
      * duration/CPB fields (:1927-1946), and b_stat_read (:1789). */
@@ -714,8 +729,11 @@ static void phx_lh_shift_to_ofbuf(phx_lookahead_t *l, int count)
 
 /* x264 encoder/lookahead.c:223-254, serial branch (:234-252).
  * The threaded ifbuf path (:225-232) does not exist in the serial port.
- * SHADER: C -- serial lookahead output, one minigop per decision. */
-int phx_lookahead_get_frames(phx_lookahead_t *l, int *frame_types, int n)
+ * Returns the raw decided types (including the BREF inserted at
+ * slicetype.c:1894) and, optionally, each frame's display-order i_frame
+ * (frame.h:56).  SHADER: C -- serial lookahead output, one minigop. */
+int phx_lookahead_get_frames_full(phx_lookahead_t *l, int *frame_types,
+                                  int *frame_numbers, int n)
 {
     if (!l || n < 0 || (!frame_types && n > 0)) return 0;
 
@@ -734,8 +752,10 @@ int phx_lookahead_get_frames(phx_lookahead_t *l, int *frame_types, int n)
 
     /* lookahead_encoder_shift(): emit the decided frames in order. */
     int count = PHX_MIN(n, l->ofbuf_size);       /* lookahead.c:212-221 */
-    for (int i = 0; i < count; i++)
+    for (int i = 0; i < count; i++) {
         if (frame_types) frame_types[i] = l->ofbuf[i].i_type;
+        if (frame_numbers) frame_numbers[i] = l->ofbuf[i].i_frame; /* frame.h:56 */
+    }
     if (count && frame_types) {
         if (count < l->ofbuf_size)
             memmove(&l->ofbuf[0], &l->ofbuf[count],
@@ -743,6 +763,27 @@ int phx_lookahead_get_frames(phx_lookahead_t *l, int *frame_types, int n)
         l->ofbuf_size -= count;
     }
     return count;
+}
+
+/* Raw types without display numbers (encoder.c:3447 call site).
+ * SHADER: C -- forwards to the full serial lookahead output. */
+int phx_lookahead_get_frames_ex(phx_lookahead_t *l, int *frame_types, int n)
+{
+    return phx_lookahead_get_frames_full(l, frame_types, NULL, n);
+}
+
+/* Backward-compatible view of the decided types: BREF is reported as B,
+ * matching phx_lookahead.h:46-47 (B/BREF -> PHX_SLICE_B).  The encoder uses
+ * phx_lookahead_get_frames_full() instead so it can keep the reference flag
+ * and the display-order frame number.
+ * SHADER: C -- serial type mapping, no state change. */
+int phx_lookahead_get_frames(phx_lookahead_t *l, int *frame_types, int n)
+{
+    int got = phx_lookahead_get_frames_full(l, frame_types, NULL, n);
+    for (int i = 0; i < got; i++)
+        if (frame_types && frame_types[i] == PHX_TYPE_BREF)
+            frame_types[i] = PHX_TYPE_B;           /* x264.h:276/280 */
+    return got;
 }
 
 /* x264 encoder/lookahead.c:177-187.  SHADER: C -- serial teardown. */

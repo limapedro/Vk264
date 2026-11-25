@@ -90,7 +90,8 @@ phx_t *phx_encoder_open(const phx_param_t *p)
 
     h->i_frame = -1;                                   /* encoder.c:1563 */
     h->i_frame_num = 0;                                /* encoder.c:1564 */
-    h->i_poc = 0;                                      /* encoder.c:1629 */
+    h->i_poc = 0;                                      /* encoder.c:3513 */
+    h->i_last_idr = -h->param.i_keyint_max;            /* encoder.c:1628 */
     h->i_idr_pic_id = 0;                               /* encoder.c:142 */
     h->i_input = 0;                                    /* encoder.c:1630 */
 
@@ -288,25 +289,26 @@ static int phx_encoder_queue_coded(phx_t *h, int type, int frame_index)
     return 0;
 }
 
-/* encoder.c:3447 / lookahead.c:223 — pull one minigop of decisions and map
- * its coded order back to our display-order frame list.  The lookahead moves
- * the closing non-B frame to index 0 and keeps the B frames in display order
- * (slicetype.c:1950-1964); no BREF/B-pyramid exists in this port.
+/* encoder.c:3447 / lookahead.c:223 — pull one minigop of decisions together
+ * with each frame's display-order number.  The lookahead moves the closing
+ * non-B frame to slot 0 and puts the BREF first among the B frames
+ * (slicetype.c:1950-1964 with idx_list={brefs+1,1}); deriving the display
+ * index from the output slot would therefore mislabel BREF/B pictures.  The
+ * full API keeps both the BREF tag (encoder.c:3546/3882) and i_frame.
  * SHADER: C — serial queue transfer, no hidden state. */
 static int phx_encoder_drain(phx_t *h)
 {
     int pending = h->n_input_frames - h->i_next_frame;       /* encoder.c:3446 */
     if (pending <= 0) return 0;
     int types[PHX_BFRAME_MAX + 4];                           /* base.h:136 */
+    int numbers[PHX_BFRAME_MAX + 4];
     int ask = pending < (int)(sizeof(types)/sizeof(types[0]))
             ? pending : (int)(sizeof(types)/sizeof(types[0]));
-    int k = phx_lookahead_get_frames(h->lookahead, types, ask); /* :3447 */
+    /* lookahead.c:223 with slicetype.c:1894's BREF and frame.h:56 i_frame. */
+    int k = phx_lookahead_get_frames_full(h->lookahead, types, numbers, ask);
     if (k <= 0) return 0;
-    for (int j = 0; j < k; j++) {
-        int idx = j == 0 ? h->i_next_frame + k - 1
-                         : h->i_next_frame + j - 1;          /* :1957/:1953 */
-        if (phx_encoder_queue_coded(h, types[j], idx) < 0) return -1;
-    }
+    for (int j = 0; j < k; j++)                              /* :1950-1964 */
+        if (phx_encoder_queue_coded(h, types[j], numbers[j]) < 0) return -1;
     h->i_next_frame += k;                                    /* encoder.c:3454 */
     return k;
 }
@@ -336,6 +338,80 @@ static int phx_encoder_slice_qp(const phx_t *h, int slice_type)
     if (qp < 0) qp = 0;
     if (qp > PHX_QP_MAX_SPEC) qp = PHX_QP_MAX_SPEC;
     return qp;
+}
+
+/* encoder.c:3499-3513, 3517-3554, 3881-3882, 2613-2637 — per-frame slice
+ * context.  The two counters are owned by the handle: frame_num is reset by
+ * an IDR and advances only on reference pictures, while POC is recomputed
+ * from the presentation number (not accumulated in coding order).  The
+ * display_frame argument is the lookahead's i_frame (frame.h:56), which for
+ * Phoenix is the index into input_frames[] assigned by phx_encode().
+ * SHADER: C — serial scalar derivation; one call per decided frame. */
+void phx_encoder_frame_context(phx_t *h, int decided_type, int display_frame,
+                               phx_slice_frame_t *fc)
+{
+    if (!h || !fc) return;
+    memset(fc, 0, sizeof(*fc));
+
+    /* encoder.c:3503-3505 — a keyframe/IDR resets frame_num and records the
+     * presentation number used by the POC formula below. */
+    if (decided_type == PHX_TYPE_IDR) {
+        h->i_frame_num = 0;                            /* encoder.c:3504 */
+        h->i_last_idr = display_frame;                 /* encoder.c:3505 */
+    }
+    int mask = (1 << h->sps.i_log2_max_frame_num) - 1;
+    fc->i_frame_num = h->i_frame_num & mask;           /* encoder.c:227/136 */
+    int last_idr = h->i_last_idr > 0 ? h->i_last_idr : 0; /* :3513 X264_MAX */
+    h->i_poc = 2 * (display_frame - last_idr);         /* encoder.c:3513 */
+    fc->i_poc = h->i_poc;                              /* encoder.c:2653 */
+    fc->b_idr = (decided_type == PHX_TYPE_IDR);        /* encoder.c:236 */
+    fc->i_idr_pic_id = h->i_idr_pic_id;                /* encoder.c:142/2613 */
+    if (fc->b_idr)
+        h->i_idr_pic_id ^= 1;                          /* encoder.c:2619 */
+
+    /* encoder.c:3517-3554 — nal_ref_idc and slice_type are a function of the
+     * decided frame type.  BREF is a B slice with NAL_PRIORITY_HIGH when
+     * B-pyramid is normal (i_bframe_pyramid == 2, x264 base.c:389); strict
+     * pyramid would make it disposable.  phx_lookahead inserts one BREF per
+     * minigop (slicetype.c:1892-1895) and reports it through
+     * phx_lookahead_get_frames_full(); the legacy get_frames() still maps
+     * BREF to B. */
+    if (decided_type == PHX_TYPE_IDR) {                /* encoder.c:3517 */
+        fc->i_nal_ref_idc = 3;                         /* :3521 HIGHEST */
+    } else if (decided_type == PHX_TYPE_I) {           /* :3526 */
+        fc->i_nal_ref_idc = 2;                         /* :3529 HIGH */
+    } else if (decided_type == PHX_TYPE_P) {           /* :3535 */
+        fc->i_nal_ref_idc = 2;                         /* :3538 HIGH */
+    } else if (decided_type == PHX_TYPE_BREF) {        /* :3543 */
+        fc->i_nal_ref_idc = 2;                         /* :3546 HIGH (normal) */
+    } else {                                           /* :3550 plain B */
+        fc->i_nal_ref_idc = 0;                         /* :3553 DISPOSABLE */
+    }
+    fc->i_type = phx_encoder_slice_type(decided_type); /* :3522/:3530/:3539/:
+                                                        * 3547/:3554 */
+
+    fc->i_first_mb = 0;                                /* encoder.c:132 */
+    fc->i_last_mb = h->mb_state->mb_count - 1;         /* encoder.c:133 */
+    fc->i_qp = phx_encoder_slice_qp(h, fc->i_type);    /* ratecontrol.c:821-825 */
+    fc->b_variable_qp = 0;                             /* encoder.c:205 */
+    fc->b_sliced_threads = 0;                          /* encoder.c:206 */
+    fc->b_mbaff = 0;                                   /* encoder.c:138 */
+    fc->b_direct_spatial_mv_pred = 0;                  /* encoder.c:156 */
+    fc->i_cabac_init_idc = 0;                          /* encoder.c:196 */
+
+    /* encoder.c:177-190 — list sizes and ref_pic_list_modification.  The
+     * BREF tag is carried above; real reference lists / weighted prediction
+     * are still TODO (encoder.c:3553-3570, slicetype.c:1918-1924). */
+    fc->i_ref[0] = (fc->i_type != PHX_SLICE_I) ? 1 : 0; /* encoder.c:186 */
+    fc->i_ref[1] = (fc->i_type == PHX_SLICE_B) ? 1 : 0; /* encoder.c:186 */
+    fc->b_ref_reorder[0] = fc->b_ref_reorder[1] = 0;    /* encoder.c:177-178 */
+
+    /* encoder.c:3881-3882 — frame_num advances only for a reference picture.
+     * Disposable B frames reuse the previous reference's frame_num.  This is
+     * the rule that makes two B frames in a minigop carry the same frame_num
+     * in x264's streams. */
+    if (fc->i_nal_ref_idc != 0)                        /* NAL_PRIORITY_DISPOSABLE */
+        h->i_frame_num = (h->i_frame_num + 1) & mask;  /* encoder.c:3882 */
 }
 
 /* bs_align_1 (common/bitstream.h:187-191): x264 pads the slice header with
@@ -809,48 +885,11 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     h->i_frame++;                                      /* encoder.c:3444 */
     h->fenc = h->input_frames[frame_index];            /* encoder.c:3454 */
 
-    /* encoder.c:132-211 — explicit per-frame context.  The slice type comes
-      * from the lookahead decision (lookahead.c:238, x264.h:272-280), with
-      * frame_num/POC from the serial counters (encoder.c:136/145). */
+    /* encoder.c:3499-3513/3517-3554/3882 — one shared context derivation for
+     * the encoder and the golden-slice tests.  frame_index is the display-
+     * order picture number, i.e. x264's fenc->i_frame (frame.h:56). */
     phx_slice_frame_t fc;
-    memset(&fc, 0, sizeof(fc));
-    int mask = (1 << h->sps.i_log2_max_frame_num) - 1;
-    /* encoder.c:3499-3506 — an IDR resets the counters *before* its slice
-     * header is written; later slices then advance them. */
-    if (decided_type == PHX_TYPE_IDR) {
-        h->i_frame_num = 0;                            /* encoder.c:3504 */
-        h->i_poc = 0;                                  /* encoder.c:3513 */
-    }
-    fc.i_frame_num = h->i_frame_num & mask;            /* encoder.c:136 */
-    fc.i_poc = h->i_poc;                               /* encoder.c:145 */
-    fc.b_idr = (decided_type == PHX_TYPE_IDR);         /* encoder.c:236/3520 */
-    fc.i_idr_pic_id = h->i_idr_pic_id;                  /* encoder.c:142 */
-    /* encoder.c:3521/3529/3538/3553 — IDR/I/P are reference pictures, plain
-      * B frames are disposable (no BREF/B-pyramid in this port). */
-    fc.i_type = phx_encoder_slice_type(decided_type);  /* encoder.c:225 */
-    /* encoder.c:3521/3529/3538 — IDR/I ref_idc=3, P reference slice=2,
-     * non-reference B=0. */
-    fc.i_nal_ref_idc = fc.i_type == PHX_SLICE_B ? 0
-                     : (fc.b_idr ? 3 : 2);
-    fc.i_first_mb = 0;                                 /* encoder.c:132 */
-    fc.i_last_mb = h->mb_state->mb_count - 1;           /* encoder.c:133 */
-    /* ratecontrol.c:823-825 — CQP maps the constant QP through the IP factor:
-     * I frames use qp_constant - 6*log2(f_ip_factor) + 0.5, P frames the
-     * constant itself. With --qp 28 and the default ip_factor 1.4 this is 25. */
-    fc.i_qp = phx_encoder_slice_qp(h, fc.i_type);       /* ratecontrol.c:821-825 */
-    fc.b_variable_qp = 0;                              /* encoder.c:205 */
-    fc.b_sliced_threads = 0;                           /* encoder.c:206 */
-    fc.b_mbaff = 0;                                    /* encoder.c:138 */
-    fc.b_direct_spatial_mv_pred = 0;                   /* encoder.c:156 */
-    fc.i_cabac_init_idc = 0;                           /* encoder.c:196 */
-
-    /* encoder.c:177-190 — list sizes and ref_pic_list_modification.  The
-     * lookahead has no BREF/B-pyramid and no weighted prediction yet, so
-     * every active list has one implicit reference and no reorder entries.
-     * TODO(worker-slicetype): BREF reordering (slicetype.c:1805-1820). */
-    fc.i_ref[0] = (fc.i_type != PHX_SLICE_I) ? 1 : 0;    /* encoder.c:186 */
-    fc.i_ref[1] = (fc.i_type == PHX_SLICE_B) ? 1 : 0;    /* encoder.c:186 */
-    fc.b_ref_reorder[0] = fc.b_ref_reorder[1] = 0;       /* encoder.c:177-178 */
+    phx_encoder_frame_context(h, decided_type, frame_index, &fc);
 
     phx_slice_header_t sh;
     phx_slice_header_init(&sh, &h->param, &h->sps, &h->pps, &fc); /* :2791 */
@@ -1015,12 +1054,8 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     *nnal = 1;                                         /* api.c:170 */
     if (recon) *recon = h->recon;
 
-    /* Explicit per-frame context advance: frame_num once per coded frame
-     * (encoder.c:3882) and POC by two (encoder.c:3513).  TODO(worker-
-     * slicetype): derive POC from display order and skip the frame_num
-     * increment on non-reference B frames once reference lists exist. */
-    h->i_frame_num = (h->i_frame_num + 1) & mask;       /* encoder.c:3882 */
-    h->i_poc += 2;                                     /* encoder.c:3513 */
+    /* frame_num / POC / i_last_idr are advanced by phx_encoder_frame_context
+     * above (encoder.c:3504-3513/3882); no second counter walk here. */
     return nal.i_payload;                              /* encoder.c:2133 */
 }
 
