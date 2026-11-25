@@ -398,6 +398,11 @@ static void phx_encoder_apply_decision(phx_t *h, const phx_mb_decision_t *d)
         c->mv[1][phx_scan8[i]][0] = d->mv[1][i][0];
         c->mv[1][phx_scan8[i]][1] = d->mv[1][i][1];
     }
+    /* nnz cache: 48 scan8 blocks plus the three DC slots (common/base.h:177-180). */
+    for (int i = 0; i < 48; i++)
+        c->non_zero_count[phx_scan8[i]] = d->nnz[i];    /* macroblock.c:1761-1768 */
+    c->non_zero_count[phx_scan8[49]] = d->chroma_nnz[0][0];
+    c->non_zero_count[phx_scan8[50]] = d->chroma_nnz[1][0];
 }
 
 /* Mapping from phx_mb_decision_t's 48x16 coefficient array to x264's
@@ -418,8 +423,11 @@ static const int16_t *phx_encoder_block(const phx_mb_decision_t *d, int kind,
     case PHX_BLK_LUMA16_DC: *ncoeff = 4;  return d->dct[0]; /* scan8[48] == 0 */
     case PHX_BLK_LUMA_AC:   *ncoeff = 15; return d->dct[phx_scan8[idx]] + 1; /* cavlc.c:570 */
     case PHX_BLK_LUMA4:     *ncoeff = 16; return d->dct[phx_scan8[idx]];     /* phx_mbencode.c:73 */
-    case PHX_BLK_CHROMA_DC: *ncoeff = 4;  return NULL; /* TODO(chroma): no chroma planes */
-    case PHX_BLK_CHROMA_AC: *ncoeff = 15; return NULL; /* TODO(chroma): no chroma planes */
+    /* 4:2:0 chroma is carried explicitly in phx_mb_decision_t (K2 handoff):
+     * block 0 of plane ch is the 2x2 DC, blocks 1..4 the 4x4 AC blocks. */
+    case PHX_BLK_CHROMA_DC: *ncoeff = 4;  return d->chroma_dct[idx][0];
+    case PHX_BLK_CHROMA_AC: *ncoeff = 15;
+        return d->chroma_dct[idx >> 4][1 + (idx & 3)];
     default: *ncoeff = 0; return NULL;
     }
 }
@@ -904,8 +912,9 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
              * mode indices (analyse.c:3739-3751); the FIX4/FIX16 mapping is
              * applied only by the CABAC/CAVLC syntax writers. */
             d.b_transform_8x8 = 0;                     /* pps transform flag is 0 below */
-            rc = phx_macroblock_encode(&h->param, h->fenc, c,
-                                       mb_x, mb_y, &d); /* :2865 */
+            rc = phx_macroblock_encode_ex(&h->param, h->fenc, c,
+                                          mb_x, mb_y, &d,
+                                          h->param.b_cabac ? &h->cabac : NULL); /* :2865 */
             if (rc < 0) {
                 /* Last resort: an empty I_16x16 MB keeps the slice parseable
                  * if the B-stage still refuses the decision. */

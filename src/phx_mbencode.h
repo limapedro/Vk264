@@ -34,6 +34,7 @@
 #include "phx_frame.h"
 #include "phx_mbcache.h"
 #include "phx_mb_decision.h"
+#include "phx_cabac.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,6 +53,12 @@ extern "C" {
 int phx_macroblock_encode(const phx_param_t *p, phx_frame_t *f,
                           phx_mb_cache_t *cache, int mb_x, int mb_y,
                           phx_mb_decision_t *d);
+
+/* Same entry point with the live CABAC coder passed in so trellis QNS can use
+ * x264's context state (rdo.c:1142-1157). NULL keeps the plain deadzone path. */
+int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
+                             phx_mb_cache_t *cache, int mb_x, int mb_y,
+                             phx_mb_decision_t *d, phx_cabac_t *cb);
 
 #ifdef __cplusplus
 }

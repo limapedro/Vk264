@@ -8,6 +8,9 @@
  * SHADER: B for every function in this file: one serial invocation per MB.
  */
 #include "phx_mbencode.h"
+#include "phx_rdo.h"
+#include "phx_cabac_syntax.h"
+#include "phx_tables.h"
 #include "phx_predict.h"
 #include "phx_dct.h"
 #include "phx_quant.h"
@@ -247,10 +250,12 @@ static void phx_predict4_v_fixed(uint8_t *dst, int stride)
  * Predict (:139-145), sub4x4_dct (:155), x264_quant_4x4 (:157),
  * nnz store (:158), zigzag/dequant/add4x4_idct (:161-164).
  * SHADER: B — one invocation per 4x4 luma block inside the MB. */
-static void phx_mb_encode_i4x4(const phx_quant_tables_t *qt,
+static void phx_mb_encode_i4x4(const phx_param_t *param,
+                               const phx_quant_tables_t *qt,
                                const uint8_t *fenc, uint8_t *p_dst,
                                int i_qp, const phx_mb_decision_t *d,
-                               phx_mb_decision_t *d_out, phx_mb_cache_t *c)
+                               phx_mb_decision_t *d_out, phx_mb_cache_t *c,
+                               phx_cabac_t *cb)
 {
     phx_predict_t pred4[12];
     phx_dctcoef dct[16], scan[16];
@@ -273,10 +278,26 @@ static void phx_mb_encode_i4x4(const phx_quant_tables_t *qt,
 
         phx_sub4x4_dct(dct, fenc + phx_block_idx_xy_fenc[idx], PHX_FENC_STRIDE,
                        p, PHX_FDEC_STRIDE);                  /* macroblock.h:155 */
-        nz = phx_quant_4x4(dct, qt->quant4_mf[PHX_CQM_4IY][i_qp],
-                           qt->quant4_bias[PHX_CQM_4IY][i_qp]); /* :157 */
-        for (int k = 0; k < 16; k++)
-            scan[k] = dct[phx_zigzag4[k]];                   /* :162 */
+        int used_trellis = 0;
+        if (cb && param->i_trellis > 0 && i_qp <= PHX_QP_MAX_SPEC) {
+            /* rdo.c:1142-1157 — QNS uses the live CABAC context state and
+             * writes coefficients in zigzag order. */
+            nz = phx_quant_4x4_trellis(cb, dct, PHX_CQM_4IY, i_qp,
+                                       PHX_DCT_LUMA_4x4, 1);
+            if (nz >= 0) {
+                used_trellis = 1;
+                memcpy(scan, dct, sizeof(scan));             /* already zigzag */
+                int16_t nat[16];
+                for (int k = 0; k < 16; k++) nat[phx_zigzag4[k]] = dct[k];
+                memcpy(dct, nat, sizeof(dct));               /* restore for IDCT */
+            }
+        }
+        if (!used_trellis) {
+            nz = phx_quant_4x4(dct, qt->quant4_mf[PHX_CQM_4IY][i_qp],
+                               qt->quant4_bias[PHX_CQM_4IY][i_qp]); /* :157 */
+            for (int k = 0; k < 16; k++)
+                scan[k] = dct[phx_zigzag4[k]];               /* :162 */
+        }
         phx_mb_store_block(d_out, c, idx, scan, nz);         /* :158 */
 
         if (nz) {                                            /* :159-165 */
@@ -316,9 +337,9 @@ static void phx_mb_encode_pcm(const phx_param_t *p, const uint8_t *fenc,
  * written into f->plane because phx_frame_t has no separate fdec plane
  * (common/frame.h:37-140).
  * SHADER: B — the single B-stage entry point for one macroblock. */
-int phx_macroblock_encode(const phx_param_t *p, phx_frame_t *f,
-                          phx_mb_cache_t *cache, int mb_x, int mb_y,
-                          phx_mb_decision_t *d)
+int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
+                             phx_mb_cache_t *cache, int mb_x, int mb_y,
+                             phx_mb_decision_t *d, phx_cabac_t *cb)
 {
     if (!p || !f || !cache || !d || !f->plane) return -1;
 
@@ -379,7 +400,7 @@ int phx_macroblock_encode(const phx_param_t *p, phx_frame_t *f,
         phx_mb_encode_i16x16(&qt, fenc, p_dst, d->i_qp,
                              d->intra16_pred_mode, d, cache);
     } else if (d->mb_type == PHX_I_4x4) {
-        phx_mb_encode_i4x4(&qt, fenc, p_dst, d->i_qp, d, d, cache);
+        phx_mb_encode_i4x4(p, &qt, fenc, p_dst, d->i_qp, d, d, cache, cb);
     } else {
         phx_mb_encode_pcm(p, fenc, p_dst, d, cache);
     }
@@ -396,4 +417,12 @@ int phx_macroblock_encode(const phx_param_t *p, phx_frame_t *f,
         memcpy(fdec_target + y * fdec_target_stride,
                p_dst + y * PHX_FDEC_STRIDE, 16);
     return 0;
+}
+
+/* Plain-deadzone wrapper: unit tests and CAVLC call this path. */
+int phx_macroblock_encode(const phx_param_t *p, phx_frame_t *f,
+                          phx_mb_cache_t *cache, int mb_x, int mb_y,
+                          phx_mb_decision_t *d)
+{
+    return phx_macroblock_encode_ex(p, f, cache, mb_x, mb_y, d, NULL);
 }
