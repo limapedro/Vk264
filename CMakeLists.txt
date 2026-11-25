@@ -34,6 +34,7 @@ add_library(phx STATIC
     src/phx_sei.c
     src/phx_chroma.c
     src/phx_rdo.c
+    src/phx_me.c
 )
 target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -116,3 +117,7 @@ add_test(NAME phx_chroma COMMAND phx_test_chroma)
 add_executable(phx_test_rdo tests/test_phx_rdo.c)
 target_link_libraries(phx_test_rdo PRIVATE phx)
 add_test(NAME phx_rdo COMMAND phx_test_rdo)
+
+add_executable(phx_test_me tests/test_phx_me.c)
+target_link_libraries(phx_test_me PRIVATE phx)
+add_test(NAME phx_me COMMAND phx_test_me)
