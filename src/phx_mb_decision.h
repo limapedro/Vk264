@@ -31,6 +31,12 @@ typedef struct {
     uint8_t nnz[48];                  /* non_zero_count per scan8 block */
     int16_t dct[48][16];              /* quantized coefficients per block */
     uint8_t skip;                     /* P_SKIP / B_SKIP candidate */
+
+    /* Chroma (4:2:0): plane 0=U, 1=V; block 0 is the 2x2 DC, 1..4 the AC
+     * 4x4 blocks. These are explicit so the entropy stage can write chroma
+     * CBP/DC/AC without guessing from luma state. */
+    int16_t chroma_dct[2][5][16];
+    uint8_t chroma_nnz[2][5];
 } phx_mb_decision_t;
 
 #endif
