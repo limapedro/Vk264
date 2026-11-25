@@ -1092,3 +1092,17 @@ and passed it to both `vk_me16_dia` call sites.
 Verified: audit 12/120, NAL2 3/20, first-diff unchanged, all gates green.
 Parameter alignment only ? the ME method itself is still DIA (plan item 12).
 
+### E49 ? i_psy_rd parameter aligned (approximate SATD psy term in MB RD)
+
+x264 default `f_psy_rd = FIX8(1.0) = 256` for subme>=6 (fast and above),
+0 otherwise; `ssd_plane` (rdo.c:123-147) adds a psy term to the RD SSD:
+`abs(satd(fdec) - dc - satd(fenc)) * psy_rd * lambda >> 8`.
+
+Added `vk_cur_psy_rd` (256 fast+, 0 else), `satd16_zeroref` /
+`sad16_zeroref` helpers, and the psy term in the subme>=6 I16 RD cost in
+`cabac_enc.c`. This is an approximation (four 8x8 SATDs vs x264's
+`cached_satd` 16x16 primitive) but aligns the parameter and the cost shape.
+
+Verified: audit 12/120, NAL2 3/20, first-diff unchanged, all gates green.
+No metric gain on the current clips; retained as parameter alignment.
+
