@@ -1708,3 +1708,24 @@ difference is in the neighbour nnz cache entries (`nnzc4`) ? likely 0x80
 No production change made. Next step: dump `nnzc4[0..47]` for MB10 in both
 encoders to find the exact cache slot mismatch.
 
+### E92b ? nnz cache dump for bin584: x264 cache[4..5]=01,01 vs oracle 00,00
+
+`build/nnzc4_probe.py` dumped all 48 nnz cache entries at MB10 (8f, veryfast):
+
+```
+x264   cache[4..7] = 01,01,00,00
+oracle nnzc4[4..7] = 00,00,00,00
+```
+
+MB10's own nnz vector matches x264 exactly, so bin584's ctx95 (x264 = 93+2)
+vs ctx93 (oracle) comes solely from the **top-neighbour nnz slots** 4 and 5.
+x264's `macroblock_cache_load` copies `nnz[top][12..15]` into these slots;
+the oracle loads `nnzc[topMB][12+i]` from a differently-indexed array. Mapping
+the oracle's natural-order nnz to x264's scan8 order (`{0,1,4,5}`) did not
+change first-diff, so the mismatch is in the per-MB nnz array contents rather
+than the slot mapping ? the top MB's block-level nnz differs between the
+encoders even though the final nnz vectors match at the MBs we instrument.
+
+No production change. Next: dump MB6's `non_zero_count[0..15]` in both
+encoders at MB10 write time to find which block differs.
+
