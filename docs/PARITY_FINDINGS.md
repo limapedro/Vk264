@@ -1494,3 +1494,23 @@ not in trellis keep/drop on identical coefficients as in E69/E70.
 This is a live reconstruction-fidelity gap despite `recon c004 0/4096`
 (the recon gate uses a different preset/payload). No source change made.
 
+### E83b ? correction: MB5 neighbour reconstruction actually matches; divergence is I4 mode choice
+
+E83's conclusion was based on a bad probe offset: x264's `p_fdec[0][y*FDEC_STRIDE+15]`
+reads MB5's **own** right column, not MB4's left neighbour. Reading the correct
+offset `p_fdec[0][y*FDEC_STRIDE-1]` gives an exact match with the oracle:
+```
+x264 leftcol 16,16,...,16   oracle leftcol 16,16,...,16
+x264 toprow  15,15,15,15,15,16,15,13,36,63,66,67,68,68,68,68   oracle identical
+```
+So reconstruction feedback into MB5 is correct; the `recon c004 0/4096` gate
+was right.
+
+With the correct 4x4 row stride (`p_dst[(y)*FDEC_STRIDE+x]`), MB5's predictions
+show the real gap: x264 block 4 uses a diagonal (DDL-like) predictor from the
+top row `25,50,65,67 / 19,37,57,66 / ...`, while the oracle uses a near-DC
+predictor `14,15,15,15 / ...`; x264 block 5 is DC_TOP `68`, oracle DC `41`.
+That is an **I4 intra mode-selection divergence** for MB5, not a trellis or
+reconstruction-feedback problem. Any fix belongs in `vk_i4x4_decide` /
+`i4x4.c` (pred-mode costs, neighbour availability, early-terminate threshold).
+
