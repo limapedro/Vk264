@@ -1749,3 +1749,21 @@ cache-fill omission. Reverted.
 No production change. The remaining byte divergence is driven by I8
 coefficient content at MB6, not by the nnz cache bookkeeping.
 
+### E93 ? MB6 I8 coefficient dump: prediction/quantization difference, not cache
+
+`build/i8_coeff_probe.py` dumped the four quantized 8x8 blocks of MB6 (8f,
+veryfast) from both encoders. CBP matches (6), but block 2's quantized
+coefficients differ: x264 has six ?1 terms, the oracle five, and the signs /
+positions differ. (Caveat: x264's `dct.luma8x8[]` is stored in zigzag order
+while the oracle's `i8q[][]` is raster-ordered, so a positional comparison is
+not exact ? the nonzero *counts* still differ.)
+
+So the bin-584 CBF-context gap (E92b/c) originates in MB6's I8 **residual
+prediction/quantization**, not in the nnz cache bookkeeping. Synthesising
+`nnzc[]` for I8 MBs (E92c) filled the cache but could not fix the underlying
+coefficient difference, which is why first-diff stayed at 84.
+
+No production change. Any fix belongs in the I8 prediction / DCT / quant
+pipeline (`vk_i8x8_decide_ex`, `vk_predict8*`, `vk_ref_dct8x8`,
+`vk_ref_quant8`), compared on a common zigzag-ordered basis.
+
