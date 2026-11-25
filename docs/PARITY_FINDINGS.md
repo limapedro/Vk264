@@ -1140,3 +1140,20 @@ This is now the precise blocker for the 24 NAL-count cases: calibrate the
 lowres intra/P cost pipeline against x264's `i_cost_est[0][0]` and
 `i_cost_est[p1-p0][0]` before wiring scenecut IDRs into the normal encode.
 
+### E65 ? x264 lowres cost rules found; must be isolated to scenecut
+
+Instrumented x264's `x264_slicetype_mb_cost` and found two rules the oracle
+does not model:
+1. `b_frame_score_mb` (`slicetype.c:532-534`) scores only **interior** lowres
+   MBs. With interior-only + min-SATD over H/V/DC/plane/directional modes,
+   the oracle's frame-9 intra cost became **1928**, matching x264's 1929.
+2. `slicetype.c:764-770` clamps the P cost up to the intra cost when intra is
+   cheaper (`imb:4 pmb:0` at x264's frame-9 scene cut).
+
+Applying both directly to the shared `vk_lowres_i_cost` /
+`vk_lowres_p_cost_mb` broke `compare_slicetype.py` (16/16 -> 13/16) because
+those helpers also feed b-adapt and mb-tree. Reverted; 16/16 restored.
+
+Next: put the interior-MB scoring and intra-clamp in **scenecut-only** local
+helpers (or add explicit flags), so b-adapt/mb-tree stay untouched.
+
