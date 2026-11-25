@@ -805,3 +805,16 @@ in x264's write order. fast/medium first-diff **regressed 15 -> 9**, so the
 I16 replay was reverted. Default remains trellis-off; a fully faithful
 write-time integration is still required before trellis can be enabled.
 
+### E45 ? enabling x264 preset trellis defaults: no metric gain
+
+With the primitive batch-validated (E43: 26/31 vectors), temporarily changed
+`vk_cur_trellis` to x264's preset defaults (0 ultra/super/veryfast, 1
+faster..medium, 2 slow..placebo) and ran the full 120-case audit.
+
+Result: **audit 12/120, NAL2 3/20, first-diff bytes unchanged**
+(veryfast 79, faster 17, fast..slower 15, veryslow/placebo 16), verdict counts
+identical. Bitstreams differ (e.g. faster IDR length 129 -> 126), so the
+primitive does affect output, but no byte-exact or first-diff gain. Reverted
+to `vk_cur_trellis=0` default. Trellis must not be enabled until a faithful
+write-time integration exists.
+
