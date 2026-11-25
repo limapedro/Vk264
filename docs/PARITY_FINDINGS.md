@@ -587,3 +587,43 @@ bytes for this clip, consistent with x264's tc=0. The 657-byte
 difference therefore comes from the decoder's reconstruction path,
 not from an encoder-side deblocking omission. Reverted the filter;
 tree clean.
+
+### E18b ? analysis-time CABAC trellis regresses parity (disabled by default)
+
+PR #290 wired the new `trellis.c/h` into `compute_i16_full` (I16 AC) and
+the I4 4x4 analysis loop whenever `vk_cur_trellis>=1` (faster..placebo).
+A follow-up also wired I16 DC and chroma AC; both were reverted after
+measurement.
+
+**Harness**: `build/trellis_probe.py` encodes `small64.yuv` (64x64, 8f,
+QP28, CABAC) with x264 and with the oracle under `VK_TRELLIS=0/1`, then
+reports the first differing IDR byte.
+
+| preset | VK_TRELLIS=0 | VK_TRELLIS=1 | verdict |
+|---|---|---|---|
+| veryfast | 49 | 11 | regression |
+| faster | 17 | 11 | regression |
+| fast | 15 | 15 | IDR len 129->125, no gain |
+| medium | 15 | 15 | IDR len 129->125, no gain |
+
+Fresh `audit_presets.py` with PR #290 enabled confirmed the regression
+(faster NAL2 byte11, oracle PSNR 11.73 vs x264 24.48). With trellis
+disabled by default the verified baseline is restored: audit **12/120**,
+first-diff `veryfast 49, faster 17, fast/medium/slow/slower 15,
+veryslow/placebo 16`; CTest 29/29 + 65/65, slicetype 16/16, c004 recon
+0/4096.
+
+**Root cause**: x264 invokes `x264_quant_4x4_trellis` /
+`x264_quant_luma_dc_trellis` from
+`x264_macroblock_write_cabac_internal` ? i.e. at *write* time, after
+mb_type, intra pred modes, CBP and QP delta bins have already updated
+`h->cabac.state`. The oracle applies trellis during analysis, before any
+current-MB bins are written, so its context state is stale and the
+level/context decisions differ from x264. The oracle's lambda2/deq
+approximation compounds this.
+
+**Decision**: keep `trellis.c/h` as a foundation but set
+`vk_cur_trellis = 0` by default; `VK_TRELLIS=1/2` re-enables it for
+experiments. Do not claim trellis parity until it is applied at write
+time in `cabac_coeffs` with live `cb->state` and recon updated to match.
+
