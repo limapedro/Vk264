@@ -1319,3 +1319,22 @@ having been verified separately. Next: dump `orig_coefs`, `unquant_abs_level`
 and the weight per coefficient from both encoders for one failing block.
 No production change; instrumentation reverted.
 
+### E62 ? exact unquant_mf formula found: 17/17 trellis vectors match
+
+The E61 SSD dump showed x264's `unquant_abs_level` uses a different scale
+than `deq<<6`. Root cause: x264 `set.c:170` derives `unquant_mf` from the
+**unshifted** `quant4_mf`:
+
+```
+unquant_mf = (1 << (qp/6 + 15 + 8)) / quant4_mf_unshifted[i]
+```
+
+while the oracle's `mf[i] = SHIFT(quant4_mf_unshifted, qp/6-1)` and `deq`
+come from the shifted/dequant tables. Recovering `qmu = mf[i] << (qp/6-1)`
+and applying x264's formula (DC: `unquant_mf[0]*2`) fixed the SSD.
+
+Authoritative sequence-numbered replay (`build/trellis_dp_probe.py`):
+**17/17 vectors exact** (was 13/17). This completes block-level trellis
+parity for I4 luma; write-time integration can now be attempted with a
+verified primitive.
+
