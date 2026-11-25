@@ -402,10 +402,15 @@ int vk_trellis_quant_4x4(int dct[16], const int orig[16],
         uint64_t ssd0[2], ssd1[2]; \
         for( int k = 0; k < 2; k++ ) { \
             int abs_level = q-1+k; \
-            /* x264 rdo.c:819: (unquant_mf * level + 128)>>8, with \
-             * unquant_mf = dequant4_mf<<6 for the 4x4 DCT scale. */ \
+            /* x264 rdo.c:819 + set.c:170: unquant_mf is derived from the
+             * UNSHIFTED quant4_mf: (1<<(qp/6+15+8)) / quant4_mf_unshifted.
+             * Oracle mf is SHIFT(quant4_mf_unshifted, qp/6-1), so recover it. */ \
             int is_dc = (ctx_block_cat==1); \
-            int unquant_mf = (deq[zigzag4[i]] << 6) * (is_dc ? 2 : 1); \
+            int mfi = is_dc ? (mf[0]>>1) : mf[zigzag4[i]]; \
+            int sh = qp/6 - 1; if (sh < 0) sh = 0; \
+            int qmu = mfi << sh; \
+            int unquant_mf = qmu ? (int)((1ULL << (qp/6 + 15 + 8)) / qmu) : 0; \
+            if (is_dc) unquant_mf *= 2; \
             int unquant_abs_level = (unquant_mf * abs_level + 128) >> 8; \
             int d = abs_coef - unquant_abs_level; \
             int wgt = is_dc ? 256 : (int)dct4_weight2_tab[zigzag4[i]]; \
