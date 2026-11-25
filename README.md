@@ -64,7 +64,9 @@ what the eventual **shader version of Vk264** will be derived from.
   see `docs/PARITY_HARNESS.md`. No Phoenix encoder exists yet, so no byte-exact
   number can be reported — the historical 12/120 short and 0/240 extended are
   context, not Phoenix results.
-- Next: MBAFF cache paths, then CABAC/CAVLC syntax and the encoder modules.
+- MBAFF cache paths ported (field-pair neighbour selection, cbp/MV/MVD
+  conversion, skip flag, intra border backup) with unit tests.
+- Next: CAVLC/CABAC slice syntax and the encoder modules.
 - The CABAC coder matches x264 golden bytes; porting it also exposed and fixed
   a `PHX_CLIP3` argument-order bug in the cost tables.
 

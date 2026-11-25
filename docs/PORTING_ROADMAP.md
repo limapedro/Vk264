@@ -31,8 +31,10 @@ SPS/PPS byte-exact for all 20 preset×entropy cases once the encoder exists;
 Ported: `x264_scan8`, `x264_left_table_t`/`left_indices`,
 `macroblock_cache_load_neighbours`, `macroblock_cache_load`,
 `macroblock_cache_save`, `STORE_8x8_NNZ`, intra4x4 pred-mode and nnz caches,
-plus ref/mv/mvd caches for the progressive path. Interlaced (MBAFF) paths and
-the deblock-strength cache are still pending.
+ref/mv/mvd caches for both progressive and MBAFF paths (field-pair neighbour
+selection, MAP_MVS, `b_allow_skip`, `i_neighbour_skip`) plus
+`macroblock_backup_intra`. Still pending: `macroblock_store_pic` (reconstructed
+pixel write-back) and the deblock-strength cache.
 
 Gate: `python tools/run_tests.py` → 4/4 passing, including a load/save
 round-trip over neighbour arrays (`tests/test_mbcache.c`) and the

@@ -52,6 +52,8 @@ phx_mb_state_t *phx_mb_state_new(int mb_width, int mb_height)
     s->mvd[0] = calloc(n, sizeof(int16_t[8][2]));
     s->mvd[1] = calloc(n, sizeof(int16_t[8][2]));
     s->slice_table = calloc(n, 1);
+    s->field = calloc(n, 1);                             /* MBAFF field flags */
+    s->threadslice_start = 0;                            /* single-thread port */
     s->slice_type = 1;                                   /* P slice default */
     s->b_cabac = 1;
     return s;
@@ -63,7 +65,7 @@ void phx_mb_state_delete(phx_mb_state_t *s)
     free(s->type); free(s->intra4x4_pred_mode); free(s->non_zero_count);
     free(s->cbp); free(s->mb_transform_size);
     free(s->ref[0]); free(s->ref[1]); free(s->mv[0]); free(s->mv[1]);
-    free(s->mvd[0]); free(s->mvd[1]); free(s->slice_table);
+    free(s->mvd[0]); free(s->mvd[1]); free(s->slice_table); free(s->field);
     free(s);
 }
 
@@ -71,72 +73,159 @@ void phx_mb_state_delete(phx_mb_state_t *s)
  * branch (b_interlaced = 0). The slice_table check mirrors x264's
  * "not from the previous threadslice" rule. */
 void phx_macroblock_cache_load_neighbours(phx_mb_state_t *s, phx_mb_cache_t *c,
-                                          int mb_x, int mb_y)
+                                          int mb_x, int mb_y, int b_mbaff)
 {
-    int top_y = mb_y - 1;                                /* macroblock.c:676 */
+    int xy = mb_y*s->mb_stride + mb_x;                   /* macroblock.c:681 */
+    int mb_interlaced = b_mbaff && s->field[xy];         /* :675 */
+    int top_y = mb_y - (1 << mb_interlaced);             /* :676 */
     int top = top_y*s->mb_stride + mb_x;                 /* :677 */
 
     c->i_mb_x = mb_x; c->i_mb_y = mb_y;                  /* :679-680 */
-    c->i_mb_xy = mb_y*s->mb_stride + mb_x;               /* :681 */
+    c->i_mb_xy = xy;                                     /* :681 */
     c->i_b8_xy = 2*(mb_y*s->b8_stride + mb_x);           /* :682 */
     c->i_b4_xy = 4*(mb_y*s->b4_stride + mb_x);           /* :683 */
     c->top = -1; c->top_y = -1;                          /* :691-692 */
-    c->left[0] = c->left[1] = -1; c->topleft = -1; c->topright = -1; /* :693-695 */
+    c->left[0] = c->left[1] = -1;                        /* :693 */
+    c->topleft = -1; c->topright = -1;                   /* :694-695 */
     c->type_top = -1; c->type_left[0] = c->type_left[1] = -1;
     c->type_topleft = c->type_topright = -1;             /* :696-699 */
     c->i_neighbour = c->i_neighbour_intra = 0;           /* :688-689 */
+    c->i_mb_top_mbpair_xy = xy - 2*s->mb_stride;         /* :713 */
+    c->i_mb_topleft_y = c->i_mb_topright_y = -1;         /* :714-715 */
+    c->topleft_partition = 0;                            /* :701 */
+    c->left_index = &phx_left_indices[3];                /* :700 */
+    c->left_b8[0] = c->left_b8[1] = -1;
+    c->left_b4[0] = c->left_b4[1] = -1;
 
     int topleft_y = top_y, topright_y = top_y;           /* :703-704 */
-    int left = c->i_mb_xy - 1;                           /* :707 */
+    int left[2] = {xy-1, xy-1};                          /* :707 */
+    c->left_b8[0] = c->left_b8[1] = c->i_b8_xy - 2;      /* :708 */
+    c->left_b4[0] = c->left_b4[1] = c->i_b4_xy - 4;      /* :709 */
+
+    if (b_mbaff) {                                       /* :711 */
+        if (mb_y & 1) {                                  /* :717 */
+            if (mb_x && mb_interlaced != s->field[xy-1]) {/* :719 */
+                left[0] = left[1] = xy - 1 - s->mb_stride; /* :721 */
+                c->left_b8[0] = c->left_b8[1] = c->i_b8_xy - 2 - 2*s->b8_stride;
+                c->left_b4[0] = c->left_b4[1] = c->i_b4_xy - 4 - 4*s->b4_stride;
+                if (mb_interlaced) {                     /* :725 */
+                    c->left_index = &phx_left_indices[2];
+                    left[1] += s->mb_stride;
+                    c->left_b8[1] += 2*s->b8_stride;
+                    c->left_b4[1] += 4*s->b4_stride;
+                } else {                                 /* :733 */
+                    c->left_index = &phx_left_indices[0];
+                    topleft_y++;
+                    c->topleft_partition = 1;
+                }
+            }
+            if (!mb_interlaced) topright_y = -1;         /* :739-740 */
+        } else if (mb_interlaced && top >= 0) {          /* :744 */
+            if (!s->field[top]) { top += s->mb_stride; top_y++; } /* :746-749 */
+            if (mb_x) topleft_y += !s->field[s->mb_stride*topleft_y + mb_x-1];
+            if (mb_x < s->mb_width-1)
+                topright_y += !s->field[s->mb_stride*topright_y + mb_x+1];
+                                                         /* :752-754 */
+        }
+    }
 
     if (mb_x > 0) {                                      /* :771 */
         c->i_neighbour |= PHX_MB_LEFT;                   /* :773 */
-        c->left[0] = c->left[1] = left;                  /* :774-775 */
-        c->type_left[0] = c->type_left[1] = s->type[left]; /* :776-777 */
-        if (s->slice_table[left] == s->first_mb) {       /* :778 */
-            c->i_neighbour |= PHX_MB_LEFT;
-            int intra = s->type[left] == PHX_I_4x4 || s->type[left] == PHX_I_8x8
-                     || s->type[left] == PHX_I_16x16 || s->type[left] == PHX_I_PCM;
+        c->left[0] = left[0]; c->left[1] = left[1];      /* :774-775 */
+        c->type_left[0] = s->type[c->left[0]];
+        c->type_left[1] = s->type[c->left[1]];           /* :776-777 */
+        if (s->slice_table[c->left[0]] == s->first_mb) { /* :778 */
+            int t = c->type_left[0];
+            int intra = t == PHX_I_4x4 || t == PHX_I_8x8
+                     || t == PHX_I_16x16 || t == PHX_I_PCM;
             if (!s->b_constrained_intra || intra)
                 c->i_neighbour_intra |= PHX_MB_LEFT;     /* :783-784 */
         }
     }
-    if (top >= 0) {                                      /* :791 */
+    if ((s->threadslice_start >> mb_interlaced) != (mb_y >> mb_interlaced)) {
+                                                         /* :789 */
+      if (top >= 0) {                                    /* :791 */
         c->top = top; c->top_y = top_y;                  /* :794-795 */
         c->type_top = s->type[top];                      /* :796 */
         if (s->slice_table[top] == s->first_mb) {        /* :797 */
             c->i_neighbour |= PHX_MB_TOP;                /* :799 */
-            int intra = c->type_top == PHX_I_4x4 || c->type_top == PHX_I_8x8
-                     || c->type_top == PHX_I_16x16 || c->type_top == PHX_I_PCM;
+            int t = c->type_top;
+            int intra = t == PHX_I_4x4 || t == PHX_I_8x8
+                     || t == PHX_I_16x16 || t == PHX_I_PCM;
             if (!s->b_constrained_intra || intra)
                 c->i_neighbour_intra |= PHX_MB_TOP;      /* :801-802 */
         }
-    }
-    if (mb_x > 0 && topleft_y >= 0) {                    /* :816 */
+      }
+      if (mb_x > 0 && topleft_y >= 0) {                  /* :816 */
         c->topleft = s->mb_stride*topleft_y + mb_x - 1;  /* :819 */
         c->type_topleft = s->type[c->topleft];           /* :821 */
-        if (s->slice_table[c->topleft] == s->first_mb)   /* :822 */
+        if (s->slice_table[c->topleft] == s->first_mb)
             c->i_neighbour |= PHX_MB_TOPLEFT;            /* :824 */
-    }
-    if (mb_x < s->mb_width - 1 && topright_y >= 0) {     /* :831 */
+      }
+      if (mb_x < s->mb_width-1 && topright_y >= 0) {     /* :831 */
         c->topright = s->mb_stride*topright_y + mb_x + 1;/* :834 */
         c->type_topright = s->type[c->topright];         /* :836 */
-        if (s->slice_table[c->topright] == s->first_mb)  /* :837 */
+        if (s->slice_table[c->topright] == s->first_mb)
             c->i_neighbour |= PHX_MB_TOPRIGHT;           /* :839 */
+      }
+    }
+
+    /* :1262-1267 ? field decoding flag is sampled at the start of a pair. */
+    if (b_mbaff && mb_x == 0 && !(mb_y & 1))
+        c->field_decoding_flag = (c->top >= s->first_mb) ? s->field[c->top] : 0;
+
+    /* :1272-1278 ? skip would mispredict interlace mode at a field boundary. */
+    c->b_allow_skip = 1;
+    if (b_mbaff && mb_interlaced != c->field_decoding_flag && (mb_y & 1)) {
+        int up = xy - s->mb_stride;
+        if (up >= 0 && (s->type[up] == PHX_P_SKIP || s->type[up] == 18))
+            c->b_allow_skip = 0;
+    }
+
+    /* :1280-1306 ? CABAC skip-neighbour count. */
+    c->i_neighbour_skip = 0;
+    if (s->b_cabac) {
+        if (b_mbaff) {
+            int mb_pair = mb_x + (mb_y & ~1)*s->mb_stride; /* :1286 */
+            int left_xy = mb_pair - 1;                     /* :1287 */
+            int top_xy;
+            if ((mb_y & 1) && mb_x > 0 && c->field_decoding_flag == s->field[left_xy])
+                left_xy += s->mb_stride;                   /* :1288-1289 */
+            if (c->field_decoding_flag) {
+                top_xy = mb_pair - s->mb_stride;           /* :1292 */
+                if (!(mb_y & 1) && top_xy >= 0
+                    && s->slice_table[top_xy] == s->first_mb && s->field[top_xy])
+                    top_xy -= s->mb_stride;                /* :1293-1294 */
+            } else top_xy = mb_x + (mb_y-1)*s->mb_stride;  /* :1297 */
+            if (mb_x > 0 && s->slice_table[left_xy] == s->first_mb
+                && s->type[left_xy] != PHX_P_SKIP && s->type[left_xy] != 18)
+                c->i_neighbour_skip++;                     /* :1299 */
+            if (top_xy >= 0 && s->slice_table[top_xy] == s->first_mb
+                && s->type[top_xy] != PHX_P_SKIP && s->type[top_xy] != 18)
+                c->i_neighbour_skip++;                     /* :1300 */
+        } else {
+            c->i_neighbour_skip = ((c->i_neighbour & PHX_MB_LEFT)
+                                   && c->type_left[0] != PHX_P_SKIP
+                                   && c->type_left[0] != 18)
+                                + ((c->i_neighbour & PHX_MB_TOP)
+                                   && c->type_top != PHX_P_SKIP
+                                   && c->type_top != 18);  /* :1304-1305 */
+        }
     }
 }
 
 /* common/macroblock.c:855 — macroblock_cache_load(), progressive branch. */
 void phx_macroblock_cache_load(phx_mb_state_t *s, phx_mb_cache_t *c,
-                               int mb_x, int mb_y)
+                               int mb_x, int mb_y, int b_mbaff)
 {
-    phx_macroblock_cache_load_neighbours(s, c, mb_x, mb_y); /* :857 */
+    phx_macroblock_cache_load_neighbours(s, c, mb_x, mb_y, b_mbaff); /* :857 */
     int top = c->top, top_y = c->top_y;
+    int mb_interlaced = b_mbaff && s->field[c->i_mb_xy]; /* :675 */
     int s8x8 = s->b8_stride, s4x4 = s->b4_stride;        /* :862-863 */
     int top_8x8 = (2*top_y+1)*s8x8 + 2*mb_x;            /* :864 */
     int top_4x4 = (4*top_y+3)*s4x4 + 4*mb_x;            /* :865 */
     int lists = (1 << s->slice_type) & 3;                /* :866 */
-    const phx_left_table_t *lt = &phx_left_indices[3];   /* :700 progressive */
+    const phx_left_table_t *lt = c->left_index;          /* :700/:766/:734 */
 
     if (c->i_neighbour & PHX_MB_TOP) {                   /* :879 */
         c->i_cbp_top = s->cbp[top];                      /* :881 */
@@ -158,20 +247,25 @@ void phx_macroblock_cache_load(phx_mb_state_t *s, phx_mb_cache_t *c,
 
     if (c->i_neighbour & PHX_MB_LEFT) {                  /* :915 */
         int ltop = c->left[0];                           /* :917 */
-        c->i_cbp_left = s->cbp[ltop];                    /* :926 */
+        int lbot = b_mbaff ? c->left[1] : ltop;          /* :918 */
+        if (b_mbaff) {                                   /* :919-924 */
+            int top_luma = (s->cbp[ltop] >> (lt->mv[0] & ~1)) & 2;
+            int bot_luma = (s->cbp[lbot] >> (lt->mv[2] & ~1)) & 2;
+            c->i_cbp_left = (s->cbp[ltop] & 0xfff0) | (bot_luma<<2) | top_luma;
+        } else c->i_cbp_left = s->cbp[ltop];             /* :926 */
         c->intra4x4_pred_mode[phx_scan8[ 0]-1] = s->intra4x4_pred_mode[ltop][lt->intra[0]];
         c->intra4x4_pred_mode[phx_scan8[ 2]-1] = s->intra4x4_pred_mode[ltop][lt->intra[1]];
-        c->intra4x4_pred_mode[phx_scan8[ 8]-1] = s->intra4x4_pred_mode[ltop][lt->intra[2]];
-        c->intra4x4_pred_mode[phx_scan8[10]-1] = s->intra4x4_pred_mode[ltop][lt->intra[3]];
+        c->intra4x4_pred_mode[phx_scan8[ 8]-1] = s->intra4x4_pred_mode[lbot][lt->intra[2]];
+        c->intra4x4_pred_mode[phx_scan8[10]-1] = s->intra4x4_pred_mode[lbot][lt->intra[3]];
                                                          /* :929-932 */
         c->non_zero_count[phx_scan8[ 0]-1] = s->non_zero_count[ltop][lt->nnz[0]];
         c->non_zero_count[phx_scan8[ 2]-1] = s->non_zero_count[ltop][lt->nnz[1]];
-        c->non_zero_count[phx_scan8[ 8]-1] = s->non_zero_count[ltop][lt->nnz[2]];
-        c->non_zero_count[phx_scan8[10]-1] = s->non_zero_count[ltop][lt->nnz[3]];
+        c->non_zero_count[phx_scan8[ 8]-1] = s->non_zero_count[lbot][lt->nnz[2]];
+        c->non_zero_count[phx_scan8[10]-1] = s->non_zero_count[lbot][lt->nnz[3]];
         c->non_zero_count[phx_scan8[16+ 0]-1] = s->non_zero_count[ltop][lt->nnz_chroma[0]];
-        c->non_zero_count[phx_scan8[16+ 2]-1] = s->non_zero_count[ltop][lt->nnz_chroma[1]];
+        c->non_zero_count[phx_scan8[16+ 2]-1] = s->non_zero_count[lbot][lt->nnz_chroma[1]];
         c->non_zero_count[phx_scan8[32+ 0]-1] = s->non_zero_count[ltop][lt->nnz_chroma[2]];
-        c->non_zero_count[phx_scan8[32+ 2]-1] = s->non_zero_count[ltop][lt->nnz_chroma[3]];
+        c->non_zero_count[phx_scan8[32+ 2]-1] = s->non_zero_count[lbot][lt->nnz_chroma[3]];
                                                          /* :935-957 (4:2:0) */
     } else {                                             /* :960 */
         c->i_cbp_left = -1;                              /* :962 */
@@ -192,7 +286,10 @@ void phx_macroblock_cache_load(phx_mb_state_t *s, phx_mb_cache_t *c,
     for (int l = 0; l < lists; l++) {
         int i8 = phx_scan8[0] - 1 - 8;                   /* :1054 */
         if (c->i_neighbour & PHX_MB_TOPLEFT) {           /* :1055 */
-            int ir = top_8x8 - 1, iv = top_4x4 - 1;     /* :1057-1058 */
+            int ir = b_mbaff ? 2*(s->b8_stride*c->i_mb_topleft_y + mb_x-1)+1+s->b8_stride
+                             : top_8x8 - 1;            /* :1057 */
+            int iv = b_mbaff ? 4*(s->b4_stride*c->i_mb_topleft_y + mb_x-1)+3+3*s->b4_stride
+                             : top_4x4 - 1;            /* :1058 */
             c->ref[l][i8] = s->ref[l][ir];               /* :1066 */
             memcpy(c->mv[l][i8], s->mv[l][iv], sizeof(int16_t[2])); /* :1067 */
         } else {
@@ -211,16 +308,31 @@ void phx_macroblock_cache_load(phx_mb_state_t *s, phx_mb_cache_t *c,
         }
         i8 = phx_scan8[0] + 3;                           /* :1090 */
         if (c->i_neighbour & PHX_MB_TOPRIGHT) {          /* :1091 */
-            c->ref[l][i8] = s->ref[l][top_8x8+2];         /* :1095 */
-            memcpy(c->mv[l][i8], s->mv[l][top_4x4+4], sizeof(int16_t[2]));
+            int ir = b_mbaff ? 2*(s->b8_stride*c->i_mb_topright_y + mb_x+1)+s->b8_stride
+                             : top_8x8 + 2;             /* :1093 */
+            int iv = b_mbaff ? 4*(s->b4_stride*c->i_mb_topright_y + mb_x+1)+3*s->b4_stride
+                             : top_4x4 + 4;             /* :1094 */
+            c->ref[l][i8] = s->ref[l][ir];         /* :1095 */
+            memcpy(c->mv[l][i8], s->mv[l][iv], sizeof(int16_t[2]));
         } else c->ref[l][i8] = -2;                       /* :1099 */
         i8 = phx_scan8[0] - 1;                           /* :1101 */
         if (c->i_neighbour & PHX_MB_LEFT) {              /* :1102 */
-            int ir = c->i_b8_xy - 1, iv = c->i_b4_xy - 1;/* :1118-1119 */
-            for (int k = 0; k < 2; k++) {
-                c->ref[l][i8+k*8] = c->ref[l][i8+1+k*8] = s->ref[l][ir+k*s8x8];
-                memcpy(c->mv[l][i8+k*8], s->mv[l][iv+k*s4x4], 2*sizeof(int16_t[2]));
-            }                                            /* :1120-1128 */
+            if (b_mbaff) {                               /* :1104-1114 */
+                for (int k = 0; k < 2; k++) {
+                    c->ref[l][i8+k*8] = s->ref[l][c->left_b8[0] + 1 + s->b8_stride*lt->ref[2*k]];
+                    c->ref[l][i8+1+k*8] = s->ref[l][c->left_b8[0] + 1 + s->b8_stride*lt->ref[2*k+1]];
+                    memcpy(c->mv[l][i8+k*8], s->mv[l][c->left_b4[0] + 3 + s->b4_stride*lt->mv[2*k]],
+                           sizeof(int16_t[2]));
+                    memcpy(c->mv[l][i8+1+k*8], s->mv[l][c->left_b4[0] + 3 + s->b4_stride*lt->mv[2*k+1]],
+                           sizeof(int16_t[2]));
+                }
+            } else {
+                int ir = c->i_b8_xy - 1, iv = c->i_b4_xy - 1;/* :1118-1119 */
+                for (int k = 0; k < 2; k++) {
+                    c->ref[l][i8+k*8] = c->ref[l][i8+1+k*8] = s->ref[l][ir+k*s8x8];
+                    memcpy(c->mv[l][i8+k*8], s->mv[l][iv+k*s4x4], 2*sizeof(int16_t[2]));
+                }                                        /* :1120-1128 */
+            }
         } else {
             for (int k = 0; k < 4; k++) {
                 c->ref[l][i8+k*8] = -2;
@@ -235,26 +347,107 @@ void phx_macroblock_cache_load(phx_mb_state_t *s, phx_mb_cache_t *c,
                                                          /* :1176-1179 */
             const int mvd_idx[] = {0,2,8,10};
             if (c->i_neighbour & PHX_MB_LEFT) {
-                int lt_mb = c->left[0];
-                for (int k = 0; k < 4; k++)
-                    memcpy(c->mvd[l][phx_scan8[mvd_idx[k]]-1], s->mvd[l][lt_mb][lt->intra[k]],
+                int lt_mb = c->left[0], lb_mb = b_mbaff ? c->left[1] : lt_mb;
+                for (int k = 0; k < 4; k++) {
+                    int mb = k < 2 ? lt_mb : lb_mb;
+                    memcpy(c->mvd[l][phx_scan8[mvd_idx[k]]-1], s->mvd[l][mb][lt->intra[k]],
                            sizeof(int16_t[2]));
+                }
             } else {
                 for (int k = 0; k < 4; k++)
                     memset(c->mvd[l][phx_scan8[mvd_idx[k]]-1], 0, sizeof(int16_t[2]));
-            }                                            /* :1181-1198 */
+            }                                            /* :1181-1190 */
+            if (b_mbaff) {                               /* :1140-1172 */
+                if (c->i_neighbour & PHX_MB_TOPRIGHT) {
+                    int y = c->i_mb_topright_y;
+                    int tr_mb = s->mb_stride*y + (mb_x+1);
+                    for (int j = 0; j < 3; j++)
+                        memcpy(c->mvd[l][phx_scan8[0] - 8 + j], s->mvd[l][tr_mb][j],
+                               sizeof(int16_t[2]));
+                } else memset(c->mvd[l][phx_scan8[0] - 8], 0, 3*sizeof(int16_t[2]));
+            }
         }
+    }
+    /* :1206-1259 ? MAP_MVS: convert MVs cached from opposite field type. */
+    if (b_mbaff) {
+#define PHX_FIELD_DIFFERENT(mb) ((mb) >= 0 && (mb_interlaced ? !s->field[mb] : s->field[mb]))
+#define PHX_MAP_F2F(idx) do { \
+        for (int l = 0; l < lists; l++) { \
+            if (c->ref[l][idx] >= 0) { \
+                c->ref[l][idx] <<= 1; c->mv[l][idx][1] /= 2; c->mvd[l][idx][1] >>= 1; \
+            } \
+        } \
+    } while (0)
+#define PHX_MAP_F2F_INV(idx) do { \
+        for (int l = 0; l < lists; l++) { \
+            if (c->ref[l][idx] >= 0) { \
+                c->ref[l][idx] >>= 1; c->mv[l][idx][1] *= 2; c->mvd[l][idx][1] <<= 1; \
+            } \
+        } \
+    } while (0)
+        int tl = phx_scan8[0] - 9;
+        int tp = phx_scan8[0] - 8;
+        int tr = phx_scan8[0] + 3;
+        int lf = phx_scan8[0] - 1;
+        if (mb_interlaced) {
+            if (PHX_FIELD_DIFFERENT(c->topleft)) PHX_MAP_F2F(tl);
+            if (PHX_FIELD_DIFFERENT(c->top)) for (int j=0;j<4;j++) PHX_MAP_F2F(tp+j);
+            if (PHX_FIELD_DIFFERENT(c->topright)) PHX_MAP_F2F(tr);
+            if (PHX_FIELD_DIFFERENT(c->left[0])) for (int j=0;j<2;j++) PHX_MAP_F2F(lf+j*8);
+            if (PHX_FIELD_DIFFERENT(c->left[1])) for (int j=2;j<4;j++) PHX_MAP_F2F(lf+j*8);
+        } else {
+            if (PHX_FIELD_DIFFERENT(c->topleft)) PHX_MAP_F2F_INV(tl);
+            if (PHX_FIELD_DIFFERENT(c->top)) for (int j=0;j<4;j++) PHX_MAP_F2F_INV(tp+j);
+            if (PHX_FIELD_DIFFERENT(c->topright)) PHX_MAP_F2F_INV(tr);
+            if (PHX_FIELD_DIFFERENT(c->left[0])) for (int j=0;j<2;j++) PHX_MAP_F2F_INV(lf+j*8);
+            if (PHX_FIELD_DIFFERENT(c->left[1])) for (int j=2;j<4;j++) PHX_MAP_F2F_INV(lf+j*8);
+        }
+#undef PHX_FIELD_DIFFERENT
+#undef PHX_MAP_F2F
+#undef PHX_MAP_F2F_INV
+    }
+}
+
+/* common/macroblock.c:1638 ? macroblock_backup_intra(). */
+void phx_macroblock_backup_intra(phx_mb_state_t *s, int mb_x, int mb_y,
+                                 int b_mbaff, const uint8_t *p_fdec, int stride)
+{
+    int mb_xy = mb_y*s->mb_stride + mb_x;                /* macroblock.c:1644 */
+    int backup_dst = !b_mbaff ? (mb_y&1)
+                   : (mb_y&1) ? 1 : (s->field[mb_xy] ? 0 : 2); /* :1644 */
+    memcpy(&s->intra_border_backup[backup_dst][0][mb_x*16], p_fdec + stride*15, 16);
+                                                         /* :1645 */
+    memcpy(&s->intra_border_backup[backup_dst][1][mb_x*16], p_fdec + (15>>1)*stride, 8);
+    memcpy(&s->intra_border_backup[backup_dst][1][mb_x*16+8], p_fdec + (15>>1)*stride + 8, 8);
+                                                         /* :1653-1655 */
+    if (b_mbaff && (mb_y & 1)) {                         /* :1657-1676 */
+        int interlaced = s->field[mb_xy];
+        int backup_src = (interlaced ? 7 : 14)*stride;   /* :1661 */
+        backup_dst = interlaced ? 2 : 0;                 /* :1662 */
+        memcpy(&s->intra_border_backup[backup_dst][0][mb_x*16], p_fdec + backup_src, 16);
+        int chroma_src = (interlaced ? 3 : 6)*stride;    /* :1672 */
+        memcpy(&s->intra_border_backup[backup_dst][1][mb_x*16], p_fdec + chroma_src, 8);
+        memcpy(&s->intra_border_backup[backup_dst][1][mb_x*16+8], p_fdec + chroma_src + 8, 8);
     }
 }
 
 /* common/macroblock.c:1680 — macroblock_cache_save(), progressive branch. */
-void phx_macroblock_cache_save(phx_mb_state_t *s, phx_mb_cache_t *c)
+void phx_macroblock_cache_save(phx_mb_state_t *s, phx_mb_cache_t *c, int b_mbaff)
 {
     const int xy = c->i_mb_xy;
     const int i_mb_4x4 = c->i_b4_xy, i_mb_8x8 = c->i_b8_xy;
     const int s8x8 = s->b8_stride, s4x4 = s->b4_stride;
     int8_t *i4x4 = s->intra4x4_pred_mode[xy];            /* :1691 */
     uint8_t *nnz = s->non_zero_count[xy];                /* :1692 */
+
+    /* :1694-1717 — MBAFF backs up two field rows; macroblock_store_pic()
+     * (reconstructed-pixel write-back) is not part of the cache state. */
+    if (b_mbaff && c->p_fdec)
+        phx_macroblock_backup_intra(s, c->i_mb_x, c->i_mb_y, 1,
+                                    c->p_fdec, c->fdec_stride);
+    if (!b_mbaff && c->p_fdec)
+        phx_macroblock_backup_intra(s, c->i_mb_x, c->i_mb_y, 0,
+                                    c->p_fdec, c->fdec_stride);
 
     /* The caller must place the current MB type in state->type[xy] before
      * save; x264 uses h->mb.i_type which is not part of the neighbour cache. */

@@ -37,7 +37,7 @@ int main(void)
 
     phx_mb_cache_t c;
     memset(&c, 0, sizeof(c));
-    phx_macroblock_cache_load(s, &c, 1, 1);
+    phx_macroblock_cache_load(s, &c, 1, 1, 0);
     CHECK(c.i_mb_xy == 5 && c.top == top && c.left[0] == left, "neighbour indices");
     CHECK((c.i_neighbour & (PHX_MB_TOP|PHX_MB_LEFT|PHX_MB_TOPLEFT|PHX_MB_TOPRIGHT))
           == (PHX_MB_TOP|PHX_MB_LEFT|PHX_MB_TOPLEFT|PHX_MB_TOPRIGHT), "neighbour flags");
@@ -51,7 +51,7 @@ int main(void)
     /* Border defaults at MB (0,0). */
     phx_mb_cache_t b;
     memset(&b, 0, sizeof(b));
-    phx_macroblock_cache_load(s, &b, 0, 0);
+    phx_macroblock_cache_load(s, &b, 0, 0, 0);
     CHECK(b.i_neighbour == 0, "no neighbours at (0,0)");
     CHECK(b.i_cbp_top == -1 && b.i_cbp_left == -1, "cbp defaults");
     CHECK(b.intra4x4_pred_mode[phx_scan8[0]-8] == -1, "intra default");
@@ -65,7 +65,7 @@ int main(void)
         c.mv[0][phx_scan8[k]][1] = (int16_t)(-k-1);
     }
     PHX_STORE_8x8_NNZ(&c, 0, 0, 7);
-    phx_macroblock_cache_save(s, &c);
+    phx_macroblock_cache_save(s, &c, 0);
     CHECK(s->non_zero_count[5][0] == 7 && s->non_zero_count[5][4] == 7,
           "STORE_8x8_NNZ saved");
     CHECK(s->mb_transform_size[5] == 1, "transform size saved");
@@ -78,10 +78,35 @@ int main(void)
     s->non_zero_count[5][3] = 7;
     phx_mb_cache_t c2;
     memset(&c2, 0, sizeof(c2));
-    phx_macroblock_cache_load(s, &c2, 2, 1);
+    phx_macroblock_cache_load(s, &c2, 2, 1, 0);
     CHECK(c2.non_zero_count[phx_scan8[0]-1] == 7, "left nnz after save");
     /* Its first left MV comes from iv = i_b4_xy-1 = 71, i.e. saved block 4. */
     CHECK(c2.mv[0][phx_scan8[0]-1][0] == 4, "left mv after save");
+
+    /* MBAFF: current MB (1,1) interlaced, left field (0,0) frame.
+     * macroblock.c:719-725 selects left MB xy-1-stride and left_indices[2]. */
+    s->field[1] = 0; s->field[5] = 1;   /* pair (mb_x=1): frame / field */
+    s->field[0] = 0; s->field[4] = 0;   /* pair (mb_x=0): frame / frame */
+    memset(&c, 0, sizeof(c));
+    phx_macroblock_cache_load(s, &c, 1, 1, 1);
+    CHECK(c.left[0] == 0 && c.left[1] == 4, "MBAFF left MB indices");
+    CHECK(c.left_index == &phx_left_indices[2], "MBAFF interlaced left table");
+    CHECK(c.i_neighbour & PHX_MB_LEFT, "MBAFF left neighbour");
+    CHECK(c.left_b4[0] == c.i_b4_xy - 4 - 4*s->b4_stride, "MBAFF left_b4");
+
+    /* :1275-1277 ? skip is disabled on a field boundary after a skip MB. */
+    s->type[1] = PHX_P_SKIP;
+    memset(&c, 0, sizeof(c));
+    phx_macroblock_cache_load(s, &c, 1, 1, 1);
+    CHECK(c.b_allow_skip == 0, "MBAFF b_allow_skip");
+
+    /* macroblock.c:1638 ? interlaced MBAFF bottom row backup goes to slot 2. */
+    uint8_t fdec[16*16 + 64];
+    for (int k = 0; k < (int)sizeof(fdec); k++) fdec[k] = (uint8_t)(k & 255);
+    phx_macroblock_backup_intra(s, 1, 1, 1, fdec, 16);
+    for (int k = 0; k < 16; k++)
+        CHECK(s->intra_border_backup[2][0][16+k] == fdec[7*16+k],
+              "MBAFF interlaced border backup");
 
     phx_mb_state_delete(s);
     printf("%s: macroblock cache, %d failures\n", fails ? "FAILED" : "OK", fails);

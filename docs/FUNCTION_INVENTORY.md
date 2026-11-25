@@ -314,7 +314,7 @@ Total x264 C functions indexed: **1386**.
 | `fields` | `common/macroblock.c:1409` | **MISSING** | /* Need to filter both fields |
 | `x264_macroblock_deblock_strength` | `common/macroblock.c:1438` | **MISSING** | void x264_macroblock_deblock_strength |
 | `macroblock_store_pic` | `common/macroblock.c:1624` | **MISSING** | static ALWAYS_INLINE void macroblock_store_pic |
-| `macroblock_backup_intra` | `common/macroblock.c:1638` | **MISSING** | static ALWAYS_INLINE void macroblock_backup_intra |
+| `macroblock_backup_intra` | `common/macroblock.c:1638` | **PORTED** | static ALWAYS_INLINE void macroblock_backup_intra |
 | `x264_macroblock_cache_save` | `common/macroblock.c:1680` | **PORTED** | void x264_macroblock_cache_save |
 | `x264_macroblock_bipred_init` | `common/macroblock.c:1883` | **MISSING** | void x264_macroblock_bipred_init |
 | `pack16to32` | `common/macroblock.h:371` | **MISSING** | static ALWAYS_INLINE uint32_t pack16to32 |

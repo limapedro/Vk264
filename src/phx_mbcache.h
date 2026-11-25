@@ -49,9 +49,12 @@ typedef struct {
     int16_t (*mv[2])[2];            /* [mb_count*16] 4x4 blocks */
     int16_t (*mvd[2])[8][2];        /* [mb_count] CABAC MVDs */
     uint8_t *slice_table;
+    uint8_t *field;                 /* MBAFF field flags, frame.c/macroblock.c */
+    uint8_t intra_border_backup[3][3][16]; /* macroblock.c:1645-1675 */
+    int threadslice_start;          /* x264 h->i_threadslice_start */
     int first_mb;
     int b_constrained_intra, b_cabac;
-    int slice_type;                 /* 0=I, 1=P, 2=B */
+    int slice_type;                 /* x264 enum: 0=P, 1=B, 2=I */
 } phx_mb_state_t;
 
 /* Neighbour cache for the current MB (x264_t.mb.cache, simplified). */
@@ -60,8 +63,14 @@ typedef struct {
     int top, top_y, left[2], topleft, topright;
     int type_top, type_left[2], type_topleft, type_topright;
     int i_neighbour, i_neighbour_intra;
+    int i_mb_top_mbpair_xy, i_mb_topleft_y, i_mb_topright_y, topleft_partition;
+    int left_b8[2], left_b4[2];
+    const phx_left_table_t *left_index;
+    int field_decoding_flag, b_allow_skip, i_neighbour_skip;
     int i_cbp_top, i_cbp_left, i_neighbour_transform_size;
     int i_cbp_luma, i_cbp_chroma, i_qp, b_transform_8x8;
+    uint8_t *p_fdec;                /* reconstructed MB, FDEC_STRIDE layout */
+    int fdec_stride;
     int8_t  intra4x4_pred_mode[40]; /* X264_SCAN8_LUMA_SIZE = 5*8 */
     uint8_t non_zero_count[120];    /* X264_SCAN8_SIZE = 3*40 */
     int8_t  ref[2][40];
@@ -73,16 +82,20 @@ typedef struct {
 phx_mb_state_t *phx_mb_state_new(int mb_width, int mb_height);
 void phx_mb_state_delete(phx_mb_state_t *s);
 
-/* macroblock.c:673 — progressive neighbour discovery. */
+/* macroblock.c:673 — neighbour discovery (b_mbaff=0 progressive, 1 MBAFF). */
 void phx_macroblock_cache_load_neighbours(phx_mb_state_t *s, phx_mb_cache_t *c,
-                                          int mb_x, int mb_y);
+                                          int mb_x, int mb_y, int b_mbaff);
 
 /* macroblock.c:855 — load the current MB's neighbour caches. */
 void phx_macroblock_cache_load(phx_mb_state_t *s, phx_mb_cache_t *c,
-                               int mb_x, int mb_y);
+                               int mb_x, int mb_y, int b_mbaff);
+
+/* macroblock.c:1638 — back up the bottom rows for intra prediction. */
+void phx_macroblock_backup_intra(phx_mb_state_t *s, int mb_x, int mb_y,
+                                 int b_mbaff, const uint8_t *p_fdec, int stride);
 
 /* macroblock.c:1680 — write the current MB into the per-frame state. */
-void phx_macroblock_cache_save(phx_mb_state_t *s, phx_mb_cache_t *c);
+void phx_macroblock_cache_save(phx_mb_state_t *s, phx_mb_cache_t *c, int b_mbaff);
 
 /* encoder/macroblock.h:112 — store an 8x8 block's four nnz flags. */
 #define PHX_STORE_8x8_NNZ(c,p,idx,nz) do { \
