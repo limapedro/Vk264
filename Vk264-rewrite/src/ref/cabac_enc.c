@@ -702,7 +702,7 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                  * if I4 analysis aborts, c4 == COST_MAX and is not chosen. */
                 int i4thresh = best < i8cost ? best : i8cost;
                 c4=vk_i4x4_decide(src16,recon+ro,rs,mx*16,my*16,qp,
-                                  left,top,0,0,modes4,i4thresh);
+                                  left,top,left&&top,0,modes4,i4thresh);
                 if(vk_cur_subme>=6){
                     /* x264 intra_rd: bit cost for I4/I8 MB syntax */
                     int l2=vk_lambda2_tab[qp<0?0:(qp>51?51:qp)];
@@ -750,7 +750,7 @@ int vk_cabac_encode_idr_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                     uint8_t lt4=(bx>0&&by>0)?rmb[(by-1)*16+bx-1]
                               :(by>0)?(left?rbase[(my*16+by-1)*rs+mx*16-1]:128)
                               :(bx>0)?(top?rbase[(my*16-1)*rs+mx*16+bx-1]:128)
-                              :128;
+                              :((left&&top)?rbase[(my*16-1)*rs+mx*16-1]:128);
                     vk_predict4(p4,modes4[i],l4,t4,lt4,tr4);
                     for(int y=0;y<4;++y)for(int x=0;x<4;++x)
                         s4[y*4+x]=frame[(my*16+by+y)*w+mx*16+bx+x];
