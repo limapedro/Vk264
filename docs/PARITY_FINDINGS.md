@@ -1627,3 +1627,20 @@ bin. Earlier CBP-luma conclusions from the mismatched harness were artifacts.
 No production change made; this is a correction plus the precise target for
 the next cost-model fix (I8/I4 cost calibration at subme=2).
 
+### E88 ? I8 +3*lambda double-count removal regresses; reverted
+
+E87 traced the first divergent bin (302 ctx400 transform_size) to MB5's
+I8-vs-I4 cost flip. Per-block dumps at 8f/veryfast showed x264's I8 `best`
+values `4,351,-12,363` (=770 total) against oracle `bc` `16,419,0,328`
+(=827 total). The oracle's gated `vk_i8x8_decide_ex` returned `best+3*lambda`
+and `cabac_enc.c` added another `3*lambda` per block ? a 48-bit (4*3?)
+double count, matching most of the 57 gap.
+
+Removing the inner +3? made MB5's I8 cost 779 (near x264's 770/779) but
+**regressed** first-diff: veryfast 48 -> 80, faster 30 unchanged, fast+ 41
+unchanged; `recon c004 0/4096` stayed green. Other MBs evidently depend on
+the current cost scale, so a local removal is not a valid fix. Reverted.
+
+Next work must align the whole I8 cost model (base predmode costs, direction
+biases, and the per-block +3? at subme=2) rather than deleting one term.
+
