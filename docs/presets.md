@@ -191,8 +191,9 @@ direct naive SATD_16x16 (E75 — buggy cross-check, retried correctly in E79),
 per-frame scenecut ratio without flash detection (E78/E80 — over-triggers),
 I16-only CAVLC IDR fallback (E76 — replaced in E77), CAVLC trellis QNS via a
 scratch `vk_bs_t` (E82 — stack-buffer-overrun crash; needs a dedicated bounded
-bit-counter). E83's "recon feedback" diagnosis was corrected in E83b: MB5's
-neighbours actually match; the gap is I4 mode selection.
+bit-counter). E83/E83b diagnoses were corrected in E83c: MB5's neighbours and all 16 I4
+modes match x264; the gap is coefficient quantization / dequant-IDCT
+reconstruction.
 
 ---
 
