@@ -286,10 +286,11 @@ static void phx_mb_encode_i4x4(const phx_param_t *param,
                                        PHX_DCT_LUMA_4x4, 1);
             if (nz >= 0) {
                 used_trellis = 1;
-                memcpy(scan, dct, sizeof(scan));             /* already zigzag */
-                int16_t nat[16];
-                for (int k = 0; k < 16; k++) nat[phx_zigzag4[k]] = dct[k];
-                memcpy(dct, nat, sizeof(dct));               /* restore for IDCT */
+                /* rdo.c:890 writes levels to dct[zigzag[i]] — natural order.
+                 * x264 then calls zigzagf.scan_4x4 (macroblock.c:391/410)
+                 * before entropy coding; do the same here. */
+                for (int k = 0; k < 16; k++)
+                    scan[k] = dct[phx_zigzag4[k]];           /* :162 */
             }
         }
         if (!used_trellis) {
