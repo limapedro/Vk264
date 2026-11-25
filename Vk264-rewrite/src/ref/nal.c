@@ -110,10 +110,14 @@ int vk_param_apply_preset(vk_param_t *p, const char *preset)
     vk_i4_analysis_enabled = (p->i_subme >= 1) ? 1 : 0;
     vk_i8_analysis_enabled = p->b_transform_8x8 ? 1 : 0;
     vk_cur_subme = p->i_subme;
-    /* x264 trellis: ultrafast/superfast/veryfast 0, faster/fast/medium 1, slow..placebo 2 */
-    if (p->i_subme <= 2) vk_cur_trellis = 0;
-    else if (p->i_subme <= 6) vk_cur_trellis = 1;
-    else vk_cur_trellis = 2;
+    /* Trellis is OFF by default in the oracle. The naive analysis-time
+     * wiring (PR #290) regressed faster 17->11 and veryfast 49->11 because
+     * x264 applies trellis at CABAC *write* time with live context state,
+     * not during analysis. Keep the foundation selectable for experiments:
+     *   VK_TRELLIS=1  (0=off default, 1/2=experimental)
+     * x264 preset defaults for reference: ultrafast/superfast/veryfast 0,
+     * faster/fast/medium 1, slow..placebo 2. */
+    vk_cur_trellis = 0;
     { const char *te=getenv("VK_TRELLIS"); if(te) vk_cur_trellis=atoi(te); }
     return 0;
 }
