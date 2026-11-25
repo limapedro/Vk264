@@ -193,7 +193,12 @@ I16-only CAVLC IDR fallback (E76 — replaced in E77), CAVLC trellis QNS via a
 scratch `vk_bs_t` (E82 — stack-buffer-overrun crash; needs a dedicated bounded
 bit-counter). E83/E83b diagnoses were corrected in E83c: MB5's neighbours and all 16 I4
 modes match x264; the gap is coefficient quantization / dequant-IDCT
-reconstruction.
+reconstruction. E86 added the bounded bit-counter and improves faster CAVLC
+byte17 -> byte12. E84/E85 fixed I4 neighbour bugs (top `+bx`, top-left
+availability); MB5/MB10/MB14 nnz now match. E87: the "bin 82 ctx73 CBP-luma"
+signal came from a preset mismatch in `bincompare_faster.py`; with matched
+presets the first divergent bin is 302 ctx400 transform_size, caused by an
+I8-vs-I4 cost flip at MB5 (x264 i8=770/i4=805 vs oracle i8=827/i4=778).
 
 ---
 
