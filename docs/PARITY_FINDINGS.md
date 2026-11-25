@@ -1174,3 +1174,17 @@ not the scenecut decision rule itself.
 
 Reverted; `compare_slicetype.py` back to 16/16, all gates green.
 
+### E67 ? faster byte-24 localized to CBP luma; write-time retry still worse
+
+Bin trace for faster (`build/bincompare_faster.py`): first divergent bin is
+**82, ctx 73** ? x264 `0`, oracle `1`. ctx 73-76 are the CBP-luma bins, so
+the two encoders disagree on which 8x8 quadrants contain nonzero 4x4 blocks
+(the I4 coefficient nnz pattern).
+
+Retried true write-time I4 trellis (live `cb->state`, recon recomputed from
+trellis coefficients) with the now 17/17-verified primitive: faster first-diff
+**17**, still worse than the analysis-time wiring's **24**. Reverted. This
+suggests x264's written coefficient contexts are effectively those from
+before the current MB's syntax bins (RD state copies), which the analysis-time
+path approximates better than the naive live-state write path.
+
