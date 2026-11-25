@@ -1714,3 +1714,20 @@ CAVLC coefficient trellis remains the highest-priority unimplemented tier;
 any retry needs a dedicated CAVLC bit-counter with bounded VLC sizes rather
 than reusing the bitstream writer on a scratch buffer.
 
+### E83 ? faster first divergence at bin82 is MB5 prediction/recon feedback
+
+After E79 the faster first-diff (30 bytes) still starts at bin 82, ctx 73
+(CBP luma). A full MB scan (`build/nnz_scan.py`, now all MBs) shows MB0/MB1
+match, while MB5 differs at block 5 (x264 nnz=0, oracle nnz=1), MB10/MB14/MB15
+also differ.
+
+Dumping pre-quant DCT + prediction (`build/mb5_dct_probe.py`) shows the MB5
+blocks are not comparable across encoders: x264's block-4 prediction is
+`25,50,65,67,74,70,70,68,...` with DCT `4,9,-2,-3,-79,-24,1,33,...`, while
+the oracle's is `14,15,15,15,...` with DCT `436,193,-2,29,-515,0,...`.
+So the divergence is in the reconstructed neighbour samples fed into MB5,
+not in trellis keep/drop on identical coefficients as in E69/E70.
+
+This is a live reconstruction-fidelity gap despite `recon c004 0/4096`
+(the recon gate uses a different preset/payload). No source change made.
+
