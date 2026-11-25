@@ -1443,3 +1443,17 @@ each I4 block's coefficients during analysis ? no gain (faster stayed 24);
 reverted. The nnz mismatch is therefore not explained by coefficient-context
 state alone.
 
+### E69 ? faster nnz mismatch: identical DCT, different trellis decision
+
+Dumped pre-quant DCT and prediction for MB1 blocks 4/5 from both encoders
+(`build/i4_dct_compare.py`). Block 4's DCT is **identical**:
+`30,3,0,-1,-4,6,0,-2,-2,3,0,-1,-2,3,0,-1`. Yet x264's final nnz[4]=0 and
+oracle's nnz[4]=1. x264's block-5 DCT becomes 48 in the final pass (because
+its block-4 reconstruction is pure prediction), while oracle's stays 0.
+
+So the divergence is a single trellis keep/drop decision on an identical
+coefficient vector ? driven by differing CABAC context state at that point,
+not by prediction or mode selection (E68 fixed the mode/DC-variant gap).
+The per-MB state-emulation attempt (E68) did not resolve it, so the state
+difference originates earlier than the current MB.
+
