@@ -324,7 +324,7 @@ Total x264 C functions indexed: **1386**.
 | `pack32to64` | `common/macroblock.h:403` | **MISSING** | static ALWAYS_INLINE uint64_t pack32to64 |
 | `x264_mb_predict_intra4x4_mode` | `common/macroblock.h:420` | **PORTED** | static ALWAYS_INLINE int x264_mb_predict_intra4x4_mode |
 | `x264_mb_predict_non_zero_code` | `common/macroblock.h:432` | **MISSING** | static ALWAYS_INLINE int x264_mb_predict_non_zero_code |
-| `x264_mb_transform_8x8_allowed` | `common/macroblock.h:454` | **MISSING** | static ALWAYS_INLINE int x264_mb_transform_8x8_allowed |
+| `x264_mb_transform_8x8_allowed` | `common/macroblock.h:454` | **PORTED** | static ALWAYS_INLINE int x264_mb_transform_8x8_allowed |
 | `pixel_avg` | `common/mc.c:49` | **MISSING** | static inline void pixel_avg |
 | `pixel_avg_wxh` | `common/mc.c:63` | **MISSING** | static inline void pixel_avg_wxh |
 | `pixel_avg_weight_wxh` | `common/mc.c:79` | **MISSING** | static inline void pixel_avg_weight_wxh |
