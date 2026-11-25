@@ -23,6 +23,7 @@
 #include "phx_mbencode.h"
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 /* x264 validate_parameters (encoder.c:423, called from encoder.c:1552).
   * Phoenix only accepts the configurations its ported frame/header path owns:
@@ -634,7 +635,16 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     fc.i_type = PHX_SLICE_I;                           /* encoder.c:225 */
     fc.i_first_mb = 0;                                 /* encoder.c:132 */
     fc.i_last_mb = h->mb_state->mb_count - 1;           /* encoder.c:133 */
-    fc.i_qp = h->pps.i_pic_init_qp;                    /* encoder.c:2613 */
+    /* ratecontrol.c:823-825 — CQP maps the constant QP through the IP factor:
+     * I frames use qp_constant - 6*log2(f_ip_factor) + 0.5, P frames the
+     * constant itself. With --qp 28 and the default ip_factor 1.4 this is 25. */
+    {
+        double ip_offset = 6.0 * log2(h->param.f_ip_factor); /* ratecontrol.c:821 */
+        int qp_i = (int)(h->pps.i_pic_init_qp - ip_offset + 0.5); /* :824 */
+        if (qp_i < 0) qp_i = 0;
+        if (qp_i > PHX_QP_MAX_SPEC) qp_i = PHX_QP_MAX_SPEC;
+        fc.i_qp = qp_i;
+    }
     fc.b_variable_qp = 0;                              /* encoder.c:205 */
     fc.b_sliced_threads = 0;                           /* encoder.c:206 */
     fc.b_mbaff = 0;                                    /* encoder.c:138 */
