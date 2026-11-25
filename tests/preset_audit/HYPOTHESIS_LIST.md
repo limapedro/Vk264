@@ -1931,3 +1931,17 @@ An attempt to also model the top MB's I4 modes (per-MB `mbmodes4` array,
 cache index 4/5/6/7 mapping) regressed first-diff back to 80, so only the
 principled cache-index lookup fix is kept.
 
+### E92 ? next divergent bin after E91 is a CBF context (95 vs 93)
+
+With matched presets, after E91 the first divergent bin is 584: x264 `(ctx=95,
+b=0)` vs oracle `(ctx=93, b=0)` ? the CBF/significant-coeff context for a 4x4
+luma block at MB10 differs while the bit value is the same. x264's
+`cabac_cbf_ctxidxinc` (cabac.c:612-645) computes
+`93 + 2*!!nnz[scan8[i]-8] + !!nnz[scan8[i]-1]`; the oracle's `cbf_i4` uses the
+same formula. Per-MB nnz vectors for MB10 match x264 exactly, so the
+difference is in the neighbour nnz cache entries (`nnzc4`) ? likely 0x80
+(unavailable) vs a real neighbour value for one cache slot.
+
+No production change made. Next step: dump `nnzc4[0..47]` for MB10 in both
+encoders to find the exact cache slot mismatch.
+
