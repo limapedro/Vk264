@@ -1,6 +1,6 @@
 # Preset parameter × function matrix (x264 authoritative → oracle)
 
-Source of truth: `build/x264-ref-src/common/base.c:384-602` (defaults + `x264_param_apply_preset`). Oracle side: `Vk264-rewrite/src/ref/nal.c:62-109` and the files listed below.
+Source of truth: `build/x264-ref-src/common/base.c:384-602` (defaults + `x264_param_apply_preset`). Oracle side: `Vk264-rewrite/src/ref/nal.c:65-122` and the files listed below. Verified against `main @ c7f5ea2` (2026-11-24); the table in §1 is x264's values, not necessarily the oracle's (see §2/§4).
 
 ## 1. Effective parameter values per preset
 
@@ -34,10 +34,10 @@ Source of truth: `build/x264-ref-src/common/base.c:384-602` (defaults + `x264_pa
 | parameter group | oracle location | status |
 |---|---|---|
 | refs / bframes / cabac / deblock / transform8x8 / wpred | `nal.c:62-109 + nal.c:108 (`vk_i8_analysis_enabled`)` | IMPLEMENTED — SPS/PPS byte-identical in all 120 cases |
-| i_subme (value stored) | `param.h:23, nal.c:70/82-98` | STORED but comment nal.c:59 says analysis knobs "not modelled" |
+| i_subme (value stored + gating) | `param.h:23, nal.c:73/78-112` | USED — gates I4 analysis, chroma QP offset, RD paths; comment at nal.c:62 is stale |
 | i_me_method (DIA/HEX/UMH/TESA) | `lowres.c:dia_search (DIA only)` | PARTIAL — only DIA; HEX/UMH/TESA absent |
 | i_me_range | `lowres.c search bounds` | PARTIAL — halfres range only |
-| i_trellis | `none (grep: one comment in nal.c)` | MISSING — x264 slow+ uses trellis=2 |
+| i_trellis | `trellis.c/h`, `nal.c:113-121`, calls in `cabac_enc.c:273/670` | **FOUNDATION, disabled by default** — x264 uses 1 (faster..medium) / 2 (slow+); E18b proved analysis-time wiring regresses (faster 17→11), so `vk_cur_trellis=0` unless `VK_TRELLIS` env set; DC/chroma helpers are stubs |
 | b_adapt FAST/TRELLIS | `slicetype.c b-adapt fast` | PARTIAL — fast only; TRELLIS (slower+) absent |
 | b_mb_tree | `none` | MISSING — affects lowres edge-MB gating |
 | i_lookahead | `slicetype.c single-pass` | MISSING — encoder-driven multi-pass |
@@ -52,10 +52,13 @@ Source of truth: `build/x264-ref-src/common/base.c:384-602` (defaults + `x264_pa
 
 ## 4. Correlation with measured parity
 
-The parameter table explains the verdict tiers exactly:
+Current verdict tiers (fresh 120-case audit at `main @ c7f5ea2`):
 - ultrafast: subme=0, trellis=0, no I4 analysis, no B — **12/12 byte-exact** (the oracle implements precisely this tier).
-- superfast/veryfast/faster: subme=1..4, trellis=0 — IDR matches to byte 16, P-slice diverges at bit 49.
-- fast/medium/slow/slower: subme=6..9, trellis=1/2 — IDR diverges at byte 5 (RD I4 modes differ).
-- veryslow/placebo: subme=10/11, ME range 24, TESA — IDR diverges at byte 6.
+- superfast: subme=1 — IDR NAL2 byte4 (CAVLC), P-slice NAL3 byte7 (CABAC).
+- veryfast: subme=2, trellis=0 — CABAC NAL2 **byte49** after PR #288 SATD; MB1 I4 modes match x264 exactly; tail is coefficients/chroma/MB2+.
+- faster: subme=4, x264 trellis=1 — CABAC NAL2 **byte17**; E18/E18b: trellis is the cause; oracle trellis foundation exists but is disabled until write-time integration lands.
+- fast/medium/slow/slower: subme=6..9, x264 trellis=1/2 — CABAC NAL2 **byte15** (MB-level RD/pred-mode tier); oracle trellis disabled.
+- veryslow/placebo: subme=10/11, ME range 24, TESA — CABAC NAL2 **byte16**.
+- 30-frame clips: 24 NAL-count mismatches from missing B-slice emission (plan item 11).
 
 See `docs/PARITY_FINDINGS.md` for the full 120-case breakdown.
