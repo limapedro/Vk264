@@ -1280,3 +1280,21 @@ levels around zigzag 6/7/8. Since deadzone, scan order, lambda and the
 diverging at those mid-block positions. Next: dump node scores/state at each
 i for a failing vector and compare with x264's DP.
 
+### E60 ? node-score dump at end of trellis DP
+
+Instrumented the end of `quant_trellis_cabac` (x264) and `vk_trellis_quant_4x4`
+(oracle) to dump the chosen bnode index and all four node scores. For a
+controlled vector (last=13, bnode=7) the scores match **exactly**:
+
+```
+x264:   s0=1152921504605725785  s1..s3=MAX
+oracle: s0=1152921504605725785  s1..s3=MAX
+```
+
+For another vector (last=5, bnode=3), node0 matches exactly but the
+nonzero-path nodes differ (x264 s1=...3553690 vs oracle ...4321690), showing
+the divergence is confined to *nonzero* node cost accumulation ? not the
+all-zero baseline or the sign/coefficient setup. This narrows E59 further:
+the remaining 4 vectors differ in per-node entropy cost updates.
+No production change; instrumentation reverted.
+
