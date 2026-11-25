@@ -1457,3 +1457,26 @@ not by prediction or mode selection (E68 fixed the mode/DC-variant gap).
 The per-MB state-emulation attempt (E68) did not resolve it, so the state
 difference originates earlier than the current MB.
 
+### E70 ? trellis_dc_shortcut missing cost_sig: major first-diff gain
+
+Traced the faster byte-24 nnz mismatch (E69) to x264's
+`trellis_dc_shortcut` (rdo.c:463-491). The oracle function received the
+`cost_sig` argument (sig/last bin cost) but **never added it** to `f8_bits`
+for the nonzero candidate ? so level 1 was systematically too cheap and
+blocks that x264 zeroed were kept.
+
+Fixed `unsigned f8_bits = cost_sig;` (x264 rdo.c:479). Verified first-diff
+improvements across all trellis-enabled presets:
+
+```
+                before   after
+veryfast          79       79   (trellis=0, unchanged)
+faster            24       30
+fast/medium/       15       41
+slow/slower
+veryslow/placebo  16       42
+```
+
+Audit still 12/120 byte-exact, but CABAC prefix agreement grew substantially
+(sum of 8 preset first-diffs: 232 -> 328, +96 bytes). All gates green.
+
