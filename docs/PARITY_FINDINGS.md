@@ -1101,3 +1101,22 @@ Authoritative sequence-numbered replay (`build/trellis_dp_probe.py`):
 parity for I4 luma; write-time integration can now be attempted with a
 verified primitive.
 
+### E63 ? write-time trellis integration tested; analysis-time remains better
+
+With the 17/17-verified primitive, implemented true write-time trellis for
+I4 luma in `vk_cabac_encode_idr_recon_frame`: analysis quantizes with plain
+deadzone (saving original DCT + prediction), and immediately before each
+`cabac_coeffs` the primitive runs with the **live** `cb->state`; recon is
+recomputed from the trellis coefficients so it stays in sync.
+
+Measured first-diff (`build/trellis_probe.py`):
+- faster with write-time trellis: **17** (equal to trellis-off)
+- faster with existing analysis-time trellis: **24**
+
+So the live-state write-time variant regresses relative to the current
+analysis-time wiring, even with recon synchronised. Reverted. The existing
+analysis-time trellis (now using the exact primitive) is retained and gives
+the best first-diff observed for faster (24). Full write-time parity may
+require matching x264's exact residual-block write order and state evolution,
+which is not yet modelled.
+
