@@ -36,6 +36,8 @@ extern int vk_i4_analysis_enabled;
 extern int vk_i8_analysis_enabled;
 /* x264 analyse.b_fast_pskip: 1 for all presets except placebo */
 extern int vk_cur_fast_pskip;
+/* x264 analyse.i_me_range: 16 by default, 24 for veryslow/placebo */
+extern int vk_cur_me_range;
 
 void vk_param_default(vk_param_t *p);
 /* Apply the SPS/PPS-relevant subset of an x264 preset. Returns -1 if unknown. */

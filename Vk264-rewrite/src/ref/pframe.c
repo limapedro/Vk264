@@ -20,6 +20,7 @@
 #include <string.h>
 
 extern int vk_cur_subme;
+extern int vk_cur_me_range;
 
 #define LPAD 32   /* luma reference border: mirror x264 PADH/PADV=32 */
 #define CPAD 16   /* chroma reference border (half of luma, 4:2:0) */
@@ -1079,7 +1080,7 @@ void vk_encode_p_frame_recon_mv(vk_bs_t *bs, const vk_sps_t *sps, const vk_pps_t
                     fprintf(stderr,"\n");
                 }
                 inter_cost = vk_me16_dia(cur, w, refp, rs, LPAD, mx*16, my*16,
-                            mvpx/4, mvpy/4, 16,
+                            mvpx/4, mvpy/4, vk_cur_me_range,
                             lambda_tab[qp < 0 ? 0 : (qp > 51 ? 51 : qp)],
                             cand, nc, &mvx, &mvy, h);
                 qmvx = mvx*4; qmvy = mvy*4;

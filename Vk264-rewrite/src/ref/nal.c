@@ -24,6 +24,7 @@ int vk_i8_analysis_enabled = 0;
 int vk_cur_subme = 0;
 int vk_cur_trellis = 0;
 int vk_cur_fast_pskip = 1;
+int vk_cur_me_range = 16;
 
 void vk_param_default(vk_param_t *p)
 {
@@ -111,6 +112,7 @@ int vk_param_apply_preset(vk_param_t *p, const char *preset)
     vk_i4_analysis_enabled = (p->i_subme >= 1) ? 1 : 0;
     vk_i8_analysis_enabled = p->b_transform_8x8 ? 1 : 0;
     vk_cur_fast_pskip = preset_eq(preset, "placebo") ? 0 : 1;
+    vk_cur_me_range = (preset_eq(preset, "veryslow") || preset_eq(preset, "placebo")) ? 24 : 16;
     vk_cur_subme = p->i_subme;
     /* Trellis is OFF by default in the oracle. The naive analysis-time
      * wiring (PR #290) regressed faster 17->11 and veryfast 49->11 because
