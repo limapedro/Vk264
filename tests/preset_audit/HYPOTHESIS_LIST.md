@@ -1784,3 +1784,21 @@ keep/drop decision. Further work should compare block 0/1 recon and the
 `vk_predict4` mode-5 (VR) sample mapping against x264's `predict_4x4_vr_c`
 before touching trellis again. No production change made.
 
+### E84 ? fixed CABAC I4 top-neighbour x-offset (MB5/MB14 nnz now match)
+
+`build/mb5_block_recon.py` found the first divergent reconstruction inside
+MB5: block 1 was `15` in x264 but `16` in the oracle. Root cause in
+`cabac_enc.c` I4 analysis loop: for a top-row block the top neighbour was read
+as `rbase[(my*16+by-1)*rs + mx*16 + k]` ? missing `+bx`. Every 4x4 block in
+the top row therefore saw the top samples of block 0 instead of its own
+column. x264's FDEC-based `t4[k]` uses the block's x offset.
+
+Added `+bx`. Verified: MB5 block-1 reconstruction is now `15` (matches x264),
+and the full nnz scan now matches x264 for MB5 and MB14 as well as MB0/MB1/MB6.
+Only MB10 still diverges. `recon c004 0/4096` and all gates remain green.
+
+The first-diff bytes did not move (veryfast 48, faster 30, fast+ 41/42), so
+the earliest CBP-luma divergence (bin 82, ctx 73) is elsewhere; this fix is
+kept because it removes a clear indexing bug and makes four more MBs' nnz
+and reconstruction exact.
+
