@@ -1,110 +1,60 @@
-# Vk264
+# Vk264 Phoenix
 
-**A Vulkan compute H.264/AVC encoder ported function-by-function from x264, with byte-exact output as the target.**
+A from-scratch, function-for-function CPU port of x264. This repository **is**
+the Phoenix project: the old incremental oracle, its harnesses and its branch
+zoo were removed from this branch. `vk264-phoenix` is the single, default
+branch. This CPU reference is what the eventual **shader version of Vk264**
+will be derived from.
 
-`Vk` = Vulkan · `264` = x264. The project started as `Vk264`; this repository is its new home and name.
-
-## Goal
-
-Port x264's encoder to Vulkan compute shaders so that, preset by preset, Vk264 produces a **byte-for-byte identical H.264 stream to libx264** at the same settings — while keeping the throughput advantage of a GPU implementation. Current baseline: GTX 1660 SUPER, 1080p60, fixed QP 28.
-
-Progress is tracked per preset and per function in [`docs/PROGRESS.dm`](docs/PROGRESS.dm), with the bottom-up x264-function → shader map in [`docs/x264-function-map.md`](docs/x264-function-map.md).
-
-## Working arrangement
-
-Development is PR-based: each change (a parity fix, a new shader, a test) lands on its own branch and is reviewed via a pull request before merging into `main`. Multiple agents work in parallel on separate branches/PRs against this remote.
-
-- Remote: `https://github.com/limapedro/Vk264`
-- Default branch: `main`
-- CI/local gate before every merge: `ctest --test-dir build -C Release` and the byte-parity harness described below.
-
-## Repository layout
-
-| Path | What it is |
-|---|---|
-| `Vk264/` | The encoder source and the x264→GLSL port. `Vk264/src` is the CLI runner; `Vk264/vulkan` holds the Vulkan shaders (`.comp`), the x264-derived C++ primitives, and the `dct_parity` fixture harness. |
-| `x264-vulkan/` | x264 fork used **only as a CPU reference** for parity fixtures and correctness checks. Not shipped. |
-| `references/x264-master/` | Pinned x264 source snapshot used to generate tables and verify functions bottom-up. |
-| `harness/` | Python benchmark and check runner (`benchmark.py`, `check.py`). |
-| `docs/` | `PROGRESS.dm` (live status), `x264-function-map.md` (function→shader map), `parity-roadmap.md` (phase plan). |
-| `clips/` | Local test sources (not committed — see `.gitignore`). |
-| `results/`, `Evals/` | Experiment outputs and reports (large artifacts ignored; markdown reports kept). |
-
-The encoder takes planar 8-bit YUV420 and writes an Annex B elementary stream (wrapped to `.mp4` by the harness for delivery). It uses compute shaders only — no Vulkan Video / fixed-function encoder.
-
-## Build and test
-
-Requirements: CMake, a C++17 compiler, Python 3.9+, the Vulkan SDK with `glslc`; FFmpeg/FFprobe for decode and quality checks.
-
-```powershell
-cmake -S . -B build -A x64
-cmake --build build --config Release
-ctest --test-dir build -C Release --output-on-failure
-```
-
-On Windows with the Khronos validation layer installed, set `$env:VK_INSTANCE_LAYERS='VK_LAYER_KHRONOS_validation'` and `$env:VK_LAYER_VALIDATE_SYNC='1'` before CTest for synchronization checking.
-
-## Verifying byte-exact parity
-
-The authoritative check compares Vk264's Annex B stream to libx264's, ignoring only encoder-identity SEI NALs:
-
-```powershell
-python harness/parity_check.py --preset ultrafast --pattern flat --width 16 --height 16 --frames 1 --gop 1
-python harness/parity_check.py --preset superfast --pattern flat --width 16 --height 16 --frames 1 --gop 1
-```
-
-`parity_check.py` exits `0` only on `BYTE-EXACT MATCH`, `1` on a byte mismatch (with the first offset), and `2` on invocation errors.
-
-### Automated parity gate (CTest)
-
-The known byte-exact cases are registered as CTest entries, so the same check that agents run by hand is part of the normal suite:
+## Layout
 
 ```
-ctest --test-dir build -C Release -R x264_parity_ --output-on-failure
-  x264_parity_ultrafast_flat_16x16
-  x264_parity_ultrafast_flat_64x64
-  x264_parity_ultrafast_noise_32x32
-  x264_parity_fast_flat_16x16
+.                            repository root (= the old vk264-phoenix/ tree)
+  CMakeLists.txt             build definition for the library + tests
+  README.md                  this file
+  reference/x264/            176 source files copied from the exact x264 build
+                             used for all parity measurements (authoritative)
+  src/                       the new oracle source (Phoenix port)
+    phx_param.h/.c           x264_param_t defaults + 10 presets  [WP1 — done]
+  tests/                     unit tests for ported functions
+    test_param.c             10-preset parameter parity          [passing]
+  tools/
+    gen_function_inventory.py   regenerate docs/FUNCTION_INVENTORY.md
+    run_tests.py               configure + build + ctest (CMake)
+    close_branches.py          one-time branch cleanup utility
+  docs/
+    README.md                  mission, rules, gates
+    X264_PIPELINE.md           how x264 encodes, function by function
+    DATA_STRUCTURES.md         structs that must be ported, field by field
+    FUNCTION_INVENTORY.md      mechanical inventory of 814 x264 C functions + status
+    ORACLE_DESIGN.md           required structure and API of the new oracle
+    SHADER_MAPPING.md          CPU->shader classes A/B/C (the main goal)
+    PORTING_ROADMAP.md         WP0-WP9 with acceptance gates
 ```
 
-They are gated on FFmpeg being available at configure time (the `find_program(FFMPEG_EXECUTABLE ffmpeg)` check in `Vk264/vulkan/CMakeLists.txt`); without FFmpeg they are not registered. Each case uses its own artifact directory under `build/parity-gate/`, so `ctest -j` is safe. A regression that breaks any exact case makes `ctest` fail. `BYTE-EXACT MATCH (ignoring encoder-identity SEI)` is the only acceptable result — a "first mismatch at offset N" line means the case is NOT exact and must not be claimed as parity.
+## Current state
 
-A `BYTE-EXACT MATCH` line means the SPS, PPS, slice header, entropy-coded macroblock data and deblocking all match libx264 byte-for-byte. Quality/speed comparison across real clips:
+- **WP0 complete**: x264 reference copied, seven documents written, mechanical
+  function inventory generated (814 functions), old repository contents removed.
+- **WP1 in progress**: `phx_param` ported from `reference/x264/common/base.c`;
+  all 10 presets verified (`OK: 10 presets, 0 failures`).
+- Historical baseline from the discarded incremental oracle: 12/120 short-clip
+  byte-exact, 0/240 extended, first-diff 84/30/41/42. Its harnesses are gone
+  from this branch (they remain in git history); Phoenix will rebuild parity
+  checks as part of each work package.
 
-```powershell
-python harness/benchmark.py --input <clip.yuv> --out <dir> --frames 240 --encoders vk264-vulkan x264-fast --vmaf --check-recon
+## Rules
+
+1. Port x264's functions verbatim — including its data structures, tables and
+   state ownership. No approximations to make a metric move.
+2. Every function gets a doc comment with its x264 source lines and a
+   `SHADER: A/B/C` classification (see `docs/SHADER_MAPPING.md`).
+3. Every ported function gets a unit test comparing directly with x264.
+4. Work packages are sequential; see `docs/PORTING_ROADMAP.md`.
+
+## Verify
+
 ```
-
-`--check-recon` re-encodes and verifies the GPU reconstruction against an independent FFmpeg decode, byte for byte.
-
-## Current parity status (summary)
-
-- **Byte-exact:** `ultrafast` (uniform/noise/small-motion cases) and `fast` (16×16 flat).
-- **In progress:** `superfast` / `veryfast` / `faster` — x264 selects I4×4 macroblocks (subme < 6) where Vk264 emits I16×16; the I4×4 analysis model already reproduces x264's reconstruction at all 256 luma samples, and the CABAC emitter matches the first bytes of the slice.
-- **Open:** varying-content mode decisions (SATD/RD), and `medium` and above, which additionally need B-frames, multi-reference, weighted prediction, trellis, AQ and lookahead.
-
-See [`docs/PROGRESS.dm`](docs/PROGRESS.dm) for the full, evidence-backed state.
-
-## Oracle parity dashboard
-
-![Vk264 oracle byte-exact parity dashboard](docs/parity-dashboard.svg)
-
-The dashboard tracks which x264 functions have a byte-exact counterpart (green), which are
-partial (amber), C++ ports (blue), or still missing (gray), plus the CAVLC P-slice sweep as it
-climbs with each merged PR. It is generated from the verified parity data — after each parity
-PR, update the numbers in `docs/generate_parity_dashboard.py` and regenerate:
-
-```powershell
-python docs/generate_parity_dashboard.py
+python tools/gen_function_inventory.py
+python tools/run_tests.py
 ```
-
-The source data lives in [`docs/function-parity-matrix.md`](docs/function-parity-matrix.md),
-[`docs/PROGRESS.dm`](docs/PROGRESS.dm), and `build/cavlc_parity_sweep.py`.
-
-## Speed context
-
-The original Vk264 CAVLC/Vulkan encoder runs at roughly 10–37 fps on 1080p60 (GTX 1660 SUPER), versus ~80–170 fps for x264 `fast`; the CABAC whole-frame bin coder is the main bottleneck. The port work is correctness-first; slice-level CABAC parallelism is the planned speed pass once parity is established.
-
-## License and references
-
-Ported from x264 (GPL-2.0-or-later); see [`references/x264-master`](references/x264-master). Legacy CAVLC/deblocking lookup tables originated from OpenH264 — see `Vk264/src/OPENH264_LICENSE.txt`. [ITU-T H.264](https://www.itu.int/rec/T-REC-H.264-202408-S/en) · [x264](https://www.videolan.org/developers/x264.html) · [OpenH264](https://github.com/cisco/openh264).

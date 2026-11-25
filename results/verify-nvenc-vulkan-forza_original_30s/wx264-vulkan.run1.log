@@ -1,1 +1,0 @@
-{"backend":"x264-vulkan","preset":"prototype","gpu":"NVIDIA GeForce GTX 1660 SUPER","settings":{"entropy":"cabac","gop":120,"reference_frames":1,"b_frames":0,"lookahead_frames":0,"slices_per_frame":1,"inter_8x8_transform":1,"rate_control":"average-rate"},"frames":240,"bytes":3200239,"encode_seconds":25.2254,"min_qp":22,"max_qp":34,"inter_8x8_blocks":1958400}

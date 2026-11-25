@@ -1,23 +1,24 @@
-cmake_minimum_required(VERSION 3.21)
-project(Vk264 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.20)
+project(vk264_phoenix VERSION 0.1.0 LANGUAGES C)
 
-find_package(Vulkan REQUIRED COMPONENTS glslc)
+# Phoenix is a function-for-function CPU port of x264 (see reference/x264/).
+# Every ported function lives in src/ with a unit test in tests/.
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Keep all executables under build/Release so the harness paths work unchanged
-# regardless of which subtree defines a target.
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
-# CPU x264 reference tree, used only to generate parity fixtures and expected
-# bytes. Never linked into the shipped encoder path at run time.
-set(X264_REFERENCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/x264-vulkan")
-
-include(CTest)
-add_subdirectory(Vk264)
-
-option(VK_BUILD_OBS "Build the Windows x64 OBS encoder plugin" OFF)
-if(VK_BUILD_OBS)
-    enable_language(C)
-    if(NOT WIN32 OR NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-        message(FATAL_ERROR "The OBS preview target requires a Windows x64 MSVC build")
-    endif()
-    add_subdirectory(obs)
+if(MSVC)
+    add_compile_options(/W3)
+else()
+    add_compile_options(-Wall -Wextra)
 endif()
+
+add_library(phx STATIC
+    src/phx_param.c
+)
+target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+enable_testing()
+
+add_executable(phx_test_param tests/test_param.c)
+target_link_libraries(phx_test_param PRIVATE phx)
+add_test(NAME phx_param_presets COMMAND phx_test_param)
