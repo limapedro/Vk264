@@ -973,3 +973,31 @@ integration gap.
 analysis-time state timing remains the blocker even with a correct primitive.
 Write-time integration (plan items 1-2) is still required.
 
+### E42 ? write-time-equivalent trellis via state replay still regresses
+
+Attempted to close the E18b gap without restructuring the writer: in
+`compute_i16_full`, saved pre-quant DCTs, then (with `VK_TRELLIS=1`) ran
+trellis in x264's write order (I16 DC first, then AC in scan order) while
+replaying each block's coefficient bins into a **state snapshot** via a
+temporary `vk_cabac_t` + `cabac_coeffs()`. Syntax bins were assumed not to
+touch coefficient contexts (true: ctx 105+/166+/227+ are disjoint from
+mb_type 3-10, pred 64-69, cbp 93-104).
+
+Result with `VK_TRELLIS=1` (`build/trellis_probe.py`):
+- faster 17 ? 11 (still regressed)
+- fast/medium 15 ? 10 (worse)
+- veryfast 49 ? 11 (expected: x264 veryfast has trellis=0)
+
+So state timing is **not** the only issue: block-level validation against
+x264 (`build/trellis_unit.c` with x264's live state bytes dumped by
+`build/trellis_oracle_probe.py`) shows the primitive still returns
+`q=1,0,0,0,-1,...` where x264's final trellis=1 write produces
+`q=1,1,0,0,-1,...` for the same input DCT. The trellis DP itself is not
+yet bit-exact. Reverted the state-replay integration; kept the DC-branch
+correctness fixes in `trellis.c` (DC deadzone uses `mf[0]>>1`, `bias[0]<<1`;
+DC SSD weight 256 and doubled unquant).
+
+Next: unit-test more blocks against x264 to find the remaining DP mismatch
+before any further integration. Do not wire trellis into the encoder until
+the primitive matches x264 on a block-by-block basis.
+

@@ -311,10 +311,13 @@ int vk_trellis_quant_4x4(int dct[16], const int orig[16],
 
     /* deadzone quantize -> scan */
     int nz = 0;
+    int is_dc_block = (ctx_block_cat == 1);
     for (int i = b_ac; i < 16; i++) {
         int sign = orig[i] < 0 ? -1 : 1;
         int a = abs(orig[i]);
-        int qv = ((a + bias[i]) * mf[i]) >> 16;  /* x264 quant_one: (bias+abs)*mf>>16 */
+        int mfi = is_dc_block ? (mf[0]>>1) : mf[i];
+        int bii = is_dc_block ? (bias[0]<<1) : bias[i];
+        int qv = ((a + bii) * mfi) >> 16;  /* x264 quant_one: (bias+abs)*mf>>16 */
         dct[i] = qv ? qv * sign : 0;
         nz |= dct[i] != 0;
     }
@@ -402,11 +405,12 @@ int vk_trellis_quant_4x4(int dct[16], const int orig[16],
             int unquant_mf = (deq[zigzag4[i]] << 6) * (is_dc ? 2 : 1); \
             int unquant_abs_level = (unquant_mf * abs_level + 128) >> 8; \
             int d = abs_coef - unquant_abs_level; \
-            ssd1[k] = (uint64_t)((int64_t)d*d * (int)dct4_weight2_tab[zigzag4[i]]); \
+            int wgt = is_dc ? 256 : (int)dct4_weight2_tab[zigzag4[i]]; \
+            ssd1[k] = (uint64_t)((int64_t)d*d * wgt); \
             ssd0[k] = ssd1[k]; \
             if( !i && !b_ac && !(ctx_hi) ) { \
                 d = sign_coef - ((SIGN(unquant_abs_level, sign_coef) + 8)&~15); \
-                ssd0[k] = (uint64_t)((int64_t)d*d * (int)dct4_weight2_tab[zigzag4[i]]); \
+                ssd0[k] = (uint64_t)((int64_t)d*d * wgt); \
             } \
         } \
         switch( q ) { \
