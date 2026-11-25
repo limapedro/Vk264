@@ -12,6 +12,8 @@
  * SHADER: B — verifies the B-stage B->C handoff record.
  */
 #include "phx_mbencode.h"
+#include "phx_analysis.h"
+#include "phx_chroma.h"
 #include "phx_param.h"
 #include <stdio.h>
 #include <string.h>
@@ -202,6 +204,85 @@ static void phx_test_case(int mb_type, const char *name)
            name, nz1, diff1, h1);
 }
 
+/* End-to-end B-stage handoff for the medium/cabac first MB: analyse writes
+ * the real chroma_pred_mode, encode writes luma, encode_chroma writes the
+ * chroma coefficients/nnz/CBP.  Golden state: mode 6, cbp_chroma 2, DC arrays
+ * [15,0,-9,0] for U and V (encoder/macroblock.c:425-426/:457/:477/:487-489).
+ * SHADER: B — verifies the explicit analysis -> encode -> chroma handoff. */
+static void phx_test_first_mb_handoff(void)
+{
+    static const int16_t golden_dc[4] = { 15, 0, -9, 0 };
+    phx_mb_decision_t d1, d2;
+    phx_mb_cache_t c1, c2;
+
+    for (int rep = 0; rep < 2; rep++) {
+        phx_param_t p;
+        phx_param_default(&p);
+        phx_param_apply_preset(&p, "medium");
+        p.b_cabac = 1;
+        phx_param_finalize(&p);        /* chroma QP offset -2 at subme>=6 */
+
+        phx_frame_t *f = phx_frame_new(TEST_W, TEST_H, 0);
+        CHECK(f != NULL, "handoff frame allocation");
+        if (!f) return;
+        for (int y = 0; y < f->i_height; y++)
+            for (int x = 0; x < f->i_width; x++)
+                f->plane[y*f->i_stride + x] =
+                    (uint8_t)((x*17 + y*29 + 11) & 0xff);
+        const int s = f->i_stride_planes[1];
+        for (int y = 0; y < f->i_lines_planes[1]; y++)
+            for (int x = 0; x < f->i_width_planes[1]; x++) {
+                const uint8_t v = (uint8_t)(128 + 5*(x & 7));
+                f->plane_chroma[y*s + 2*x + 0] = v;
+                f->plane_chroma[y*s + 2*x + 1] = v;
+            }
+        phx_frame_init_lowres(f);
+
+        phx_mb_state_t *st = phx_mb_state_new(1, 1);
+        CHECK(st != NULL, "handoff MB state");
+        if (!st) { phx_frame_delete(f); return; }
+        st->slice_type = 2;
+        st->first_mb = 0;
+        phx_mb_cache_t *c = rep ? &c2 : &c1;
+        phx_mb_decision_t *d = rep ? &d2 : &d1;
+        memset(c, 0, sizeof(*c));
+        phx_macroblock_cache_load(st, c, 0, 0, 0);
+
+        memset(d, 0, sizeof(*d));
+        d->i_qp = 22;                  /* chroma QP 20 = qp_idx 32 (base.h) */
+        CHECK(phx_macroblock_analyse(&p, f, c, 0, 0, d->i_qp, d) == 0,
+              "handoff analysis");
+        CHECK(d->chroma_pred_mode == 6, "analysis yields DC_128 mode 6");
+        /* phx_mbencode.c rejects I_8x8; the encoder applies the same guard. */
+        if (d->mb_type == PHX_I_8x8) d->mb_type = PHX_I_16x16;
+        d->b_transform_8x8 = 0;
+        CHECK(phx_macroblock_encode(&p, f, c, 0, 0, d) == 0,
+              "handoff luma encode");
+        CHECK(phx_macroblock_encode_chroma(&p, f, c, 0, 0, d) == 0,
+              "handoff chroma encode");
+
+        CHECK(d->chroma_pred_mode == 6, "handoff retains mode 6");
+        CHECK(d->cbp_chroma == 2, "handoff cbp_chroma == 2");
+        for (int ch = 0; ch < 2; ch++)
+            CHECK(memcmp(d->chroma_dct[ch][0], golden_dc,
+                         sizeof(golden_dc)) == 0,
+                  ch ? "handoff V DC golden" : "handoff U DC golden");
+        CHECK((d->i_cbp & 0x30) == 0x20, "handoff i_cbp chroma bits");
+        CHECK((d->i_cbp & 0x600) == 0x600, "handoff CABAC DC flags");
+        phx_mb_state_delete(st);
+        phx_frame_delete(f);
+    }
+    CHECK(memcmp(&d1, &d2, sizeof(d1)) == 0, "golden handoff reproducible");
+    CHECK(memcmp(c1.non_zero_count, c2.non_zero_count,
+                 sizeof(c1.non_zero_count)) == 0, "golden cache nnz reproducible");
+    CHECK(c1.i_cbp_luma == c2.i_cbp_luma &&
+          c1.i_cbp_chroma == c2.i_cbp_chroma, "golden cache cbp reproducible");
+    printf("first-MB handoff: mode=%d cbp_chroma=%d U_DC=%d,%d V_DC=%d,%d\n",
+           d1.chroma_pred_mode, d1.cbp_chroma,
+           d1.chroma_dct[0][0][0], d1.chroma_dct[0][0][2],
+           d1.chroma_dct[1][0][0], d1.chroma_dct[1][0][2]);
+}
+
 /* Standalone test driver: x264_macroblock_encode (encoder/macroblock.c:974)
  * exercised through both intra branches and checked against the nnz rule of
  * encoder/macroblock.c:115-121.
@@ -210,6 +291,7 @@ int main(void)
 {
     phx_test_case(PHX_I_16x16, "I16");
     phx_test_case(PHX_I_4x4, "I4");
+    phx_test_first_mb_handoff();
 
     if (fails) {
         printf("FAIL %d check(s)\n", fails);

@@ -120,12 +120,14 @@ static int phx_clip3(int v, int lo, int hi)
 
 /* Stage the 8x8 chroma source and reconstructed neighbours from the NV12
  * plane into per-channel FENC/FDEC windows.  U is the even byte, V the odd
- * byte of each pair (frame.c:89-99/240).  Out-of-frame neighbours are clamped
- * to the edge sample, which is what plane_expand_border replicates
- * (frame.c:535-553); cache->i_neighbour_intra (macroblock.c:673/783/801)
- * tells which sides really have a coded neighbour.
+ * byte of each pair (frame.c:89-99/240).  In-frame neighbours are clamped to
+ * the edge sample (frame.c:535-553); sides without a coded neighbour are
+ * seeded with 128 (macroblock.c:907-912/:960-977), matching the analysis
+ * staging and x264's predictors.  cache->i_neighbour_intra
+ * (macroblock.c:673/783/801) tells which sides are coded.
  * SHADER: B — per-MB neighbour staging into B-stage scratch windows. */
 static void phx_chroma_load_windows(const phx_frame_t *f, int mb_x, int mb_y,
+                                    int cache_neighbour_intra,
                                     uint8_t fenc[2][8*PHX_FENC_STRIDE],
                                     uint8_t *p_dst[2])
 {
@@ -143,19 +145,37 @@ static void phx_chroma_load_windows(const phx_frame_t *f, int mb_x, int mb_y,
                     plane[(y0+y)*s + 2*(x0+x) + c];   /* frame.c:240 */
 
         /* Left column p[-1 + y*FDEC_STRIDE] and top-left p[-1-FDEC_STRIDE].
-         * The predictor needs y=-1..7 (predict.c:289). */
+         * The predictor needs y=-1..7 (predict.c:289).  Sides without a coded
+         * neighbour are seeded with 128, exactly as in the analysis staging
+         * (common/macroblock.c:907-912/:960-977, phx_analysis.c). */
+        const int in = cache_neighbour_intra;
         for (int y = -1; y < 8; y++) {
-            const int sy = phx_clip3(y0 + y, 0, ch - 1);
-            const int sx = phx_clip3(x0 - 1, 0, cw - 1);
-            p_dst[c][-1 + y*PHX_FDEC_STRIDE] = plane[sy*s + 2*sx + c];
+            uint8_t v = 128;
+            if (in & PHX_MB_LEFT) {
+                const int sy = phx_clip3(y0 + y, 0, ch - 1);
+                const int sx = phx_clip3(x0 - 1, 0, cw - 1);
+                v = plane[sy*s + 2*sx + c];
+            }
+            p_dst[c][-1 + y*PHX_FDEC_STRIDE] = v;
         }
         /* Top row p[x-FDEC_STRIDE] for x=0..7 (predict.c:272/288), using the
          * already-staged top-left sample at x=-1. */
         for (int x = 0; x < 8; x++) {
-            const int sy = phx_clip3(y0 - 1, 0, ch - 1);
-            const int sx = phx_clip3(x0 + x, 0, cw - 1);
-            p_dst[c][x - PHX_FDEC_STRIDE] = plane[sy*s + 2*sx + c];
+            uint8_t v = 128;
+            if (in & PHX_MB_TOP) {
+                const int sy = phx_clip3(y0 - 1, 0, ch - 1);
+                const int sx = phx_clip3(x0 + x, 0, cw - 1);
+                v = plane[sy*s + 2*sx + c];
+            }
+            p_dst[c][x - PHX_FDEC_STRIDE] = v;
         }
+        uint8_t v = 128;                /* planar predictor, predict.c:289 */
+        if (in & PHX_MB_TOPLEFT) {
+            const int sy = phx_clip3(y0 - 1, 0, ch - 1);
+            const int sx = phx_clip3(x0 - 1, 0, cw - 1);
+            v = plane[sy*s + 2*sx + c];
+        }
+        p_dst[c][-1 - PHX_FDEC_STRIDE] = v;
     }
 }
 
@@ -178,6 +198,11 @@ static void phx_chroma_store(phx_frame_t *f, int mb_x, int mb_y,
 
 /* x264_mb_encode_chroma / mb_encode_chroma_internal —
  * reference/x264/encoder/macroblock.c:492-498 and :259-498 (4:2:0 branch).
+ * Coefficient handoff (common/base.h:177-180): chroma AC blocks 16..47 are
+ * stored at d->nnz[16+ch*16+i] and cache->non_zero_count[phx_scan8[idx]];
+ * chroma DC flags go to cache->non_zero_count[phx_scan8[49+ch]] and the CABAC
+ * bits 9/10 of i_cbp (macroblock.c:946-951).  phx_mb_decision_t::nnz[48]
+ * cannot address scan8[49/50], so DC is carried in chroma_nnz/i_cbp.
  * SHADER: B — the single B-stage chroma entry point for one macroblock. */
 int phx_macroblock_encode_chroma(const phx_param_t *p, phx_frame_t *f,
                                  phx_mb_cache_t *cache, int mb_x, int mb_y,
@@ -213,7 +238,8 @@ int phx_macroblock_encode_chroma(const phx_param_t *p, phx_frame_t *f,
     uint8_t *p_dst[2] = { fdec[0] + PHX_FDEC_STRIDE + 1,
                           fdec[1] + PHX_FDEC_STRIDE + 1 }; /* common.h:570-571 */
     memset(fdec, 0, sizeof(fdec));
-    phx_chroma_load_windows(f, mb_x, mb_y, fenc, p_dst);
+    phx_chroma_load_windows(f, mb_x, mb_y, cache->i_neighbour_intra,
+                            fenc, p_dst);
 
     int mode = d->chroma_pred_mode;
     if (!phx_chroma_mode_available(cache->i_neighbour_intra, mode))

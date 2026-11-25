@@ -3,6 +3,8 @@
  * Authoritative source (vendored x264), followed line by line:
  *   reference/x264/encoder/macroblock.c:259-498  mb_encode_chroma_internal
  *   reference/x264/encoder/macroblock.c:925-941  chroma prediction call site
+ *   reference/x264/encoder/analyse.c:586-665     mb_analyse_intra_chroma
+ *                                               (mode from U/V SATD)
  *   reference/x264/encoder/macroblock.c:34-96    chroma DC helpers
  *   reference/x264/encoder/macroblock.c:115-121  nnz correctness contract
  *   reference/x264/encoder/macroblock.c:945-951  cbp / CABAC DC flags

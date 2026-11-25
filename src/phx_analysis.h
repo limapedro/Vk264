@@ -49,7 +49,12 @@ extern "C" {
  *             in 0..6, intra4x4_pred_mode/intra8x8_pred_mode in 0..11.
  *             The signalled FIX4/FIX16 mapping is applied by the entropy
  *             stage, not by analysis (analyse.c:3739-3751).
- *   Chroma slots are zero until chroma planes are exposed (TODO).
+ *   chroma_pred_mode is derived from the NV12 U/V SATD of analyse.c:586-665
+ *             (availability table :485-492/:537-542, predictor :650-651,
+ *             cost :632/:655-657).  Chroma coefficients are not emitted by
+ *             x264's analysis; x264_macroblock_encode_chroma
+ *             (encoder/macroblock.c:259-498/:940) fills chroma_dct/nnz and
+ *             the scan8[16..47]/[49,50] nnz state afterwards.
  *
  * Intra prediction neighbours: if cache->p_fdec is non-NULL it is used as
  * x264's FDEC_STRIDE reconstruction buffer; otherwise a private buffer seeded

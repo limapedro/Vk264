@@ -28,6 +28,20 @@ static void fill_frame(phx_frame_t *f)
             f->plane[x + y*f->i_stride] = (uint8_t)((x*17 + y*29 + 11) & 0xff);
 }
 
+/* First-MB NV12 chroma fixture of the medium/cabac probe: U and V are a
+ * 5-sample horizontal ramp on 128, so DC128 prediction leaves real U/V
+ * residual energy.  Mirrors parity_harness.py:64-77 (frame 0).
+ * SHADER: B — B-stage analysis input fixture. */
+static void fill_chroma(phx_frame_t *f)
+{
+    const int s = f->i_stride_planes[1];
+    for (int y = 0; y < f->i_lines_planes[1]; y++)
+        for (int x = 0; x < f->i_width_planes[1]; x++) {
+            f->plane_chroma[y*s + 2*x + 0] = (uint8_t)(128 + 5*(x & 7));
+            f->plane_chroma[y*s + 2*x + 1] = (uint8_t)(128 + 5*(x & 7));
+        }
+}
+
 static int any_nonzero(const int16_t *c, int n)
 {
     for (int i = 0; i < n; i++) if (c[i]) return 1;
@@ -42,8 +56,8 @@ static void check_decision(const phx_mb_decision_t *d, const char *tag)
     CHECK(d->i_qp >= 0 && d->i_qp <= 51, "i_qp range");
     CHECK(d->intra16_pred_mode >= 0 && d->intra16_pred_mode <= 6,
           "intra16_pred_mode is x264's raw I_PRED_16x16 index (0..6)");
-    CHECK(d->chroma_pred_mode >= 0 && d->chroma_pred_mode <= 3,
-          "chroma_pred_mode range");
+    CHECK(d->chroma_pred_mode >= 0 && d->chroma_pred_mode <= 6,
+          "chroma_pred_mode is x264's raw I_PRED_CHROMA index (0..6)");
     CHECK(d->cbp_luma >= 0 && d->cbp_luma <= 15, "cbp_luma range");
     CHECK(d->cbp_chroma >= 0 && d->cbp_chroma <= 3, "cbp_chroma range");
     CHECK(d->i_cbp == ((d->cbp_chroma << 4) | d->cbp_luma | 0x1700),
@@ -116,6 +130,7 @@ int main(void)
         return 1;
     }
     fill_frame(f);
+    fill_chroma(f);
     phx_frame_init_lowres(f);
     s->slice_type = 2;                 /* I slice */
     s->first_mb = 0;
@@ -141,10 +156,16 @@ int main(void)
               "golden coefficients at scan8[0] (luma block 0)");
         CHECK(d1.dct[phx_scan8[4]][0] == -1 && d1.dct[phx_scan8[4]][1] == 10,
               "golden coefficients at scan8[4] (second block row)");
+        /* x264 analyse.c:586-665: no intra neighbours at MB(0,0) mean the
+         * only available chroma mode is DC_128 (index 6, analyse.c:487), so
+         * the SATD search must return 6 rather than the old placeholder 0. */
+        CHECK(d1.chroma_pred_mode == 6,
+              "golden first-MB chroma mode is DC_128 (analyse.c:615/664)");
     }
 
     /* Reset every input the driver reads, then analyse the same MB again. */
     fill_frame(f);
+    fill_chroma(f);
     phx_frame_init_lowres(f);
     phx_mb_state_delete(s);
     s = phx_mb_state_new(2, 2);

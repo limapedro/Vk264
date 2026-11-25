@@ -13,6 +13,7 @@
  */
 #include "phx_analysis.h"
 
+#include "phx_bitstream.h"
 #include "phx_cost.h"
 #include "phx_dct.h"
 #include "phx_predict.h"
@@ -44,6 +45,14 @@ typedef uint32_t phx_sum2_t;
     if ((y) < (x)) { (x) = (y); (a) = (b); } \
 } while (0)
 
+/* x264 common/common.h:93-108 — x264_clip3(), used to replicate the frame
+ * border samples that frame.c:535-553 places outside the coded area.
+ * SHADER: A — pure clamp, no state. */
+static int phx_clip3(int v, int lo, int hi)
+{
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
 /* x264 common/predict.h:45 — I_PRED_CHROMA_*. */
 static const uint8_t phx_chroma_fix[7] = { 0, 1, 2, 3, 0, 0, 0 };
 /* x264 common/predict.h:62 — I_PRED_16x16_*. */
@@ -73,13 +82,15 @@ static const int8_t phx_i16x16_mode_available[5][5] = {
     { 0, 1, 2, -1, -1 },
     { 0, 1, 2, 3, -1 },
 };
-/* x264 encoder/analyse.c:485-492. */
+/* x264 encoder/analyse.c:485-492 — chroma_mode_available (mode order matters
+ * for COPY2_IF_LT tie-breaks).  I_PRED_CHROMA_*: DC=0, H=1, V=2, P=3,
+ * DC_LEFT=4, DC_TOP=5, DC_128=6 (common/predict.h:34-44). */
 static const int8_t phx_chroma_mode_available[5][5] = {
-    { 6, -1, -1, -1, -1 },
-    { 4, 1, -1, -1, -1 },
-    { 5, 0, -1, -1, -1 },
-    { 0, 1, 2, -1, -1 },
-    { 0, 1, 2, 3, -1 },
+    { 6, -1, -1, -1, -1 },                             /* analyse.c:487 */
+    { 4,  1, -1, -1, -1 },                             /* analyse.c:488 */
+    { 5,  2, -1, -1, -1 },                             /* analyse.c:489 */
+    { 2,  1,  0, -1, -1 },                             /* analyse.c:490 */
+    { 2,  1,  0,  3, -1 },                             /* analyse.c:491 */
 };
 /* x264 encoder/analyse.c:494-510 (force_intra=0 row; PIR is not ported). */
 static const int8_t phx_i8x8_mode_available[5][10] = {
@@ -623,19 +634,116 @@ static void phx_search_i4(phx_analysis_ctx_t *c)
     c->satd_i4x4 = i_cost;
 }
 
-/* x264 encoder/analyse.c:586-665 — mb_analyse_intra_chroma().
- * TODO: phx_frame_t (common/frame.h:37-140 port) exposes only the luma plane
- * and four lowres planes.  Without p_fenc[1]/p_fenc[2] and p_fdec[1]/p_fdec[2]
- * the chroma SATD loop cannot be evaluated, so the mode is chosen from the
- * x264 availability table and mapped through x264_mb_chroma_pred_mode_fix
- * (predict.h:45) as a deterministic placeholder.  No chroma coefficients are
- * emitted. SHADER: B — uses the MB-level neighbour mask only. */
+/* Stage the 4:2:0 NV12 source window and the reconstructed neighbour samples
+ * into per-channel FENC/FDEC scratch windows.  U is the even byte of each
+ * NV12 pair, V the odd byte (common/frame.c:89-99/:239-243).  This is the
+ * chroma counterpart of p_fenc[1]/p_fenc[2] and p_fdec[1]/p_fdec[2]
+ * (common/common.h:570-571, common/macroblock.c:532-548).  Sides without a
+ * coded neighbour are seeded with 128, exactly what x264's predictors see at
+ * a frame edge (common/macroblock.c:907-912/:960-977, frame.c:535-553).
+ * SHADER: A — one per-MB neighbour staging invocation, no hidden state. */
+static void phx_analysis_chroma_load(const phx_analysis_ctx_t *c,
+                                     uint8_t fenc[2][8*PHX_FENC_STRIDE],
+                                     uint8_t fdec[2][PHX_FDEC_STRIDE*10 + PHX_FDEC_STRIDE])
+{
+    const int x0 = c->mb_x * 8, y0 = c->mb_y * 8;   /* CHROMA_H/V_SHIFT = 1 */
+    const phx_frame_t *f = c->f;
+    const int cw = f->i_width_planes[1], ch = f->i_lines_planes[1];
+    const int s = f->i_stride_planes[1];
+    const uint8_t *plane = f->plane_chroma;
+    const int in = c->cache->i_neighbour_intra;
+    const int fs = PHX_FDEC_STRIDE;
+
+    for (int ch_idx = 0; ch_idx < 2; ch_idx++) {
+        uint8_t *p_dst = fdec[ch_idx] + PHX_FDEC_STRIDE + 1; /* common.h:571 */
+        for (int y = 0; y < 8; y++)                  /* macroblock.c:369-370 */
+            for (int x = 0; x < 8; x++)
+                fenc[ch_idx][y*PHX_FENC_STRIDE + x] =
+                    plane[(y0+y)*s + 2*(x0+x) + ch_idx]; /* frame.c:240 */
+
+        /* Left column p[-1 + y*FDEC_STRIDE], y = -1..7 (predict.c:289). */
+        for (int y = -1; y < 8; y++) {
+            uint8_t v = 128;
+            if (in & PHX_MB_LEFT) {
+                const int sy = phx_clip3(y0 + y, 0, ch - 1);
+                const int sx = phx_clip3(x0 - 1, 0, cw - 1);
+                v = plane[sy*s + 2*sx + ch_idx];     /* frame.c:535-553 */
+            }
+            p_dst[-1 + y*fs] = v;
+        }
+        /* Top row p[x - FDEC_STRIDE], x = 0..7 (predict.c:272/288). */
+        for (int x = 0; x < 8; x++) {
+            uint8_t v = 128;
+            if (in & PHX_MB_TOP) {
+                const int sy = phx_clip3(y0 - 1, 0, ch - 1);
+                const int sx = phx_clip3(x0 + x, 0, cw - 1);
+                v = plane[sy*s + 2*sx + ch_idx];
+            }
+            p_dst[x - fs] = v;
+        }
+        /* Top-left is available only when MB_TOPLEFT is in i_neighbour_intra
+         * (common/macroblock.c:816-824); the planar predictor uses it. */
+        uint8_t v = 128;
+        if (in & PHX_MB_TOPLEFT) {
+            const int sy = phx_clip3(y0 - 1, 0, ch - 1);
+            const int sx = phx_clip3(x0 - 1, 0, cw - 1);
+            v = plane[sy*s + 2*sx + ch_idx];
+        }
+        p_dst[-1 - fs] = v;
+    }
+}
+
+/* x264 encoder/analyse.c:586-665 — mb_analyse_intra_chroma(), 4:2:0 branch.
+ * x264 derives chroma_pred_mode from the SATD of the U/V 8x8 predictions,
+ * not from a placeholder: the availability list is analyse.c:615/:537-542,
+ * the predictors are analyse.c:650-651 (common/predict.c:936-945) and the
+ * cost is analyse.c:632/:655-657 with bs_size_ue (common/bitstream.h:278).
+ * The x3 shortcut of analyse.c:619-636 is expressed as the equivalent full
+ * mode loop of analyse.c:640-661 (same SATD on the same predictions).  The
+ * mode bit-cost follows x264's two branches: raw mode index when pm[3] >= 0
+ * (:632), chroma_pred_mode_fix[] otherwise (:657, common/predict.h:45).
+ * Chroma coefficients are not produced here: x264 emits them later in
+ * x264_macroblock_encode_chroma (encoder/macroblock.c:259-498/:940), which
+ * Phoenix calls after the luma encode.  cbp_chroma stays 0 until then.
+ * SHADER: B — one invocation per MB, writes only d->chroma_pred_mode. */
 static void phx_analysis_intra_chroma(phx_analysis_ctx_t *c, phx_mb_decision_t *d)
 {
+    if (!c->f->plane_chroma || !c->f->i_width_planes[1] ||
+        !c->f->i_lines_planes[1]) {
+        d->chroma_pred_mode = 0;                     /* no NV12 plane: TODO */
+        c->cbp_chroma = 0;
+        return;
+    }
+
+    uint8_t fenc[2][8*PHX_FENC_STRIDE];
+    uint8_t fdec[2][PHX_FDEC_STRIDE*10 + PHX_FDEC_STRIDE];
+    uint8_t *p_dst[2] = { fdec[0] + PHX_FDEC_STRIDE + 1,
+                          fdec[1] + PHX_FDEC_STRIDE + 1 }; /* common.h:571 */
+    memset(fdec, 128, sizeof(fdec));
+    phx_analysis_chroma_load(c, fenc, fdec);
+
     const int8_t *pm = phx_chroma_modes(c->cache->i_neighbour_intra);
-    int mode = (*pm >= 0) ? phx_chroma_fix[*pm] : 0;
-    d->chroma_pred_mode = (int8_t)mode;
-    c->cbp_chroma = 0;
+    /* analyse.c:619 — the x3 path is selected when the 4th mode exists. */
+    const int raw_mode_cost = pm[3] >= 0;
+    phx_predict_t pred8[7];
+    phx_predict_8x8c_init(pred8);                    /* predict.c:936-945 */
+    int best = PHX_COST_MAX, best_mode = 6;          /* DC128 fallback (:487) */
+    for (; *pm >= 0; ++pm) {                         /* analyse.c:629/640 */
+        const int mode = *pm;
+        int satd_u, satd_v, satd;
+        pred8[mode](p_dst[0], PHX_FDEC_STRIDE);      /* analyse.c:650/:624 */
+        pred8[mode](p_dst[1], PHX_FDEC_STRIDE);      /* analyse.c:651/:625 */
+        satd_u = phx_satd_8x8(fenc[0], PHX_FENC_STRIDE,
+                              p_dst[0], PHX_FDEC_STRIDE); /* :655 */
+        satd_v = phx_satd_8x8(fenc[1], PHX_FENC_STRIDE,
+                              p_dst[1], PHX_FDEC_STRIDE); /* :656 */
+        satd = satd_u + satd_v + c->a.i_lambda *
+               phx_bs_size_ue((unsigned)(raw_mode_cost ? mode
+                                                       : phx_chroma_fix[mode]));
+        if (satd < best) { best = satd; best_mode = mode; } /* :635/:660 */
+    }
+    d->chroma_pred_mode = (int8_t)best_mode;         /* analyse.c:664 */
+    c->cbp_chroma = 0;                               /* macroblock.c:265 */
 }
 
 /* x264 encoder/analyse.c:1255-1332 / encoder/me.c — mb_analyse_inter_p16x16.

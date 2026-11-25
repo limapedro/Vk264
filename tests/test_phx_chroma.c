@@ -222,12 +222,110 @@ static void phx_test_case(int mb_x, int mb_y, int mode, const char *name)
            name, mb_x, mb_y, mode, nz1, d1.cbp_chroma, h1);
 }
 
+/* Golden first-MB medium/cabac chroma state reported by the probe worker:
+ * chroma_pred_mode 6 (DC_128), cbp_chroma 2 (DC+AC) and zigzag chroma DC
+ * arrays [15,0,-9,0] for U and V (macroblock.c:329/:457/:477 -> :487-489).
+ * The U/V ramps leave 15/-9 after quant_2x2_dc with chroma QP 20 (medium's
+ * psy chroma offset -2 applied to luma QP 22).  x264's chroma DC quantizer
+ * is quant4_mf[CQM_4IC][qp+3][0]>>1 / quant4_bias<<1 (macroblock.c:425-426).
+ * SHADER: B — golden B-stage chroma handoff assertion. */
+static void phx_test_golden_first_mb(void)
+{
+    static const int16_t golden_dc[4] = { 15, 0, -9, 0 };
+
+    phx_param_t p;
+    phx_param_default(&p);
+    phx_param_apply_preset(&p, "medium");
+    p.b_cabac = 1;
+    phx_param_finalize(&p);            /* encoder.c:1218: chroma offset -2 */
+    CHECK(p.i_chroma_qp_index_offset == -2, "medium chroma QP offset");
+
+    phx_mb_decision_t d1, d2;
+    phx_mb_cache_t c1, c2;
+    uint8_t r1[16*8], r2[16*8];
+    int nz1 = 0, nz2 = 0;
+    uint32_t h1 = 0, h2 = 0;
+
+    for (int rep = 0; rep < 2; rep++) {
+        phx_mb_decision_t *d = rep ? &d2 : &d1;
+        phx_mb_cache_t *c = rep ? &c2 : &c1;
+        uint8_t *r = rep ? r2 : r1;
+        int *nz = rep ? &nz2 : &nz1;
+        uint32_t *h = rep ? &h2 : &h1;
+
+        phx_frame_t *f = phx_frame_new(TEST_W, TEST_H, 0);
+        CHECK(f != NULL, "golden frame allocation");
+        if (!f) return;
+        /* First-MB NV12 source U/V: 128 + 5*x (no neighbours => DC_128). */
+        const int s = f->i_stride_planes[1];
+        for (int y = 0; y < f->i_lines_planes[1]; y++)
+            for (int x = 0; x < f->i_width_planes[1]; x++) {
+                const uint8_t v = (uint8_t)(128 + 5*(x & 7));
+                f->plane_chroma[y*s + 2*x + 0] = v;
+                f->plane_chroma[y*s + 2*x + 1] = v;
+            }
+
+        phx_mb_state_t *st = phx_mb_state_new(TEST_MBS, TEST_MBS);
+        CHECK(st != NULL, "golden MB state");
+        if (!st) { phx_frame_delete(f); return; }
+        st->slice_type = 2;
+        st->first_mb = 0;
+        memset(c, 0, sizeof(*c));
+        phx_macroblock_cache_load(st, c, 0, 0, 0);
+
+        memset(d, 0, sizeof(*d));
+        d->mb_type = PHX_I_16x16;
+        d->i_partition = 16;
+        d->i_qp = 22;                  /* qp_idx 12-2+22 = 32 -> chroma QP 20 */
+        d->intra16_pred_mode = 6;      /* DC_128, as x264 analyses MB(0,0) */
+        d->chroma_pred_mode = 6;       /* from mb_analyse_intra_chroma */
+        d->cbp_luma = 0x3;
+
+        CHECK(phx_macroblock_encode_chroma(&p, f, c, 0, 0, d) == 0,
+              "golden chroma encode");
+        *nz = phx_test_check_nnz(d, c);
+
+        CHECK(d->chroma_pred_mode == 6, "golden mode 6 retained");
+        CHECK(d->cbp_chroma == 2, "golden cbp_chroma == 2 (DC+AC)");
+        for (int ch = 0; ch < 2; ch++) {
+            CHECK(memcmp(d->chroma_dct[ch][0], golden_dc,
+                         sizeof(golden_dc)) == 0,
+                  ch ? "golden V DC [15,0,-9,0]"
+                     : "golden U DC [15,0,-9,0]");
+            CHECK(d->chroma_nnz[ch][0] == 1, "golden chroma DC nnz");
+            for (int b = 1; b < 5; b++)
+                CHECK(d->chroma_nnz[ch][b] == 1, "golden chroma AC nnz");
+        }
+        CHECK((d->i_cbp & 0x30) == 0x20, "golden cbp bits in i_cbp");
+        CHECK((d->i_cbp & 0x600) == 0x600, "golden CABAC chroma DC flags");
+
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 16; x++)
+                r[y*16 + x] = f->plane_chroma[y*s + x];
+        *h = phx_test_hash(f, 0, 0);
+        phx_mb_state_delete(st);
+        phx_frame_delete(f);
+    }
+
+    CHECK(memcmp(&d1, &d2, sizeof(d1)) == 0, "golden decision reproducible");
+    CHECK(memcmp(c1.non_zero_count, c2.non_zero_count,
+                 sizeof(c1.non_zero_count)) == 0, "golden cache reproducible");
+    CHECK(memcmp(r1, r2, sizeof(r1)) == 0, "golden reconstruction reproducible");
+    CHECK(h1 == h2 && nz1 == nz2, "golden hash/nnz reproducible");
+    printf("golden first MB: mode=%d cbp_chroma=%d U_DC=%d,%d V_DC=%d,%d "
+           "nz_blocks=%d recon_hash=%08x\n",
+           d1.chroma_pred_mode, d1.cbp_chroma,
+           d1.chroma_dct[0][0][0], d1.chroma_dct[0][0][2],
+           d1.chroma_dct[1][0][0], d1.chroma_dct[1][0][2], nz1, h1);
+}
+
 /* Standalone driver.  SHADER: B — B-stage chroma verification entry point. */
 int main(void)
 {
     phx_test_case(1, 1, 0, "DC");     /* top/left neighbours available */
     phx_test_case(1, 1, 3, "planar");
     phx_test_case(0, 0, 6, "DC128");  /* frame edge: available-mode fallback */
+    phx_test_golden_first_mb();       /* medium/cabac first-MB golden state */
 
     phx_mb_decision_t d;
     phx_mb_cache_t c;
