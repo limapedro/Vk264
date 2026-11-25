@@ -26,6 +26,12 @@ CAVLC IDR                 I4/I8 decisions now shared with byte-exact CABAC (E77)
 recon c004 / c064        0/4096  /  2209/4096
 ```
 
+**Parity percentages:** byte-exact cases **12/120 = 10%**; NAL2 pairs
+**3/20 = 15%**; CABAC IDR byte-prefix (veryfast 84/128 = 66%, faster 30/130 =
+23%, fast…slower 41/120 ≈ 34%, veryslow/placebo 42/121 = 35%); superfast
+CABAC IDR 100% prefix; **ultrafast 100%** across all 12 cases. Per-preset
+percentages, function inventories and roadmap are in `docs/PRESETS.md` §0.
+
 Current verdict counts (120 cases, fresh audit): `BYTE-EXACT 12`, `NAL2 byte4
 20`, `byte5 15`, `byte6 7`, `byte10 15`, `byte15 9`, `byte16 6`, `byte17 2`,
 `byte79 2`, `NAL COUNT mismatches 24`, `NAL3 byte7/byte2 2`.

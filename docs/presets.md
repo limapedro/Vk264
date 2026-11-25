@@ -2,7 +2,7 @@
 
 This document is the working reference for **what each x264 preset actually
 does** and **how much of it the oracle implements**. It exists so progress is
-tracked per preset/feature instead of as a single parity percentage.
+tracked per preset/feature, with a digestible per-preset percentage in §0.
 
 - Authoritative source: `build/x264-ref-src/common/base.c` — `x264_param_default()`
   (lines 344–487) and `param_apply_preset()` (lines 489–609).
@@ -19,6 +19,55 @@ tracked per preset/feature instead of as a single parity percentage.
   editing `Vk264-rewrite/`.
 
 ---
+
+## 0. Parity scorecard (at a glance)
+
+Verbatim from the latest verified `build/audit_presets.py` (120 cases) and
+`build/progress_metrics.py`. **Byte-exact** = cases with identical streams
+(12 per preset: 2 frame-counts × 2 entropies × 3 clips). **Prefix** = first
+differing byte of the first CABAC IDR ÷ that IDR's length — the fraction of the
+bitstream that is already byte-identical. **Params** = how many of the 16
+x264 parameters audited in `PRESET_PARAM_MATRIX.md` §2b are aligned in value
+(partial implementations count as aligned, because values must match x264
+even when the implementation is unfinished).
+
+| preset | byte-exact | NAL2 CABAC prefix | prefix % | params aligned | function status | practical parity |
+|---|---:|---:|---:|---:|---|---:|
+| **ultrafast** | **12/12 = 100%** | 203/203 | **100%** | 11/11 relevant = **100%** | all needed functions implemented | **100%** |
+| **superfast** | 0/12 = 0% | 130/130 | **100%** (IDR) | ~10/12 = **83%** | I4/I8 analysis SAD, DIA ME; missing trellis (off), HEX, weighted-pred detail | IDR exact; P-slice/CAVLC gaps |
+| **veryfast** | 0/12 = 0% | 84/128 | **66%** | ~9/15 = **60%** | exact I16 SATD, SA8D I8, I4 cache pred, scenecut flags; missing HEX ME, multi-pass lookahead, MB-tree, B-slice emission | ~two-thirds of first IDR |
+| **faster** | 0/12 = 0% | 30/130 | **23%** | ~9/16 = **56%** | adds CAVLC trellis I4 (E86), 2-ref; missing write-time trellis, HEX, B slices | early MBs only |
+| **fast** | 0/12 = 0% | 41/121 | **34%** | ~9/16 = **56%** | adds psy-RD/chroma-QP, MB RD; missing write-time trellis, HEX, B | early MBs only |
+| **medium** | 0/12 = 0% | 41/121 | **34%** | ~9/16 = **56%** | 3 refs aligned; missing 3-ref inter detail, HEX, B | early MBs only |
+| **slow** | 0/12 = 0% | 41/120 | **34%** | ~8/16 = **50%** | 5-ref/DIRECT AUTO values set; implementations missing | early MBs only |
+| **slower** | 0/12 = 0% | 41/120 | **34%** | ~7/16 = **44%** | UMH, b-adapt TRELLIS, PSUB8x8, 8 refs all absent | early MBs only |
+| **veryslow** | 0/12 = 0% | 42/121 | **35%** | ~7/16 = **44%** | me_range 24 aligned; UMH, 16 refs, 8 B absent | early MBs only |
+| **placebo** | 0/12 = 0% | 42/121 | **35%** | ~7/16 = **44%** | fast_pskip aligned; TESA, 16 B absent | early MBs only |
+
+Overall audit: **12/120 = 10% byte-exact**, **3/20 = 15% NAL2 pairs exact**,
+**18** NAL-count mismatches. The gap is **preset-gated, not content-gated**:
+ultrafast is the only complete tier. Keep the parameter values aligned even
+when the implementation is partial — that is what makes the remaining work
+local and measurable.
+
+### Functions required per preset (implemented / partial / missing)
+
+| preset | implemented | partial | missing / roadmap |
+|---|---|---|---|
+| ultrafast | SPS/PPS, slice header, CAVLC+CABAC I16, DCT/quant/residual, recon | — | — |
+| superfast | above + I4/I8 analysis (SAD), DIA ME, chroma SATD, I4 DC variants | CAVLC I4 decisions (E77) | trellis (off by definition), weighted-pred detail |
+| veryfast | above + exact I16 SATD (E79), SA8D I8 (E74), I4 cache pred (E91), `cost_sig` (E70), scenecut IDR flags (E81) | trellis primitive (analysis-time), b-adapt FAST, CAVLC trellis I4 (E86) | HEX ME, multi-pass lookahead, MB-tree, B-slice emission, write-time trellis |
+| faster | above + 2 refs, subme 4 | CAVLC trellis I4, 2-ref P | write-time trellis, HEX, B slices |
+| fast | above + psy-RD, chroma QP −2, MB RD | subme 6 RD paths | write-time trellis, HEX, B slices |
+| medium | above + 3 refs | 3-ref inter | HEX, B slices, full lookahead |
+| slow | above + trellis value 2 | 5-ref, direct AUTO | 5-ref ME, direct AUTO, B slices |
+| slower | above + 8 refs | 8-ref | UMH ME, b-adapt TRELLIS, PSUB8x8, B slices |
+| veryslow | above + me_range 24 | 16-ref | UMH ME, 16 refs, 8 B-frames |
+| placebo | above + fast_pskip 0 | — | TESA ME, 16 B-frames, full TRELLIS b-adapt |
+
+Legend: **implemented** = verified byte-exact contribution in at least one
+case; **partial** = code exists and is faithful in a subset; **missing** = no
+implementation. Roadmap order and retracted experiments are in §5.
 
 ## 1. How x264 presets work
 
