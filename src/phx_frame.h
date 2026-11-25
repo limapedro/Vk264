@@ -35,6 +35,17 @@ typedef struct {
     int16_t lowres_mvs[2][PHX_BFRAME_MAX+1][2]; /* frame.h:103 */
 
     int bframes;                    /* x264 param.i_bframe, used by init */
+
+    /* Appended 4:2:0 chroma fields.  frame_internal_csp() maps I420 to NV12
+     * (reference/x264/common/frame.c:45-57), so plane[1] interleaves U/V as
+     * pairs: U at even byte offsets, V at odd byte offsets.  frame.c:89-99
+     * gives the chroma width/lines/stride, frame.c:239-243 the pointer.
+     * These are appended so existing luma/lowres users are unaffected. */
+    uint8_t *planes[2];             /* [0]=f->plane (luma), [1]=NV12 U/V */
+    uint8_t *plane_chroma;          /* alias of planes[1], frame.c:240 */
+    int i_width_planes[2];          /* frame.c:95-96 */
+    int i_lines_planes[2];          /* frame.c:96 */
+    int i_stride_planes[2];         /* frame.c:97 (equal to i_stride) */
 } phx_frame_t;
 
 /* frame.c:30 — align_stride() with the scalar-build align/disalign values. */
@@ -56,6 +67,10 @@ void phx_plane_expand_border(uint8_t *pix, int stride, int width, int height,
 
 /* frame.c:627 — expand all four lowres planes. */
 void phx_frame_expand_border_lowres(phx_frame_t *f);
+
+/* frame.c:633-638 — x264_frame_expand_border_chroma() for the NV12 plane.
+ * Pairs of U/V bytes are replicated as a unit (pixel_memset size 2). */
+void phx_frame_expand_border_chroma(phx_frame_t *f);
 
 /* mc.c:484 — the C reference implementation of frame_init_lowres_core. */
 void phx_frame_init_lowres_core(uint8_t *src0, uint8_t *dst0, uint8_t *dsth,

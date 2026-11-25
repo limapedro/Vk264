@@ -63,6 +63,18 @@ void phx_frame_expand_border_lowres(phx_frame_t *f)
                                 PHX_PADH, PHX_PADV, 1, 1, 0); /* frame.c:630 */
 }
 
+/* x264 common/frame.c:633-638 — x264_frame_expand_border_chroma().  For NV12
+ * the pixel size is two bytes, so i_width is passed as the luma width (the
+ * number of bytes per chroma row) and b_chroma=CHROMA_H_SHIFT=1; plane_expand_
+ * border then replicates whole U/V pairs (frame.c:541/543). */
+void phx_frame_expand_border_chroma(phx_frame_t *f)
+{
+    if (!f || !f->plane_chroma) return;
+    phx_plane_expand_border(f->plane_chroma, f->i_stride_planes[1],
+                            f->i_width, f->i_height/2,              /* :636 */
+                            PHX_PADH, PHX_PADV >> 1, 1, 1, 1);      /* :637 */
+}
+
 /* x264 common/mc.c:484 — frame_init_lowres_core(). The FILTER macro and
  * pointer walks are copied verbatim (the "slower than naive bilinear, but
  * matches asm" rounding from mc.c:493). */
@@ -137,18 +149,37 @@ phx_frame_t *phx_frame_new(int width, int height, int bframes)
     f->i_stride_lowres = phx_align_stride(f->i_width_lowres + PHX_PADH2, 16, 1024);
                                                      /* frame.c:125 */
 
+    f->i_width_planes[0] = width;                    /* frame.c:95 */
+    f->i_lines_planes[0] = height;                   /* frame.c:96 */
+    f->i_stride_planes[0] = f->i_stride;             /* frame.c:97 */
+    f->i_width_planes[1] = width / 2;                /* frame.c:95 (i=1) */
+    f->i_lines_planes[1] = height / 2;               /* frame.c:96 (NV12) */
+    f->i_stride_planes[1] = f->i_stride;             /* frame.c:97 (i=1) */
+
     int luma_size = phx_align_plane_size(f->i_stride * (height + 2*PHX_PADV), 1024);
                                                      /* frame.c:164 */
+    int chroma_padv = PHX_PADV >> 1;                 /* frame.c:152, NV12 */
+    int chroma_size = f->i_stride_planes[1] *
+                      (f->i_lines_planes[1] + 2*chroma_padv);
+                                                      /* frame.c:153 */
     int lowres_size = phx_align_plane_size(f->i_stride_lowres *
                                            (f->i_lines_lowres + 2*PHX_PADV), 1024);
                                                      /* frame.c:207 */
-    /* luma buffer (frame.c:169) + 4 lowres planes (frame.c:209) + asm pad */
-    size_t total = (size_t)luma_size + 4*(size_t)lowres_size + 256;
+    /* chroma buffer (frame.c:154), luma buffer (frame.c:169),
+     * 4 lowres planes (frame.c:209) + asm pad (frame.c:231-235). */
+    size_t total = (size_t)chroma_size + (size_t)luma_size
+                   + 4*(size_t)lowres_size + 256;
     f->base = calloc(total, 1);                      /* frame.c:235 */
     if (!f->base) { free(f); return NULL; }
     uint8_t *buf = f->base;
+    /* frame.c:154 allocates buffer[1] before the luma buffer[0] at :169. */
+    f->plane_chroma = buf + f->i_stride_planes[1]*chroma_padv + PHX_PADH_ALIGN;
+                                                      /* frame.c:240 */
+    buf += chroma_size;
     f->plane = buf + f->i_stride*PHX_PADV + PHX_PADH_ALIGN; /* frame.c:261 */
     buf += luma_size;
+    f->planes[0] = f->plane;                         /* frame.c:256/261 */
+    f->planes[1] = f->plane_chroma;                  /* frame.c:240 */
     for (int i = 0; i < 4; i++)
         f->lowres[i] = buf + f->i_stride_lowres*PHX_PADV + PHX_PADH_ALIGN
                        + (size_t)i*lowres_size;       /* frame.c:281 */

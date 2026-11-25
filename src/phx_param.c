@@ -58,6 +58,7 @@ void phx_param_default(phx_param_t *p)
     p->b_transform_8x8 = 1;             /* base.c:454 */
     p->i_trellis = 1;                   /* base.c:455 */
     p->b_fast_pskip = 1;                /* base.c:450 */
+    p->i_direct_mv_pred = 1;            /* X264_DIRECT_PRED_SPATIAL, base.c:438 */
 }
 
 /* x264 common/base.c:489 — exact preset deltas, in source order. */
@@ -95,17 +96,20 @@ int phx_param_apply_preset(phx_param_t *p, const char *preset)
     } else if (!strcasecmp(preset, "slow")) {                /* base.c:557 */
         p->i_subpel_refine = 8; p->i_frame_reference = 5;
         p->i_trellis = 2; p->i_lookahead = 50;
+        p->i_direct_mv_pred = 3;                        /* base.c:561 AUTO */
     } else if (!strcasecmp(preset, "slower")) {              /* base.c:565 */
         p->i_me_method = PHX_ME_UMH; p->i_subpel_refine = 9;
         p->i_frame_reference = 8; p->i_bframe_adaptive = PHX_B_ADAPT_TRELLIS;
         p->analyse_inter |= PHX_ANALYSE_PSUB8x8;
         p->i_trellis = 2; p->i_lookahead = 60;
+        p->i_direct_mv_pred = 3;                        /* base.c:571 AUTO */
     } else if (!strcasecmp(preset, "veryslow")) {            /* base.c:576 */
         p->i_me_method = PHX_ME_UMH; p->i_subpel_refine = 10;
         p->i_me_range = 24; p->i_frame_reference = 16;
         p->i_bframe_adaptive = PHX_B_ADAPT_TRELLIS;
         p->analyse_inter |= PHX_ANALYSE_PSUB8x8;
         p->i_trellis = 2; p->i_bframe = 8; p->i_lookahead = 60;
+        p->i_direct_mv_pred = 3;                        /* base.c:583 AUTO */
     } else if (!strcasecmp(preset, "placebo")) {             /* base.c:589 */
         p->i_me_method = PHX_ME_TESA; p->i_subpel_refine = 11;
         p->i_me_range = 24; p->i_frame_reference = 16;
@@ -113,6 +117,7 @@ int phx_param_apply_preset(phx_param_t *p, const char *preset)
         p->analyse_inter |= PHX_ANALYSE_PSUB8x8;
         p->b_fast_pskip = 0; p->i_trellis = 2;
         p->i_bframe = 16; p->i_lookahead = 60;
+        p->i_direct_mv_pred = 3;                        /* base.c:596 AUTO */
     } else {
         return -1;
     }

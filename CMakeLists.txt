@@ -30,6 +30,9 @@ add_library(phx STATIC
     src/phx_cavlc.c
     src/phx_mbencode.c
     src/phx_analysis.c
+    src/phx_lookahead.c
+    src/phx_sei.c
+    src/phx_chroma.c
 )
 target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -96,3 +99,15 @@ add_test(NAME phx_mbencode COMMAND phx_test_mbencode)
 add_executable(phx_test_analysis tests/test_phx_analysis.c)
 target_link_libraries(phx_test_analysis PRIVATE phx)
 add_test(NAME phx_analysis COMMAND phx_test_analysis)
+
+add_executable(phx_test_lookahead tests/test_phx_lookahead.c)
+target_link_libraries(phx_test_lookahead PRIVATE phx)
+add_test(NAME phx_lookahead COMMAND phx_test_lookahead)
+
+add_executable(phx_test_sei tests/test_phx_sei.c)
+target_link_libraries(phx_test_sei PRIVATE phx)
+add_test(NAME phx_sei COMMAND phx_test_sei)
+
+add_executable(phx_test_chroma tests/test_phx_chroma.c)
+target_link_libraries(phx_test_chroma PRIVATE phx)
+add_test(NAME phx_chroma COMMAND phx_test_chroma)

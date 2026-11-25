@@ -45,6 +45,7 @@ typedef struct {
     int i_subpel_refine;        /* 7 (medium) */
     int b_mixed_references;     /* 1 */
     int b_fast_pskip;           /* 1 */
+    int i_direct_mv_pred;       /* 1 = SPATIAL, 3 = AUTO (x264.h:197-200) */
     int b_weighted_bipred;      /* 1 */
     int i_weighted_pred;        /* SMART=2 */
     int i_trellis;              /* 1 */
