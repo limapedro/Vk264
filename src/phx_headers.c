@@ -181,10 +181,16 @@ void phx_pps_write(phx_bs_t *b, const phx_sps_t *s, const phx_pps_t *p)
     phx_bs_write1(b, p->b_constrained_intra_pred);      /* :525 */
     phx_bs_write1(b, p->b_redundant_pic_cnt);           /* :526 */
     if (p->b_transform_8x8_mode) {                      /* :529 */
-        phx_bs_write1(b, 1);
-        phx_bs_write1(b, 0);                            /* no scaling lists */
+        phx_bs_write1(b, 1);                            /* transform_8x8_mode_flag */
+        phx_bs_write1(b, 0);                            /* pic_scaling_matrix_present (flat CQM) */
+        /* set.c:567 — x264 rewrites chroma_qp_index_offset inside the
+         * transform_8x8/scaling-list block (after the scaling lists, which
+         * are absent for X264_CQM_FLAT).  Omitting this shifts the RBSP stop
+         * bit by one and changes the final byte of every PPS that enables
+         * 8x8dct. */
+        phx_bs_write_se(b, p->i_chroma_qp_index_offset); /* set.c:567 */
     }
-    phx_bs_rbsp_trailing(b);                            /* :566 region */
+    phx_bs_rbsp_trailing(b);                            /* set.c:570 */
 }
 
 /* Assemble the SPS/PPS NALs exactly as x264_encoder_headers does. */

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Debug helper: decode SPS fields from Phoenix dump and x264 reference."""
+"""Debug helper: decode SPS/PPS fields from Phoenix dump and x264 reference.
+
+Source: reference/x264/encoder/set.c:305-475 (SPS write),
+        reference/x264/encoder/set.c:505-570 (PPS write, including the
+        duplicated chroma_qp_index_offset at :522 and :567),
+        common/bitstream.h:241-272 (ue/se/rbsp_trailing).
+"""
 import pathlib, subprocess, sys
 
 class BR:
@@ -12,6 +18,13 @@ class BR:
         self.p += 1
         v = (1<<z)-1 + (int(self.b[self.p:self.p+z],2) if z else 0); self.p += z
         return v
+    def se(self):
+        """bitstream.h:246-261 — map signed Exp-Golomb codeNum to value.
+
+        SHADER: C — diagnostic mirror of phx_bs_write_se.
+        """
+        k = self.ue()
+        return (k+1)//2 if k & 1 else -(k//2)
 
 def unesc(b):
     o = bytearray(); i = 0
@@ -50,6 +63,75 @@ def parse(nal):
             d['mv_h']=r.ue(); d['mv_v']=r.ue(); d['reorder']=r.ue(); d['maxdec']=r.ue()
     d['endpos']=r.p
     return d
+
+def ue(v):
+    """Exp-Golomb codeNum for v (common/bitstream.h:221-245).
+
+    SHADER: C — serial header stage; mirrors phx_bs_write_ue.
+    """
+    n = v + 1
+    k = n.bit_length() - 1
+    return '0' * k + format(n, '0' + str(k + 1) + 'b')
+
+
+def se(v):
+    """Signed Exp-Golomb for v (common/bitstream.h:246-261).
+
+    SHADER: C — serial header stage; mirrors phx_bs_write_se.
+    """
+    return ue(2*v - 1 if v > 0 else -2*v)
+
+
+def pps_tail_bits(cqo, transform, tail_pos=0):
+    """Encode set.c:529-570's PPS tail; flat CQM => no scaling lists.
+
+    Source: reference/x264/encoder/set.c:551-567 (transform_8x8 block and the
+    second chroma_qp_index_offset write), :570 and common/bitstream.h:272
+    (rbsp stop bit / byte alignment).  tail_pos is the absolute bit position
+    at which the tail starts, so alignment is relative to the RBSP start.
+
+    SHADER: C — serial header stage; used as the focused tail oracle.
+    """
+    bits = ''
+    if transform:
+        bits += '10'          # transform_8x8_mode_flag=1, scaling_matrix_present=0
+        bits += se(cqo)       # set.c:567 — duplicate of the :522 field
+    bits += '1'               # rbsp_stop_one_bit (bitstream.h:272)
+    bits += '0' * ((-(tail_pos + len(bits))) % 8)
+    return bits
+
+
+def parse_pps(nal):
+    """Decode a PPS NAL, exposing both chroma_qp_index_offset writes.
+
+    Source: reference/x264/encoder/set.c:505-570 and common/bitstream.h:
+    241-272.  Returns the bit position where the tail begins, the raw tail,
+    the decoded tail fields, and the value of the second se() when present.
+
+    SHADER: C — serial header stage; diagnostic mirror of phx_pps_write.
+    """
+    bits = ''.join(f'{x:08b}' for x in unesc(nal)[1:])
+    r = BR(bits)
+    d = {'pps_id': r.ue(), 'sps_id': r.ue(), 'cabac': r.u(1),
+         'pic_order': r.u(1), 'groups': r.ue(), 'l0': r.ue(), 'l1': r.ue(),
+         'wp': r.u(1), 'wbp': r.u(2), 'qp': r.se(), 'qs': r.se(),
+         'cqo': r.se(), 'deblock': r.u(1), 'constrained': r.u(1),
+         'redundant': r.u(1)}
+    d['tail_pos'] = r.p
+    d['tail'] = bits[r.p:]
+    tb = BR(d['tail'])
+    d['transform'] = 0
+    d['cqo2'] = None
+    if len(d['tail']) >= 4 and tb.u(1) == 1 and tb.u(1) == 0:
+        try:
+            d['transform'] = 1
+            d['cqo2'] = tb.se()
+        except IndexError:      # the no-transform tail is just 1 + zeros
+            d['transform'] = 0
+            d['cqo2'] = None
+    d['rbsp_tail'] = d['tail'][tb.p:] if d['transform'] else d['tail']
+    return d
+
 
 def nals(data):
     out, i = [], 0

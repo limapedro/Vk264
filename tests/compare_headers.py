@@ -5,6 +5,8 @@ Usage: python tests/compare_headers.py
 """
 import pathlib, subprocess, sys
 
+from parse_sps import parse_pps, pps_tail_bits
+
 R = pathlib.Path(__file__).resolve().parents[1]
 DUMP = R / 'build/tests/Release/phx_header_dump.exe'
 REF = R / 'build/parity'
@@ -29,11 +31,32 @@ def common_prefix(a, b):
     return next((i for i,(x,y) in enumerate(zip(a,b)) if x != y), min(len(a),len(b)))
 
 
+def verify_pps_tail(got_pps, want_pps):
+    """Focused regression check for the PPS tail / RBSP stop-bit position.
+
+    Source: reference/x264/encoder/set.c:551-567 — when transform_8x8_mode is
+    set, chroma_qp_index_offset is written a *second* time after the two
+    transform flags; set.c:570 and common/bitstream.h:272 then append the rbsp
+    stop bit.  A simple writer that omits the :567 write still decodes to the
+    same field values, but places the stop bit one bit too early, so this
+    check compares the encoded tail bits against the set.c-derived oracle.
+
+    SHADER: C — focused verification of the serial header stage.
+    """
+    ref = parse_pps(want_pps)
+    got = parse_pps(got_pps)
+    expect = pps_tail_bits(ref['cqo'], ref['transform'], ref['tail_pos'])
+    return (ref['tail'] == expect and got['tail_pos'] == ref['tail_pos']
+            and got['tail'] == expect
+            and (not ref['transform'] or ref['cqo2'] == ref['cqo']))
+
+
 def main():
     if not DUMP.exists():
         print('SKIP: build phx_header_dump first (python tools/run_tests.py)')
         return 2
     exact = 0
+    tails_ok = 0
     for preset in PRESETS:
         for ent in ['cabac', 'cavlc']:
             ref = REF / f'synth-{preset}-{ent}.ref.h264'
@@ -51,10 +74,13 @@ def main():
             pp = common_prefix(got_pps, want_pps)
             ok = got == b'\x00\x00\x00\x01'+want_sps+b'\x00\x00\x00\x01'+want_pps
             exact += ok
+            tail_ok = verify_pps_tail(got_pps, want_pps)
+            tails_ok += tail_ok
             print(f'{preset:10s} {ent:5s} SPS prefix {ps:2d}/{len(want_sps):2d}'
-                  f' PPS prefix {pp}/{len(want_pps)} {"EXACT" if ok else ""}')
-    print(f'header-exact {exact}/20')
-    return 0 if exact == 20 else 1
+                  f' PPS prefix {pp}/{len(want_pps)}'
+                  f' {"EXACT" if ok else ""} tail-ok={int(tail_ok)}')
+    print(f'header-exact {exact}/20  pps-tail-verified {tails_ok}/20')
+    return 0 if exact == 20 and tails_ok == 20 else 1
 
 
 if __name__ == '__main__':
