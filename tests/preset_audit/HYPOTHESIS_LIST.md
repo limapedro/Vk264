@@ -1187,3 +1187,23 @@ be paired with the qc vector. The test hook was removed; no production change.
 Next: extend `trellis_rdo_probe.py` to dump sig/last/level state bytes
 alongside qc, then replay the exact (qc, state) pair into the primitive.
 
+### E55 ? decisive DP probe: exact (qc, state) still differs
+
+Extended `build/trellis_rdo_probe.py` to dump sig/last/level state bytes, and
+`build/trellis_dp_probe.py` to replay x264's exact `(quant_coefs, state)` into
+`vk_trellis_quant_4x4` (temporary test hook, removed). Result: even with
+x264's qc and state, the primitive's output differs, e.g. vector 1:
+
+```
+x264 qc (zigzag) = 1,-1,1,0,-1,1,0,...
+x264 final       = 1,1,0,0,-1,0,...
+oracle DP        = 1,-1,0,0,1,0,...
+```
+
+The DP selects the same zigzag positions (0,1,2) but assigns different
+signs/levels. Since `trellis_coef` and all tables were already verified
+source-identical (E53), the remaining difference is in how the **level tree
+is walked / signs restored** relative to x264's `dct` state at that point.
+This is now the precise blocker for the last 5 vectors and for write-time
+trellis. No production change; baseline unchanged.
+
