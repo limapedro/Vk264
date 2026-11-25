@@ -350,7 +350,7 @@ int vk_i8x8_decide_ex(const uint8_t src[64], const uint8_t l[8],
                 if(c<best){best=c;bm=m;}
             }
         }
-        if(cost_out)*cost_out=best+3*lambda;
+        if(cost_out)*cost_out=best;
         return bm;
     }
 

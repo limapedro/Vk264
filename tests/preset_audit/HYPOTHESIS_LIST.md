@@ -1878,6 +1878,21 @@ Removing the inner +3? made MB5's I8 cost 779 (near x264's 770/779) but
 unchanged; `recon c004 0/4096` stayed green. Other MBs evidently depend on
 the current cost scale, so a local removal is not a valid fix. Reverted.
 
-Next work must align the whole I8 cost model (base predmode costs, direction
-biases, and the per-block +3? at subme=2) rather than deleting one term.
+Next work may still need the rest of the I8 cost model aligned (base predmode
+costs, direction biases), but the local +3? removal is verified beneficial.
+
+### E89 ? I8 +3*lambda double-count removal LANDED (corrects E88)
+
+E88 misread the first-diff direction: `veryfast 48 -> 80` is an **improvement**
+of 32 matching bytes, not a regression. Re-applied the single change to
+`vk_i8x8decide.c`'s gated path (`cost_out = best` instead of `best+3*lambda`;
+`cabac_enc.c` already adds the per-block +3?).
+
+Verified: `progress_metrics.py` first-diff `veryfast 48 -> 80`; faster 30,
+fast/medium/slow/slower 41, veryslow/placebo 42 unchanged. Audit 12/120,
+NAL2 3/20, recon c004 0/4096, CAVLC 1360/1360, slicetype 16/16, CTest
+29/29+65/65. MB5 I8 cost is now 779 (x264 770 at 8f/veryfast, 779 at 2f/faster).
+
+An additional `+7*lambda` I4-cost adjustment was tested but gave no further
+metric gain, so only the principled I8 double-count removal is kept.
 
