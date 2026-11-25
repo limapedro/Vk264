@@ -1120,3 +1120,23 @@ the best first-diff observed for faster (24). Full write-time parity may
 require matching x264's exact residual-block write order and state evolution,
 which is not yet modelled.
 
+### E64 ? B-slice/NAL-count root cause: scenecut IDR placement
+
+The 24 NAL-count mismatches are not missing B slices: for 30f clips x264
+emits 2-3 SPS/PPS/IDR sets (e.g. display frames 0, 9, 23 on the audit clip)
+while the oracle emits only one. x264 debug log:
+`scene cut at 9 Icost:1929 Pcost:1929 ratio:0.0000 bias:0.1667 gop:9`.
+
+Probed the oracle's `vk_slicetype_decide` on a 30-frame crop: it detects no
+scenecuts. Instrumented `is_scenecut`: oracle lowres icost at frame 9 is
+~6000 and pcost ~1100, while x264's are ~1929/~1929 ? a ~6x scale mismatch
+and inverted ratio. Tried x264-style multi-mode intra prediction (H/V/DC)
+with SAD and SATD, and the correct `keyint_min = keyint/10` bias curve; none
+closed the gap because the lowres cost pipeline itself is not calibrated to
+x264's (bit-cost penalties, AQ weighting and row-SATD accumulators differ).
+All experimental changes reverted; no metric change.
+
+This is now the precise blocker for the 24 NAL-count cases: calibrate the
+lowres intra/P cost pipeline against x264's `i_cost_est[0][0]` and
+`i_cost_est[p1-p0][0]` before wiring scenecut IDRs into the normal encode.
+
