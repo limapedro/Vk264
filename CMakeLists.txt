@@ -24,6 +24,9 @@ add_library(phx STATIC
     src/phx_encoder.c
     src/phx_slice.c
     src/phx_cabac_syntax.c
+    src/phx_predict.c
+    src/phx_dct.c
+    src/phx_quant.c
 )
 target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -70,3 +73,11 @@ add_test(NAME phx_slice_header COMMAND phx_test_slice)
 add_executable(phx_test_cabac_syntax tests/test_phx_cabac_syntax.c)
 target_link_libraries(phx_test_cabac_syntax PRIVATE phx)
 add_test(NAME phx_cabac_syntax COMMAND phx_test_cabac_syntax)
+
+add_executable(phx_test_predict tests/test_phx_predict.c)
+target_link_libraries(phx_test_predict PRIVATE phx)
+add_test(NAME phx_predict COMMAND phx_test_predict)
+
+add_executable(phx_test_quant tests/test_phx_quant.c)
+target_link_libraries(phx_test_quant PRIVATE phx)
+add_test(NAME phx_quant_dequant COMMAND phx_test_quant)
