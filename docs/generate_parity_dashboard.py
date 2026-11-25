@@ -23,7 +23,7 @@ from datetime import date
 # ---------------------------------------------------------------------------
 # Data — update these after each parity PR, then regenerate the SVG.
 # ---------------------------------------------------------------------------
-SNAPSHOT = "b7f3724"
+SNAPSHOT = "c7f5ea2"
 GENERATED = date.today().isoformat()
 
 # Overall numbers (from build/*_parity_sweep.py, ctest, tests/video_experiments.json)
@@ -346,7 +346,8 @@ OPEN_TARGETS = [
     ("Superfast NAL2 macroblock prefix", 130, 130, "#2ea043"),
     ("Slicetype frame-type agreement (16f)", 16, 16, "#2ea043"),
     ("CABAC first-diff progress (6 presets)", 6, 6, "#d29922"),
-    ("Full NAL2 byte-exact (all presets)", 2, 20, "#f85149"),
+    ("Full NAL2 byte-exact (all presets)", 3, 20, "#f85149"),
+    ("Mod2/mod16 resolution handling (#289)", 1, 1, "#2ea043"),
     ("04 Analysis weighted family coverage", 2, 10, "#d29922"),
 ]
 
