@@ -1769,3 +1769,18 @@ input prediction. The earlier `trellis_dc_shortcut` `cost_sig` fix (E70)
 addressed the same class of bug at MB1; an analogous discrepancy remains at
 MB5. No production change made.
 
+### E83d ? final note on the MB5 cascade
+
+`build/mb5_coeff_probe.py` shows x264's pre-quant DCT for MB5 block 5 is
+`18,3,0,-1,4,6,...` (trellis zeroes it, nnz=0) while the oracle's is
+`450,3,0,-1,4,6,...` ? quantizes to DC=10 and keeps nnz=1. The two differ
+only at coefficient 0, i.e. the block's DC prediction level: x264 predicts
+?68, oracle ?41. That prediction comes from block 4's reconstruction, whose
+DCT also differs (`4,9,-2,-3,-79,...` vs `436,193,-2,29,-515,...`).
+
+So the MB5 divergence is a cascading reconstruction-fidelity difference that
+starts at an earlier block of the same MB; it is not a standalone trellis
+keep/drop decision. Further work should compare block 0/1 recon and the
+`vk_predict4` mode-5 (VR) sample mapping against x264's `predict_4x4_vr_c`
+before touching trellis again. No production change made.
+
