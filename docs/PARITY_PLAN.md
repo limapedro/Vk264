@@ -52,6 +52,7 @@ Work = add the missing tiers, not fix arbitrary content bugs.
 - **PR #289: mod2/mod16 resolution handling** — SPS frame cropping + CLI padding; 1920x1080/640x360 now emit NALs (were 0) and decode
 - PR #290/#291: trellis foundation (`trellis.c/h`) retained but **disabled by default** after E18b regression (see below)
 - **E37: SATD for chroma intra mode decision (subme>1)** — veryfast first-diff **49 → 79** (2f and 8f); bin-level first diff moved from bin313 (ctx64 chroma) to bin541 (ctx400 transform-size flag); all gates green
+- **E41: trellis primitive correctness (PR #295)** — unit test vs x264 found and fixed 3 bugs (deadzone bias order, CABAC state byte indexing, unquant scale). Default parity unchanged; analysis-time wiring still regresses, so write-time integration remains the blocker
 
 ### Evidence notes
 - E18: faster's byte-17 divergence is **trellis=1** (x264 default from `base.c:455`), not subme/refs/lookahead: `--preset faster --trellis 0` matches veryfast, `--preset veryfast --trellis 1` matches faster.
@@ -131,7 +132,7 @@ One change per experiment; revert on no metric gain; keep all gates green.
 
 | # | priority | work item | evidence / why now | concrete change | primary signal | gate |
 |---|---|---|---|---|---|---|
-| 1 | P0 | **Write-time CABAC trellis** | E18 + E18b: trellis is the faster+ gap, but analysis-time wiring regresses. Foundation exists in `trellis.c/h`. | Apply trellis inside `cabac_coeffs`/write path with **live** `cb->state`; keep recon in sync. Unit-test one block vs x264 `quant_trellis_cabac` first. | faster first-diff 17→higher; audit cases for faster..placebo | c004 recon 0, slicetype 16/16, CTest 29+65 |
+| 1 | P0 | **Write-time CABAC trellis** | E18 + E18b: trellis is the faster+ gap; E41 fixed 3 primitive bugs (unit test now matches x264 trellis=0 output), but analysis-time wiring still regresses faster 17→11. Remaining blocker is context-state timing / write-time integration. | Apply trellis inside `cabac_coeffs`/write path with **live** `cb->state`; keep recon in sync. Use `build/trellis_unit.c` + `build/trellis_oracle_probe.py` for block-level checks. | faster first-diff 17→higher; audit cases for faster..placebo | c004 recon 0, slicetype 16/16, CTest 29+65 |
 | 2 | P0 | **Trellis-aware RD / live state plumbing** | Trellis decisions depend on context state; oracle RD quantizes without it. | Snapshot/pass `vk_cabac_t` state through RD trials and final write; use `x264_cabac_size_decision2`/entropy costs. | same as #1 | all gates |
 | 3 | P0 | **Veryfast byte-79 tail (ctx400 transform-size)** | E37 moved 49→79; new bin-level first diff = bin541 ctx400 (transform-size_8x8 flag of a later MB). | Use `build/bincompare_veryfast.py` to trace MB type / I8-vs-I4 decision after bin541; compare I8 candidate costs. | veryfast first-diff 79→higher | c004 recon 0 |
 | 4 | P0 | **I16 mode decision SATD for subme>1** | `cabac_enc.c:505` uses plain SAD; x264 `mbcmp_init` uses SATD at subme>1; `vk_i16x16_decide` (SATD) exists but unused. | Wire SATD16 (x264-equivalent) into I16 loop gated `vk_cur_subme>1`; compare MB0 costs to x264. | 720p diff moves; veryfast/faster first-diff | c004 recon 0, ultrafast exact |
