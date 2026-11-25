@@ -910,3 +910,29 @@ decision, not chroma. Keep tracing with the same harness.
   `vk_satd8` (four 4x4 SATDs) is not x264's SA8D scale, and the `-3*lambda`
   discount is SAD-calibrated. Reverted; a faithful SA8D port is needed.
 
+### E40 ? faithful SA8D in I8 analysis also regresses (reverted)
+
+After E37 the veryfast bin-level first diff is **bin541 ctx400**
+(`transform_size_8x8_flag`): x264 `0` (I4 transform), oracle `1` (I8).
+Hypothesis: x264 uses `intra_sa8d_x3_8x8` when mbcmp==SATD (subme>1), so the
+oracle's SAD-based I8 metric should become SA8D.
+
+Implemented `vk_sa8d8` in `i8x8decide.c` as a faithful port of
+`x264_pixel_sa8d_8x8` (full 8x8 Hadamard, `sum|coeff|`, `(sum+2)>>2`) and
+enabled `use_satd` for `vk_i8x8_decide_ex`.
+
+| variant | veryfast first-diff |
+|---|---|
+| baseline (E37, SAD I8) | **79** |
+| `vk_satd8` in edge-MB path only | 38 |
+| `vk_sa8d8` in `mb_gate` + edge path | 38 |
+| `vk_sa8d8` in `mb_gate` only | 48 |
+
+All variants regressed; reverted. The `-3*lambda` predicted-mode discount in
+`vk_i8x8_decide_ex` is SAD-calibrated, so changing the residual metric without
+rescaling the discount (and the x264 shortcut table) breaks the decision.
+The ctx400 divergence is therefore **not** just the I8 residual metric ?
+it needs the full x264 I4/I8 cost construction (including chroma-cost
+addition and bit costs) before the metric can be switched. Tracked as plan
+item 5/6.
+
