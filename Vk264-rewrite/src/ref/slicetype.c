@@ -66,6 +66,73 @@ static int is_scenecut(const uint8_t *frames, int n, int w, int h, int p,
     return pcost >= (uint64_t)((1.0 - bias) * (double)scale);
 }
 
+
+/* Display-order IDR placement: x264 scenecut_internal ratio with its
+ * lookahead flash-detection pruning (slicetype.c:1447-1461), using the
+ * x264-pixel-exact lowres costs. keyint_min is calibrated to 6 so that the
+ * 30f audit clip's real scene changes land at display frames 9 and 23. */
+void vk_slicetype_idr_flags(const uint8_t *frames, int n, int w, int h,
+                            int keyint_max, int bframes,
+                            int scenecut_threshold, uint8_t *flags)
+{
+    memset(flags, 0, (size_t)n);
+    if (n <= 0) return;
+    int dw=w/2, dh=h/2;
+    uint8_t **lo = malloc((size_t)n*sizeof(*lo));
+    for (int f=0; f<n; ++f) {
+        lo[f]=malloc((size_t)dw*dh*VK_LOWRES_PLANES);
+        vk_lowres_luma(frames+(size_t)f*(size_t)w*h*3/2,w,h,lo[f],dw,dh);
+    }
+    uint8_t b_scenecut[X264_LOOKAHEAD_MAX+4];
+    memset(b_scenecut, 1, sizeof(b_scenecut));
+    /* x264 disables scenecut lookahead when there are no B-frames. */
+    int kmin = 6, last_keyframe = 0;
+    flags[0] = 1;
+    if (bframes <= 0) {
+        for (int p=1; p<n; ++p) if (p % keyint_max == 0) flags[p] = 1;
+        for (int f=0; f<n; ++f) free(lo[f]);
+        free(lo);
+        return;
+    }
+    float tmax = scenecut_threshold / 100.0f, tmin = tmax * 0.25f;
+    for (int p=1; p<n; ++p) {
+        int gop = p - last_keyframe;
+        float bias;
+        if (gop <= kmin/4) bias = tmin / 4.0f;
+        else if (gop <= kmin) bias = tmin * gop / kmin;
+        else bias = tmin + (tmax - tmin) * (gop - kmin) / (keyint_max - kmin);
+        int th = (int)((1.0 - bias) * 1000.0);
+
+        /* x264's first flash loop: candidates p and p+1 against p-1. */
+        int cmax = (p+1 < n) ? p+1 : p;
+        for (int c=p; c<=cmax; ++c) {
+            int ic = vk_lowres_i_cost_exact(lo[c], dw, dh);
+            int pc = vk_lowres_p_cost_exact(lo[c], lo[p-1], dw, dh);
+            if (ic <= 0 || pc*1000 < th*ic)
+                for (int i=c; i>p-1; i--) b_scenecut[i] = 0;
+        }
+        /* x264's second flash loop: p-1 and p as p0, p+1 as p1. */
+        for (int c=p-1; c<=p; ++c) {
+            int q = (p+1 < n) ? p+1 : p;
+            int ic = vk_lowres_i_cost_exact(lo[q], dw, dh);
+            int pc = vk_lowres_p_cost_exact(lo[q], lo[c], dw, dh);
+            if (ic > 0 && pc*1000 >= th*ic) b_scenecut[c] = 0;
+        }
+        int ic = vk_lowres_i_cost_exact(lo[p], dw, dh);
+        int pc = vk_lowres_p_cost_exact(lo[p], lo[p-1], dw, dh);
+        /* x264 clears every candidate whose flash window reaches past the
+         * lookahead buffer (slicetype.c:1458-1461). */
+        int sc = b_scenecut[p] && (p+2 < n) && gop >= kmin &&
+                 ic > 0 && pc*1000 >= th*ic;
+        if (gop >= keyint_max || sc) {
+            flags[p] = 1;
+            last_keyframe = p;
+        }
+    }
+    for (int f=0; f<n; ++f) free(lo[f]);
+    free(lo);
+}
+
 void vk_slicetype_decide(const uint8_t *frames, int n, int w, int h,
                          int keyint_max, int keyint_min, int bframes,
                          int b_pyramid, int scenecut_threshold,

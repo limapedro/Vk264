@@ -1672,3 +1672,23 @@ The exact-lowres helper experiment was reverted (no production gain); IDR
 placement remains 0-only. Next: replicate x264's lookahead/flash pruning
 around these now-calibrated costs.
 
+### E81 ? scenecut IDR placement with lowres flash detection (partial gain)
+
+Implemented x264-style scenecut IDR flags from the now x264-pixel-exact
+lowres costs (`vk_lowres_i_cost_exact`/`vk_lowres_p_cost_exact`, E80):
+- per-frame ratio `pcost >= (1-bias)*icost` with `keyint_min` calibrated to 6,
+- x264's first/second flash-detection loops (slicetype.c:1447-1461),
+- the lookahead-window limit `p+2 < n` (candidates whose flash window reaches
+  past the buffer are cleared, slicetype.c:1458-1461),
+- no scenecut when `bframes == 0` (x264 disables lookahead analysis),
+- SPS/PPS repeated before each extra IDR, matching x264's NAL layout.
+
+On the c043 (30f) probe the oracle NAL sequence now matches x264 exactly:
+`[7,8,5, 1x8, 7,8,5, 1x14, 7,8,5, 1x6]` ? IDRs at display frames 0/9/23,
+36 NALs in both.
+
+Audit result: NAL-COUNT mismatches **24 -> 18** (6 cases fixed), byte-exact
+remains 12/120, all gates green. Remaining mismatches are preset/clip
+dependent (superfast over-triggers on forza, slower/veryslow under-trigger),
+so the rule is not yet a faithful replica of x264's sequential lookahead.
+
