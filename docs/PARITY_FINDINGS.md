@@ -1023,3 +1023,23 @@ they are likely a remaining per-position cost or node-context issue. This
 harness replaces the older 31-vector count as the block-level gate; no
 production change beyond the already-landed zigzag/bias0 fixes.
 
+### E59 ? per-level trace of the 4 remaining trellis vectors
+
+Added a temporary per-level debug print in the trellis output walk (removed).
+For the first failing vector (qc `10,-7,3,1,1,0,0,-2,1,0,0,0,-1,-1,0,0`):
+
+```
+i=0 z=0  qc=10 lvl=10   i=7 z=9  qc=-2 lvl=2
+i=1 z=4  qc=-7 lvl=7    i=8 z=6  qc=1  lvl=1   <-- x264 drops this
+i=2 z=1  qc=3  lvl=3    i=12 z=13 qc=-1 lvl=0
+i=4 z=5  qc=1  lvl=1    i=13 z=14 qc=-1 lvl=0
+```
+
+Every kept level matches x264 except one extra at zigzag index 8 (i=8,
+qc=+1). The other three failing vectors similarly differ by one or two
+levels around zigzag 6/7/8. Since deadzone, scan order, lambda and the
+`trellis_coef` cost function are all source-identical, the cause is the
+**node-state evolution** (`cabac_state` snapshots carried in `trellis_node_t`)
+diverging at those mid-block positions. Next: dump node scores/state at each
+i for a failing vector and compare with x264's DP.
+
