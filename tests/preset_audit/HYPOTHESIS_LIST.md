@@ -2004,3 +2004,20 @@ No production change. Any fix belongs in the I8 prediction / DCT / quant
 pipeline (`vk_i8x8_decide_ex`, `vk_predict8*`, `vk_ref_dct8x8`,
 `vk_ref_quant8`), compared on a common zigzag-ordered basis.
 
+### E94 ? correction to E93: coded I8 blocks match in zigzag order
+
+`build/i8_zigzag_probe.py` compared MB6's four 8x8 quantized coefficient
+arrays on a common x264 zigzag scan. The CBP is 6 (blocks 1 and 2 coded) in
+both encoders, and **both coded blocks match exactly** ? block 1 (1 nonzero)
+and block 2 (9 nonzeros) have identical values and positions. E93's apparent
+coefficient divergence came from comparing x264's zigzag-ordered
+`dct.luma8x8[]` with the oracle's raster-ordered `i8q[][]` plus stale analysis
+data in the two uncoded blocks.
+
+Combining E92c's I8 `nnzc[]` synthesis with x264's scan8 slot mapping still
+did not move first-diff (veryfast 84), and the nnz cache slots remained
+shifted (`cache4` x264 `01,01,00,00` vs oracle `00,00,01,01`). So the bin-584
+CBF-context gap is in the **nnz cache slot semantics** (which neighbour
+values land in slots 4..7 for an I8 top neighbour), not in coefficient
+content. All attempts reverted; no production change.
+
