@@ -46,6 +46,34 @@ Source of truth: `build/x264-ref-src/common/base.c:384-602` (defaults + `x264_pa
 | i_direct_mv_pred | `none obvious` | MISSING for B slices |
 | weighted bipred | `lowres.c bipred_cost` | PARTIAL — equal/dsf weights |
 
+## 2b. Parameter alignment audit (oracle value vs x264 value)
+
+100% byte-exact parity requires the oracle to use **the same parameter values
+as x264** for every preset. Current alignment (verified at `main @ 8f9112e`):
+
+| x264 parameter | x264 preset values | oracle value | status |
+|---|---|---|---|
+| `i_frame_reference` | 1/1/1/2/2/3/5/8/16/16 | same (`nal.c:69-101`) | **ALIGNED** (SPS/PPS exact) |
+| `i_bframe` | 0/3/3/3/3/3/3/3/8/16 | same (`nal.c`) | **ALIGNED** in headers; emission partial |
+| `b_cabac` | 0/1/.../1 | same | **ALIGNED** |
+| `b_deblocking_filter` | 0 ultrafast, 1 else | same | **ALIGNED** |
+| `b_transform_8x8` | 0 ultrafast, 1 else | same (`vk_i8_analysis_enabled`) | **ALIGNED** |
+| `i_subpel_refine` | 0/1/2/4/6/7/8/9/10/11 | same (`vk_cur_subme`) | **ALIGNED** |
+| `i_chroma_qp_offset` | 0 ultra..faster, -2 fast+ | same | **ALIGNED** |
+| `analyse.i_trellis` | 0/0/0/1/1/1/2/2/2/2 | now same (`vk_cur_trellis`) | **ALIGNED** since E45; primitive still partial |
+| `analyse.i_me_method` | DIA/DIA/HEX/HEX/HEX/HEX/HEX/UMH/UMH/TESA | DIA only | **MISSING** — plan item 12 |
+| `analyse.i_me_range` | 16..16/24/24 | 16 | **PARTIAL** — plan item 12 |
+| `analyse.b_fast_pskip` | 1..1/0 placebo | probe-only | **PARTIAL** — plan item 10 |
+| `i_bframe_adaptive` | NONE/FAST/FAST/.../TRELLIS | FAST only | **PARTIAL** — plan item 11 |
+| `rc.b_mb_tree` | 0/0/1... | not wired into lookahead | **PARTIAL** — plan item 14 |
+| `rc.i_lookahead` | 0/0/10/20/30/40/50/60/60/60 | single-pass | **MISSING** — plan item 14 |
+| `analyse.i_weighted_pred` | NONE/SIMPLE.../SMART | partial | **PARTIAL** — plan item 13 |
+| `analyse.i_psy_rd` | 1.0 fast+ | not implemented | **MISSING** — plan item 7 |
+
+Rule: an ALIGNED parameter must not be disabled just because its current
+implementation is incomplete — the value must match x264, and the
+implementation is what gets fixed next.
+
 ## 3. Function inventory (Vk264-rewrite/src/ref)
 
 `bitstream.c`, `bitstream.h`, `bslice.c`, `bslice.h`, `cabac.c`, `cabac.h`, `cabac_enc.c`, `cabac_enc.h`, `cabac_tables.h`, `cavlc.c`, `cavlc.h`, `cavlc_tables.h`, `encoder.c`, `encoder.h`, `hpel.c`, `hpel.h`, `i4x4.c`, `i4x4.h`, `i4x4enc.c`, `i4x4enc.h`, `i8x8.c`, `i8x8.h`, `i8x8decide.c`, `i8x8decide.h`, `i8x8enc.c`, `i8x8enc.h`, `intra16.c`, `intra16.h`, `lowres.c`, `lowres.h`, `lowres_path.c`, `mbtree.c`, `mbtree.h`, `motion.c`, `motion.h`, `nal.c`, `param.h`, `pframe.c`, `pframe.h`, `ratecontrol.c`, `ratecontrol.h`, `slice.c`, `slice.h`, `slicetype.c`, `slicetype.h`, `subpel.c`, `subpel.h`
