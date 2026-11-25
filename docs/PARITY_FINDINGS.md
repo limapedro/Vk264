@@ -1606,3 +1606,24 @@ NAL2 3/20, CABAC first-diffs unchanged, all gates green. CAVLC trellis remains
 partial (only I4 luma; DC/chroma and 8x8 still use plain quantization) but the
 bounded-counter approach is stable and gives a measured CAVLC gain.
 
+### E87 ? bin-82 "CBP luma" was a preset mismatch; real first diff is transform_size
+
+`build/bincompare_faster.py` logged x264 with `--preset faster` but the oracle
+with `veryfast`, so the "bin 82 / ctx 73 CBP-luma" divergence (E69/E70 era)
+compared different presets. With both sides on `veryfast`, the first divergent
+bin is **302, ctx 400 = transform_size**, x264 `1` vs oracle `0`.
+
+Located with `build/bin82_locate.py` (8 frames): ctx400 b=0 is written by MB5
+through the I4 path. Matched 8-frame costs:
+```
+x264 MB5: i16=2653 i4=805 i8=770  -> chooses I8x8 (transform_size=1)
+oracle:   i16=2653 i4=778 i8=827  -> chooses I4    (transform_size=0)
+```
+So the real gap is the **I8-vs-I4 decision at MB5**: x264's I8 cost is 770 and
+I4 805; the oracle's I8 827 and I4 778. The two cost models differ by ~57/27
+at veryfast subme=2, flipping the MB type and therefore the transform_size
+bin. Earlier CBP-luma conclusions from the mismatched harness were artifacts.
+
+No production change made; this is a correction plus the precise target for
+the next cost-model fix (I8/I4 cost calibration at subme=2).
+
