@@ -21,29 +21,41 @@ def defs(path):
             continue
         if '(' not in s or ')' not in s:
             continue
-        # next non-empty line must open a function body
-        j=i+1
-        while j<len(lines) and not lines[j].strip(): j+=1
-        if j>=len(lines) or lines[j].strip()!='{': continue
-        head=s.split('(')[0].strip()
-        m=re.findall(r'[A-Za-z_]\w*',head)
-        if not m: continue
-        name=m[-1]
-        if name in KEYWORDS: continue
-        if len(m)<2: continue
-        out.append((name,i+1,s))
+        # Collect a multi-line signature: keep going until a line is `{`.
+        j, head = i, s
+        while j < len(lines) and lines[j].strip() != '{':
+            j += 1
+            if j-i > 6 or j >= len(lines): break
+            head += ' ' + lines[j].strip()
+        if j >= len(lines) or lines[j].strip() != '{': continue
+        head = head.split('(')[0].strip()
+        m = re.findall(r'[A-Za-z_]\w*', head)
+        if not m or len(m) < 2: continue
+        name = m[-1]
+        if name in KEYWORDS or len(name) < 3: continue
+        out.append((name, i+1, ' '.join(head.split())))
     return out
 
 xrows=[]
-for f in sorted(X.rglob('*.c')):
+for f in sorted(list(X.rglob('*.c'))+list(X.rglob('*.h'))):
     if any(p in f.parts for p in ('tools','filters','input','output','extras')): continue
     for name,line,text in defs(f):
         xrows.append((str(f.relative_to(X)).replace('\\','/'),line,name,text))
 
+def canon(name):
+    """Drop the project prefix so phx_foo matches x264_foo."""
+    for p in ('phx_', 'x264_'):
+        if name.startswith(p):
+            return name[len(p):]
+    return name
+
 onames={}
+LIBC={'malloc','free','memcpy','memset','printf','fprintf','realloc','strlen'}
 for f in sorted(O.rglob('*.c'))+sorted(O.rglob('*.h')):
     for name,line,text in defs(f):
-        onames.setdefault(name,[]).append(f.name)
+        key = canon(name)
+        if key in LIBC: continue
+        onames.setdefault(key,[]).append(f.name)
 
 groups=collections.defaultdict(list)
 for path,line,name,text in xrows:
@@ -69,7 +81,7 @@ for mod in sorted(groups):
               '| x264 function | source:line | phoenix | signature / note |',
               '|---|---:|---|---|']
     for path,line,name,text in rows:
-        status='PORTED' if name in onames else 'MISSING'
+        status='PORTED' if canon(name) in onames else 'MISSING'
         note=text.replace('|','\\|')[:140]
         lines.append(f'| `{name}` | `{path}:{line}` | **{status}** | {note} |')
     lines.append('')

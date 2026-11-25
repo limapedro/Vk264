@@ -14,6 +14,8 @@ endif()
 
 add_library(phx STATIC
     src/phx_param.c
+    src/phx_tables.c
+    src/phx_cost.c
 )
 target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -22,3 +24,7 @@ enable_testing()
 add_executable(phx_test_param tests/test_param.c)
 target_link_libraries(phx_test_param PRIVATE phx)
 add_test(NAME phx_param_presets COMMAND phx_test_param)
+
+add_executable(phx_test_cost tests/test_cost.c)
+target_link_libraries(phx_test_cost PRIVATE phx)
+add_test(NAME phx_cost_tables COMMAND phx_test_cost)

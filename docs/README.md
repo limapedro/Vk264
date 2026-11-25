@@ -40,7 +40,7 @@ CPU reference can.
     README.md                  this file
     X264_PIPELINE.md           how x264 encodes, function by function, with source lines
     DATA_STRUCTURES.md         the structs that must be ported, field by field
-    FUNCTION_INVENTORY.md      mechanical inventory of 814 x264 C functions + status
+    FUNCTION_INVENTORY.md      mechanical inventory of 1049 x264 C functions + status
     ORACLE_DESIGN.md           how the phoenix oracle must be structured
     SHADER_MAPPING.md          CPU function -> shader classification (the main goal)
     PORTING_ROADMAP.md         ordered work packages and their acceptance gates
@@ -73,7 +73,7 @@ Current, runnable gates for this repository:
 
 ```
 python tools/run_tests.py       CMake configure + build + ctest (all unit tests)
-python tools/gen_function_inventory.py   regenerate the 814-function inventory
+python tools/gen_function_inventory.py   regenerate the 1049-function inventory
 ```
 
 Historical baseline from the discarded incremental oracle (its harness scripts
