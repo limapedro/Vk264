@@ -1118,3 +1118,25 @@ No metric gain on the current clips (first P-slice MB has no skip
 neighbours), but parameter alignment is now complete across both P-slice
 writers.
 
+### E51 ? x264 RDO probe reveals deadzone-bias difference; DP still incomplete
+
+`build/trellis_rdo_probe.py` patches x264 `encoder/rdo.c` to dump the
+*internal* `quant_trellis_cabac` state: original coefficients, deadzone
+`quant_coefs`, `last_nnz`, and final output for MB1 I4 blocks. Example:
+
+```
+TDQ last=5 o=54,-60,46,10,-60,26,-30,18,...
+        qc=1,-1,1,0,-1,1,0,0,...
+TDO q=1,1,0,0,-1,0,...
+```
+
+x264's trellis deadzone uses `h->quant4_bias0 = (1<<15)/mf`
+(`set.c:179-180`, `rdo.c:1149`), which produces more nonzero candidates than
+the oracle's deadzone bias. Re-testing `vk_trellis_quant_4x4` with bias0
+made the batch match count **worse** (26/31 -> 24/31), so the trellis DP
+itself still has differences that are masked when the candidate set is
+smaller. Reverted bias0; kept the regular bias for now.
+
+Conclusion: block-exact trellis needs both the bias0 deadzone and a
+faithful DP. No parity change from this experiment; tracked as plan item 1.
+
