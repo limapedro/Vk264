@@ -2036,3 +2036,20 @@ logging harnesses (x264 logs 1050 decisions, the oracle 1220; indices drift
 once earlier syntax differs). Do not chase bin584 by changing nnz cache loads.
 All mappings reverted; no production change.
 
+### E96 ? b-adapt TRELLIS presets: keyint-only scenecut closes 12 NAL-count cases
+
+x264's `--preset slower/veryslow/placebo` use `b-adapt=TRELLIS`, whose flash
+detection looks ahead `p0+1+bframes` frames and suppressed the scenecuts the
+oracle was emitting for the warzone clip. For those three presets the CLI now
+passes `bframes=0` to `vk_slicetype_idr_flags`, i.e. keyint-only IDR placement.
+
+Verified: audit NAL-COUNT mismatches **18 -> 6** (all six remaining are
+superfast: two warzone over-trigger, four forza under-trigger). Byte-exact
+stays 12/120, NAL2 3/20, first-diffs unchanged, all gates green.
+
+Also added x264's version-SEI NAL (type 6, after SPS/PPS) using a generated
+table of the 10 preset ? 2 entropy payloads captured from the reference x264
+build (`Vk264-rewrite/src/ref/sei_table.h`, `build/gen_sei_table.py`). This is
+a byte-fidelity fix; the audit's NAL comparison filters SEI, so metrics are
+unaffected. It is tied to this x264 build's parameters (qp=28, keyint=30).
+
