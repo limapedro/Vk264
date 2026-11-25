@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="480" height="7652" viewBox="0 0 480 7652" role="img" aria-label="Phoenix x264 parity progress">
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="8156" viewBox="0 0 480 8156" role="img" aria-label="Phoenix x264 parity progress">
 <defs>
 <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
 <stop offset="0" stop-color="#101820"/><stop offset="1" stop-color="#0a0f14"/>
@@ -7,17 +7,17 @@
 <stop offset="0" stop-color="#00e676"/><stop offset="1" stop-color="#69f0ae"/>
 </linearGradient>
 </defs>
-<rect width="480" height="7652" fill="url(#bg)"/>
+<rect width="480" height="8156" fill="url(#bg)"/>
 <text x="24" y="48" font-family="sans-serif" font-size="30" font-weight="700" fill="#ffffff">VK264 / PHOENIX</text>
 <text x="24" y="78" font-family="sans-serif" font-size="17" fill="#8aa0b4">X264 PARITY PROGRESS  •  MOBILE VIEW</text>
 <rect x="24" y="100" width="432" height="150" rx="14" fill="#16212b" stroke="#274050"/>
 <text x="44" y="144" font-family="sans-serif" font-size="16" fill="#8aa0b4">WEAPON</text>
 <text x="44" y="176" font-family="sans-serif" font-size="26" font-weight="700" fill="#ffffff">X264 ORACLE</text>
-<text x="440" y="176" text-anchor="end" font-family="sans-serif" font-size="34" font-weight="700" fill="#00e676">LVL 166</text>
+<text x="440" y="176" text-anchor="end" font-family="sans-serif" font-size="34" font-weight="700" fill="#00e676">LVL 178</text>
 <text x="44" y="206" font-family="sans-serif" font-size="15" fill="#8aa0b4">XP</text>
-<text x="440" y="206" text-anchor="end" font-family="sans-serif" font-size="17" fill="#ffffff">166 / 1386  (12.0%)</text>
+<text x="440" y="206" text-anchor="end" font-family="sans-serif" font-size="17" fill="#ffffff">178 / 1386  (12.8%)</text>
 <rect x="44" y="222" width="392" height="18" rx="8" fill="#22303c"/>
-<rect x="44" y="222" width="46" height="18" rx="8" fill="url(#xp)"/>
+<rect x="44" y="222" width="50" height="18" rx="8" fill="url(#xp)"/>
 <line x1="83" y1="222" x2="83" y2="240" stroke="#101820" stroke-width="2"/>
 <line x1="122" y1="222" x2="122" y2="240" stroke="#101820" stroke-width="2"/>
 <line x1="161" y1="222" x2="161" y2="240" stroke="#101820" stroke-width="2"/>
@@ -56,8 +56,8 @@
 <text x="426" y="422" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#3a4a58">100%</text>
 <text x="426" y="444" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#b0c4d4">PARITY</text>
 <text x="24" y="504" font-family="sans-serif" font-size="20" font-weight="700" fill="#ffffff">PORTED FUNCTIONS</text>
-<text x="456" y="504" text-anchor="end" font-family="sans-serif" font-size="15" fill="#00e676">166 UNLOCKED</text>
-<text x="24" y="530" font-family="sans-serif" font-size="14" fill="#8aa0b4">1220 functions still locked • 100% byte-exact is the final unlock</text>
+<text x="456" y="504" text-anchor="end" font-family="sans-serif" font-size="15" fill="#00e676">178 UNLOCKED</text>
+<text x="24" y="530" font-family="sans-serif" font-size="14" fill="#8aa0b4">1208 functions still locked • 100% byte-exact is the final unlock</text>
 <rect x="16" y="532" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="553" r="5" fill="#00e676"/>
 <text x="46" y="560" font-family="sans-serif" font-size="17" fill="#ffffff">x264_param_default</text>
@@ -179,467 +179,509 @@
 <text x="46" y="1962" font-family="sans-serif" font-size="12" fill="#7f97aa">common/common.h:145</text>
 <rect x="16" y="1960" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="1981" r="5" fill="#00e676"/>
-<text x="46" y="1988" font-family="sans-serif" font-size="17" fill="#ffffff">dct4x4dc</text>
-<text x="46" y="2004" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:47</text>
+<text x="46" y="1988" font-family="sans-serif" font-size="17" fill="#ffffff">cache</text>
+<text x="46" y="2004" font-family="sans-serif" font-size="12" fill="#7f97aa">common/cpu.c:265</text>
 <circle cx="32" cy="2023" r="5" fill="#00e676"/>
-<text x="46" y="2030" font-family="sans-serif" font-size="17" fill="#ffffff">idct4x4dc</text>
-<text x="46" y="2046" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:78</text>
+<text x="46" y="2030" font-family="sans-serif" font-size="17" fill="#ffffff">dct4x4dc</text>
+<text x="46" y="2046" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:47</text>
 <rect x="16" y="2044" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="2065" r="5" fill="#00e676"/>
-<text x="46" y="2072" font-family="sans-serif" font-size="17" fill="#ffffff">dct2x4dc</text>
-<text x="46" y="2088" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:109</text>
+<text x="46" y="2072" font-family="sans-serif" font-size="17" fill="#ffffff">idct4x4dc</text>
+<text x="46" y="2088" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:78</text>
 <circle cx="32" cy="2107" r="5" fill="#00e676"/>
-<text x="46" y="2114" font-family="sans-serif" font-size="17" fill="#ffffff">pixel_sub_wxh</text>
-<text x="46" y="2130" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:145</text>
+<text x="46" y="2114" font-family="sans-serif" font-size="17" fill="#ffffff">dct2x4dc</text>
+<text x="46" y="2130" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:109</text>
 <rect x="16" y="2128" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="2149" r="5" fill="#00e676"/>
-<text x="46" y="2156" font-family="sans-serif" font-size="17" fill="#ffffff">sub4x4_dct</text>
-<text x="46" y="2172" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:157</text>
+<text x="46" y="2156" font-family="sans-serif" font-size="17" fill="#ffffff">pixel_sub_wxh</text>
+<text x="46" y="2172" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:145</text>
 <circle cx="32" cy="2191" r="5" fill="#00e676"/>
-<text x="46" y="2198" font-family="sans-serif" font-size="17" fill="#ffffff">sub8x8_dct</text>
-<text x="46" y="2214" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:191</text>
+<text x="46" y="2198" font-family="sans-serif" font-size="17" fill="#ffffff">sub4x4_dct</text>
+<text x="46" y="2214" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:157</text>
 <rect x="16" y="2212" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="2233" r="5" fill="#00e676"/>
-<text x="46" y="2240" font-family="sans-serif" font-size="17" fill="#ffffff">sub16x16_dct</text>
-<text x="46" y="2256" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:199</text>
+<text x="46" y="2240" font-family="sans-serif" font-size="17" fill="#ffffff">sub8x8_dct</text>
+<text x="46" y="2256" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:191</text>
 <circle cx="32" cy="2275" r="5" fill="#00e676"/>
-<text x="46" y="2282" font-family="sans-serif" font-size="17" fill="#ffffff">sub4x4_dct_dc</text>
-<text x="46" y="2298" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:207</text>
+<text x="46" y="2282" font-family="sans-serif" font-size="17" fill="#ffffff">sub16x16_dct</text>
+<text x="46" y="2298" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:199</text>
 <rect x="16" y="2296" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="2317" r="5" fill="#00e676"/>
-<text x="46" y="2324" font-family="sans-serif" font-size="17" fill="#ffffff">sub8x8_dct_dc</text>
-<text x="46" y="2340" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:216</text>
+<text x="46" y="2324" font-family="sans-serif" font-size="17" fill="#ffffff">sub4x4_dct_dc</text>
+<text x="46" y="2340" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:207</text>
 <circle cx="32" cy="2359" r="5" fill="#00e676"/>
-<text x="46" y="2366" font-family="sans-serif" font-size="17" fill="#ffffff">sub8x16_dct_dc</text>
-<text x="46" y="2382" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:234</text>
+<text x="46" y="2366" font-family="sans-serif" font-size="17" fill="#ffffff">sub8x8_dct_dc</text>
+<text x="46" y="2382" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:216</text>
 <rect x="16" y="2380" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="2401" r="5" fill="#00e676"/>
-<text x="46" y="2408" font-family="sans-serif" font-size="17" fill="#ffffff">add4x4_idct</text>
-<text x="46" y="2424" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:272</text>
+<text x="46" y="2408" font-family="sans-serif" font-size="17" fill="#ffffff">sub8x16_dct_dc</text>
+<text x="46" y="2424" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:234</text>
 <circle cx="32" cy="2443" r="5" fill="#00e676"/>
-<text x="46" y="2450" font-family="sans-serif" font-size="17" fill="#ffffff">add8x8_idct</text>
-<text x="46" y="2466" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:312</text>
+<text x="46" y="2450" font-family="sans-serif" font-size="17" fill="#ffffff">add4x4_idct</text>
+<text x="46" y="2466" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:272</text>
 <rect x="16" y="2464" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="2485" r="5" fill="#00e676"/>
-<text x="46" y="2492" font-family="sans-serif" font-size="17" fill="#ffffff">add16x16_idct</text>
-<text x="46" y="2508" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:320</text>
+<text x="46" y="2492" font-family="sans-serif" font-size="17" fill="#ffffff">add8x8_idct</text>
+<text x="46" y="2508" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:312</text>
 <circle cx="32" cy="2527" r="5" fill="#00e676"/>
-<text x="46" y="2534" font-family="sans-serif" font-size="17" fill="#ffffff">sub8x8_dct8</text>
-<text x="46" y="2550" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:359</text>
+<text x="46" y="2534" font-family="sans-serif" font-size="17" fill="#ffffff">add16x16_idct</text>
+<text x="46" y="2550" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:320</text>
 <rect x="16" y="2548" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="2569" r="5" fill="#00e676"/>
-<text x="46" y="2576" font-family="sans-serif" font-size="17" fill="#ffffff">sub16x16_dct8</text>
-<text x="46" y="2592" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:380</text>
+<text x="46" y="2576" font-family="sans-serif" font-size="17" fill="#ffffff">sub8x8_dct8</text>
+<text x="46" y="2592" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:359</text>
 <circle cx="32" cy="2611" r="5" fill="#00e676"/>
-<text x="46" y="2618" font-family="sans-serif" font-size="17" fill="#ffffff">add8x8_idct8</text>
-<text x="46" y="2634" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:415</text>
+<text x="46" y="2618" font-family="sans-serif" font-size="17" fill="#ffffff">sub16x16_dct8</text>
+<text x="46" y="2634" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:380</text>
 <rect x="16" y="2632" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="2653" r="5" fill="#00e676"/>
-<text x="46" y="2660" font-family="sans-serif" font-size="17" fill="#ffffff">add16x16_idct8</text>
-<text x="46" y="2676" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:434</text>
+<text x="46" y="2660" font-family="sans-serif" font-size="17" fill="#ffffff">add8x8_idct8</text>
+<text x="46" y="2676" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:415</text>
 <circle cx="32" cy="2695" r="5" fill="#00e676"/>
-<text x="46" y="2702" font-family="sans-serif" font-size="17" fill="#ffffff">add4x4_idct_dc</text>
-<text x="46" y="2718" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:442</text>
+<text x="46" y="2702" font-family="sans-serif" font-size="17" fill="#ffffff">add16x16_idct8</text>
+<text x="46" y="2718" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:434</text>
 <rect x="16" y="2716" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="2737" r="5" fill="#00e676"/>
-<text x="46" y="2744" font-family="sans-serif" font-size="17" fill="#ffffff">add8x8_idct_dc</text>
-<text x="46" y="2760" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:454</text>
+<text x="46" y="2744" font-family="sans-serif" font-size="17" fill="#ffffff">add4x4_idct_dc</text>
+<text x="46" y="2760" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:442</text>
 <circle cx="32" cy="2779" r="5" fill="#00e676"/>
-<text x="46" y="2786" font-family="sans-serif" font-size="17" fill="#ffffff">add16x16_idct_dc</text>
-<text x="46" y="2802" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:462</text>
+<text x="46" y="2786" font-family="sans-serif" font-size="17" fill="#ffffff">add8x8_idct_dc</text>
+<text x="46" y="2802" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:454</text>
 <rect x="16" y="2800" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="2821" r="5" fill="#00e676"/>
-<text x="46" y="2828" font-family="sans-serif" font-size="17" fill="#ffffff">x264_clip_pixel</text>
-<text x="46" y="2844" font-family="sans-serif" font-size="12" fill="#7f97aa">common/deblock.c:106</text>
+<text x="46" y="2828" font-family="sans-serif" font-size="17" fill="#ffffff">add16x16_idct_dc</text>
+<text x="46" y="2844" font-family="sans-serif" font-size="12" fill="#7f97aa">common/dct.c:462</text>
 <circle cx="32" cy="2863" r="5" fill="#00e676"/>
 <text x="46" y="2870" font-family="sans-serif" font-size="17" fill="#ffffff">x264_clip_pixel</text>
-<text x="46" y="2886" font-family="sans-serif" font-size="12" fill="#7f97aa">common/deblock.c:107</text>
+<text x="46" y="2886" font-family="sans-serif" font-size="12" fill="#7f97aa">common/deblock.c:106</text>
 <rect x="16" y="2884" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="2905" r="5" fill="#00e676"/>
 <text x="46" y="2912" font-family="sans-serif" font-size="17" fill="#ffffff">x264_clip_pixel</text>
-<text x="46" y="2928" font-family="sans-serif" font-size="12" fill="#7f97aa">common/deblock.c:147</text>
+<text x="46" y="2928" font-family="sans-serif" font-size="12" fill="#7f97aa">common/deblock.c:107</text>
 <circle cx="32" cy="2947" r="5" fill="#00e676"/>
 <text x="46" y="2954" font-family="sans-serif" font-size="17" fill="#ffffff">x264_clip_pixel</text>
-<text x="46" y="2970" font-family="sans-serif" font-size="12" fill="#7f97aa">common/deblock.c:148</text>
+<text x="46" y="2970" font-family="sans-serif" font-size="12" fill="#7f97aa">common/deblock.c:147</text>
 <rect x="16" y="2968" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="2989" r="5" fill="#00e676"/>
-<text x="46" y="2996" font-family="sans-serif" font-size="17" fill="#ffffff">align_stride</text>
-<text x="46" y="3012" font-family="sans-serif" font-size="12" fill="#7f97aa">common/frame.c:30</text>
+<text x="46" y="2996" font-family="sans-serif" font-size="17" fill="#ffffff">x264_clip_pixel</text>
+<text x="46" y="3012" font-family="sans-serif" font-size="12" fill="#7f97aa">common/deblock.c:148</text>
 <circle cx="32" cy="3031" r="5" fill="#00e676"/>
-<text x="46" y="3038" font-family="sans-serif" font-size="17" fill="#ffffff">align_plane_size</text>
-<text x="46" y="3054" font-family="sans-serif" font-size="12" fill="#7f97aa">common/frame.c:38</text>
+<text x="46" y="3038" font-family="sans-serif" font-size="17" fill="#ffffff">align_stride</text>
+<text x="46" y="3054" font-family="sans-serif" font-size="12" fill="#7f97aa">common/frame.c:30</text>
 <rect x="16" y="3052" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="3073" r="5" fill="#00e676"/>
-<text x="46" y="3080" font-family="sans-serif" font-size="17" fill="#ffffff">frame_new</text>
-<text x="46" y="3096" font-family="sans-serif" font-size="12" fill="#7f97aa">common/frame.c:59</text>
+<text x="46" y="3080" font-family="sans-serif" font-size="17" fill="#ffffff">align_plane_size</text>
+<text x="46" y="3096" font-family="sans-serif" font-size="12" fill="#7f97aa">common/frame.c:38</text>
 <circle cx="32" cy="3115" r="5" fill="#00e676"/>
-<text x="46" y="3122" font-family="sans-serif" font-size="17" fill="#ffffff">x264_frame_delete</text>
-<text x="46" y="3138" font-family="sans-serif" font-size="12" fill="#7f97aa">common/frame.c:312</text>
+<text x="46" y="3122" font-family="sans-serif" font-size="17" fill="#ffffff">frame_new</text>
+<text x="46" y="3138" font-family="sans-serif" font-size="12" fill="#7f97aa">common/frame.c:59</text>
 <rect x="16" y="3136" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="3157" r="5" fill="#00e676"/>
-<text x="46" y="3164" font-family="sans-serif" font-size="17" fill="#ffffff">plane_expand_border</text>
-<text x="46" y="3180" font-family="sans-serif" font-size="12" fill="#7f97aa">common/frame.c:535</text>
+<text x="46" y="3164" font-family="sans-serif" font-size="17" fill="#ffffff">x264_frame_delete</text>
+<text x="46" y="3180" font-family="sans-serif" font-size="12" fill="#7f97aa">common/frame.c:312</text>
 <circle cx="32" cy="3199" r="5" fill="#00e676"/>
-<text x="46" y="3206" font-family="sans-serif" font-size="17" fill="#ffffff">x264_frame_expand_border_lowres</text>
-<text x="46" y="3222" font-family="sans-serif" font-size="12" fill="#7f97aa">common/frame.c:627</text>
+<text x="46" y="3206" font-family="sans-serif" font-size="17" fill="#ffffff">plane_expand_border</text>
+<text x="46" y="3222" font-family="sans-serif" font-size="12" fill="#7f97aa">common/frame.c:535</text>
 <rect x="16" y="3220" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="3241" r="5" fill="#00e676"/>
-<text x="46" y="3248" font-family="sans-serif" font-size="17" fill="#ffffff">macroblock_cache_load_neighbours</text>
-<text x="46" y="3264" font-family="sans-serif" font-size="12" fill="#7f97aa">common/macroblock.c:673</text>
+<text x="46" y="3248" font-family="sans-serif" font-size="17" fill="#ffffff">x264_frame_expand_border_lowres</text>
+<text x="46" y="3264" font-family="sans-serif" font-size="12" fill="#7f97aa">common/frame.c:627</text>
 <circle cx="32" cy="3283" r="5" fill="#00e676"/>
-<text x="46" y="3290" font-family="sans-serif" font-size="17" fill="#ffffff">macroblock_cache_load</text>
-<text x="46" y="3306" font-family="sans-serif" font-size="12" fill="#7f97aa">common/macroblock.c:855</text>
+<text x="46" y="3290" font-family="sans-serif" font-size="17" fill="#ffffff">macroblock_cache_load_neighbours</text>
+<text x="46" y="3306" font-family="sans-serif" font-size="12" fill="#7f97aa">common/macroblock.c:673</text>
 <rect x="16" y="3304" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="3325" r="5" fill="#00e676"/>
-<text x="46" y="3332" font-family="sans-serif" font-size="17" fill="#ffffff">macroblock_backup_intra</text>
-<text x="46" y="3348" font-family="sans-serif" font-size="12" fill="#7f97aa">common/macroblock.c:1638</text>
+<text x="46" y="3332" font-family="sans-serif" font-size="17" fill="#ffffff">macroblock_cache_load</text>
+<text x="46" y="3348" font-family="sans-serif" font-size="12" fill="#7f97aa">common/macroblock.c:855</text>
 <circle cx="32" cy="3367" r="5" fill="#00e676"/>
-<text x="46" y="3374" font-family="sans-serif" font-size="17" fill="#ffffff">x264_macroblock_cache_save</text>
-<text x="46" y="3390" font-family="sans-serif" font-size="12" fill="#7f97aa">common/macroblock.c:1680</text>
+<text x="46" y="3374" font-family="sans-serif" font-size="17" fill="#ffffff">macroblock_backup_intra</text>
+<text x="46" y="3390" font-family="sans-serif" font-size="12" fill="#7f97aa">common/macroblock.c:1638</text>
 <rect x="16" y="3388" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="3409" r="5" fill="#00e676"/>
-<text x="46" y="3416" font-family="sans-serif" font-size="17" fill="#ffffff">x264_mb_predict_intra4x4_mode</text>
-<text x="46" y="3432" font-family="sans-serif" font-size="12" fill="#7f97aa">common/macroblock.h:420</text>
+<text x="46" y="3416" font-family="sans-serif" font-size="17" fill="#ffffff">x264_macroblock_cache_save</text>
+<text x="46" y="3432" font-family="sans-serif" font-size="12" fill="#7f97aa">common/macroblock.c:1680</text>
 <circle cx="32" cy="3451" r="5" fill="#00e676"/>
-<text x="46" y="3458" font-family="sans-serif" font-size="17" fill="#ffffff">x264_frame_init_lowres</text>
-<text x="46" y="3474" font-family="sans-serif" font-size="12" fill="#7f97aa">common/mc.c:458</text>
+<text x="46" y="3458" font-family="sans-serif" font-size="17" fill="#ffffff">x264_mb_predict_intra4x4_mode</text>
+<text x="46" y="3474" font-family="sans-serif" font-size="12" fill="#7f97aa">common/macroblock.h:420</text>
 <rect x="16" y="3472" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="3493" r="5" fill="#00e676"/>
-<text x="46" y="3500" font-family="sans-serif" font-size="17" fill="#ffffff">frame_init_lowres_core</text>
-<text x="46" y="3516" font-family="sans-serif" font-size="12" fill="#7f97aa">common/mc.c:484</text>
+<text x="46" y="3500" font-family="sans-serif" font-size="17" fill="#ffffff">x264_frame_init_lowres</text>
+<text x="46" y="3516" font-family="sans-serif" font-size="12" fill="#7f97aa">common/mc.c:458</text>
 <circle cx="32" cy="3535" r="5" fill="#00e676"/>
-<text x="46" y="3542" font-family="sans-serif" font-size="17" fill="#ffffff">x264_mb_predict_mv</text>
-<text x="46" y="3558" font-family="sans-serif" font-size="12" fill="#7f97aa">common/mvpred.c:30</text>
+<text x="46" y="3542" font-family="sans-serif" font-size="17" fill="#ffffff">frame_init_lowres_core</text>
+<text x="46" y="3558" font-family="sans-serif" font-size="12" fill="#7f97aa">common/mc.c:484</text>
 <rect x="16" y="3556" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="3577" r="5" fill="#00e676"/>
-<text x="46" y="3584" font-family="sans-serif" font-size="17" fill="#ffffff">x264_clip_pixel</text>
-<text x="46" y="3600" font-family="sans-serif" font-size="12" fill="#7f97aa">common/opencl/x264-cl.h:41</text>
+<text x="46" y="3584" font-family="sans-serif" font-size="17" fill="#ffffff">x264_mb_predict_mv</text>
+<text x="46" y="3600" font-family="sans-serif" font-size="12" fill="#7f97aa">common/mvpred.c:30</text>
 <circle cx="32" cy="3619" r="5" fill="#00e676"/>
-<text x="46" y="3626" font-family="sans-serif" font-size="17" fill="#ffffff">name</text>
-<text x="46" y="3642" font-family="sans-serif" font-size="12" fill="#7f97aa">common/opencl.c:47</text>
+<text x="46" y="3626" font-family="sans-serif" font-size="17" fill="#ffffff">x264_clip_pixel</text>
+<text x="46" y="3642" font-family="sans-serif" font-size="12" fill="#7f97aa">common/opencl/x264-cl.h:41</text>
 <rect x="16" y="3640" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="3661" r="5" fill="#00e676"/>
-<text x="46" y="3668" font-family="sans-serif" font-size="17" fill="#ffffff">x264_clz</text>
-<text x="46" y="3684" font-family="sans-serif" font-size="12" fill="#7f97aa">common/osdep.h:514</text>
+<text x="46" y="3668" font-family="sans-serif" font-size="17" fill="#ffffff">abs2</text>
+<text x="46" y="3684" font-family="sans-serif" font-size="12" fill="#7f97aa">common/opencl/x264-cl.h:53</text>
 <circle cx="32" cy="3703" r="5" fill="#00e676"/>
-<text x="46" y="3710" font-family="sans-serif" font-size="17" fill="#ffffff">predict_16x16_dc_128_c</text>
-<text x="46" y="3726" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:100</text>
+<text x="46" y="3710" font-family="sans-serif" font-size="17" fill="#ffffff">name</text>
+<text x="46" y="3726" font-family="sans-serif" font-size="12" fill="#7f97aa">common/opencl.c:47</text>
 <rect x="16" y="3724" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="3745" r="5" fill="#00e676"/>
-<text x="46" y="3752" font-family="sans-serif" font-size="17" fill="#ffffff">block</text>
-<text x="46" y="3768" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:164</text>
+<text x="46" y="3752" font-family="sans-serif" font-size="17" fill="#ffffff">x264_clz</text>
+<text x="46" y="3768" font-family="sans-serif" font-size="12" fill="#7f97aa">common/osdep.h:514</text>
 <circle cx="32" cy="3787" r="5" fill="#00e676"/>
-<text x="46" y="3794" font-family="sans-serif" font-size="17" fill="#ffffff">block</text>
-<text x="46" y="3810" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:311</text>
+<text x="46" y="3794" font-family="sans-serif" font-size="17" fill="#ffffff">abs2</text>
+<text x="46" y="3810" font-family="sans-serif" font-size="12" fill="#7f97aa">common/pixel.c:255</text>
 <rect x="16" y="3808" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="3829" r="5" fill="#00e676"/>
-<text x="46" y="3836" font-family="sans-serif" font-size="17" fill="#ffffff">predict_8x16c_dc_left_c</text>
-<text x="46" y="3852" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:323</text>
+<text x="46" y="3836" font-family="sans-serif" font-size="17" fill="#ffffff">x264_pixel_satd_4x4</text>
+<text x="46" y="3852" font-family="sans-serif" font-size="12" fill="#7f97aa">common/pixel.c:265</text>
 <circle cx="32" cy="3871" r="5" fill="#00e676"/>
-<text x="46" y="3878" font-family="sans-serif" font-size="17" fill="#ffffff">x264_predict_8x16c_dc_c</text>
-<text x="46" y="3894" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:361</text>
+<text x="46" y="3878" font-family="sans-serif" font-size="17" fill="#ffffff">x264_pixel_satd_8x4</text>
+<text x="46" y="3894" font-family="sans-serif" font-size="12" fill="#7f97aa">common/pixel.c:290</text>
 <rect x="16" y="3892" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="3913" r="5" fill="#00e676"/>
-<text x="46" y="3920" font-family="sans-serif" font-size="17" fill="#ffffff">predict_4x4_ddl_c</text>
-<text x="46" y="3936" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:534</text>
+<text x="46" y="3920" font-family="sans-serif" font-size="17" fill="#ffffff">sa8d_8x8</text>
+<text x="46" y="3936" font-family="sans-serif" font-size="12" fill="#7f97aa">common/pixel.c:334</text>
 <circle cx="32" cy="3955" r="5" fill="#00e676"/>
-<text x="46" y="3962" font-family="sans-serif" font-size="17" fill="#ffffff">predict_8x8_dc_left_c</text>
-<text x="46" y="3978" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:704</text>
+<text x="46" y="3962" font-family="sans-serif" font-size="17" fill="#ffffff">predict_16x16_dc_128_c</text>
+<text x="46" y="3978" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:100</text>
 <rect x="16" y="3976" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="3997" r="5" fill="#00e676"/>
-<text x="46" y="4004" font-family="sans-serif" font-size="17" fill="#ffffff">predict_8x8_dc_top_c</text>
-<text x="46" y="4020" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:710</text>
+<text x="46" y="4004" font-family="sans-serif" font-size="17" fill="#ffffff">block</text>
+<text x="46" y="4020" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:164</text>
 <circle cx="32" cy="4039" r="5" fill="#00e676"/>
-<text x="46" y="4046" font-family="sans-serif" font-size="17" fill="#ffffff">x264_predict_16x16_init</text>
-<text x="46" y="4062" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:889</text>
+<text x="46" y="4046" font-family="sans-serif" font-size="17" fill="#ffffff">block</text>
+<text x="46" y="4062" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:311</text>
 <rect x="16" y="4060" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="4081" r="5" fill="#00e676"/>
-<text x="46" y="4088" font-family="sans-serif" font-size="17" fill="#ffffff">x264_predict_8x8c_init</text>
-<text x="46" y="4104" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:936</text>
+<text x="46" y="4088" font-family="sans-serif" font-size="17" fill="#ffffff">predict_8x16c_dc_left_c</text>
+<text x="46" y="4104" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:323</text>
 <circle cx="32" cy="4123" r="5" fill="#00e676"/>
-<text x="46" y="4130" font-family="sans-serif" font-size="17" fill="#ffffff">x264_predict_8x16c_init</text>
-<text x="46" y="4146" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:977</text>
+<text x="46" y="4130" font-family="sans-serif" font-size="17" fill="#ffffff">x264_predict_8x16c_dc_c</text>
+<text x="46" y="4146" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:361</text>
 <rect x="16" y="4144" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="4165" r="5" fill="#00e676"/>
-<text x="46" y="4172" font-family="sans-serif" font-size="17" fill="#ffffff">x264_predict_8x8_init</text>
-<text x="46" y="4188" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:1000</text>
+<text x="46" y="4172" font-family="sans-serif" font-size="17" fill="#ffffff">predict_4x4_ddl_c</text>
+<text x="46" y="4188" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:534</text>
 <circle cx="32" cy="4207" r="5" fill="#00e676"/>
-<text x="46" y="4214" font-family="sans-serif" font-size="17" fill="#ffffff">x264_predict_4x4_init</text>
-<text x="46" y="4230" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:1042</text>
+<text x="46" y="4214" font-family="sans-serif" font-size="17" fill="#ffffff">predict_8x8_dc_left_c</text>
+<text x="46" y="4230" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:704</text>
 <rect x="16" y="4228" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="4249" r="5" fill="#00e676"/>
-<text x="46" y="4256" font-family="sans-serif" font-size="17" fill="#ffffff">quant_8x8</text>
-<text x="46" y="4272" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:59</text>
+<text x="46" y="4256" font-family="sans-serif" font-size="17" fill="#ffffff">predict_8x8_dc_top_c</text>
+<text x="46" y="4272" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:710</text>
 <circle cx="32" cy="4291" r="5" fill="#00e676"/>
-<text x="46" y="4298" font-family="sans-serif" font-size="17" fill="#ffffff">quant_4x4</text>
-<text x="46" y="4314" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:67</text>
+<text x="46" y="4298" font-family="sans-serif" font-size="17" fill="#ffffff">x264_predict_16x16_init</text>
+<text x="46" y="4314" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:889</text>
 <rect x="16" y="4312" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="4333" r="5" fill="#00e676"/>
-<text x="46" y="4340" font-family="sans-serif" font-size="17" fill="#ffffff">quant_4x4x4</text>
-<text x="46" y="4356" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:75</text>
+<text x="46" y="4340" font-family="sans-serif" font-size="17" fill="#ffffff">x264_predict_8x8c_init</text>
+<text x="46" y="4356" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:936</text>
 <circle cx="32" cy="4375" r="5" fill="#00e676"/>
-<text x="46" y="4382" font-family="sans-serif" font-size="17" fill="#ffffff">quant_4x4_dc</text>
-<text x="46" y="4398" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:88</text>
+<text x="46" y="4382" font-family="sans-serif" font-size="17" fill="#ffffff">x264_predict_8x16c_init</text>
+<text x="46" y="4398" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:977</text>
 <rect x="16" y="4396" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="4417" r="5" fill="#00e676"/>
-<text x="46" y="4424" font-family="sans-serif" font-size="17" fill="#ffffff">quant_2x2_dc</text>
-<text x="46" y="4440" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:96</text>
+<text x="46" y="4424" font-family="sans-serif" font-size="17" fill="#ffffff">x264_predict_8x8_init</text>
+<text x="46" y="4440" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:1000</text>
 <circle cx="32" cy="4459" r="5" fill="#00e676"/>
-<text x="46" y="4466" font-family="sans-serif" font-size="17" fill="#ffffff">dequant_4x4</text>
-<text x="46" y="4482" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:112</text>
+<text x="46" y="4466" font-family="sans-serif" font-size="17" fill="#ffffff">x264_predict_4x4_init</text>
+<text x="46" y="4482" font-family="sans-serif" font-size="12" fill="#7f97aa">common/predict.c:1042</text>
 <rect x="16" y="4480" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="4501" r="5" fill="#00e676"/>
-<text x="46" y="4508" font-family="sans-serif" font-size="17" fill="#ffffff">dequant_8x8</text>
-<text x="46" y="4524" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:130</text>
+<text x="46" y="4508" font-family="sans-serif" font-size="17" fill="#ffffff">quant_8x8</text>
+<text x="46" y="4524" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:59</text>
 <circle cx="32" cy="4543" r="5" fill="#00e676"/>
-<text x="46" y="4550" font-family="sans-serif" font-size="17" fill="#ffffff">dequant_4x4_dc</text>
-<text x="46" y="4566" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:148</text>
+<text x="46" y="4550" font-family="sans-serif" font-size="17" fill="#ffffff">quant_4x4</text>
+<text x="46" y="4566" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:67</text>
 <rect x="16" y="4564" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="4585" r="5" fill="#00e676"/>
-<text x="46" y="4592" font-family="sans-serif" font-size="17" fill="#ffffff">idct_dequant_2x4_dc</text>
-<text x="46" y="4608" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:185</text>
+<text x="46" y="4592" font-family="sans-serif" font-size="17" fill="#ffffff">quant_4x4x4</text>
+<text x="46" y="4608" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:75</text>
 <circle cx="32" cy="4627" r="5" fill="#00e676"/>
-<text x="46" y="4634" font-family="sans-serif" font-size="17" fill="#ffffff">idct_dequant_2x4_dconly</text>
-<text x="46" y="4650" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:199</text>
+<text x="46" y="4634" font-family="sans-serif" font-size="17" fill="#ffffff">quant_4x4_dc</text>
+<text x="46" y="4650" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:88</text>
 <rect x="16" y="4648" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="4669" r="5" fill="#00e676"/>
-<text x="46" y="4676" font-family="sans-serif" font-size="17" fill="#ffffff">optimize_chroma_idct_dequant_2x4</text>
-<text x="46" y="4692" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:213</text>
+<text x="46" y="4676" font-family="sans-serif" font-size="17" fill="#ffffff">quant_2x2_dc</text>
+<text x="46" y="4692" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:96</text>
 <circle cx="32" cy="4711" r="5" fill="#00e676"/>
-<text x="46" y="4718" font-family="sans-serif" font-size="17" fill="#ffffff">optimize_chroma_idct_dequant_2x2</text>
-<text x="46" y="4734" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:227</text>
+<text x="46" y="4718" font-family="sans-serif" font-size="17" fill="#ffffff">dequant_4x4</text>
+<text x="46" y="4734" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:112</text>
 <rect x="16" y="4732" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="4753" r="5" fill="#00e676"/>
-<text x="46" y="4760" font-family="sans-serif" font-size="17" fill="#ffffff">optimize_chroma_round</text>
-<text x="46" y="4776" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:239</text>
+<text x="46" y="4760" font-family="sans-serif" font-size="17" fill="#ffffff">dequant_8x8</text>
+<text x="46" y="4776" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:130</text>
 <circle cx="32" cy="4795" r="5" fill="#00e676"/>
-<text x="46" y="4802" font-family="sans-serif" font-size="17" fill="#ffffff">optimize_chroma_dc_internal</text>
-<text x="46" y="4818" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:254</text>
+<text x="46" y="4802" font-family="sans-serif" font-size="17" fill="#ffffff">dequant_4x4_dc</text>
+<text x="46" y="4818" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:148</text>
 <rect x="16" y="4816" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="4837" r="5" fill="#00e676"/>
-<text x="46" y="4844" font-family="sans-serif" font-size="17" fill="#ffffff">optimize_chroma_2x2_dc</text>
-<text x="46" y="4860" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:294</text>
+<text x="46" y="4844" font-family="sans-serif" font-size="17" fill="#ffffff">idct_dequant_2x4_dc</text>
+<text x="46" y="4860" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:185</text>
 <circle cx="32" cy="4879" r="5" fill="#00e676"/>
-<text x="46" y="4886" font-family="sans-serif" font-size="17" fill="#ffffff">optimize_chroma_2x4_dc</text>
-<text x="46" y="4902" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:299</text>
+<text x="46" y="4886" font-family="sans-serif" font-size="17" fill="#ffffff">idct_dequant_2x4_dconly</text>
+<text x="46" y="4902" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:199</text>
 <rect x="16" y="4900" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="4921" r="5" fill="#00e676"/>
-<text x="46" y="4928" font-family="sans-serif" font-size="17" fill="#ffffff">denoise_dct</text>
-<text x="46" y="4944" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:304</text>
+<text x="46" y="4928" font-family="sans-serif" font-size="17" fill="#ffffff">optimize_chroma_idct_dequant_2x4</text>
+<text x="46" y="4944" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:213</text>
 <circle cx="32" cy="4963" r="5" fill="#00e676"/>
-<text x="46" y="4970" font-family="sans-serif" font-size="17" fill="#ffffff">x264_macroblock_cache_mvd</text>
-<text x="46" y="4986" font-family="sans-serif" font-size="12" fill="#7f97aa">common/rectangle.h:137</text>
+<text x="46" y="4970" font-family="sans-serif" font-size="17" fill="#ffffff">optimize_chroma_idct_dequant_2x2</text>
+<text x="46" y="4986" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:227</text>
 <rect x="16" y="4984" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="5005" r="5" fill="#00e676"/>
-<text x="46" y="5012" font-family="sans-serif" font-size="17" fill="#ffffff">x264_cqm_init</text>
-<text x="46" y="5028" font-family="sans-serif" font-size="12" fill="#7f97aa">common/set.c:73</text>
+<text x="46" y="5012" font-family="sans-serif" font-size="17" fill="#ffffff">optimize_chroma_round</text>
+<text x="46" y="5028" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:239</text>
 <circle cx="32" cy="5047" r="5" fill="#00e676"/>
-<text x="46" y="5054" font-family="sans-serif" font-size="17" fill="#ffffff">x264_cavlc_init</text>
-<text x="46" y="5070" font-family="sans-serif" font-size="12" fill="#7f97aa">common/vlc.c:33</text>
+<text x="46" y="5054" font-family="sans-serif" font-size="17" fill="#ffffff">optimize_chroma_dc_internal</text>
+<text x="46" y="5070" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:254</text>
 <rect x="16" y="5068" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="5089" r="5" fill="#00e676"/>
-<text x="46" y="5096" font-family="sans-serif" font-size="17" fill="#ffffff">predict_8x8c_dc_left</text>
-<text x="46" y="5112" font-family="sans-serif" font-size="12" fill="#7f97aa">common/x86/predict-c.c:295</text>
+<text x="46" y="5096" font-family="sans-serif" font-size="17" fill="#ffffff">optimize_chroma_2x2_dc</text>
+<text x="46" y="5112" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:294</text>
 <circle cx="32" cy="5131" r="5" fill="#00e676"/>
-<text x="46" y="5138" font-family="sans-serif" font-size="17" fill="#ffffff">init_costs</text>
-<text x="46" y="5154" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/analyse.c:143</text>
+<text x="46" y="5138" font-family="sans-serif" font-size="17" fill="#ffffff">optimize_chroma_2x4_dc</text>
+<text x="46" y="5154" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:299</text>
 <rect x="16" y="5152" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="5173" r="5" fill="#00e676"/>
-<text x="46" y="5180" font-family="sans-serif" font-size="17" fill="#ffffff">x264_analyse_init_costs</text>
-<text x="46" y="5196" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/analyse.c:179</text>
+<text x="46" y="5180" font-family="sans-serif" font-size="17" fill="#ffffff">denoise_dct</text>
+<text x="46" y="5196" font-family="sans-serif" font-size="12" fill="#7f97aa">common/quant.c:304</text>
 <circle cx="32" cy="5215" r="5" fill="#00e676"/>
-<text x="46" y="5222" font-family="sans-serif" font-size="17" fill="#ffffff">x264_analyse_free_costs</text>
-<text x="46" y="5238" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/analyse.c:204</text>
+<text x="46" y="5222" font-family="sans-serif" font-size="17" fill="#ffffff">x264_macroblock_cache_mvd</text>
+<text x="46" y="5238" font-family="sans-serif" font-size="12" fill="#7f97aa">common/rectangle.h:137</text>
 <rect x="16" y="5236" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="5257" r="5" fill="#00e676"/>
-<text x="46" y="5264" font-family="sans-serif" font-size="17" fill="#ffffff">mb_analyse_load_costs</text>
-<text x="46" y="5280" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/analyse.c:248</text>
+<text x="46" y="5264" font-family="sans-serif" font-size="17" fill="#ffffff">x264_cqm_init</text>
+<text x="46" y="5280" font-family="sans-serif" font-size="12" fill="#7f97aa">common/set.c:73</text>
 <circle cx="32" cy="5299" r="5" fill="#00e676"/>
-<text x="46" y="5306" font-family="sans-serif" font-size="17" fill="#ffffff">mb_analyse_init_qp</text>
-<text x="46" y="5322" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/analyse.c:255</text>
+<text x="46" y="5306" font-family="sans-serif" font-size="17" fill="#ffffff">x264_cavlc_init</text>
+<text x="46" y="5322" font-family="sans-serif" font-size="12" fill="#7f97aa">common/vlc.c:33</text>
 <rect x="16" y="5320" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="5341" r="5" fill="#00e676"/>
-<text x="46" y="5348" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_open</text>
-<text x="46" y="5364" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/api.c:76</text>
+<text x="46" y="5348" font-family="sans-serif" font-size="17" fill="#ffffff">predict_8x8c_dc_left</text>
+<text x="46" y="5364" font-family="sans-serif" font-size="12" fill="#7f97aa">common/x86/predict-c.c:295</text>
 <circle cx="32" cy="5383" r="5" fill="#00e676"/>
-<text x="46" y="5390" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_close</text>
-<text x="46" y="5406" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/api.c:130</text>
+<text x="46" y="5390" font-family="sans-serif" font-size="17" fill="#ffffff">init_costs</text>
+<text x="46" y="5406" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/analyse.c:143</text>
 <rect x="16" y="5404" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="5425" r="5" fill="#00e676"/>
-<text x="46" y="5432" font-family="sans-serif" font-size="17" fill="#ffffff">x264_nal_encode</text>
-<text x="46" y="5448" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/api.c:138</text>
+<text x="46" y="5432" font-family="sans-serif" font-size="17" fill="#ffffff">x264_analyse_init_costs</text>
+<text x="46" y="5448" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/analyse.c:179</text>
 <circle cx="32" cy="5467" r="5" fill="#00e676"/>
-<text x="46" y="5474" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_headers</text>
-<text x="46" y="5490" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/api.c:159</text>
+<text x="46" y="5474" font-family="sans-serif" font-size="17" fill="#ffffff">x264_analyse_free_costs</text>
+<text x="46" y="5490" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/analyse.c:204</text>
 <rect x="16" y="5488" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="5509" r="5" fill="#00e676"/>
-<text x="46" y="5516" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_encode</text>
-<text x="46" y="5532" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/api.c:166</text>
+<text x="46" y="5516" font-family="sans-serif" font-size="17" fill="#ffffff">mb_analyse_load_costs</text>
+<text x="46" y="5532" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/analyse.c:248</text>
 <circle cx="32" cy="5551" r="5" fill="#00e676"/>
-<text x="46" y="5558" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_mb_type_intra</text>
-<text x="46" y="5574" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:35</text>
+<text x="46" y="5558" font-family="sans-serif" font-size="17" fill="#ffffff">mb_analyse_init_qp</text>
+<text x="46" y="5574" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/analyse.c:255</text>
 <rect x="16" y="5572" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="5593" r="5" fill="#00e676"/>
-<text x="46" y="5600" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_intra4x4_pred_mode</text>
-<text x="46" y="5616" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:83</text>
+<text x="46" y="5600" font-family="sans-serif" font-size="17" fill="#ffffff">mb_analyse_init</text>
+<text x="46" y="5616" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/analyse.c:294</text>
 <circle cx="32" cy="5635" r="5" fill="#00e676"/>
-<text x="46" y="5642" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_intra_chroma_pred_mode</text>
-<text x="46" y="5658" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:98</text>
+<text x="46" y="5642" font-family="sans-serif" font-size="17" fill="#ffffff">x264_macroblock_analyse</text>
+<text x="46" y="5658" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/analyse.c:2918</text>
 <rect x="16" y="5656" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="5677" r="5" fill="#00e676"/>
-<text x="46" y="5684" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_cbp_luma</text>
-<text x="46" y="5700" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:118</text>
+<text x="46" y="5684" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_open</text>
+<text x="46" y="5700" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/api.c:76</text>
 <circle cx="32" cy="5719" r="5" fill="#00e676"/>
-<text x="46" y="5726" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_cbp_chroma</text>
-<text x="46" y="5742" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:129</text>
+<text x="46" y="5726" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_close</text>
+<text x="46" y="5742" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/api.c:130</text>
 <rect x="16" y="5740" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="5761" r="5" fill="#00e676"/>
-<text x="46" y="5768" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_qp_delta</text>
-<text x="46" y="5784" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:150</text>
+<text x="46" y="5768" font-family="sans-serif" font-size="17" fill="#ffffff">x264_nal_encode</text>
+<text x="46" y="5784" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/api.c:138</text>
 <circle cx="32" cy="5803" r="5" fill="#00e676"/>
-<text x="46" y="5810" font-family="sans-serif" font-size="17" fill="#ffffff">x264_cabac_mb_skip</text>
-<text x="46" y="5826" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:189</text>
+<text x="46" y="5810" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_headers</text>
+<text x="46" y="5826" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/api.c:159</text>
 <rect x="16" y="5824" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="5845" r="5" fill="#00e676"/>
-<text x="46" y="5852" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_subpartition_p</text>
-<text x="46" y="5868" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:198</text>
+<text x="46" y="5852" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_encode</text>
+<text x="46" y="5868" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/api.c:166</text>
 <circle cx="32" cy="5887" r="5" fill="#00e676"/>
-<text x="46" y="5894" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_subpartition_b</text>
-<text x="46" y="5910" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:215</text>
+<text x="46" y="5894" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_mb_type_intra</text>
+<text x="46" y="5910" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:35</text>
 <rect x="16" y="5908" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="5929" r="5" fill="#00e676"/>
-<text x="46" y="5936" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_transform_size</text>
-<text x="46" y="5952" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:235</text>
+<text x="46" y="5936" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_intra4x4_pred_mode</text>
+<text x="46" y="5952" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:83</text>
 <circle cx="32" cy="5971" r="5" fill="#00e676"/>
-<text x="46" y="5978" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_ref_internal</text>
-<text x="46" y="5994" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:241</text>
+<text x="46" y="5978" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_intra_chroma_pred_mode</text>
+<text x="46" y="5994" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:98</text>
 <rect x="16" y="5992" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="6013" r="5" fill="#00e676"/>
-<text x="46" y="6020" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_mvd_cpn</text>
-<text x="46" y="6036" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:270</text>
+<text x="46" y="6020" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_cbp_luma</text>
+<text x="46" y="6036" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:118</text>
 <circle cx="32" cy="6055" r="5" fill="#00e676"/>
-<text x="46" y="6062" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_mvd</text>
-<text x="46" y="6078" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:329</text>
+<text x="46" y="6062" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_cbp_chroma</text>
+<text x="46" y="6078" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:129</text>
 <rect x="16" y="6076" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="6097" r="5" fill="#00e676"/>
-<text x="46" y="6104" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_mvd</text>
-<text x="46" y="6120" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:351</text>
+<text x="46" y="6104" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_qp_delta</text>
+<text x="46" y="6120" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:150</text>
 <circle cx="32" cy="6139" r="5" fill="#00e676"/>
-<text x="46" y="6146" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_8x8_mvd</text>
-<text x="46" y="6162" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:355</text>
+<text x="46" y="6146" font-family="sans-serif" font-size="17" fill="#ffffff">x264_cabac_mb_skip</text>
+<text x="46" y="6162" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:189</text>
 <rect x="16" y="6160" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="6181" r="5" fill="#00e676"/>
-<text x="46" y="6188" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_mb_header_i</text>
-<text x="46" y="6204" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:381</text>
+<text x="46" y="6188" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_subpartition_p</text>
+<text x="46" y="6204" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:198</text>
 <circle cx="32" cy="6223" r="5" fill="#00e676"/>
-<text x="46" y="6230" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_mb_header_p</text>
-<text x="46" y="6246" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:435</text>
+<text x="46" y="6230" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_subpartition_b</text>
+<text x="46" y="6246" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:215</text>
 <rect x="16" y="6244" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="6265" r="5" fill="#00e676"/>
-<text x="46" y="6272" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_mb_header_b</text>
-<text x="46" y="6288" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:499</text>
+<text x="46" y="6272" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_transform_size</text>
+<text x="46" y="6288" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:235</text>
 <circle cx="32" cy="6307" r="5" fill="#00e676"/>
-<text x="46" y="6314" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_cbf_ctxidxinc</text>
-<text x="46" y="6330" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:612</text>
+<text x="46" y="6314" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_ref_internal</text>
+<text x="46" y="6330" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:241</text>
 <rect x="16" y="6328" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="6349" r="5" fill="#00e676"/>
-<text x="46" y="6356" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_block_residual_internal</text>
-<text x="46" y="6372" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:665</text>
+<text x="46" y="6356" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_mvd_cpn</text>
+<text x="46" y="6372" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:270</text>
 <circle cx="32" cy="6391" r="5" fill="#00e676"/>
-<text x="46" y="6398" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_block_residual</text>
-<text x="46" y="6414" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:755</text>
+<text x="46" y="6398" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_mvd</text>
+<text x="46" y="6414" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:329</text>
 <rect x="16" y="6412" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="6433" r="5" fill="#00e676"/>
-<text x="46" y="6440" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_block_residual_internal</text>
-<text x="46" y="6456" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:775</text>
+<text x="46" y="6440" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_mvd</text>
+<text x="46" y="6456" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:351</text>
 <circle cx="32" cy="6475" r="5" fill="#00e676"/>
-<text x="46" y="6482" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_block_residual</text>
-<text x="46" y="6498" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:877</text>
+<text x="46" y="6482" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_8x8_mvd</text>
+<text x="46" y="6498" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:355</text>
 <rect x="16" y="6496" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="6517" r="5" fill="#00e676"/>
-<text x="46" y="6524" font-family="sans-serif" font-size="17" fill="#ffffff">cavlc_block_residual_escape</text>
-<text x="46" y="6540" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cavlc.c:70</text>
+<text x="46" y="6524" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_mb_header_i</text>
+<text x="46" y="6540" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:381</text>
 <circle cx="32" cy="6559" r="5" fill="#00e676"/>
-<text x="46" y="6566" font-family="sans-serif" font-size="17" fill="#ffffff">cavlc_block_residual_internal</text>
-<text x="46" y="6582" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cavlc.c:121</text>
+<text x="46" y="6566" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_mb_header_p</text>
+<text x="46" y="6582" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:435</text>
 <rect x="16" y="6580" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="6601" r="5" fill="#00e676"/>
-<text x="46" y="6608" font-family="sans-serif" font-size="17" fill="#ffffff">cavlc_block_residual_internal</text>
-<text x="46" y="6624" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cavlc.c:208</text>
+<text x="46" y="6608" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_mb_header_b</text>
+<text x="46" y="6624" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:499</text>
 <circle cx="32" cy="6643" r="5" fill="#00e676"/>
-<text x="46" y="6650" font-family="sans-serif" font-size="17" fill="#ffffff">slice_header_init</text>
-<text x="46" y="6666" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:122</text>
+<text x="46" y="6650" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_cbf_ctxidxinc</text>
+<text x="46" y="6666" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:612</text>
 <rect x="16" y="6664" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="6685" r="5" fill="#00e676"/>
-<text x="46" y="6692" font-family="sans-serif" font-size="17" fill="#ffffff">slice_header_write</text>
-<text x="46" y="6708" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:213</text>
+<text x="46" y="6692" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_block_residual_internal</text>
+<text x="46" y="6708" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:665</text>
 <circle cx="32" cy="6727" r="5" fill="#00e676"/>
-<text x="46" y="6734" font-family="sans-serif" font-size="17" fill="#ffffff">validate_parameters</text>
-<text x="46" y="6750" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:423</text>
+<text x="46" y="6734" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_block_residual</text>
+<text x="46" y="6750" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:755</text>
 <rect x="16" y="6748" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="6769" r="5" fill="#00e676"/>
-<text x="46" y="6776" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_open</text>
-<text x="46" y="6792" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:1507</text>
+<text x="46" y="6776" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_block_residual_internal</text>
+<text x="46" y="6792" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:775</text>
 <circle cx="32" cy="6811" r="5" fill="#00e676"/>
-<text x="46" y="6818" font-family="sans-serif" font-size="17" fill="#ffffff">nal_end</text>
-<text x="46" y="6834" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:2010</text>
+<text x="46" y="6818" font-family="sans-serif" font-size="17" fill="#ffffff">cabac_block_residual</text>
+<text x="46" y="6834" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cabac.c:877</text>
 <rect x="16" y="6832" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="6853" r="5" fill="#00e676"/>
-<text x="46" y="6860" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_headers</text>
-<text x="46" y="6876" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:2096</text>
+<text x="46" y="6860" font-family="sans-serif" font-size="17" fill="#ffffff">cavlc_block_residual_escape</text>
+<text x="46" y="6876" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cavlc.c:70</text>
 <circle cx="32" cy="6895" r="5" fill="#00e676"/>
-<text x="46" y="6902" font-family="sans-serif" font-size="17" fill="#ffffff">bs_pos</text>
-<text x="46" y="6918" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:3098</text>
+<text x="46" y="6902" font-family="sans-serif" font-size="17" fill="#ffffff">cavlc_block_residual_internal</text>
+<text x="46" y="6918" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cavlc.c:121</text>
 <rect x="16" y="6916" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="6937" r="5" fill="#00e676"/>
-<text x="46" y="6944" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_encode</text>
-<text x="46" y="6960" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:3323</text>
+<text x="46" y="6944" font-family="sans-serif" font-size="17" fill="#ffffff">cavlc_block_residual_internal</text>
+<text x="46" y="6960" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/cavlc.c:208</text>
 <circle cx="32" cy="6979" r="5" fill="#00e676"/>
-<text x="46" y="6986" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_close</text>
-<text x="46" y="7002" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:4196</text>
+<text x="46" y="6986" font-family="sans-serif" font-size="17" fill="#ffffff">slice_header_init</text>
+<text x="46" y="7002" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:122</text>
 <rect x="16" y="7000" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="7021" r="5" fill="#00e676"/>
-<text x="46" y="7028" font-family="sans-serif" font-size="17" fill="#ffffff">quant_2x2_dc</text>
-<text x="46" y="7044" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.c:313</text>
+<text x="46" y="7028" font-family="sans-serif" font-size="17" fill="#ffffff">slice_header_write</text>
+<text x="46" y="7044" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:213</text>
 <circle cx="32" cy="7063" r="5" fill="#00e676"/>
-<text x="46" y="7070" font-family="sans-serif" font-size="17" fill="#ffffff">quant_4x4x4</text>
-<text x="46" y="7086" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.c:402</text>
+<text x="46" y="7070" font-family="sans-serif" font-size="17" fill="#ffffff">validate_parameters</text>
+<text x="46" y="7086" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:423</text>
 <rect x="16" y="7084" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="7105" r="5" fill="#00e676"/>
-<text x="46" y="7112" font-family="sans-serif" font-size="17" fill="#ffffff">quant_2x2_dc</text>
-<text x="46" y="7128" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.c:425</text>
+<text x="46" y="7112" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_open</text>
+<text x="46" y="7128" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:1507</text>
 <circle cx="32" cy="7147" r="5" fill="#00e676"/>
-<text x="46" y="7154" font-family="sans-serif" font-size="17" fill="#ffffff">only</text>
-<text x="46" y="7170" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.c:1383</text>
+<text x="46" y="7154" font-family="sans-serif" font-size="17" fill="#ffffff">nal_end</text>
+<text x="46" y="7170" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:2010</text>
 <rect x="16" y="7168" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="7189" r="5" fill="#00e676"/>
-<text x="46" y="7196" font-family="sans-serif" font-size="17" fill="#ffffff">x264_quant_4x4</text>
-<text x="46" y="7212" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.h:90</text>
+<text x="46" y="7196" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_headers</text>
+<text x="46" y="7212" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:2096</text>
 <circle cx="32" cy="7231" r="5" fill="#00e676"/>
-<text x="46" y="7238" font-family="sans-serif" font-size="17" fill="#ffffff">x264_quant_8x8</text>
-<text x="46" y="7254" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.h:101</text>
+<text x="46" y="7238" font-family="sans-serif" font-size="17" fill="#ffffff">bs_pos</text>
+<text x="46" y="7254" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:3098</text>
 <rect x="16" y="7252" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="7273" r="5" fill="#00e676"/>
-<text x="46" y="7280" font-family="sans-serif" font-size="17" fill="#ffffff">log2</text>
-<text x="46" y="7296" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/ratecontrol.c:791</text>
+<text x="46" y="7280" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_encode</text>
+<text x="46" y="7296" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:3323</text>
 <circle cx="32" cy="7315" r="5" fill="#00e676"/>
-<text x="46" y="7322" font-family="sans-serif" font-size="17" fill="#ffffff">x264_sps_init</text>
-<text x="46" y="7338" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/set.c:101</text>
+<text x="46" y="7322" font-family="sans-serif" font-size="17" fill="#ffffff">x264_encoder_close</text>
+<text x="46" y="7338" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/encoder.c:4196</text>
 <rect x="16" y="7336" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="7357" r="5" fill="#00e676"/>
-<text x="46" y="7364" font-family="sans-serif" font-size="17" fill="#ffffff">x264_sps_write</text>
-<text x="46" y="7380" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/set.c:305</text>
+<text x="46" y="7364" font-family="sans-serif" font-size="17" fill="#ffffff">mb_encode_i16x16</text>
+<text x="46" y="7380" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.c:126</text>
 <circle cx="32" cy="7399" r="5" fill="#00e676"/>
-<text x="46" y="7406" font-family="sans-serif" font-size="17" fill="#ffffff">x264_pps_init</text>
-<text x="46" y="7422" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/set.c:479</text>
+<text x="46" y="7406" font-family="sans-serif" font-size="17" fill="#ffffff">quant_2x2_dc</text>
+<text x="46" y="7422" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.c:313</text>
 <rect x="16" y="7420" width="448" height="42" rx="6" fill="#121c25"/>
 <circle cx="32" cy="7441" r="5" fill="#00e676"/>
-<text x="46" y="7448" font-family="sans-serif" font-size="17" fill="#ffffff">x264_pps_write</text>
-<text x="46" y="7464" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/set.c:505</text>
+<text x="46" y="7448" font-family="sans-serif" font-size="17" fill="#ffffff">quant_4x4x4</text>
+<text x="46" y="7464" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.c:402</text>
 <circle cx="32" cy="7483" r="5" fill="#00e676"/>
-<text x="46" y="7490" font-family="sans-serif" font-size="17" fill="#ffffff">encode</text>
-<text x="46" y="7506" font-family="sans-serif" font-size="12" fill="#7f97aa">x264.c:1919</text>
-<rect x="0" y="7532" width="480" height="120" fill="#0a0f14"/>
-<text x="24" y="7566" font-family="sans-serif" font-size="14" fill="#8aa0b4">Source: docs/FUNCTION_INVENTORY.md • regenerated by</text>
-<text x="24" y="7590" font-family="sans-serif" font-size="14" fill="#00e676">docs/generate_progress_svg.py</text>
+<text x="46" y="7490" font-family="sans-serif" font-size="17" fill="#ffffff">quant_2x2_dc</text>
+<text x="46" y="7506" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.c:425</text>
+<rect x="16" y="7504" width="448" height="42" rx="6" fill="#121c25"/>
+<circle cx="32" cy="7525" r="5" fill="#00e676"/>
+<text x="46" y="7532" font-family="sans-serif" font-size="17" fill="#ffffff">x264_macroblock_encode</text>
+<text x="46" y="7548" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.c:974</text>
+<circle cx="32" cy="7567" r="5" fill="#00e676"/>
+<text x="46" y="7574" font-family="sans-serif" font-size="17" fill="#ffffff">only</text>
+<text x="46" y="7590" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.c:1383</text>
+<rect x="16" y="7588" width="448" height="42" rx="6" fill="#121c25"/>
+<circle cx="32" cy="7609" r="5" fill="#00e676"/>
+<text x="46" y="7616" font-family="sans-serif" font-size="17" fill="#ffffff">x264_quant_4x4</text>
+<text x="46" y="7632" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.h:90</text>
+<circle cx="32" cy="7651" r="5" fill="#00e676"/>
+<text x="46" y="7658" font-family="sans-serif" font-size="17" fill="#ffffff">x264_quant_8x8</text>
+<text x="46" y="7674" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.h:101</text>
+<rect x="16" y="7672" width="448" height="42" rx="6" fill="#121c25"/>
+<circle cx="32" cy="7693" r="5" fill="#00e676"/>
+<text x="46" y="7700" font-family="sans-serif" font-size="17" fill="#ffffff">x264_mb_encode_i4x4</text>
+<text x="46" y="7716" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.h:132</text>
+<circle cx="32" cy="7735" r="5" fill="#00e676"/>
+<text x="46" y="7742" font-family="sans-serif" font-size="17" fill="#ffffff">x264_mb_encode_i8x8</text>
+<text x="46" y="7758" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/macroblock.h:168</text>
+<rect x="16" y="7756" width="448" height="42" rx="6" fill="#121c25"/>
+<circle cx="32" cy="7777" r="5" fill="#00e676"/>
+<text x="46" y="7784" font-family="sans-serif" font-size="17" fill="#ffffff">log2</text>
+<text x="46" y="7800" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/ratecontrol.c:791</text>
+<circle cx="32" cy="7819" r="5" fill="#00e676"/>
+<text x="46" y="7826" font-family="sans-serif" font-size="17" fill="#ffffff">x264_sps_init</text>
+<text x="46" y="7842" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/set.c:101</text>
+<rect x="16" y="7840" width="448" height="42" rx="6" fill="#121c25"/>
+<circle cx="32" cy="7861" r="5" fill="#00e676"/>
+<text x="46" y="7868" font-family="sans-serif" font-size="17" fill="#ffffff">x264_sps_write</text>
+<text x="46" y="7884" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/set.c:305</text>
+<circle cx="32" cy="7903" r="5" fill="#00e676"/>
+<text x="46" y="7910" font-family="sans-serif" font-size="17" fill="#ffffff">x264_pps_init</text>
+<text x="46" y="7926" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/set.c:479</text>
+<rect x="16" y="7924" width="448" height="42" rx="6" fill="#121c25"/>
+<circle cx="32" cy="7945" r="5" fill="#00e676"/>
+<text x="46" y="7952" font-family="sans-serif" font-size="17" fill="#ffffff">x264_pps_write</text>
+<text x="46" y="7968" font-family="sans-serif" font-size="12" fill="#7f97aa">encoder/set.c:505</text>
+<circle cx="32" cy="7987" r="5" fill="#00e676"/>
+<text x="46" y="7994" font-family="sans-serif" font-size="17" fill="#ffffff">encode</text>
+<text x="46" y="8010" font-family="sans-serif" font-size="12" fill="#7f97aa">x264.c:1919</text>
+<rect x="0" y="8036" width="480" height="120" fill="#0a0f14"/>
+<text x="24" y="8070" font-family="sans-serif" font-size="14" fill="#8aa0b4">Source: docs/FUNCTION_INVENTORY.md • regenerated by</text>
+<text x="24" y="8094" font-family="sans-serif" font-size="14" fill="#00e676">docs/generate_progress_svg.py</text>
 </svg>
