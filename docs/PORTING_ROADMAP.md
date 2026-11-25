@@ -39,8 +39,7 @@ pixel write-back) and the deblock-strength cache.
 Gate: `python tools/run_tests.py` → 4/4 passing, including a load/save
 round-trip over neighbour arrays (`tests/test_mbcache.c`) and the
 bitstream/NAL writer (`tests/test_bitstream.c`) and the CABAC coder
-against x264 golden bytes (`tests/test_cabac.c`). SPS writing is byte-exact (20/20) and SPS+PPS is 2/20 exact
-(`tests/compare_headers.py`); PPS word-flush padding is still pending. Byte-exact MB
+against x264 golden bytes (`tests/test_cabac.c`). SPS+PPS is byte-exact 20/20 (`tests/compare_headers.py`). Byte-exact MB
 decisions remain gated on WP4–WP7; the rebuild parity harness is described in
 `docs/PARITY_HARNESS.md`.
 
@@ -100,11 +99,19 @@ For every ported function, ensure the `SHADER: A/B/C` annotation exists and
 Gate: a generated index of all functions with their shader class; a design
 review document for the shader backend derived from it.
 
-## Current state (for reviewers)
+## Current state (for reviewers, after 8-worker parallel port)
 
-- WP0 complete; WP1 in progress (parameters ported and tested); WP2–WP9 pending.
+- WP0 complete; WP1 complete; WP2 progressive+MBAFF caches complete;
+  entropy/predictor/DCT/quant primitives ported by 8 parallel workers;
+  WP3–WP9 still pending (lookahead, MB analysis driver, frame loop, CRF).
+  Function inventory: 166 PORTED rows of 1386 (12%); `ctest` 12/12.
+- Headers are byte-exact 20/20 against the saved x264 streams; full-stream
+  parity is 0/100 because `phx_encode()` still returns
+  `PHX_ERR_UNIMPLEMENTED` — the ported primitives are not yet wired into a
+  frame loop.
 - Historical baseline from the discarded incremental oracle: 12/120 short,
   0/240 extended, first-diff 84/30/41/42. Its harnesses are no longer in this
-  repository; parity gates must be rebuilt under `tests/` per work package.
-- Do not start a later WP before the earlier gate passes — the E70/E75/E90/E95
-  history shows that partial ports create misleading metrics.
+  repository; parity gates are rebuilt under `tests/` (`compare_headers.py`,
+  `compare_streams.py`, `parity_harness.py`).
+- Keep evidence-first: a work package is complete only with a golden test and
+  a byte-exact gate, never with a metric-driven approximation.

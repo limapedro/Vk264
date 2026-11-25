@@ -25,7 +25,15 @@ what the eventual **shader version of Vk264** will be derived from.
     phx_mbcache.h/.c         scan8 + progressive MB cache load/save [WP2 — done]
     phx_bitstream.h/.c       bs_* Golomb writer + NAL escape        [done]
     phx_cabac.h/.c           CABAC arithmetic coder + context init  [done]
-    phx_headers.h/.c         SPS/PPS init + write + NAL assembly    [in progress]
+    phx_headers.h/.c         SPS/PPS init + write + NAL assembly    [20/20 exact]
+    phx_slice.h/.c            slice header writer                     [done]
+    phx_cabac_syntax.h/.c     CABAC MB/coeff syntax (24 golden cases) [done]
+    phx_cavlc.h/.c            CAVLC residual syntax + x264 tables     [done]
+    phx_predict.h/.c          46 predictors with filtered edges      [done]
+    phx_dct.h/.c              DCT/Hadamard/IDCT family                [done]
+    phx_quant.h/.c            deadzone quant/dequant + CQM tables     [done]
+    phx_encoder.h/.c          explicit encoder API (frame loop WIP)   [scaffold]
+    tools/phx_cli.c            raw-YUV CLI, headers-only for now       [scaffold]
   tests/                     unit tests for ported functions
     test_param.c             10-preset parameter parity          [passing]
     test_cost.c              cost tables against x264 goldens    [passing]
@@ -33,7 +41,10 @@ what the eventual **shader version of Vk264** will be derived from.
     test_mbcache.c           scan8 + cache load/save round-trip  [passing]
     test_bitstream.c         Exp-Golomb patterns + NAL escape     [passing]
     test_cabac.c             decision/bypass vs x264 golden bytes [passing]
-    tests/compare_headers.py SPS 20/20 exact; SPS+PPS 2/20 exact
+    tests/compare_headers.py SPS+PPS byte-exact 20/20
+    tests/parse_sps.py        PPS tail oracle
+    tests/compare_streams.py  100-case byte comparator
+    tests/test_phx_{slice,cabac_syntax,cavlc,predict,quant,encoder}.c
   tools/
     gen_function_inventory.py   regenerate docs/FUNCTION_INVENTORY.md
     gen_tables.py              regenerate src/phx_tables.{h,c} from x264 source
@@ -60,7 +71,7 @@ what the eventual **shader version of Vk264** will be derived from.
 - **WP1 complete**: `phx_param` (10/10 presets), the analyse cost tables, and
   frame allocation / `x264_frame_init_lowres` are ported with source-line
   comments; x264 tables are generated mechanically. All unit tests pass
-  (`ctest`: 6/6).
+  (`ctest`: 12/12).
 - **Parity harness rebuilt**: `tools/parity_harness.py` compares 10 presets ×
   2 entropies byte-for-byte once `X264_EXE` (and later `PHX_EXE`) is supplied;
   see `docs/PARITY_HARNESS.md`. No Phoenix encoder exists yet, so no byte-exact
@@ -68,10 +79,16 @@ what the eventual **shader version of Vk264** will be derived from.
   context, not Phoenix results.
 - MBAFF cache paths ported (field-pair neighbour selection, cbp/MV/MVD
   conversion, skip flag, intra border backup) with unit tests.
-- SPS writer is byte-exact for all 20 reference streams; SPS+PPS is 2/20
-  exact. PPS differences are trailing word-flush padding in x264's shared
-  bitstream buffer (`tests/compare_headers.py`).
-- Next: finish SPS/PPS parity, then CABAC/CAVLC slice syntax and phx_cli.
+- **8 parallel workers integrated**: byte-exact SPS+PPS (20/20), CABAC slice
+  syntax verified against x264's own `encoder/cabac.c` (24 golden streams),
+  CAVLC residual syntax with verbatim x264 tables, 46 predictors, DCT/Hadamard/
+  IDCT, quant/dequant, slice header, encoder/CLI scaffold, and two shader
+  design documents (`docs/FUNCTION_PORTS.md`, `docs/SHADER_NOTES.md`).
+- `phx_cli` writes headers and exits 3 because the frame loop
+  (`phx_encode`) still returns `PHX_ERR_UNIMPLEMENTED`; no full stream exists
+  yet, so 100-case byte-exact parity remains 0/100.
+- Next: wire the analysis/quant/entropy modules into the frame loop so
+  `phx_cli` emits full slices, then iterate against the 100 saved streams.
 - The CABAC coder matches x264 golden bytes; porting it also exposed and fixed
   a `PHX_CLIP3` argument-order bug in the cost tables.
 
