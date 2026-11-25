@@ -117,6 +117,10 @@ int vk_param_apply_preset(vk_param_t *p, const char *preset)
      *   VK_TRELLIS=1  (0=off default, 1/2=experimental)
      * x264 preset defaults for reference: ultrafast/superfast/veryfast 0,
      * faster/fast/medium 1, slow..placebo 2. */
+    /* Trellis stays OFF by default: E45 showed enabling x264's preset
+     * defaults changes bitstreams but improves no verdict/first-diff metric.
+     * The primitive is batch-validated (26/31 vectors) but full write-time
+     * integration is still required. VK_TRELLIS overrides for experiments. */
     vk_cur_trellis = 0;
     { const char *te=getenv("VK_TRELLIS"); if(te) vk_cur_trellis=atoi(te); }
     return 0;
