@@ -10,8 +10,7 @@
  * owns every bit of stream state.
  *
  * Usage: phx_cli <yuv> <width> <height> <qp> <preset> <cabac|cavlc> <outfile>
- * Exit:  0 success, 1 IO/API error, 2 bad arguments, 3 encoding not yet
- *        implemented (headers are still written in this case).
+ * Exit:  0 success, 1 IO/API error, 2 bad arguments.
  */
 #include "phx_encoder.h"
 #include <stdio.h>
@@ -61,10 +60,10 @@ static int cli_write_nals(FILE *f, phx_nal_t *nals, int nnal)
     return 0;
 }
 
-/* Entry point; mirrors x264.c:358 (main), :1977 (headers) and :2024/:2049
- * (encode loop / flush).  Full-frame encoding is not available yet, so after
- * writing the SPS+PPS the tool exits nonzero with an explanatory message.
- * SHADER: C — thin host-side wrapper around the serial encoder API. */
+/* Entry point; mirrors x264.c:358 (main), :1977 (headers), :1858 (encode)
+ * and :2024/:2049 (encode loop / flush).  SPS+PPS are written once, then the
+ * slice NAL(s) returned by phx_encode().  SHADER: C — thin host-side wrapper
+ * around the serial encoder API. */
 int main(int argc, char **argv)
 {
     if (argc != 8) {
@@ -142,15 +141,7 @@ int main(int argc, char **argv)
     int nnal = 0;
     uint8_t *recon = NULL;
     int rc = phx_encode(enc, &pic, &out, &nnal, &recon); /* x264.c:1858 */
-    if (rc == PHX_ERR_UNIMPLEMENTED) {
-        fprintf(stderr, "phx_cli: full-frame encoding is not implemented yet "
-                        "(SPS+PPS written; TODO: slice/MB pipeline)\n");
-        fclose(fout);
-        free(frame);
-        phx_encoder_close(enc);
-        return 3;
-    }
-    if (rc < 0 || cli_write_nals(fout, out, nnal)) {
+    if (rc < 0 || nnal <= 0 || cli_write_nals(fout, out, nnal)) {
         fprintf(stderr, "phx_cli: encode failed (%d)\n", rc);
         fclose(fout);
         free(frame);

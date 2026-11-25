@@ -34,9 +34,14 @@
 #include "phx_cost.h"
 #include "phx_cabac.h"
 
-/* phx_encode() return value while the per-MB pipeline is still being ported
- * by the other workers.  The CLI turns this into a nonzero exit status. */
+/* Legacy sentinel kept only so old callers still compile: phx_encode() no
+ * longer returns it once the per-MB pipeline is wired.  Source: the old
+ * "no data out" envelope at encoder.c:3354-3356. */
 #define PHX_ERR_UNIMPLEMENTED (-2)
+
+/* FDEC_STRIDE (common/common.h:571).  The reconstructed plane uses the same
+ * stride so phx_mb_cache_t.p_fdec can be indexed exactly like x264's. */
+#define PHX_FDEC_STRIDE 32
 
 /* One raw input picture.  x264_picture_t's I420 planes, reduced to the fields
  * the ported path uses.  Source: reference/x264/x264.h:862-904 (x264_picture_t)
@@ -71,8 +76,12 @@ typedef struct phx_t {
     phx_cost_tables_t cost;         /* encoder.c:1708 / analyse.c:179 */
     phx_mb_analysis_t analysis;     /* analyse.c:248-292 */
     phx_cabac_t cabac;              /* encoder.c:1669 / cabac.c:32 */
+    uint8_t *rbsp;                  /* slice-header + MB scratch RBSP (encoder.c:1724) */
+    uint8_t *recon;                 /* reconstructed plane, FDEC_STRIDE layout */
     int i_frame;                    /* encoder.c:1563 */
     int i_frame_num;                /* encoder.c:1564 */
+    int i_poc;                      /* encoder.c:1629 (fenc->i_poc) */
+    int i_idr_pic_id;               /* encoder.c:142 */
     int i_input;                    /* encoder.c:1630 */
 } phx_t;
 
@@ -106,11 +115,14 @@ int phx_encoder_header_bytes(phx_t *h, uint8_t *dst, int capacity);
  *   slice/MB loop (encoder.c:2855-2892: cache_load, analyse, encode,
  *   write_{cabac,cavlc}, cache_save) ->
  *   ratecontrol_end (encoder.c:3978) -> NAL assembly (encoder.c:2124).
- * The MB pipeline is not ported yet: the call sites are marked TODO in
- * phx_encoder.c and this function currently returns PHX_ERR_UNIMPLEMENTED
- * with *out=NULL, *nnal=0 and *recon=NULL (mirroring "no data out",
- * encoder.c:3354-3356).  Passing pic == NULL is the x264 flush call
- * (x264.c:2049) and is likewise not implemented yet.
+ *
+ * The wired path emits one all-intra (IDR for frame 0) slice per call:
+ * SPS/PPS are NOT repeated here (x264.c:1977 emits them once), so callers
+ * must call phx_headers() first.  P/B slice-type decision, lookahead and
+ * rate control remain explicit TODOs; every frame is currently coded as I
+ * so the stream stays self-contained without a reference list.  Passing
+ * pic == NULL is the x264 flush call (x264.c:2049): there are no delayed
+ * frames in this path, so it returns 0 with *out=NULL, *nnal=0.
  * SHADER: C — the whole staged pipeline is serial and seek-safe. */
 int phx_encode(phx_t *h, const phx_picture_t *pic,
                phx_nal_t **out, int *nnal, uint8_t **recon);
