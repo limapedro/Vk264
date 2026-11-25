@@ -1554,3 +1554,15 @@ Evidence:
   because x264 superfast (subme=1) uses SAD. The subme gate restores recon to
   0/4096. All gates green.
 
+### E75 ? retracted: direct SATD_16x16 for I16 costs
+
+Attempted to align the oracle's I16 analysis cost with x264's `mbcmp` by
+replacing plain SAD with an x264-exact SATD_16x16 (16 packed-Hadamard 8x4
+blocks) when `subme > 1`. The standalone cross-check (`build/test_satd16.c`)
+showed the new helper does NOT match x264's SATD scaling (e.g. oracle 12598
+vs x264 2653 for MB5's I16 cost), even though the recon gate stayed green.
+
+The change was reverted; E74 remains the verified state. Any future I16 cost
+work must first establish the exact x264 SATD scaling used by the reference
+build before wiring it into the analysis path.
+
