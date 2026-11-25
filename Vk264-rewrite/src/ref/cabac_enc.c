@@ -16,6 +16,8 @@
 extern int vk_cur_subme;
 extern int vk_cur_trellis;
 extern int vk_cur_me_range;
+extern int vk_cur_fast_pskip;
+#include <stdio.h>
 extern int vk_cur_psy_rd;
 
 /* x264 ssd_plane psy term (rdo.c:123-147): SATD relative to zero minus DC,
@@ -1436,7 +1438,10 @@ int vk_cabac_encode_p_recon_frame(vk_bs_t *bs, vk_cabac_t *cb,
                            || (have_tl && is_skip[idx-mw-1])
                            || (have_c && is_skip[idx-mw+1]);
             int do_skip = 0, fast_skip = 0;
-            if (skip_neigh &&
+            /* x264 analyse.c:3002-3013: b_fast_pskip + subme>=3 probes
+             * P_SKIP unconditionally; subme<3 only with a P_SKIP neighbour. */
+            int try_skip = skip_neigh || (vk_cur_fast_pskip && vk_cur_subme >= 3);
+            if (try_skip &&
                 p_probe(cur, refp, w, h, rs, mx*16, my*16, psk_x, psk_y, qp)) {
                 do_skip = 1;
                 fast_skip = 1;  /* x264 returns early: intra not considered */
