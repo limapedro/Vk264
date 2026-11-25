@@ -63,7 +63,9 @@ in these documents refer to `reference/x264/`.
    what state it mutates, and whether it is seek-safe/shader-able.
 5. **A commit must include** the x264 source lines followed, the new oracle
    code, the test/gate output, and the parity metric before/after. There are no
-   side branches or PRs: `vk264-phoenix` is the single default branch.
+   side branches or PRs: `vk264-phoenix` is the single default branch. The 362
+   old branches are archived as `archive/*` tags (see
+   `tools/archive_old_branches.py`) and can be restored from there if needed.
 
 ## Gates
 

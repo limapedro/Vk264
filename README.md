@@ -1,10 +1,11 @@
 # Vk264 Phoenix
 
 A from-scratch, function-for-function CPU port of x264. This repository **is**
-the Phoenix project: the old incremental oracle, its harnesses and its branch
-zoo were removed from this branch. `vk264-phoenix` is the single, default
-branch. This CPU reference is what the eventual **shader version of Vk264**
-will be derived from.
+the Phoenix project: the old incremental oracle and its harnesses were removed from this branch.
+`vk264-phoenix` is the single, default branch; the 362 old branches were
+**archived as tags** (`archive/pr<N>-<branch>` and `archive/pre-phoenix-main`)
+by `tools/archive_old_branches.py`, so nothing was lost. This CPU reference is
+what the eventual **shader version of Vk264** will be derived from.
 
 ## Layout
 
@@ -22,6 +23,7 @@ will be derived from.
     gen_function_inventory.py   regenerate docs/FUNCTION_INVENTORY.md
     run_tests.py               configure + build + ctest (CMake)
     close_branches.py          one-time branch cleanup utility
+    archive_old_branches.py    one-time archival of old branches as tags
   docs/
     README.md                  mission, rules, gates
     X264_PIPELINE.md           how x264 encodes, function by function
