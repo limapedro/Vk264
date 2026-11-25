@@ -48,9 +48,17 @@ static int phx_encoder_validate(const phx_param_t *p)
 static void phx_encoder_release(phx_t *h)
 {
     if (!h) return;
+    phx_lookahead_delete(h->lookahead);                    /* lookahead.c:177 */
+    /* x264 returns every borrowed frame to the pool at close
+     * (encoder.c:4196, frame.c:312).  Phoenix owns the queue outright. */
+    for (int i = 0; i < h->n_input_frames; i++)            /* encoder.c:3368 */
+        phx_frame_delete(h->input_frames[i]);              /* frame.c:312 */
+    free(h->input_frames);                                 /* encoder.c:4527 */
+    free(h->coded_types);                                  /* lookahead.c:223 */
+    free(h->coded_frames);
     phx_analyse_free_costs(&h->cost, h->param.i_me_range); /* encoder.c:4520 */
     phx_mb_state_delete(h->mb_state);                      /* encoder.c:4527 */
-    phx_frame_delete(h->fenc);                             /* encoder.c:4528 */
+    /* h->fenc borrows from input_frames[] and is freed in the loop above. */
     free(h->rbsp);                                         /* encoder.c:4518 */
     free(h->recon);                                        /* encoder.c:4527 */
     free(h->bitstream);                                    /* encoder.c:4518 */
@@ -86,8 +94,11 @@ phx_t *phx_encoder_open(const phx_param_t *p)
     h->i_idr_pic_id = 0;                               /* encoder.c:142 */
     h->i_input = 0;                                    /* encoder.c:1630 */
 
-    h->fenc = phx_frame_new(h->i_width, h->i_height,
-                            h->param.i_bframe);        /* encoder.c:3368 / frame.c:60 */
+    /* encoder.c:3426 / lookahead.c:192 — serial lookahead metadata queue.
+     * Pictures are appended by phx_encode(); SHADER: C. */
+    h->lookahead = phx_lookahead_new(&h->param, h->i_mb_width, h->i_mb_height);
+    /* h->fenc borrows a frame from input_frames[] when a slice is encoded
+     * (encoder.c:3454); no dedicated allocation here. */
     h->mb_state = phx_mb_state_new(h->i_mb_width, h->i_mb_height);
                                                        /* encoder.c:1590-1592 */
     /* encoder.c:1724-1729 — one RBSP scratch plus the Annex-B destination.
@@ -106,7 +117,7 @@ phx_t *phx_encoder_open(const phx_param_t *p)
         h->recon = (uint8_t *)calloc((size_t)rows * PHX_FDEC_STRIDE + 128, 1);
     }
 
-    if (!h->fenc || !h->mb_state || !h->rbsp || !h->bitstream || !h->recon ||
+    if (!h->lookahead || !h->mb_state || !h->rbsp || !h->bitstream || !h->recon ||
         phx_analyse_init_costs(&h->cost, h->param.i_me_range,
                                (int)h->param.i_me_method, 0, PHX_QP_MAX)) {
         phx_encoder_release(h);                        /* encoder.c:goto fail */
@@ -205,9 +216,10 @@ int phx_encoder_header_bytes(phx_t *h, uint8_t *dst, int capacity)
   * copy the caller's I420 luma rows into the padded frame plane and interleave
   * the U/V planes into the NV12 chroma plane used by the 4:2:0 encoder.
   * SHADER: C — one ordered memcpy per row. */
-static int phx_encoder_copy_picture(phx_t *h, const phx_picture_t *pic)
+static int phx_encoder_copy_picture(phx_t *h, phx_frame_t *f,
+                                    const phx_picture_t *pic)
 {
-    phx_frame_t *f = h->fenc;
+    (void)h; /* x264_frame_copy_picture reads h only for the chroma format */
     if (!f || !pic || !pic->plane[0]) return -1;
     if (pic->i_width != h->i_width || pic->i_height != h->i_height) return -1;
 
@@ -234,6 +246,98 @@ static int phx_encoder_copy_picture(phx_t *h, const phx_picture_t *pic)
     return 0;
 }
 
+/* x264_frame_pop_unused (encoder.c:3368, frame.c:60): each input picture gets
+ * its own frame because the lookahead borrows lowres planes until the slice
+ * type has been decided (phx_lookahead.h "Ownership").  The array grows
+ * geometrically; every frame is released by phx_encoder_release().
+ * SHADER: C — serial host-side allocation. */
+static phx_frame_t *phx_encoder_new_input_frame(phx_t *h)
+{
+    if (h->n_input_frames == h->cap_input_frames) {
+        int cap = h->cap_input_frames ? h->cap_input_frames * 2 : 8;
+        phx_frame_t **p = (phx_frame_t **)realloc(h->input_frames,
+                                    (size_t)cap * sizeof(*p)); /* frame.c:235 */
+        if (!p) return NULL;
+        h->input_frames = p;
+        h->cap_input_frames = cap;
+    }
+    phx_frame_t *f = phx_frame_new(h->i_width, h->i_height,
+                                   h->param.i_bframe);        /* frame.c:60 */
+    if (!f) return NULL;
+    h->input_frames[h->n_input_frames++] = f;
+    return f;
+}
+
+/* Append one decided frame to the coding-order queue.  SHADER: C — serial
+ * push; the paired arrays keep the lookahead type next to its picture. */
+static int phx_encoder_queue_coded(phx_t *h, int type, int frame_index)
+{
+    if (h->n_coded == h->cap_coded) {
+        int cap = h->cap_coded ? h->cap_coded * 2 : 16;
+        int *t = (int *)realloc(h->coded_types, (size_t)cap * sizeof(*t));
+        if (!t) return -1;
+        h->coded_types = t;
+        int *f = (int *)realloc(h->coded_frames, (size_t)cap * sizeof(*f));
+        if (!f) return -1;
+        h->coded_frames = f;
+        h->cap_coded = cap;
+    }
+    h->coded_types[h->n_coded] = type;                       /* lookahead.c:238 */
+    h->coded_frames[h->n_coded] = frame_index;               /* encoder.c:3454 */
+    h->n_coded++;
+    return 0;
+}
+
+/* encoder.c:3447 / lookahead.c:223 — pull one minigop of decisions and map
+ * its coded order back to our display-order frame list.  The lookahead moves
+ * the closing non-B frame to index 0 and keeps the B frames in display order
+ * (slicetype.c:1950-1964); no BREF/B-pyramid exists in this port.
+ * SHADER: C — serial queue transfer, no hidden state. */
+static int phx_encoder_drain(phx_t *h)
+{
+    int pending = h->n_input_frames - h->i_next_frame;       /* encoder.c:3446 */
+    if (pending <= 0) return 0;
+    int types[PHX_BFRAME_MAX + 4];                           /* base.h:136 */
+    int ask = pending < (int)(sizeof(types)/sizeof(types[0]))
+            ? pending : (int)(sizeof(types)/sizeof(types[0]));
+    int k = phx_lookahead_get_frames(h->lookahead, types, ask); /* :3447 */
+    if (k <= 0) return 0;
+    for (int j = 0; j < k; j++) {
+        int idx = j == 0 ? h->i_next_frame + k - 1
+                         : h->i_next_frame + j - 1;          /* :1957/:1953 */
+        if (phx_encoder_queue_coded(h, types[j], idx) < 0) return -1;
+    }
+    h->i_next_frame += k;                                    /* encoder.c:3454 */
+    return k;
+}
+
+/* x264.h:272-280 -> common/base.h:111-116: IDR/I -> I, P -> P, B/BREF -> B.
+ * SHADER: C — pure lookup. */
+static int phx_encoder_slice_type(int type)
+{
+    if (PHX_IS_I(type)) return PHX_SLICE_I;                  /* x264.h:279 */
+    if (PHX_IS_B(type)) return PHX_SLICE_B;                  /* x264.h:280 */
+    return PHX_SLICE_P;
+}
+
+/* ratecontrol.c:821-825 — CQP QP per slice type.  TODO(worker-ratecontrol):
+ * replace with the real rc->qp_constant[] once VBV/CRF are ported.
+ * SHADER: C — serial scalar derivation. */
+static int phx_encoder_slice_qp(const phx_t *h, int slice_type)
+{
+    int qp = h->param.i_qp_constant;
+    if (qp < 0) qp = h->pps.i_pic_init_qp;                   /* set.c:494 */
+    double offset = 0.0;
+    if (slice_type == PHX_SLICE_I)
+        offset = 6.0 * log2(h->param.f_ip_factor);          /* ratecontrol.c:821 */
+    else if (slice_type == PHX_SLICE_B)
+        offset = 6.0 * log2(h->param.f_pb_factor);          /* ratecontrol.c:822 */
+    qp = (int)(qp + offset + 0.5);                          /* :824-825 */
+    if (qp < 0) qp = 0;
+    if (qp > PHX_QP_MAX_SPEC) qp = PHX_QP_MAX_SPEC;
+    return qp;
+}
+
 /* bs_align_1 (common/bitstream.h:187-191): x264 pads the slice header with
   * one bits before handing the buffer to CABAC.  phx_bitstream exposes
   * align_0/align_10 only, so the one-bit variant is spelled out here.
@@ -248,12 +352,12 @@ static void phx_encoder_bs_align_1(phx_bs_t *bs)
 /* encoder.c:2783 (x264_macroblock_thread_init) + encoder.c:2808-2809:
   * reset the per-frame MB state that belongs to the entropy stage.
   * SHADER: C — serial state reset, no cross-frame globals. */
-static void phx_encoder_reset_mb_state(phx_t *h)
+static void phx_encoder_reset_mb_state(phx_t *h, int slice_type)
 {
     phx_mb_state_t *s = h->mb_state;
     if (!s) return;
     s->b_cabac = h->param.b_cabac;                      /* encoder.c:2855 */
-    s->slice_type = PHX_SLICE_I;                        /* encoder.c:225 */
+    s->slice_type = slice_type;                         /* encoder.c:225 */
     s->first_mb = 0; s->threadslice_start = 0;          /* encoder.c:206 */
     for (int i = 0; i < s->mb_count; i++) {
         s->type[i] = 0;
@@ -390,10 +494,13 @@ static int phx_encoder_predict_i4(const phx_mb_cache_t *c, int idx)
     return m < 0 ? 2 : m;
 }
 
-/* cavlc.c:305-335 (cavlc_mb_header_i), I-slice offset 0 (cavlc.c:543).
+/* cavlc.c:305-335 (cavlc_mb_header_i).  x264 passes i_mb_i_offset = 0 for
+  * I slices, 5 for P and 23 for B (cavlc.c:408/481/543); intra MBs in a P/B
+  * slice are exactly the per-frame fallback used by phx_encode().
   * SHADER: C — serial Exp-Golomb writer. */
 static void phx_encoder_cavlc_header_i(phx_t *h, phx_bs_t *bs,
-                                       const phx_mb_decision_t *d)
+                                       const phx_mb_decision_t *d,
+                                       int i_mb_i_offset)
 {
     static const uint8_t fix16[7] = { 0,1,2,3,2,2,2 };
     static const uint8_t fixc[7]  = { 0,1,2,3,0,0,0 };
@@ -403,10 +510,10 @@ static void phx_encoder_cavlc_header_i(phx_t *h, phx_bs_t *bs,
         int pred = d->intra16_pred_mode;
         if (pred < 0) pred = 0;
         if (pred > 6) pred = 6;
-        phx_bs_write_ue(bs, (unsigned)(1 + fix16[pred]
+        phx_bs_write_ue(bs, (unsigned)(i_mb_i_offset + 1 + fix16[pred]
                         + 4*d->cbp_chroma + (d->cbp_luma ? 12 : 0))); /* :310 */
     } else {
-        phx_bs_write_ue(bs, 0);                          /* :316 */
+        phx_bs_write_ue(bs, (unsigned)i_mb_i_offset);    /* :316 */
         if (h->pps.b_transform_8x8_mode)
             phx_bs_write1(bs, (unsigned)(d->b_transform_8x8 & 1)); /* :318 */
         int di = (h->pps.b_transform_8x8_mode && d->b_transform_8x8 &&
@@ -441,21 +548,27 @@ static void phx_encoder_cavlc_qp_delta(phx_bs_t *bs, int qp, int *last_qp)
     *last_qp = qp;
 }
 
-/* cavlc.c:487-595 (x264_macroblock_write_cavlc).  Only the I-slice header is
-  * complete today; P_L0 16x16 is a best-effort path and P_8x8/B remain TODO
-  * (all frames are coded as I by phx_encode() for now).
+/* cavlc.c:487-595 (x264_macroblock_write_cavlc).  Only the I-MB header is
+  * complete today; P_L0/P_8x8/B inter headers remain TODO.
+  * P/B slices carry the lookahead type, but the MB decision is forced to an
+  * intra mode by the explicit fallback in phx_encode(): inter ME is not
+  * ported and no MVs/coefficients are fabricated.  The intra mb_type offset
+  * still follows the slice type (cavlc.c:408/481/543).
   * SHADER: C — strictly serial CAVLC MB syntax. */
 static void phx_encoder_write_cavlc_mb(phx_t *h, const phx_mb_decision_t *d,
-                                       phx_cavlc_t *cav, int *last_qp)
+                                       phx_cavlc_t *cav, int *last_qp,
+                                       int slice_type)
 {
     phx_bs_t *bs = cav->bs;
     int mt = d->mb_type;
     int intra = (mt == PHX_I_4x4 || mt == PHX_I_8x8 ||
                  mt == PHX_I_16x16 || mt == PHX_I_PCM);
+    /* cavlc.c:513 — mb_type offset of an intra MB in I/P/B slices. */
+    static const int offsets[3] = { 5, 23, 0 };
+    int i_mb_i_offset = offsets[slice_type];
 
     if (mt == PHX_I_PCM) {
-        static const int offsets[3] = { 5, 23, 0 };     /* cavlc.c:513 */
-        phx_bs_write_ue(bs, (unsigned)(offsets[PHX_SLICE_I] + 25)); /* :515 */
+        phx_bs_write_ue(bs, (unsigned)(i_mb_i_offset + 25)); /* :515 */
         phx_bs_align_0(bs);                             /* :519 */
         /* x264 reinitialises bs at s->p (cavlc.c:530-531) after the raw
          * samples.  The decision type carries no fenc samples, so zero
@@ -467,16 +580,13 @@ static void phx_encoder_write_cavlc_mb(phx_t *h, const phx_mb_decision_t *d,
     }
 
     if (intra) {
-        phx_encoder_cavlc_header_i(h, bs, d);           /* cavlc.c:543 */
-    } else if (mt == PHX_P_L0 && d->i_partition == PHX_D_16x16) {
-        phx_bs_write1(bs, 1);                           /* cavlc.c:344 */
-        /* i_fref[0] == 1: no ref_idx syntax.  MVD TODO(for P frames). */
-        phx_bs_write_se(bs, 0);                         /* cavlc.c:246 */
-        phx_bs_write_se(bs, 0);
+        phx_encoder_cavlc_header_i(h, bs, d, i_mb_i_offset); /* cavlc.c:543 */
     } else {
-        /* TODO(P/B): P_8x8 / B headers need sub-partitions and MVDs from the
-         * decision; I-slice frames never take this branch. */
-        phx_encoder_cavlc_header_i(h, bs, d);           /* cavlc.c:408/481 */
+        /* TODO(worker-mbencode): real P_L0/P_8x8/B inter headers require
+         * reference lists and MVDs from the analysis stage.  phx_encode()
+         * forces an intra decision before reaching this point; no zero MVD
+         * is written here so nothing pretends to be an inter prediction. */
+        phx_encoder_cavlc_header_i(h, bs, d, i_mb_i_offset); /* cavlc.c:408/481 */
     }
 
     if (mt != PHX_I_16x16) {
@@ -550,7 +660,7 @@ static void phx_encoder_write_cabac_mb(phx_t *h, phx_cabac_mb_t *mb,
     else if (mb->slice_type == PHX_SLICE_B)
         phx_cabac_mb_header_b(cb, mb, mt, 1);           /* cabac.c:935 */
     else
-        phx_cabac_mb_header_i(cb, mb, mt, PHX_SLICE_I, 1); /* cabac.c:937 */
+        phx_cabac_mb_header_i(cb, mb, mt, mb->slice_type, 1); /* cabac.c:937 */
 
     if (mt == PHX_I_PCM) {
         /* cabac.c:943-963: raw samples follow the aligned cabac byte pointer.
@@ -622,13 +732,13 @@ static void phx_encoder_write_cabac_mb(phx_t *h, phx_cabac_mb_t *mb,
 
 /* x264_encoder_encode (api.c:166 -> encoder.c:3323).  Stage order:
   *   put_frame/copy picture (encoder.c:3368-3426) -> lowres (mc.c:458) ->
-  *   [TODO: lookahead, rate control] ->
+  *   lookahead (encoder.c:3445-3454, lookahead.c:192/223) ->
   *   slice header (encoder.c:2791) -> MB loop (encoder.c:2812-3074) ->
   *   CABAC/CAVLC trailing bits (encoder.c:3080-3092) ->
   *   NAL assembly (encoder.c:3093 -> encoder.c:2124).
-  * Every frame is coded as an all-intra slice: frame 0 is IDR, later frames
-  * are non-IDR I frames.  P/B lookahead, slice-type decision and rate control
-  * are explicit TODOs below, and no global or environment state is used.
+  * The lookahead decides I/P/B in coding order; the MB stage still falls back
+  * to I_16x16 because inter ME is not ported (phx_mbencode.c).  Rate control
+  * uses the CQP constants of ratecontrol.c:821-825; VBV/CRF are TODOs.
   * SHADER: C — the whole staged pipeline is serial and seek-safe. */
 int phx_encode(phx_t *h, const phx_picture_t *pic,
                phx_nal_t **out, int *nnal, uint8_t **recon)
@@ -638,60 +748,101 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     *nnal = 0;                                         /* encoder.c:3356 */
     if (recon) *recon = NULL;
 
-    /* x264.c:2049 — flush has no delayed frames in this path. */
-    if (!pic) return 0;
-    if (phx_encoder_copy_picture(h, pic) < 0) return -1;
-    phx_frame_init_lowres(h->fenc);                    /* encoder.c:3423 / mc.c:458 */
-    /* TODO(worker-slicetype): phx_lookahead_put_frame/get_frames, P/B decision.
-     * TODO(worker-ratecontrol): phx_ratecontrol_start/end (encoder.c:3857/3978). */
+    if (pic) {
+        /* encoder.c:3368/3372/3426 — one owned frame per input picture. */
+        phx_frame_t *f = phx_encoder_new_input_frame(h);
+        if (!f) return -1;
+        if (phx_encoder_copy_picture(h, f, pic) < 0) return -1;
+        /* lookahead.c:192/223 calls phx_frame_init_lowres() internally. */
+        phx_lookahead_put_frame(h->lookahead, f);       /* encoder.c:3426 */
+        h->i_input++;                                  /* encoder.c:3379 */
 
+        /* encoder.c:3428-3433 — gate output while the lookahead window
+         * fills.  With i_bframe B frames, a minigop needs i_bframe+1
+         * pictures before its closing non-B frame can be decided.  The
+         * remaining pictures are drained at flush (x264.c:2049). */
+        if (h->n_input_frames - h->i_next_frame >= h->param.i_bframe + 1) {
+            if (phx_encoder_drain(h) < 0) return -1;   /* encoder.c:3447 */
+        }
+    } else if (h->i_coded_head >= h->n_coded) {
+        /* x264.c:2049 — at flush the delay gate is gone: decide whatever is
+         * still queued so the last minigop is emitted (encoder.c:3449). */
+        if (phx_encoder_drain(h) < 0) return -1;       /* encoder.c:3447 */
+    }
+
+    /* x264.c:2049 / encoder.c:3449 — emit one decided frame per call. */
+    if (h->i_coded_head >= h->n_coded) {
+        if (pic) h->i_frame++;                         /* encoder.c:3444 */
+        return 0;
+    }
+    int frame_index = h->coded_frames[h->i_coded_head]; /* encoder.c:3454 */
+    int decided_type = h->coded_types[h->i_coded_head]; /* lookahead.c:238 */
+    h->i_coded_head++;
     h->i_frame++;                                      /* encoder.c:3444 */
-    h->i_input++;                                      /* encoder.c:3379 */
+    h->fenc = h->input_frames[frame_index];            /* encoder.c:3454 */
 
-    /* Explicit per-frame context: x264 derives these from h->sh / fenc
-      * (encoder.c:132-211).  Here they come from the handle counters only. */
+    /* encoder.c:132-211 — explicit per-frame context.  The slice type comes
+      * from the lookahead decision (lookahead.c:238, x264.h:272-280), with
+      * frame_num/POC from the serial counters (encoder.c:136/145). */
     phx_slice_frame_t fc;
     memset(&fc, 0, sizeof(fc));
     int mask = (1 << h->sps.i_log2_max_frame_num) - 1;
+    /* encoder.c:3499-3506 — an IDR resets the counters *before* its slice
+     * header is written; later slices then advance them. */
+    if (decided_type == PHX_TYPE_IDR) {
+        h->i_frame_num = 0;                            /* encoder.c:3504 */
+        h->i_poc = 0;                                  /* encoder.c:3513 */
+    }
     fc.i_frame_num = h->i_frame_num & mask;            /* encoder.c:136 */
     fc.i_poc = h->i_poc;                               /* encoder.c:145 */
-    fc.b_idr = (h->i_frame == 0);                      /* encoder.c:236 */
+    fc.b_idr = (decided_type == PHX_TYPE_IDR);         /* encoder.c:236/3520 */
     fc.i_idr_pic_id = h->i_idr_pic_id;                  /* encoder.c:142 */
-    fc.i_nal_ref_idc = 3;                              /* encoder.c:328 */
-    fc.i_type = PHX_SLICE_I;                           /* encoder.c:225 */
+    /* encoder.c:3521/3529/3538/3553 — IDR/I/P are reference pictures, plain
+      * B frames are disposable (no BREF/B-pyramid in this port). */
+    fc.i_type = phx_encoder_slice_type(decided_type);  /* encoder.c:225 */
+    fc.i_nal_ref_idc = fc.i_type == PHX_SLICE_B ? 0 : 3; /* encoder.c:328 */
     fc.i_first_mb = 0;                                 /* encoder.c:132 */
     fc.i_last_mb = h->mb_state->mb_count - 1;           /* encoder.c:133 */
     /* ratecontrol.c:823-825 — CQP maps the constant QP through the IP factor:
      * I frames use qp_constant - 6*log2(f_ip_factor) + 0.5, P frames the
      * constant itself. With --qp 28 and the default ip_factor 1.4 this is 25. */
-    {
-        double ip_offset = 6.0 * log2(h->param.f_ip_factor); /* ratecontrol.c:821 */
-        int qp_i = (int)(h->pps.i_pic_init_qp - ip_offset + 0.5); /* :824 */
-        if (qp_i < 0) qp_i = 0;
-        if (qp_i > PHX_QP_MAX_SPEC) qp_i = PHX_QP_MAX_SPEC;
-        fc.i_qp = qp_i;
-    }
+    fc.i_qp = phx_encoder_slice_qp(h, fc.i_type);       /* ratecontrol.c:821-825 */
     fc.b_variable_qp = 0;                              /* encoder.c:205 */
     fc.b_sliced_threads = 0;                           /* encoder.c:206 */
     fc.b_mbaff = 0;                                    /* encoder.c:138 */
     fc.b_direct_spatial_mv_pred = 0;                   /* encoder.c:156 */
     fc.i_cabac_init_idc = 0;                           /* encoder.c:196 */
 
+    /* encoder.c:177-190 — list sizes and ref_pic_list_modification.  The
+     * lookahead has no BREF/B-pyramid and no weighted prediction yet, so
+     * every active list has one implicit reference and no reorder entries.
+     * TODO(worker-slicetype): BREF reordering (slicetype.c:1805-1820). */
+    fc.i_ref[0] = (fc.i_type != PHX_SLICE_I) ? 1 : 0;    /* encoder.c:186 */
+    fc.i_ref[1] = (fc.i_type == PHX_SLICE_B) ? 1 : 0;    /* encoder.c:186 */
+    fc.b_ref_reorder[0] = fc.b_ref_reorder[1] = 0;       /* encoder.c:177-178 */
+
     phx_slice_header_t sh;
     phx_slice_header_init(&sh, &h->param, &h->sps, &h->pps, &fc); /* :2791 */
+    /* encoder.c:173-175/254-259 — pps defaults are already one entry per
+     * list; no override is needed.  Mark both fields explicitly so the
+     * decision is visible at the entropy stage. */
+    sh.b_num_ref_idx_override = 0;                       /* encoder.c:254 */
+    sh.i_num_ref_idx_l0_active = fc.i_ref[0] ? fc.i_ref[0] : 1; /* :257 */
+    sh.i_num_ref_idx_l1_active = fc.i_ref[1] ? fc.i_ref[1] : 1; /* :259 */
+    sh.i_mmco_command_count = 0;                         /* encoder.c:337 */
 
     phx_bs_t bs;
     phx_bs_init(&bs, h->rbsp, h->i_bitstream);         /* encoder.c:2776 bs_realign */
     phx_slice_header_write(&bs, &h->param, &sh);       /* encoder.c:2791 */
     if (h->param.b_cabac) {
         phx_encoder_bs_align_1(&bs);                   /* encoder.c:2795 */
-        phx_cabac_context_init(&h->cabac, PHX_SLICE_I,
+        phx_cabac_context_init(&h->cabac, fc.i_type,
                                sh.i_qp, sh.i_cabac_init_idc); /* :2798 */
         phx_cabac_encode_init(&h->cabac, bs.p,
                               h->rbsp + h->i_bitstream); /* :2799 */
     }
 
-    phx_encoder_reset_mb_state(h);                     /* encoder.c:2783 */
+    phx_encoder_reset_mb_state(h, fc.i_type);          /* encoder.c:2783 */
     int last_qp = sh.i_qp;                             /* encoder.c:2804 */
     int last_dqp = 0;                                  /* encoder.c:2805 */
     phx_cavlc_t cav;
@@ -725,16 +876,22 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
             d.chroma_pred_mode = 0;
             int rc = phx_macroblock_analyse(&h->param, h->fenc, c,
                                             mb_x, mb_y, sh.i_qp, &d); /* :2861 */
-            /* phx_mbencode.c rejects I_8x8 (no 64-coefficient slot in the
-             * shared decision struct) and B/P modes (no reference list).
-             * Fall back to I_16x16, which is always representable, instead
-             * of aborting the whole frame.  TODO(worker-mbencode): remove
-             * this guard once those modes are supported. */
+            /* Explicit per-frame fallback: phx_mbencode.c rejects I_8x8
+             * (no 64-coefficient slot) and all inter P/B modes (no reference list),
+             * so a P/B frame decided by phx_lookahead still codes its MBs
+             * as I_16x16 inside a P/B slice.  No MV or coefficient is fabricated.
+             * TODO(worker-mbencode): remove this guard once inter ME and
+             * reference lists are ported. */
             if (rc < 0 || (d.mb_type != PHX_I_16x16 && d.mb_type != PHX_I_4x4 &&
                            d.mb_type != PHX_I_PCM)) {
                 d.mb_type = PHX_I_16x16;
                 d.i_partition = PHX_D_16x16;
                 d.b_transform_8x8 = 0;
+                d.skip = 0;                            /* no fake P_SKIP/B_SKIP */
+                /* Drop any inter trial MVs/refs: the intra fallback must not
+                 * publish motion data it never encoded. */
+                memset(d.mv, 0, sizeof(d.mv));
+                memset(d.ref, -1, sizeof(d.ref));
                 if (d.intra16_pred_mode < 0 || d.intra16_pred_mode > 6)
                     d.intra16_pred_mode = 2;
             }
@@ -784,9 +941,9 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 mb.prev_type = mb_xy > 0 ? (int)h->mb_state->type[mb_xy-1] : -1;
                 mb.prev_cbp = mb_xy > 0 ? (int)h->mb_state->cbp[mb_xy-1] : 0;
                 mb.curr_cbp = d.i_cbp;
-                mb.i_fref[0] = 1; mb.i_fref[1] = 0;
+                mb.i_fref[0] = fc.i_ref[0]; mb.i_fref[1] = fc.i_ref[1];
                 mb.b_transform_8x8_mode = h->pps.b_transform_8x8_mode;
-                mb.slice_type = PHX_SLICE_I;
+                mb.slice_type = fc.i_type;                 /* encoder.c:225 */
                 mb.i_frame = h->i_frame;
                 mb.plane_count = 1; mb.chroma = 1;
                 if (mb_xy > fc.i_first_mb)             /* encoder.c:2869-2870 */
@@ -799,7 +956,8 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                     last_qp = mb.i_qp;                 /* macroblock.c:1757 */
                 }
             } else {
-                phx_encoder_write_cavlc_mb(h, &d, &cav, &last_qp); /* :2892 */
+                phx_encoder_write_cavlc_mb(h, &d, &cav, &last_qp,
+                                           fc.i_type);     /* :2892 */
             }
 
             h->mb_state->type[mb_xy] = (uint8_t)d.mb_type; /* cache_save contract */
@@ -825,9 +983,12 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     *nnal = 1;                                         /* api.c:170 */
     if (recon) *recon = h->recon;
 
-    /* Explicit per-frame context advance (encoder.c:1564, :1629). */
-    h->i_frame_num = (h->i_frame_num + 1) & mask;
-    h->i_poc = fc.b_idr ? 2 : h->i_poc + 2;
+    /* Explicit per-frame context advance: frame_num once per coded frame
+     * (encoder.c:3882) and POC by two (encoder.c:3513).  TODO(worker-
+     * slicetype): derive POC from display order and skip the frame_num
+     * increment on non-reference B frames once reference lists exist. */
+    h->i_frame_num = (h->i_frame_num + 1) & mask;       /* encoder.c:3882 */
+    h->i_poc += 2;                                     /* encoder.c:3513 */
     return nal.i_payload;                              /* encoder.c:2133 */
 }
 

@@ -1,17 +1,21 @@
-/* Phoenix thin CLI: read one raw I420 frame, emit SPS+PPS, then call the
- * encoder API.  No encoding logic lives here (ORACLE_DESIGN.md:56-57).
- *
- * Source: reference/x264/x264.c:358 (main), :1977 (x264_encoder_headers),
- *         :1851-1868 (encode_frame / write_frame), :2024 (frame loop),
- *         :2049 (flush with pic == NULL);
- *         reference/x264/input/raw.c:113-124 (I420 plane read).
- *
- * SHADER: C — host-side file IO and API calls only; the serial encoder stage
- * owns every bit of stream state.
- *
- * Usage: phx_cli <yuv> <width> <height> <qp> <preset> <cabac|cavlc> <outfile>
- * Exit:  0 success, 1 IO/API error, 2 bad arguments.
- */
+/* Phoenix thin CLI: read every raw I420 frame, emit SPS+PPS+SEI once, then
+  * drain the encoder's lookahead into one slice NAL per input frame.
+  * No encoding logic lives here (ORACLE_DESIGN.md:56-57).
+  *
+  * Source: reference/x264/x264.c:358 (main), :1977 (x264_encoder_headers),
+  *         :1851-1868 (encode_frame / write_frame), :2024 (frame loop),
+  *         :2049 (flush with pic == NULL);
+  *         reference/x264/encoder/encoder.c:3368/3426/3447/3454 (put/lookahead/
+  *         shift), reference/x264/encoder/lookahead.c:192/223,
+  *         reference/x264/encoder/slicetype.c:1950-1964 (coded-order reorder);
+  *         reference/x264/input/raw.c:113-124 (I420 plane read).
+  *
+  * SHADER: C — host-side file IO and API calls only; the serial encoder stage
+  * owns every bit of stream state.
+  *
+  * Usage: phx_cli <yuv> <width> <height> <qp> <preset> <cabac|cavlc> <outfile>
+  * Exit:  0 success, 1 IO/API error, 2 bad arguments.
+  */
 #include "phx_encoder.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,9 +64,21 @@ static int cli_write_nals(FILE *f, phx_nal_t *nals, int nnal)
     return 0;
 }
 
-/* Entry point; mirrors x264.c:358 (main), :1977 (headers), :1858 (encode)
- * and :2024/:2049 (encode loop / flush).  SPS+PPS are written once, then the
- * slice NAL(s) returned by phx_encode().  SHADER: C — thin host-side wrapper
+/* Number of complete I420 pictures in the file (input/raw.c:113-124).
+ * SHADER: C — host-side file-size query; no encoder state is read. */
+static int cli_frame_count(FILE *f, size_t frame_bytes)
+{
+    if (fseek(f, 0, SEEK_END) != 0) return -1;
+    long size = ftell(f);
+    if (size < 0 || fseek(f, 0, SEEK_SET) != 0) return -1;
+    if (frame_bytes == 0) return 0;
+    return (int)((size_t)size / frame_bytes);
+}
+
+/* Entry point; mirrors x264.c:358 (main), :1977 (headers), :2024 (frame loop)
+ * and :2049 (flush).  One phx_encode() call consumes one picture and emits at
+ * most one decided slice; the flush loop drains the lookahead remainder
+ * (encoder.c:3447/3454, lookahead.c:223).  SHADER: C — thin host-side wrapper
  * around the serial encoder API. */
 int main(int argc, char **argv)
 {
@@ -113,59 +129,86 @@ int main(int argc, char **argv)
     uint8_t *frame = (uint8_t *)malloc(frame_bytes ? frame_bytes : 1);
     FILE *fin = fopen(yuv_path, "rb");
     FILE *fout = fopen(out_path, "wb");
-    if (!frame || !fin || !fout ||
-        cli_read_i420(fin, w, h, frame)) {             /* input/raw.c:113 */
-        fprintf(stderr, "phx_cli: cannot read I420 frame from '%s'\n", yuv_path);
+    if (!frame || !fin || !fout) {
+        fprintf(stderr, "phx_cli: cannot open input/output\n");
         if (fin) fclose(fin);
         if (fout) fclose(fout);
         free(frame);
         phx_encoder_close(enc);
         return 1;
     }
-    fclose(fin);
 
-    phx_picture_t pic;
-    cli_make_picture(&pic, frame, w, h);
+    int nframes = cli_frame_count(fin, frame_bytes);   /* input/raw.c:113 */
+    if (nframes <= 0) {
+        fprintf(stderr, "phx_cli: no complete I420 frames in '%s'\n", yuv_path);
+        fclose(fin);
+        fclose(fout);
+        free(frame);
+        phx_encoder_close(enc);
+        return 1;
+    }
 
-    /* x264.c:1977 -> encoder.c:2096: emit SPS+PPS.  The byte assembly is the
-     * ported phx_encoder_headers() (phx_headers.h:53); phx_headers() wraps it
-     * into the public phx_nal_t array. */
-    uint8_t hdr[1024];
-    int hdr_n = phx_encoder_headers(hdr, (int)sizeof(hdr), &p, w, h);
+    /* x264.c:1977 -> encoder.c:2096: emit SPS+PPS+SEI once.  phx_headers()
+     * wraps the ported phx_encoder_headers()/phx_sei_version_write(). */
     phx_nal_t *hnals = NULL;
     int hnnal = 0;
     int n = phx_headers(enc, &hnals, &hnnal);
     if (n <= 0 || hnnal < 3 ||
         cli_write_nals(fout, hnals, hnnal)) {          /* x264.c:1864 */
         fprintf(stderr, "phx_cli: header emission failed\n");
+        fclose(fin);
         fclose(fout);
         free(frame);
         phx_encoder_close(enc);
         return 1;
     }
 
-    phx_nal_t *out = NULL;
-    int nnal = 0;
-    uint8_t *recon = NULL;
-    int rc = phx_encode(enc, &pic, &out, &nnal, &recon); /* x264.c:1858 */
-    if (rc < 0 || nnal <= 0 || cli_write_nals(fout, out, nnal)) {
-        fprintf(stderr, "phx_cli: encode failed (%d)\n", rc);
-        fclose(fout);
-        free(frame);
-        phx_encoder_close(enc);
-        return 1;
+    phx_picture_t pic;
+    cli_make_picture(&pic, frame, w, h);
+    int rc = 0;
+
+    /* x264.c:2024 — one picture per loop iteration.  phx_encode() may return
+     * zero NALs while the lookahead window fills (encoder.c:3428-3433). */
+    for (int i = 0; i < nframes; i++) {
+        if (cli_read_i420(fin, w, h, frame)) {         /* input/raw.c:113 */
+            fprintf(stderr, "phx_cli: short I420 frame %d\n", i);
+            rc = 1;
+            break;
+        }
+        phx_nal_t *out = NULL;
+        int nnal = 0;
+        uint8_t *recon = NULL;
+        rc = phx_encode(enc, &pic, &out, &nnal, &recon); /* x264.c:1858 */
+        if (rc < 0 || (nnal && cli_write_nals(fout, out, nnal))) {
+            fprintf(stderr, "phx_cli: encode failed on frame %d (%d)\n", i, rc);
+            rc = 1;
+            break;
+        }
+        rc = 0;
     }
 
-    /* x264.c:2049 — flush with pic == NULL once the pipeline is wired. */
-    do {
-        out = NULL; nnal = 0; recon = NULL;
+    /* x264.c:2049 — flush: phx_encoder_encode(NULL) drains one decided frame
+     * per call and returns 0/NULL when the lookahead is empty. */
+    for (;;) {
+        phx_nal_t *out = NULL;
+        int nnal = 0;
+        uint8_t *recon = NULL;
         rc = phx_encoder_encode(enc, NULL, &out, &nnal, &recon);
-        if (rc < 0) break;
-        if (nnal && cli_write_nals(fout, out, nnal)) { rc = -1; break; }
-    } while (rc > 0 && nnal > 0);
+        if (rc < 0) {
+            fprintf(stderr, "phx_cli: flush failed (%d)\n", rc);
+            break;
+        }
+        if (nnal && cli_write_nals(fout, out, nnal)) {
+            rc = 1;
+            break;
+        }
+        if (rc == 0) break;                            /* lookahead drained */
+        rc = 0;                                        /* keep draining */
+    }
 
+    fclose(fin);
     fclose(fout);
     free(frame);
     phx_encoder_close(enc);                            /* api.c:130 */
-    return rc < 0 ? 1 : 0;
+    return rc < 0 ? 1 : rc;
 }

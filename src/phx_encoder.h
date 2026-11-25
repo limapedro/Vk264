@@ -33,6 +33,7 @@
 #include "phx_mbcache.h"
 #include "phx_cost.h"
 #include "phx_cabac.h"
+#include "phx_lookahead.h"
 
 /* Legacy sentinel kept only so old callers still compile: phx_encode() no
  * longer returns it once the per-MB pipeline is wired.  Source: the old
@@ -70,7 +71,22 @@ typedef struct phx_t {
     uint8_t *bitstream;             /* encoder.c:1724 — out.p_bitstream */
     int i_bitstream;                /* encoder.c:1724 — out.i_bitstream */
     phx_nal_t nal[2];               /* encoder.c:2130 / per-frame NAL array */
-    phx_frame_t *fenc;              /* encoder.c:3368 — current input frame */
+    phx_frame_t *fenc;              /* encoder.c:3454 — frame being encoded */
+
+    /* Serial lookahead pipeline.  x264 keeps every input picture alive in its
+     * frame pool until the slice-type decision has consumed it
+     * (encoder.c:3368/3426/3454; lookahead.c:192/223).  Phoenix owns the same
+     * list explicitly: input_frames[] is display order, coded_types[]/frames[]
+     * is the decided queue in coding order (slicetype.c:1950-1964 reorder).
+     * SHADER: C — one queue, no threads. */
+    phx_lookahead_t *lookahead;     /* encoder.c:3426 / lookahead.c:192 */
+    phx_frame_t **input_frames;     /* encoder.c:3368 x264_frame_pop_unused */
+    int n_input_frames, cap_input_frames;
+    int i_next_frame;               /* encoder.c:3454 frames.current head */
+    int *coded_types;               /* lookahead.c:223, coding order */
+    int *coded_frames;              /* parallel indices into input_frames */
+    int n_coded, cap_coded, i_coded_head;
+
     phx_mb_state_t *mb_state;       /* encoder.c:1590-1592 MB arrays */
     phx_mb_cache_t mb_cache;        /* encoder.c:2855 — h->mb.cache */
     phx_cost_tables_t cost;         /* encoder.c:1708 / analyse.c:179 */
@@ -116,13 +132,21 @@ int phx_encoder_header_bytes(phx_t *h, uint8_t *dst, int capacity);
  *   write_{cabac,cavlc}, cache_save) ->
  *   ratecontrol_end (encoder.c:3978) -> NAL assembly (encoder.c:2124).
  *
- * The wired path emits one all-intra (IDR for frame 0) slice per call:
- * SPS/PPS are NOT repeated here (x264.c:1977 emits them once), so callers
- * must call phx_headers() first.  P/B slice-type decision, lookahead and
- * rate control remain explicit TODOs; every frame is currently coded as I
- * so the stream stays self-contained without a reference list.  Passing
- * pic == NULL is the x264 flush call (x264.c:2049): there are no delayed
- * frames in this path, so it returns 0 with *out=NULL, *nnal=0.
+ * The wired path feeds each picture into phx_lookahead_put_frame()
+ * (encoder.c:3426) and consumes decided frame types in coding order via
+ * phx_lookahead_get_frames() (encoder.c:3447, lookahead.c:223,
+ * slicetype.c:1950-1964).  One slice NAL is emitted per call once a decided
+ * frame is available; early calls may return zero NALs while the lookahead
+ * window fills, exactly like x264's i_delay gate (encoder.c:3428-3433).
+ * SPS/PPS are NOT repeated here (x264.c:1977 emits them once).
+ *
+ * Slice headers carry the decided I/P/B type, frame_num, POC, ref counts and
+ * marking flags (encoder.c:213-364).  The MB stage still falls back to
+ * I_16x16 for P/B frames because inter ME is not ported in phx_mbencode.c:
+ * the fallback is explicit and is NOT a claim of x264 bitstream parity.
+ *
+ * Passing pic == NULL is the x264 flush call (x264.c:2049): it drains the
+ * lookahead one frame per call and finally returns 0 with *out=NULL, *nnal=0.
  * SHADER: C — the whole staged pipeline is serial and seek-safe. */
 int phx_encode(phx_t *h, const phx_picture_t *pic,
                phx_nal_t **out, int *nnal, uint8_t **recon);
