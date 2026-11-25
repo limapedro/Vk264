@@ -21,6 +21,8 @@
 #include "phx_mb_decision.h"
 #include "phx_analysis.h"
 #include "phx_mbencode.h"
+#include "phx_chroma.h"
+#include "phx_sei.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -167,8 +169,21 @@ int phx_headers(phx_t *h, phx_nal_t **out, int *nnal)
     h->header_nal[1].i_type = 8;                       /* NAL_PPS, encoder.c:2112 */
     h->header_nal[1].b_long_startcode = 1;
 
+    /* encoder.c:2118-2122 — version SEI after SPS/PPS. */
+    int sei_n = phx_sei_version_write(h->header_bytes + n,
+                                       (int)sizeof(h->header_bytes) - n,
+                                       &h->param, h->i_width, h->i_height);
+    if (sei_n > 0) {
+        h->header_nal[2].p_payload = h->header_bytes + n;
+        h->header_nal[2].i_payload = sei_n;
+        h->header_nal[2].i_ref_idc = 0;                 /* NAL_PRIORITY_DISPOSABLE */
+        h->header_nal[2].i_type = 6;                    /* NAL_SEI */
+        h->header_nal[2].b_long_startcode = 1;
+        n += sei_n;
+    }
+
     *out = h->header_nal;                              /* encoder.c:2130 */
-    *nnal = 2;                                         /* encoder.c:2129 */
+    *nnal = sei_n > 0 ? 3 : 2;                         /* encoder.c:2129 */
     return n;                                          /* encoder.c:2133 */
 }
 
@@ -186,10 +201,9 @@ int phx_encoder_header_bytes(phx_t *h, uint8_t *dst, int capacity)
   * Frame-loop helpers.  Every one of them is class C (serial host work).
   * ------------------------------------------------------------------------- */
 
-/* x264_frame_copy_picture (encoder.c:3372, common/frame.c:...):
-  * copy the caller's I420 luma rows into the padded frame plane.  Chroma is
-  * not consumed by the ported 4:2:0 analysis/encode path yet (TODO: the
-  * phx_frame_t has no chroma planes); only luma is copied here.
+/* x264_frame_copy_picture (encoder.c:3372, common/frame.c:45-57/3377):
+  * copy the caller's I420 luma rows into the padded frame plane and interleave
+  * the U/V planes into the NV12 chroma plane used by the 4:2:0 encoder.
   * SHADER: C — one ordered memcpy per row. */
 static int phx_encoder_copy_picture(phx_t *h, const phx_picture_t *pic)
 {
@@ -202,6 +216,18 @@ static int phx_encoder_copy_picture(phx_t *h, const phx_picture_t *pic)
         memcpy(f->plane + (size_t)y * f->i_stride,
                pic->plane[0] + (size_t)y * src_stride,
                (size_t)f->i_width);
+    /* frame.c:45-57 maps input I420 to the encoder's internal NV12 plane. */
+    if (pic->plane[1] && pic->plane[2] && f->plane_chroma) {
+        int cs = pic->i_stride[1] > 0 ? pic->i_stride[1] : h->i_width/2;
+        int cw = f->i_width_planes[1], chh = f->i_lines_planes[1];
+        int dsts = f->i_stride_planes[1];
+        for (int y = 0; y < chh; y++)
+            for (int x = 0; x < cw; x++) {
+                f->plane_chroma[y*dsts + 2*x  ] = pic->plane[1][y*cs + x];
+                f->plane_chroma[y*dsts + 2*x+1] = pic->plane[2][y*cs + x];
+            }
+        phx_frame_expand_border_chroma(f);            /* frame.c:633-638 */
+    }
     /* frame.c:627 / encoder.c:3377 (the picture is already mod16). */
     phx_plane_expand_border(f->plane, f->i_stride, f->i_width, f->i_height,
                             PHX_PADH, PHX_PADV, 1, 1, 0);
@@ -737,6 +763,11 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 }
                 c->i_cbp_luma = c->i_cbp_chroma = 0;
             }
+            /* encoder/macroblock.c:925-941/259-498 — encode chroma DC+AC from
+             * the NV12 plane into the explicit decision fields. */
+            int crc = phx_macroblock_encode_chroma(&h->param, h->fenc, c,
+                                                   mb_x, mb_y, &d);
+            if (crc < 0) { d.cbp_chroma = 0; d.i_cbp &= ~0x30; }
             phx_encoder_apply_decision(h, &d);         /* docs/SHADER_NOTES.md:126 */
 
             if (h->param.b_cabac) {

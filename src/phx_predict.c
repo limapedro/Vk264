@@ -425,9 +425,12 @@ void phx_predict_4x4_h(uint8_t *dst, int stride)
  * SHADER: A — one invocation per 4x4 block. */
 void phx_predict_4x4_v(uint8_t *dst, int stride)
 {
-    const uint8_t v = SRC(0, -1);
+    /* x264 uses PREDICT_4x4_DC(SRC_X4(0,-1)) (predict.c:508-511): the four
+     * top-row samples are copied to every row, not the single top-left
+     * sample broadcast. */
+    const uint8_t *top = dst - stride;                 /* SRC_X4(0,-1) */
     for (int y = 0; y < 4; y++)
-        for (int x = 0; x < 4; x++) SRC(x, y) = v;
+        memcpy(dst + y*stride, top, 4);                 /* PREDICT_4x4_DC, :478-479 */
 }
 
 /* predict.c:534-545 — predict_4x4_ddl_c (top-left down-left diagonal).

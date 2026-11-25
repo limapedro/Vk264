@@ -56,7 +56,7 @@ static int check_headers(phx_t *h, const phx_param_t *p)
     phx_nal_t *nals = NULL;
     int nnal = 0;
     int n = phx_headers(h, &nals, &nnal);
-    if (n <= 0 || nnal != 2 || !nals) {
+    if (n <= 0 || nnal != 3 || !nals) {
         printf("FAIL headers: n=%d nnal=%d\n", n, nnal);
         return 1;
     }
@@ -68,11 +68,13 @@ static int check_headers(phx_t *h, const phx_param_t *p)
         return 1;
     }
     if (nals[0].i_payload <= 4 || nals[1].i_payload <= 4 ||
-        nals[0].i_payload + nals[1].i_payload != n ||
+        nals[0].i_payload + nals[1].i_payload + nals[2].i_payload != n ||
         nals[0].p_payload[0] || nals[0].p_payload[1] ||
         nals[0].p_payload[2] || nals[0].p_payload[3] != 1 ||
         nals[1].p_payload[0] || nals[1].p_payload[1] ||
-        nals[1].p_payload[2] || nals[1].p_payload[3] != 1) {
+        nals[1].p_payload[2] || nals[1].p_payload[3] != 1 ||
+        nals[2].p_payload[0] || nals[2].p_payload[1] ||
+        nals[2].p_payload[2] || nals[2].p_payload[3] != 1) {
         printf("FAIL header Annex-B framing: sizes %d+%d != %d\n",
                nals[0].i_payload, nals[1].i_payload, n);
         return 1;
@@ -81,7 +83,8 @@ static int check_headers(phx_t *h, const phx_param_t *p)
     uint8_t ref[512];
     int rn = phx_encoder_headers(ref, (int)sizeof(ref), p, TW, TH);
     int rn2 = phx_encoder_header_bytes(h, ref, (int)sizeof(ref));
-    if (rn != n || rn2 != n || memcmp(ref, nals[0].p_payload, (size_t)n)) {
+    if (rn2 != rn || n != rn + nals[2].i_payload ||
+        memcmp(ref, nals[0].p_payload, (size_t)rn)) {
         printf("FAIL header bytes: high-level %d, low-level %d/%d\n", n, rn, rn2);
         return 1;
     }
@@ -111,9 +114,10 @@ static int check_encode(const char *label, phx_t *h, phx_picture_t *pic)
     int fails = 0;
 
     int hdr_n = phx_headers(h, &nals, &nnal);
-    if (hdr_n <= 0 || nnal != 2 || !nals ||
+    if (hdr_n <= 0 || nnal != 3 || !nals ||
         append_nals(stream, STREAM_CAP, &used, &nals[0]) ||
         append_nals(stream, STREAM_CAP, &used, &nals[1]) ||
+        append_nals(stream, STREAM_CAP, &used, &nals[2]) ||
         used != hdr_n) {
         printf("FAIL %s: header append (n=%d used=%d)\n", label, hdr_n, used);
         return 1;

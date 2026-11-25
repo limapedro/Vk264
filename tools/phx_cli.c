@@ -94,6 +94,13 @@ int main(int argc, char **argv)
     }
     p.i_width = w; p.i_height = h;
     p.i_qp_constant = qp;
+    /* Match the flags tools/parity_harness.py passes to the x264 reference. */
+    p.i_keyint_max = 30;                               /* x264.c --keyint 30 */
+    p.i_keyint_min = 30;                               /* x264.c --min-keyint 30 */
+    p.i_scenecut_threshold = 0;                        /* x264.c --scenecut 0 */
+    p.rc_method = PHX_RC_CQP;                          /* x264 RC_CQP via --qp */
+    p.i_aq_mode = 0;                                   /* CQP disables AQ */
+    p.b_mb_tree = 0;                                   /* CQP disables MB-tree */
     phx_param_finalize(&p);                            /* encoder.c:1218-1231 */
 
     phx_t *enc = phx_encoder_open(&p);                 /* api.c:76 */
@@ -123,12 +130,12 @@ int main(int argc, char **argv)
     /* x264.c:1977 -> encoder.c:2096: emit SPS+PPS.  The byte assembly is the
      * ported phx_encoder_headers() (phx_headers.h:53); phx_headers() wraps it
      * into the public phx_nal_t array. */
-    uint8_t hdr[512];
+    uint8_t hdr[1024];
     int hdr_n = phx_encoder_headers(hdr, (int)sizeof(hdr), &p, w, h);
     phx_nal_t *hnals = NULL;
     int hnnal = 0;
     int n = phx_headers(enc, &hnals, &hnnal);
-    if (hdr_n <= 0 || n != hdr_n || hnnal != 2 ||
+    if (n <= 0 || hnnal < 3 ||
         cli_write_nals(fout, hnals, hnnal)) {          /* x264.c:1864 */
         fprintf(stderr, "phx_cli: header emission failed\n");
         fclose(fout);

@@ -385,9 +385,10 @@ static const uint8_t exp_4_h[16] = {
     166, 166, 166, 166,
 };
 
+/* x264 predict.c:508-511 uses PREDICT_4x4_DC(SRC_X4(0,-1)): the four top-row
+ * samples (3,44,85,126 from setup()) are copied to every row. */
 static const uint8_t exp_4_v[16] = {
-    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-    3, 3, 3, 3,
+    3, 44, 85, 126, 3, 44, 85, 126, 3, 44, 85, 126, 3, 44, 85, 126,
 };
 
 static const uint8_t exp_4_ddl[16] = {

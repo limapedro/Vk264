@@ -65,8 +65,8 @@ typedef struct phx_t {
     int i_mb_width, i_mb_height;    /* encoder.c:1590-1592 */
     phx_sps_t sps;                  /* encoder.c:1579 */
     phx_pps_t pps;                  /* encoder.c:1581 */
-    uint8_t header_bytes[512];      /* Annex-B SPS+PPS from phx_headers.h:53 */
-    phx_nal_t header_nal[2];        /* SPS, PPS NALs handed out by phx_headers */
+    uint8_t header_bytes[1024];     /* Annex-B SPS+PPS+SEI (encoder.c:2106-2122) */
+    phx_nal_t header_nal[3];        /* SPS, PPS, SEI NALs handed out by phx_headers */
     uint8_t *bitstream;             /* encoder.c:1724 — out.p_bitstream */
     int i_bitstream;                /* encoder.c:1724 — out.i_bitstream */
     phx_nal_t nal[2];               /* encoder.c:2130 / per-frame NAL array */
