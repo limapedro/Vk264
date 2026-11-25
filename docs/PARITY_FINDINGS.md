@@ -1003,3 +1003,23 @@ new sequence-numbered RDO dump.
 
 Full audit with bias0: 12/120, first-diff unchanged, no regression.
 
+### E58 ? sequence-numbered RDO harness becomes authoritative: 13/17 vectors
+
+Extended `build/trellis_rdo_probe.py` to dump all I4 luma trellis calls
+(frame 0+1, all 16 MBs) with a per-call sequence number, so `quant_coefs`,
+live sig/last/level state and final output are paired from the **same call**
+(earlier macroblock-level harness paired RD-trial vs final passes and was
+unreliable). `build/trellis_dp_probe.py` now replays those pairs.
+
+Result with the E56 zigzag fix and E57 bias0 enabled: **13/17 vectors match
+exactly** (was 0/4 on the first small set). The 4 remaining mismatches are
+all over-retention of small levels at zigzag indices 6/7/8:
+- n=0: extra level at raster6 (zigzag8)
+- n=5, n=16: extra level at raster12 (zigzag6)
+- n=15: magnitude -2 vs x264's -1 at raster9 (zigzag7)
+
+Lambda scaling does not fix these (higher lambda breaks other vectors), so
+they are likely a remaining per-position cost or node-context issue. This
+harness replaces the older 31-vector count as the block-level gate; no
+production change beyond the already-landed zigzag/bias0 fixes.
+
