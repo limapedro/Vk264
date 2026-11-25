@@ -1140,3 +1140,19 @@ smaller. Reverted bias0; kept the regular bias for now.
 Conclusion: block-exact trellis needs both the bias0 deadzone and a
 faithful DP. No parity change from this experiment; tracked as plan item 1.
 
+### E52 ? trellis lambda2 confirmed; DP cost scaling still suspect
+
+`build/trellis_rdo_probe.py` dumps x264's live `h->mb.i_trellis_lambda2`:
+for QP28 I-slice (MB qp25) it is **14914 (inter) / 8721 (intra)**; the oracle
+uses 8721 for I4 luma, matching x264. The entropy table was also byte-for-byte
+verified against `x264_cabac_entropy[128]`.
+
+Empirically scaling the oracle DP's lambda2 by 1/2 improves batch vector
+matches from 26/31 to 28/31, while x264's real value is 8721 (not half).
+That indicates a remaining factor-of-two in the oracle DP's f8-bit/SSD
+cost construction rather than a wrong lambda. No scaling hack was committed;
+the primitive keeps the source-faithful lambda2 and its 26/31 match count.
+
+Next: audit `trellis_coef`/`COEF` f8-bit accumulation against
+`encoder/rdo.c:494-531` line by line with a traced vector.
+
