@@ -1174,3 +1174,16 @@ the DP, not in the audited functions. No speculative change committed.
 Next: replay x264's exact `quant_coefs` vector into the primitive to
 separate deadzone from DP.
 
+### E54 ? forced-quant_coefs DP probe (inconclusive without live state)
+
+Added a temporary test hook to feed x264's exact `quant_coefs` into
+`vk_trellis_quant_4x4`, bypassing the oracle deadzone (`build/trellis_dp_probe.py`).
+With x264's qc but only qp-initialised CABAC state, the DP produced different
+level assignments than x264 (e.g. 6 levels instead of 5). Because the RDO
+dump did not include the live state bytes, the cost_siglast/entropy inputs
+were not x264's ? so this does **not** prove a DP bug, only that state must
+be paired with the qc vector. The test hook was removed; no production change.
+
+Next: extend `trellis_rdo_probe.py` to dump sig/last/level state bytes
+alongside qc, then replay the exact (qc, state) pair into the primitive.
+
