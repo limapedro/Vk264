@@ -95,16 +95,21 @@ static int check_headers(phx_t *h, const phx_param_t *p)
                nals[0].i_ref_idc, nals[1].i_ref_idc, nals[2].i_ref_idc);
         return 1;
     }
+    /* encoder.c:2082-2083: SPS/PPS are indices 0/1 of the header NAL array
+     * and get 4-byte codes; SEI is index 2 and gets a 3-byte code. */
+    int h0 = nal_header_off(nals[0].p_payload);
+    int h1 = nal_header_off(nals[1].p_payload);
+    int h2 = nal_header_off(nals[2].p_payload);
     if (nals[0].i_payload <= 4 || nals[1].i_payload <= 4 ||
         nals[0].i_payload + nals[1].i_payload + nals[2].i_payload != n ||
-        nals[0].p_payload[0] || nals[0].p_payload[1] ||
-        nals[0].p_payload[2] || nals[0].p_payload[3] != 1 ||
-        nals[1].p_payload[0] || nals[1].p_payload[1] ||
-        nals[1].p_payload[2] || nals[1].p_payload[3] != 1 ||
-        nals[2].p_payload[0] || nals[2].p_payload[1] ||
-        nals[2].p_payload[2] || nals[2].p_payload[3] != 1) {
-        printf("FAIL header Annex-B framing: sizes %d+%d+%d != %d\n",
-               nals[0].i_payload, nals[1].i_payload, nals[2].i_payload, n);
+        h0 != 4 || h1 != 4 || h2 != 3 ||
+        nals[0].p_payload[h0] != 0x67 ||
+        nals[1].p_payload[h1] != 0x68 ||
+        nals[2].p_payload[h2] != 0x06) {
+        printf("FAIL header Annex-B framing: sizes %d+%d+%d != %d "
+               "(start codes %d/%d/%d)\n",
+               nals[0].i_payload, nals[1].i_payload, nals[2].i_payload, n,
+               h0, h1, h2);
         return 1;
     }
 
@@ -119,6 +124,18 @@ static int check_headers(phx_t *h, const phx_param_t *p)
     return 0;
 }
 
+/* Annex-B start-code length for one NAL.  x264's encoder.c:2082-2083 gives a
+ * 4-byte code to SPS/PPS and to each slice that starts its own NAL array, but
+ * a 3-byte code to SEI and to the first slice, which share the header array
+ * (indices 2 and 3).  Return the offset of the NAL type byte.  SHADER: C —
+ * serial byte scan. */
+static int nal_header_off(const uint8_t *p)
+{
+    if (p[0] == 0 && p[1] == 0 && p[2] == 0 && p[3] == 1) return 4;
+    if (p[0] == 0 && p[1] == 0 && p[2] == 1) return 3;
+    return -1;
+}
+
 /* Append a NAL's Annex-B bytes to a test stream buffer and record its type.
   * SHADER: C — serial byte copy. */
 static int append_nals(uint8_t *dst, int cap, int *used, phx_nal_t *nal,
@@ -126,9 +143,11 @@ static int append_nals(uint8_t *dst, int cap, int *used, phx_nal_t *nal,
 {
     if (!nal->p_payload || nal->i_payload <= 0 ||
         *used + nal->i_payload > cap || *nn >= MAX_NALS) return 1;
+    int h = nal_header_off(nal->p_payload);            /* bitstream.c:63 */
+    if (h < 0) return 1;
     offs[*nn] = *used;
     lens[*nn] = nal->i_payload;
-    types[*nn] = nal->p_payload[4] & 0x1f;
+    types[*nn] = nal->p_payload[h] & 0x1f;
     memcpy(dst + *used, nal->p_payload, (size_t)nal->i_payload);
     *used += nal->i_payload;
     (*nn)++;
@@ -136,8 +155,9 @@ static int append_nals(uint8_t *dst, int cap, int *used, phx_nal_t *nal,
 }
 
 /* One-frame encode: SPS/PPS/SEI then a slice NAL.  The stream must start with
-  * 00 00 00 01 67 (4-byte start code + NAL_SPS), as written by phx_nal_encode
-  * (bitstream.c:55-75).  SHADER: C — serial stream assembly. */
+  * 00 00 00 01 67 (4-byte start code + NAL_SPS), while the first slice uses a
+  * 3-byte code (encoder.c:2082-2083) because it follows SEI in the same NAL
+  * array.  SHADER: C — serial stream assembly. */
 static int check_encode(const char *label, phx_t *h, phx_picture_t *pic)
 {
     uint8_t stream[STREAM_CAP];
@@ -181,12 +201,14 @@ static int check_encode(const char *label, phx_t *h, phx_picture_t *pic)
                label, stream[0], stream[1], stream[2], stream[3], stream[4], used);
         ++fails;
     }
-    if (used > hdr_n + 5 && !(stream[hdr_n] == 0 && stream[hdr_n+1] == 0 &&
-                              stream[hdr_n+2] == 0 && stream[hdr_n+3] == 1)) {
-        printf("FAIL %s: slice start code at %d\n", label, hdr_n);
+    /* encoder.c:2082-2083: first slice shares the header NAL array. */
+    int sh = hdr_n < used ? nal_header_off(stream + hdr_n) : -1;
+    if (sh != 3 || used <= hdr_n + sh) {
+        printf("FAIL %s: slice start code at %d (want 3-byte, got %d)\n",
+               label, hdr_n, sh);
         ++fails;
     }
-    if (used > hdr_n + 5 && types[3] != 5) {
+    if (sh > 0 && used > hdr_n + sh && types[3] != 5) {
         printf("FAIL %s: first slice must be IDR (type %d)\n", label, types[3]);
         ++fails;
     }
@@ -259,8 +281,10 @@ static int deescape(const uint8_t *src, int n, uint8_t *dst, int cap)
 static int parse_slice(const uint8_t *payload, int len, const phx_sps_t *sps,
                        int nal_type, int *slice_type, int *frame_num, int *poc)
 {
+    int h = nal_header_off(payload);                    /* 3 or 4-byte code */
+    if (h < 0 || len <= h + 1) return -1;
     uint8_t rbsp[1024];
-    int n = deescape(payload + 5, len - 5, rbsp,
+    int n = deescape(payload + h + 1, len - h - 1, rbsp,
                      (int)sizeof(rbsp));                /* skip start code + NAL */
     /* Only first_mb/slice_type/pps_id/frame_num/idr_pic_id/POC are read here,
      * so a header-only golden NAL (3-4 RBSP bytes) is enough. */
@@ -313,8 +337,10 @@ static int parse_slice_fields(const uint8_t *payload, int len,
                               const phx_sps_t *sps, const phx_pps_t *pps,
                               phx_test_sh_t *o)
 {
+    int h = nal_header_off(payload);                  /* 3 or 4-byte code */
+    if (h < 0 || len <= h + 1) return -1;
     uint8_t rbsp[16384];                              /* ABR QP=0 slices can be large */
-    int n = deescape(payload + 5, len - 5, rbsp, (int)sizeof(rbsp));
+    int n = deescape(payload + h + 1, len - h - 1, rbsp, (int)sizeof(rbsp));
     if (n < 3 || sps->i_poc_type != 0 || !sps->b_frame_mbs_only) return -1;
     int nal_ref_idc = o->nal_ref_idc, nal_type = o->nal_type;
     memset(o, 0, sizeof(*o));
@@ -476,7 +502,8 @@ static int check_multiframe(const char *label, phx_param_t *p)
         }
         if (st == 0 || st == 1) saw_pb = 1;             /* x264 base.h:111-112 */
         /* encoder.c:3882 — only reference NALs advance frame_num. */
-        int ref_idc = (stream[offs[i] + 4] >> 5) & 3;   /* bitstream.c:73 */
+        int nh = nal_header_off(stream + offs[i]);     /* bitstream.c:63/73 */
+        int ref_idc = nh > 0 ? (stream[offs[i] + nh] >> 5) & 3 : -1;
         if (fn < prev_fn || (ref_idc && fn != prev_fn + 1 && i > 0)) {
             printf("FAIL %s: slice %d frame_num %d (prev %d, ref_idc %d)\n",
                    label, i, fn, prev_fn, ref_idc);
@@ -598,8 +625,9 @@ static int check_slice_context_golden(void)
 
         phx_test_sh_t o;
         memset(&o, 0, sizeof(o));
-        o.nal_ref_idc = (packet[4] >> 5) & 3;         /* bitstream.c:73 */
-        o.nal_type = packet[4] & 0x1f;
+        int ph = nal_header_off(packet);              /* bitstream.c:63/73 */
+        o.nal_ref_idc = ph > 0 ? (packet[ph] >> 5) & 3 : -1;
+        o.nal_type = ph > 0 ? packet[ph] & 0x1f : -1;
         if (parse_slice_fields(packet, nal.i_payload, &gold_sps, &pps, &o)) {
             printf("FAIL golden context: parse frame %d\n", (int)i);
             ++fails;
@@ -797,7 +825,12 @@ static int check_mb0_sequence(void)
     if (idr < 0) { printf("FAIL mb0: no IDR slice\n"); return 1; }
 
     uint8_t rbsp[2048];
-    int n = deescape(stream + offs[idr] + 5, lens[idr] - 5, rbsp,
+    int nh = nal_header_off(stream + offs[idr]);      /* 3 or 4-byte code */
+    if (nh < 0 || lens[idr] <= nh + 1) {
+        printf("FAIL mb0: bad slice start code\n");
+        return 1;
+    }
+    int n = deescape(stream + offs[idr] + nh + 1, lens[idr] - nh - 1, rbsp,
                      (int)sizeof(rbsp));
     /* Slice header of this fixture is 30 bits, then bs_align_1 (encoder.c:2795)
      * leaves the first CABAC byte at rbsp[4]. */
@@ -884,8 +917,10 @@ static int check_mb0_sequence(void)
 static int parse_p_slice_end(const uint8_t *payload, int len,
                              const phx_sps_t *sps, int *end_bit)
 {
+    int h = nal_header_off(payload);                  /* 3 or 4-byte code */
+    if (h < 0 || len <= h + 1) return -1;
     uint8_t rbsp[1024];
-    int n = deescape(payload + 5, len - 5, rbsp, (int)sizeof(rbsp));
+    int n = deescape(payload + h + 1, len - h - 1, rbsp, (int)sizeof(rbsp));
     if (n < 3 || !sps->b_frame_mbs_only || sps->i_poc_type > 2) return -1;
     phx_test_br_t b = { rbsp, 0 };
     if (br_ue(&b) < 0 || br_ue(&b) < 0 || br_ue(&b) < 0) return -1;
@@ -1021,7 +1056,12 @@ static int check_p_slice_mb(void)
     if (pnal < 0) { printf("FAIL p-mb: no P slice NAL\n"); return 1; }
 
     uint8_t rbsp[2048];
-    int n = deescape(stream + offs[pnal] + 5, lens[pnal] - 5, rbsp,
+    int nh = nal_header_off(stream + offs[pnal]);     /* 3 or 4-byte code */
+    if (nh < 0 || lens[pnal] <= nh + 1) {
+        printf("FAIL p-mb: bad slice start code\n");
+        return 1;
+    }
+    int n = deescape(stream + offs[pnal] + nh + 1, lens[pnal] - nh - 1, rbsp,
                      (int)sizeof(rbsp));
     int end_bit = -1;
     if (parse_p_slice_end(stream + offs[pnal], lens[pnal], &sps, &end_bit) ||
@@ -1173,8 +1213,9 @@ static int parse_run_qps(const uint8_t *stream, const int *offs, const int *lens
     for (int i = 0; i < nslices; i++) {
         phx_test_sh_t o;
         memset(&o, 0, sizeof(o));
-        o.nal_ref_idc = (stream[offs[i+3] + 4] >> 5) & 3;
-        o.nal_type = stream[offs[i+3] + 4] & 0x1f;
+        int h = nal_header_off(stream + offs[i+3]);   /* 3 or 4-byte code */
+        o.nal_ref_idc = h > 0 ? (stream[offs[i+3] + h] >> 5) & 3 : -1;
+        o.nal_type = h > 0 ? stream[offs[i+3] + h] & 0x1f : -1;
         if (parse_slice_fields(stream + offs[i+3], lens[i+3], sps, pps, &o)) {
             printf("FAIL bitrate: parse slice %d\n", i);
             ++fails;
