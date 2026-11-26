@@ -66,7 +66,7 @@ Total x264 C functions indexed: **1386**.
 | `x264_exp2fix8` | `common/base.h:218` | **MISSING** | static ALWAYS_INLINE int x264_exp2fix8 |
 | `x264_log2` | `common/base.h:226` | **PORTED** | static ALWAYS_INLINE float x264_log2 |
 | `x264_median` | `common/base.h:232` | **MISSING** | static ALWAYS_INLINE int x264_median |
-| `x264_median_mv` | `common/base.h:242` | **MISSING** | static ALWAYS_INLINE void x264_median_mv |
+| `x264_median_mv` | `common/base.h:242` | **PORTED** | static ALWAYS_INLINE void x264_median_mv |
 | `x264_predictor_difference` | `common/base.h:248` | **MISSING** | static ALWAYS_INLINE int x264_predictor_difference |
 | `abs` | `common/base.h:253` | **PORTED** | sum += abs |
 | `x264_cabac_mvd_sum` | `common/base.h:259` | **PORTED** | static ALWAYS_INLINE uint16_t x264_cabac_mvd_sum |
@@ -284,7 +284,7 @@ Total x264 C functions indexed: **1386**.
 | `mb_mc_0xywh` | `common/macroblock.c:37` | **MISSING** | static NOINLINE void mb_mc_0xywh |
 | `width` | `common/macroblock.c:71` | **PORTED** | h->sh.weight[i_ref][2].weightfn[width>>1] |
 | `mb_mc_1xywh` | `common/macroblock.c:76` | **MISSING** | static NOINLINE void mb_mc_1xywh |
-| `get_ref` | `common/macroblock.c:107` | **MISSING** | src1 = h->mc.get_ref |
+| `get_ref` | `common/macroblock.c:107` | **PORTED** | src1 = h->mc.get_ref |
 | `i_mode` | `common/macroblock.c:109` | **MISSING** | h->mc.avg[i_mode] |
 | `mb_mc_01xywh` | `common/macroblock.c:112` | **MISSING** | static NOINLINE void mb_mc_01xywh |
 | `x264_mb_mc_8x8` | `common/macroblock.c:158` | **MISSING** | void x264_mb_mc_8x8 |
@@ -333,7 +333,7 @@ Total x264 C functions indexed: **1386**.
 | `mc_copy` | `common/mc.c:162` | **MISSING** | static void mc_copy |
 | `hpel_filter` | `common/mc.c:174` | **MISSING** | static void hpel_filter |
 | `mc_luma` | `common/mc.c:198` | **MISSING** | static void mc_luma |
-| `get_ref` | `common/mc.c:221` | **MISSING** | static pixel *get_ref |
+| `get_ref` | `common/mc.c:221` | **PORTED** | static pixel *get_ref |
 | `mc_chroma` | `common/mc.c:252` | **MISSING** | static void mc_chroma |
 | `x264_plane_copy_c` | `common/mc.c:294` | **MISSING** | void x264_plane_copy_c |
 | `x264_plane_copy_swap_c` | `common/mc.c:305` | **MISSING** | void x264_plane_copy_swap_c |
@@ -588,8 +588,8 @@ Total x264 C functions indexed: **1386**.
 | `x264_coeff_last64_msa` | `common/mips/quant-c.c:622` | **MISSING** | int32_t x264_coeff_last64_msa |
 | `x264_coeff_last16_msa` | `common/mips/quant-c.c:627` | **MISSING** | int32_t x264_coeff_last16_msa |
 | `x264_mb_predict_mv` | `common/mvpred.c:30` | **PORTED** | void x264_mb_predict_mv |
-| `x264_mb_predict_mv_16x16` | `common/mvpred.c:129` | **MISSING** | void x264_mb_predict_mv_16x16 |
-| `x264_mb_predict_mv_pskip` | `common/mvpred.c:166` | **MISSING** | void x264_mb_predict_mv_pskip |
+| `x264_mb_predict_mv_16x16` | `common/mvpred.c:129` | **PORTED** | void x264_mb_predict_mv_16x16 |
+| `x264_mb_predict_mv_pskip` | `common/mvpred.c:166` | **PORTED** | void x264_mb_predict_mv_pskip |
 | `mb_predict_mv_direct16x16_temporal` | `common/mvpred.c:183` | **MISSING** | static int mb_predict_mv_direct16x16_temporal |
 | `ypart` | `common/mvpred.c:246` | **MISSING** | int ypart = |
 | `mb_predict_mv_direct16x16_spatial` | `common/mvpred.c:289` | **MISSING** | static ALWAYS_INLINE int mb_predict_mv_direct16x16_spatial |
@@ -598,7 +598,7 @@ Total x264 C functions indexed: **1386**.
 | `x264_mb_predict_mv_direct16x16` | `common/mvpred.c:454` | **MISSING** | int x264_mb_predict_mv_direct16x16 |
 | `x264_mb_predict_mv_ref16x16` | `common/mvpred.c:519` | **MISSING** | void x264_mb_predict_mv_ref16x16 |
 | `x264_clip_pixel` | `common/opencl/x264-cl.h:41` | **PORTED** | inline pixel x264_clip_pixel |
-| `x264_median_mv` | `common/opencl/x264-cl.h:46` | **MISSING** | inline int2 x264_median_mv |
+| `x264_median_mv` | `common/opencl/x264-cl.h:46` | **PORTED** | inline int2 x264_median_mv |
 | `abs2` | `common/opencl/x264-cl.h:53` | **PORTED** | inline sum2_t abs2 |
 | `parallel_sum` | `common/opencl/x264-cl.h:106` | **MISSING** | int parallel_sum |
 | `mv_cost` | `common/opencl/x264-cl.h:127` | **MISSING** | int mv_cost |
@@ -960,7 +960,7 @@ Total x264 C functions indexed: **1386**.
 | `now` | `encoder/analyse.c:833` | **MISSING** | /* we need to encode this block now |
 | `now` | `encoder/analyse.c:959` | **MISSING** | /* we need to encode this block now |
 | `intra_rd` | `encoder/analyse.c:982` | **MISSING** | static void intra_rd |
-| `intra_rd_refine` | `encoder/analyse.c:1016` | **MISSING** | static void intra_rd_refine |
+| `intra_rd_refine` | `encoder/analyse.c:1016` | **PORTED** | static void intra_rd_refine |
 | `intra_rd` | `encoder/analyse.c:1060` | **MISSING** | /* the previous thing encoded was intra_rd |
 | `mb_analyse_inter_p16x16` | `encoder/analyse.c:1255` | **MISSING** | static void mb_analyse_inter_p16x16 |
 | `mb_analyse_inter_p8x8_mixed_ref` | `encoder/analyse.c:1334` | **MISSING** | static void mb_analyse_inter_p8x8_mixed_ref |
@@ -1183,7 +1183,7 @@ Total x264 C functions indexed: **1386**.
 | `x264_mb_encode_i4x4` | `encoder/macroblock.h:132` | **PORTED** | static ALWAYS_INLINE void x264_mb_encode_i4x4 |
 | `x264_mb_encode_i8x8` | `encoder/macroblock.h:168` | **PORTED** | static ALWAYS_INLINE void x264_mb_encode_i8x8 |
 | `x264_me_search_ref` | `encoder/me.c:182` | **MISSING** | void x264_me_search_ref |
-| `cost` | `encoder/me.c:260` | **MISSING** | else /* Otherwise just copy the cost |
+| `cost` | `encoder/me.c:260` | **PORTED** | else /* Otherwise just copy the cost |
 | `abs` | `encoder/me.c:492` | **PORTED** | mvd = abs |
 | `i_pixel` | `encoder/me.c:659` | **MISSING** | int bsad = h->pixf.sad[i_pixel] |
 | `i_pixel` | `encoder/me.c:668` | **MISSING** | xn = h->pixf.ads[i_pixel] |
@@ -1273,7 +1273,7 @@ Total x264 C functions indexed: **1386**.
 | `ssd_plane` | `encoder/rdo.c:261` | **MISSING** | int chroma_ssd = ssd_plane |
 | `rd_cost_i8x8` | `encoder/rdo.c:279` | **MISSING** | static uint64_t rd_cost_i8x8 |
 | `ssd_plane` | `encoder/rdo.c:296` | **MISSING** | int chromassd = ssd_plane |
-| `rd_cost_i4x4` | `encoder/rdo.c:315` | **MISSING** | static uint64_t rd_cost_i4x4 |
+| `rd_cost_i4x4` | `encoder/rdo.c:315` | **PORTED** | static uint64_t rd_cost_i4x4 |
 | `ssd_plane` | `encoder/rdo.c:330` | **MISSING** | int chromassd = ssd_plane |
 | `rd_cost_chroma` | `encoder/rdo.c:349` | **MISSING** | static uint64_t rd_cost_chroma |
 | `ssd_plane` | `encoder/rdo.c:357` | **MISSING** | i_ssd = ssd_plane |
@@ -1340,8 +1340,8 @@ Total x264 C functions indexed: **1386**.
 | `weight_cost_chroma444` | `encoder/slicetype.c:257` | **MISSING** | static NOINLINE unsigned int weight_cost_chroma444 |
 | `x264_weights_analyse` | `encoder/slicetype.c:284` | **MISSING** | void x264_weights_analyse |
 | `slicetype_mb_cost` | `encoder/slicetype.c:514` | **MISSING** | static void slicetype_mb_cost |
-| `slicetype_slice_cost` | `encoder/slicetype.c:814` | **PORTED** | static void slicetype_slice_cost |
-| `slicetype_frame_cost` | `encoder/slicetype.c:836` | **MISSING** | static int slicetype_frame_cost |
+| `slicetype_slice_cost` | `encoder/slicetype.c:814` | **MISSING** | static void slicetype_slice_cost |
+| `slicetype_frame_cost` | `encoder/slicetype.c:836` | **PORTED** | static int slicetype_frame_cost |
 | `slicetype_frame_cost_recalculate` | `encoder/slicetype.c:999` | **MISSING** | static int slicetype_frame_cost_recalculate |
 | `macroblock_tree_finish` | `encoder/slicetype.c:1029` | **MISSING** | static void macroblock_tree_finish |
 | `macroblock_tree_propagate` | `encoder/slicetype.c:1051` | **MISSING** | static void macroblock_tree_propagate |
