@@ -107,3 +107,24 @@ The only accepted quality changes so far: x264 V/H/DC/Plane I16 prediction with
 SATD+λ bits and x264's intra quantizer deadzone (PR #488), and ABR starting-QP
 clamp to 14 (PR #489). Together they took the 640p clip from 48.13 dB/0.99369
 to 51.35 dB/0.99537 at the same ~6.1 Mb/s.
+
+## Speed breakthrough (PRs #494, #495)
+
+Parallel CAVLC slice assembly (per-MB bodies + prefix sums + 64-byte chunked
+emulation prevention) plus single preload of source YUV removed the entire
+entropy bottleneck with **byte-identical streams**:
+
+| Case | Entropy ms/f | Encode-loop fps | Process fps |
+|---|---:|---:|---:|
+| 1080p 60f before | 9.84 | 49 | 42 |
+| 1080p 60f after | 0.11 | 100-108 | 65-69 |
+| 1080p 300f after | 0.09 | 112 | 85 |
+| 640x360 60f before | 2.79 | 215 | 133 |
+| 640x360 60f after | 0.06 | 509 | 203 |
+
+Single whole-frame IDR entropy: 289.8 ms -> 1.45 ms. SHA-256 of 1080p and
+640p streams unchanged (1080p `A51E2A8070EF5A3C80D75C585418C3FCEB798F41971D93E203A2BAC42FF8F20C`).
+Quality at 6000 kb/s unchanged: 1080p 300f VMAF 95.297, 640p 99.52.
+
+Current object: 100 fps at 1080p is met in the encode loop (85 fps end-to-end
+on 300 frames); remaining gap is perceptual quality on game content (~2.6 VMAF).
