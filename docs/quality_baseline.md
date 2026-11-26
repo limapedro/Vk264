@@ -146,3 +146,21 @@ Reason: `matches[].cost` only drives 8×8 partitions (off in `slow`), and older
 references cover ~0.76 % of P macroblocks. Remaining gap is structural —
 no B-frames, CABAC or trellis/RDO/MB-tree. Baseline hash
 `0be1a42df0209d5bbb367b5693fced48d0d75e95ff72a6feba9e6b198ee16d03`.
+
+## Negative Intra4x4 experiment (reverted)
+
+Implemented x264 I4 prediction modes (analyse.c:512-528/864-979,
+predict.c:478-621) with SATD + λ·bs_size_ue, 16-mode/CBP/mb_type syntax and
+commit-on-win after the I16 pass. Findings for a future attempt: write pred
+modes in **scan order** (lumaOrder scan→raster); gate the win on
+`total+bias < i16Cost`; keep all coefficients in scratch until the win; emulate
+top-right at `bx==3` by replicating `t[3]` (analyse.c:886-888); availability of
+above-left is `topAvail && leftAvail`; DDL is `f2(t[x+y],t[x+y+1],t[x+y+2])`.
+
+Result: DC+H/V candidate set passed synthetic fixtures, but real 1080p and
+640p streams failed `ffmpeg -err_detect explode` (`total_coeff=16`, invalid
+intra mode, out-of-range chroma pred mode); adding directional modes also
+caused 1-LSB recon mismatches. A serial I4 walk raised 1080p IDR residual from
+~65.7 ms to ~352 ms. Reverted with zero gain; baseline hash and 45/46 ctest
+restored. Structural gaps remain: no B-frames/CABAC/trellis/MB-tree in the
+native path.
