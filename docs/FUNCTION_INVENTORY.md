@@ -91,7 +91,7 @@ Total x264 C functions indexed: **1386**.
 | `bs_write_te` | `common/bitstream.h:264` | **PORTED** | static inline void bs_write_te |
 | `bs_rbsp_trailing` | `common/bitstream.h:272` | **PORTED** | static inline void bs_rbsp_trailing |
 | `bs_size_ue` | `common/bitstream.h:278` | **PORTED** | static ALWAYS_INLINE int bs_size_ue |
-| `bs_size_ue_big` | `common/bitstream.h:283` | **MISSING** | static ALWAYS_INLINE int bs_size_ue_big |
+| `bs_size_ue_big` | `common/bitstream.h:283` | **PORTED** | static ALWAYS_INLINE int bs_size_ue_big |
 | `bs_size_se` | `common/bitstream.h:291` | **PORTED** | static ALWAYS_INLINE int bs_size_se |
 | `bs_size_te` | `common/bitstream.h:301` | **PORTED** | static ALWAYS_INLINE int bs_size_te |
 | `x264_cabac_init` | `common/cabac.c:32` | **PORTED** | void x264_cabac_init |
@@ -165,32 +165,32 @@ Total x264 C functions indexed: **1386**.
 | `x264_clip_pixel` | `common/deblock.c:106` | **PORTED** | pix[-1*xstride] = x264_clip_pixel |
 | `x264_clip_pixel` | `common/deblock.c:107` | **PORTED** | pix[ 0*xstride] = x264_clip_pixel |
 | `deblock_luma_c` | `common/deblock.c:110` | **MISSING** | static inline void deblock_luma_c |
-| `deblock_h_luma_mbaff_c` | `common/deblock.c:123` | **MISSING** | static void deblock_h_luma_mbaff_c |
-| `deblock_v_luma_c` | `common/deblock.c:128` | **MISSING** | static void deblock_v_luma_c |
-| `deblock_h_luma_c` | `common/deblock.c:132` | **MISSING** | static void deblock_h_luma_c |
+| `deblock_h_luma_mbaff_c` | `common/deblock.c:123` | **PORTED** | static void deblock_h_luma_mbaff_c |
+| `deblock_v_luma_c` | `common/deblock.c:128` | **PORTED** | static void deblock_v_luma_c |
+| `deblock_h_luma_c` | `common/deblock.c:132` | **PORTED** | static void deblock_h_luma_c |
 | `deblock_edge_chroma_c` | `common/deblock.c:137` | **MISSING** | static ALWAYS_INLINE void deblock_edge_chroma_c |
 | `x264_clip_pixel` | `common/deblock.c:147` | **PORTED** | pix[-1*xstride] = x264_clip_pixel |
 | `x264_clip_pixel` | `common/deblock.c:148` | **PORTED** | pix[ 0*xstride] = x264_clip_pixel |
 | `deblock_chroma_c` | `common/deblock.c:151` | **MISSING** | static ALWAYS_INLINE void deblock_chroma_c |
-| `deblock_h_chroma_mbaff_c` | `common/deblock.c:166` | **MISSING** | static void deblock_h_chroma_mbaff_c |
-| `deblock_v_chroma_c` | `common/deblock.c:170` | **MISSING** | static void deblock_v_chroma_c |
-| `deblock_h_chroma_c` | `common/deblock.c:174` | **MISSING** | static void deblock_h_chroma_c |
+| `deblock_h_chroma_mbaff_c` | `common/deblock.c:166` | **PORTED** | static void deblock_h_chroma_mbaff_c |
+| `deblock_v_chroma_c` | `common/deblock.c:170` | **PORTED** | static void deblock_v_chroma_c |
+| `deblock_h_chroma_c` | `common/deblock.c:174` | **PORTED** | static void deblock_h_chroma_c |
 | `deblock_h_chroma_422_c` | `common/deblock.c:178` | **MISSING** | static void deblock_h_chroma_422_c |
 | `deblock_edge_luma_intra_c` | `common/deblock.c:183` | **MISSING** | static ALWAYS_INLINE void deblock_edge_luma_intra_c |
 | `deblock_luma_intra_c` | `common/deblock.c:222` | **MISSING** | static inline void deblock_luma_intra_c |
-| `deblock_h_luma_intra_mbaff_c` | `common/deblock.c:227` | **MISSING** | static void deblock_h_luma_intra_mbaff_c |
-| `deblock_v_luma_intra_c` | `common/deblock.c:232` | **MISSING** | static void deblock_v_luma_intra_c |
-| `deblock_h_luma_intra_c` | `common/deblock.c:236` | **MISSING** | static void deblock_h_luma_intra_c |
+| `deblock_h_luma_intra_mbaff_c` | `common/deblock.c:227` | **PORTED** | static void deblock_h_luma_intra_mbaff_c |
+| `deblock_v_luma_intra_c` | `common/deblock.c:232` | **PORTED** | static void deblock_v_luma_intra_c |
+| `deblock_h_luma_intra_c` | `common/deblock.c:236` | **PORTED** | static void deblock_h_luma_intra_c |
 | `deblock_edge_chroma_intra_c` | `common/deblock.c:241` | **MISSING** | static ALWAYS_INLINE void deblock_edge_chroma_intra_c |
-| `xstride` | `common/deblock.c:250` | **MISSING** | pix[-1*xstride] = |
-| `xstride` | `common/deblock.c:251` | **MISSING** | pix[ 0*xstride] = |
+| `xstride` | `common/deblock.c:250` | **PORTED** | pix[-1*xstride] = |
+| `xstride` | `common/deblock.c:251` | **PORTED** | pix[ 0*xstride] = |
 | `deblock_chroma_intra_c` | `common/deblock.c:254` | **MISSING** | static ALWAYS_INLINE void deblock_chroma_intra_c |
-| `deblock_h_chroma_intra_mbaff_c` | `common/deblock.c:260` | **MISSING** | static void deblock_h_chroma_intra_mbaff_c |
-| `deblock_v_chroma_intra_c` | `common/deblock.c:264` | **MISSING** | static void deblock_v_chroma_intra_c |
-| `deblock_h_chroma_intra_c` | `common/deblock.c:268` | **MISSING** | static void deblock_h_chroma_intra_c |
+| `deblock_h_chroma_intra_mbaff_c` | `common/deblock.c:260` | **PORTED** | static void deblock_h_chroma_intra_mbaff_c |
+| `deblock_v_chroma_intra_c` | `common/deblock.c:264` | **PORTED** | static void deblock_v_chroma_intra_c |
+| `deblock_h_chroma_intra_c` | `common/deblock.c:268` | **PORTED** | static void deblock_h_chroma_intra_c |
 | `deblock_h_chroma_422_intra_c` | `common/deblock.c:272` | **MISSING** | static void deblock_h_chroma_422_intra_c |
-| `deblock_strength_c` | `common/deblock.c:277` | **MISSING** | static void deblock_strength_c |
-| `deblock_edge` | `common/deblock.c:306` | **MISSING** | static ALWAYS_INLINE void deblock_edge |
+| `deblock_strength_c` | `common/deblock.c:277` | **PORTED** | static void deblock_strength_c |
+| `deblock_edge` | `common/deblock.c:306` | **PORTED** | static ALWAYS_INLINE void deblock_edge |
 | `deblock_edge_intra` | `common/deblock.c:326` | **MISSING** | static ALWAYS_INLINE void deblock_edge_intra |
 | `macroblock_cache_load_neighbours_deblock` | `common/deblock.c:340` | **MISSING** | static ALWAYS_INLINE void macroblock_cache_load_neighbours_deblock |
 | `x264_frame_deblock_row` | `common/deblock.c:378` | **MISSING** | void x264_frame_deblock_row |
@@ -280,7 +280,7 @@ Total x264 C functions indexed: **1386**.
 | `x264_predict_8x8c_init_loongarch` | `common/loongarch/predict-c.c:49` | **MISSING** | void x264_predict_8x8c_init_loongarch |
 | `x264_predict_8x8_init_loongarch` | `common/loongarch/predict-c.c:65` | **MISSING** | void x264_predict_8x8_init_loongarch |
 | `x264_predict_4x4_init_loongarch` | `common/loongarch/predict-c.c:92` | **MISSING** | void x264_predict_4x4_init_loongarch |
-| `mc_luma` | `common/macroblock.c:32` | **MISSING** | h->mc.mc_luma |
+| `mc_luma` | `common/macroblock.c:32` | **PORTED** | h->mc.mc_luma |
 | `mb_mc_0xywh` | `common/macroblock.c:37` | **MISSING** | static NOINLINE void mb_mc_0xywh |
 | `width` | `common/macroblock.c:71` | **PORTED** | h->sh.weight[i_ref][2].weightfn[width>>1] |
 | `mb_mc_1xywh` | `common/macroblock.c:76` | **MISSING** | static NOINLINE void mb_mc_1xywh |
@@ -312,7 +312,7 @@ Total x264 C functions indexed: **1386**.
 | `x264_macroblock_cache_load_interlaced` | `common/macroblock.c:1359` | **MISSING** | void x264_macroblock_cache_load_interlaced |
 | `macroblock_deblock_strength_mbaff` | `common/macroblock.c:1364` | **MISSING** | static void macroblock_deblock_strength_mbaff |
 | `fields` | `common/macroblock.c:1409` | **MISSING** | /* Need to filter both fields |
-| `x264_macroblock_deblock_strength` | `common/macroblock.c:1438` | **MISSING** | void x264_macroblock_deblock_strength |
+| `x264_macroblock_deblock_strength` | `common/macroblock.c:1438` | **PORTED** | void x264_macroblock_deblock_strength |
 | `macroblock_store_pic` | `common/macroblock.c:1624` | **MISSING** | static ALWAYS_INLINE void macroblock_store_pic |
 | `macroblock_backup_intra` | `common/macroblock.c:1638` | **PORTED** | static ALWAYS_INLINE void macroblock_backup_intra |
 | `x264_macroblock_cache_save` | `common/macroblock.c:1680` | **PORTED** | void x264_macroblock_cache_save |
@@ -326,19 +326,19 @@ Total x264 C functions indexed: **1386**.
 | `x264_mb_predict_non_zero_code` | `common/macroblock.h:432` | **MISSING** | static ALWAYS_INLINE int x264_mb_predict_non_zero_code |
 | `x264_mb_transform_8x8_allowed` | `common/macroblock.h:454` | **PORTED** | static ALWAYS_INLINE int x264_mb_transform_8x8_allowed |
 | `pixel_avg` | `common/mc.c:49` | **MISSING** | static inline void pixel_avg |
-| `pixel_avg_wxh` | `common/mc.c:63` | **MISSING** | static inline void pixel_avg_wxh |
+| `pixel_avg_wxh` | `common/mc.c:63` | **PORTED** | static inline void pixel_avg_wxh |
 | `pixel_avg_weight_wxh` | `common/mc.c:79` | **MISSING** | static inline void pixel_avg_weight_wxh |
 | `weight_cache` | `common/mc.c:113` | **MISSING** | static void weight_cache |
 | `mc_weight` | `common/mc.c:119` | **MISSING** | static void mc_weight |
-| `mc_copy` | `common/mc.c:162` | **MISSING** | static void mc_copy |
+| `mc_copy` | `common/mc.c:162` | **PORTED** | static void mc_copy |
 | `hpel_filter` | `common/mc.c:174` | **MISSING** | static void hpel_filter |
-| `mc_luma` | `common/mc.c:198` | **MISSING** | static void mc_luma |
+| `mc_luma` | `common/mc.c:198` | **PORTED** | static void mc_luma |
 | `get_ref` | `common/mc.c:221` | **PORTED** | static pixel *get_ref |
-| `mc_chroma` | `common/mc.c:252` | **MISSING** | static void mc_chroma |
+| `mc_chroma` | `common/mc.c:252` | **PORTED** | static void mc_chroma |
 | `x264_plane_copy_c` | `common/mc.c:294` | **MISSING** | void x264_plane_copy_c |
 | `x264_plane_copy_swap_c` | `common/mc.c:305` | **MISSING** | void x264_plane_copy_swap_c |
 | `x264_plane_copy_interleave_c` | `common/mc.c:316` | **MISSING** | void x264_plane_copy_interleave_c |
-| `x264_plane_copy_deinterleave_c` | `common/mc.c:328` | **MISSING** | void x264_plane_copy_deinterleave_c |
+| `x264_plane_copy_deinterleave_c` | `common/mc.c:328` | **PORTED** | void x264_plane_copy_deinterleave_c |
 | `plane_copy_deinterleave_rgb_c` | `common/mc.c:339` | **MISSING** | static void plane_copy_deinterleave_rgb_c |
 | `v210_endian_fix32` | `common/mc.c:356` | **MISSING** | static ALWAYS_INLINE uint32_t v210_endian_fix32 |
 | `plane_copy_deinterleave_v210_c` | `common/mc.c:364` | **MISSING** | static void plane_copy_deinterleave_v210_c |
@@ -359,7 +359,7 @@ Total x264 C functions indexed: **1386**.
 | `mbtree_fix8_pack` | `common/mc.c:601` | **MISSING** | static void mbtree_fix8_pack |
 | `mbtree_fix8_unpack` | `common/mc.c:607` | **MISSING** | static void mbtree_fix8_unpack |
 | `x264_mc_init` | `common/mc.c:613` | **MISSING** | void x264_mc_init |
-| `x264_frame_filter` | `common/mc.c:704` | **MISSING** | void x264_frame_filter |
+| `x264_frame_filter` | `common/mc.c:704` | **PORTED** | void x264_frame_filter |
 | `sums` | `common/mc.c:751` | **MISSING** | * in the lower plane, 4x4 sums |
 | `avc_dct4x4dc_msa` | `common/mips/dct-c.c:45` | **MISSING** | static void avc_dct4x4dc_msa |
 | `avc_sub4x4_dct_msa` | `common/mips/dct-c.c:76` | **MISSING** | static void avc_sub4x4_dct_msa |
@@ -886,8 +886,8 @@ Total x264 C functions indexed: **1386**.
 | `x264_cqm_delete` | `common/set.c:300` | **MISSING** | void x264_cqm_delete |
 | `cqm_parse_jmlist` | `common/set.c:307` | **MISSING** | static int cqm_parse_jmlist |
 | `x264_cqm_parse_file` | `common/set.c:351` | **MISSING** | int x264_cqm_parse_file |
-| `pow` | `common/tables.c:96` | **MISSING** | /* lambda = pow |
-| `pow` | `common/tables.c:112` | **MISSING** | /* lambda2 = pow |
+| `pow` | `common/tables.c:96` | **PORTED** | /* lambda = pow |
+| `pow` | `common/tables.c:112` | **PORTED** | /* lambda2 = pow |
 | `MIN` | `common/tables.c:1777` | **MISSING** | const uint8_t x264_coeff_flag_offset_chroma_422_dc[7] = { 0, 0, 1, 1, 2, 2, 2 }; /* MIN |
 | `threadpool_thread` | `common/threadpool.c:48` | **MISSING** | REALIGN_STACK static void *threadpool_thread |
 | `x264_threadpool_init` | `common/threadpool.c:70` | **MISSING** | int x264_threadpool_init |
@@ -1061,13 +1061,13 @@ Total x264 C functions indexed: **1386**.
 | `cavlc_block_residual_internal` | `encoder/cavlc.c:121` | **PORTED** | static int cavlc_block_residual_internal |
 | `cavlc_block_residual_internal` | `encoder/cavlc.c:208` | **PORTED** | *nnz = cavlc_block_residual_internal |
 | `cavlc_qp_delta` | `encoder/cavlc.c:211` | **MISSING** | static void cavlc_qp_delta |
-| `cavlc_mvd` | `encoder/cavlc.c:241` | **MISSING** | static void cavlc_mvd |
-| `cavlc_8x8_mvd` | `encoder/cavlc.c:250` | **MISSING** | static inline void cavlc_8x8_mvd |
+| `cavlc_mvd` | `encoder/cavlc.c:241` | **PORTED** | static void cavlc_mvd |
+| `cavlc_8x8_mvd` | `encoder/cavlc.c:250` | **PORTED** | static inline void cavlc_8x8_mvd |
 | `cavlc_macroblock_luma_residual` | `encoder/cavlc.c:274` | **MISSING** | static ALWAYS_INLINE void cavlc_macroblock_luma_residual |
 | `cavlc_partition_luma_residual` | `encoder/cavlc.c:293` | **MISSING** | static ALWAYS_INLINE void cavlc_partition_luma_residual |
-| `cavlc_mb_header_i` | `encoder/cavlc.c:305` | **MISSING** | static void cavlc_mb_header_i |
-| `cavlc_mb_header_p` | `encoder/cavlc.c:337` | **MISSING** | static ALWAYS_INLINE void cavlc_mb_header_p |
-| `cavlc_mb_header_b` | `encoder/cavlc.c:411` | **MISSING** | static ALWAYS_INLINE void cavlc_mb_header_b |
+| `cavlc_mb_header_i` | `encoder/cavlc.c:305` | **PORTED** | static void cavlc_mb_header_i |
+| `cavlc_mb_header_p` | `encoder/cavlc.c:337` | **PORTED** | static ALWAYS_INLINE void cavlc_mb_header_p |
+| `cavlc_mb_header_b` | `encoder/cavlc.c:411` | **PORTED** | static ALWAYS_INLINE void cavlc_mb_header_b |
 | `x264_macroblock_write_cavlc` | `encoder/cavlc.c:487` | **MISSING** | void x264_macroblock_write_cavlc |
 | `ref` | `encoder/cavlc.c:601` | **MISSING** | * doesn't write ref |
 | `partition_size_cavlc` | `encoder/cavlc.c:605` | **MISSING** | static int partition_size_cavlc |
@@ -1157,7 +1157,7 @@ Total x264 C functions indexed: **1386**.
 | `quant_2x2_dc` | `encoder/macroblock.c:313` | **PORTED** | nz_dc \|= h->quantf.quant_2x2_dc |
 | `quant_4x4x4` | `encoder/macroblock.c:402` | **PORTED** | nz = h->quantf.quant_4x4x4 |
 | `quant_2x2_dc` | `encoder/macroblock.c:425` | **PORTED** | nz_dc \|= h->quantf.quant_2x2_dc |
-| `i_cbp_chroma` | `encoder/macroblock.c:488` | **MISSING** | h->mb.i_cbp_chroma += |
+| `i_cbp_chroma` | `encoder/macroblock.c:488` | **PORTED** | h->mb.i_cbp_chroma += |
 | `x264_mb_encode_chroma` | `encoder/macroblock.c:492` | **MISSING** | void x264_mb_encode_chroma |
 | `macroblock_encode_skip` | `encoder/macroblock.c:500` | **MISSING** | static void macroblock_encode_skip |
 | `x264_predict_lossless_chroma` | `encoder/macroblock.c:526` | **MISSING** | void x264_predict_lossless_chroma |
@@ -1165,10 +1165,10 @@ Total x264 C functions indexed: **1386**.
 | `x264_predict_lossless_8x8` | `encoder/macroblock.c:575` | **MISSING** | void x264_predict_lossless_8x8 |
 | `x264_predict_lossless_16x16` | `encoder/macroblock.c:595` | **MISSING** | void x264_predict_lossless_16x16 |
 | `macroblock_encode_internal` | `encoder/macroblock.c:618` | **MISSING** | static ALWAYS_INLINE void macroblock_encode_internal |
-| `mc_luma` | `encoder/macroblock.c:665` | **MISSING** | h->mc.mc_luma |
+| `mc_luma` | `encoder/macroblock.c:665` | **PORTED** | h->mc.mc_luma |
 | `x264_macroblock_encode` | `encoder/macroblock.c:974` | **PORTED** | void x264_macroblock_encode |
 | `macroblock_probe_skip_internal` | `encoder/macroblock.c:988` | **MISSING** | static ALWAYS_INLINE int macroblock_probe_skip_internal |
-| `mc_luma` | `encoder/macroblock.c:1005` | **MISSING** | h->mc.mc_luma |
+| `mc_luma` | `encoder/macroblock.c:1005` | **PORTED** | h->mc.mc_luma |
 | `load_deinterleave_chroma_fdec` | `encoder/macroblock.c:1049` | **MISSING** | h->mc.load_deinterleave_chroma_fdec |
 | `x264_macroblock_probe_skip` | `encoder/macroblock.c:1129` | **MISSING** | int x264_macroblock_probe_skip |
 | `x264_noise_reduction_update` | `encoder/macroblock.c:1146` | **MISSING** | void x264_noise_reduction_update |
@@ -1201,7 +1201,7 @@ Total x264 C functions indexed: **1386**.
 | `qp2qscale` | `encoder/ratecontrol.c:203` | **MISSING** | static inline float qp2qscale |
 | `qscale2qp` | `encoder/ratecontrol.c:207` | **MISSING** | static inline float qscale2qp |
 | `qscale2bits` | `encoder/ratecontrol.c:216` | **MISSING** | static inline double qscale2bits |
-| `pow` | `encoder/ratecontrol.c:221` | **MISSING** | + rce->mv_bits * pow |
+| `pow` | `encoder/ratecontrol.c:221` | **PORTED** | + rce->mv_bits * pow |
 | `ac_energy_var` | `encoder/ratecontrol.c:225` | **MISSING** | static ALWAYS_INLINE uint32_t ac_energy_var |
 | `ac_energy_plane` | `encoder/ratecontrol.c:237` | **MISSING** | static ALWAYS_INLINE uint32_t ac_energy_plane |
 | `height` | `encoder/ratecontrol.c:242` | **MISSING** | ? 16 * mb_x + height * |
@@ -1215,26 +1215,26 @@ Total x264 C functions indexed: **1386**.
 | `x264_reference_build_list_optimal` | `encoder/ratecontrol.c:585` | **MISSING** | int x264_reference_build_list_optimal |
 | `strcat_filename` | `encoder/ratecontrol.c:622` | **MISSING** | static char *strcat_filename |
 | `x264_ratecontrol_init_reconfigurable` | `encoder/ratecontrol.c:632` | **MISSING** | void x264_ratecontrol_init_reconfigurable |
-| `pow` | `encoder/ratecontrol.c:644` | **MISSING** | rc->rate_factor_constant = pow |
+| `pow` | `encoder/ratecontrol.c:644` | **PORTED** | rc->rate_factor_constant = pow |
 | `x264_ratecontrol_new` | `encoder/ratecontrol.c:744` | **MISSING** | int x264_ratecontrol_new |
 | `log2` | `encoder/ratecontrol.c:791` | **PORTED** | double bits_required = log2 |
 | `parse_zone` | `encoder/ratecontrol.c:1219` | **MISSING** | static int parse_zone |
 | `parse_zones` | `encoder/ratecontrol.c:1263` | **MISSING** | static int parse_zones |
 | `get_zone` | `encoder/ratecontrol.c:1333` | **MISSING** | static x264_zone_t *get_zone |
 | `x264_ratecontrol_summary` | `encoder/ratecontrol.c:1345` | **MISSING** | void x264_ratecontrol_summary |
-| `x264_ratecontrol_delete` | `encoder/ratecontrol.c:1358` | **MISSING** | void x264_ratecontrol_delete |
+| `x264_ratecontrol_delete` | `encoder/ratecontrol.c:1358` | **PORTED** | void x264_ratecontrol_delete |
 | `accum_p_qp_update` | `encoder/ratecontrol.c:1410` | **MISSING** | static void accum_p_qp_update |
 | `x264_ratecontrol_zone_init` | `encoder/ratecontrol.c:1422` | **MISSING** | void x264_ratecontrol_zone_init |
-| `x264_ratecontrol_start` | `encoder/ratecontrol.c:1432` | **MISSING** | void x264_ratecontrol_start |
+| `x264_ratecontrol_start` | `encoder/ratecontrol.c:1432` | **PORTED** | void x264_ratecontrol_start |
 | `predict_row_size` | `encoder/ratecontrol.c:1540` | **MISSING** | static float predict_row_size |
 | `row_bits_so_far` | `encoder/ratecontrol.c:1569` | **MISSING** | static int row_bits_so_far |
 | `predict_row_size_to_end` | `encoder/ratecontrol.c:1577` | **MISSING** | static float predict_row_size_to_end |
 | `x264_ratecontrol_mb` | `encoder/ratecontrol.c:1590` | **MISSING** | int x264_ratecontrol_mb |
 | `x264_ratecontrol_qp` | `encoder/ratecontrol.c:1748` | **MISSING** | int x264_ratecontrol_qp |
-| `x264_ratecontrol_mb_qp` | `encoder/ratecontrol.c:1754` | **MISSING** | int x264_ratecontrol_mb_qp |
+| `x264_ratecontrol_mb_qp` | `encoder/ratecontrol.c:1754` | **PORTED** | int x264_ratecontrol_mb_qp |
 | `x264_ratecontrol_slice_type` | `encoder/ratecontrol.c:1771` | **MISSING** | int x264_ratecontrol_slice_type |
 | `x264_ratecontrol_set_weights` | `encoder/ratecontrol.c:1812` | **MISSING** | void x264_ratecontrol_set_weights |
-| `x264_ratecontrol_end` | `encoder/ratecontrol.c:1829` | **MISSING** | int x264_ratecontrol_end |
+| `x264_ratecontrol_end` | `encoder/ratecontrol.c:1829` | **PORTED** | int x264_ratecontrol_end |
 | `nrt_first_access_unit` | `encoder/ratecontrol.c:1962` | **MISSING** | h->fenc->hrd_timing.cpb_removal_time = rc->nrt_first_access_unit + |
 | `get_qscale` | `encoder/ratecontrol.c:2003` | **MISSING** | static double get_qscale |
 | `get_diff_limited_q` | `encoder/ratecontrol.c:2037` | **MISSING** | static double get_diff_limited_q |
@@ -1261,7 +1261,7 @@ Total x264 C functions indexed: **1386**.
 | `fps` | `encoder/ratecontrol.c:3111` | **MISSING** | expected_bits * rcc->fps / |
 | `cached_hadamard` | `encoder/rdo.c:75` | **MISSING** | static ALWAYS_INLINE uint64_t cached_hadamard |
 | `cache_index` | `encoder/rdo.c:80` | **MISSING** | int cache_index = |
-| `cached_satd` | `encoder/rdo.c:94` | **MISSING** | static ALWAYS_INLINE int cached_satd |
+| `cached_satd` | `encoder/rdo.c:94` | **PORTED** | static ALWAYS_INLINE int cached_satd |
 | `cache_index` | `encoder/rdo.c:99` | **MISSING** | int cache_index = |
 | `ssd_plane` | `encoder/rdo.c:123` | **MISSING** | static inline int ssd_plane |
 | `abs` | `encoder/rdo.c:135` | **PORTED** | satd = abs |
