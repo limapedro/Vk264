@@ -10,6 +10,9 @@
  *   reference/x264/encoder/macroblock.c:126   mb_encode_i16x16
  *   reference/x264/encoder/macroblock.c:259   mb_encode_chroma_internal
  *   reference/x264/encoder/macroblock.c:654   P_SKIP MC (p_fref[0][0])
+ *   reference/x264/encoder/macroblock.c:697   B_SKIP MC (x264_mb_mc)
+ *   reference/x264/common/macroblock.c:37     mb_mc_0xywh / 1xywh / 01xywh
+ *   reference/x264/common/mc.c:63             implicit weighted bipred average
  *   reference/x264/encoder/macroblock.c:669   P_SKIP chroma MC + mv0 shortcut
  *   reference/x264/encoder/macroblock.c:769   inter MC (x264_mb_mc)
  *   reference/x264/common/macroblock.c:61     inter 16x16 chroma MC call site
@@ -116,6 +119,22 @@ int phx_macroblock_encode_ex2(const phx_param_t *p, phx_frame_t *f,
                               phx_mb_cache_t *cache, int mb_x, int mb_y,
                               phx_mb_decision_t *d, phx_cabac_t *cb,
                               phx_mb_i8x8_block_t i8x8_out[4]);
+
+/* B-slice skip/direct encode.  Additive entry point: the P_L0/I paths above
+ * are untouched.  `fref0`/`fref1` are h->fref[0][0]/h->fref[1][0] (list-0 and
+ * list-1 reference 0); `bipred_weight` is h->mb.bipred_weight[r0][r1] (32 for
+ * implicit equal-weight bipred, mc.c:79-91).  For PHX_B_SKIP (and PHX_B_DIRECT
+ * with cbp == 0) x264's macroblock_encode_internal B_SKIP branch
+ * (encoder/macroblock.c:697-703) calls x264_mb_mc(common/macroblock.c:37-153,
+ * :200-244) and macroblock_encode_skip: no residual, reconstructed samples
+ * in FDEC.  Direct MVs/refs are read from d->mv[0/1][block] and
+ * d->ref[0/1][block] (the arrays published by Z1's B-direct analysis); only
+ * ref index 0 of each list is supplied.  Returns 0 on success, -1 otherwise.
+ * SHADER: B — one serial per-MB MC from two read-only references. */
+int phx_macroblock_encode_b(const phx_param_t *p, phx_frame_t *f,
+                            const phx_frame_t *fref0, const phx_frame_t *fref1,
+                            phx_mb_cache_t *cache, int mb_x, int mb_y,
+                            phx_mb_decision_t *d, int bipred_weight);
 
 /* x264's chroma DC path uses x264_quant_chroma_dc_trellis() (macroblock.c:420,
  * rdo.c:1114-1140) whenever trellis is enabled, and zigzag_scan_2x2_dc()

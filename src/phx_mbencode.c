@@ -976,6 +976,174 @@ static int phx_mb_mc_l0_part(const phx_param_t *p, const phx_frame_t *fref,
     return 0;
 }
 
+/* -------------------------------------------------------------------------
+ * B_SKIP / B-direct reconstruction — encoder/macroblock.c:697-703 and
+ * common/macroblock.c:37-153/:200-244.  The analysis record supplies the
+ * direct MVs/refs in d->mv[0/1] / d->ref[0/1]; only reference 0 of each list
+ * is available to this stage.  SHADER: B — one serial per-MB MC from two
+ * read-only references, no cross-MB state.
+ * ------------------------------------------------------------------------- */
+
+/* common/mc.c:63-91 — implicit weighted bipred average.  weight == 32 uses
+ * the (a+b+1)>>1 fast path (pixel_avg_wxh); otherwise x264_clip_pixel of
+ * (a*w + b*(64-w) + 32)>>6 (pixel_avg_weight_wxh). */
+static void phx_mb_avg(uint8_t *dst, int i_dst,
+                       const uint8_t *s0, int i_s0,
+                       const uint8_t *s1, int i_s1,
+                       int w, int h, int weight)
+{
+    if (weight == 32) {
+        phx_mc_pixel_avg(dst, i_dst, s0, i_s0, s1, i_s1, w, h);
+        return;
+    }
+    const int w2 = 64 - weight;
+    for (int y = 0; y < h; y++, dst += i_dst, s0 += i_s0, s1 += i_s1)
+        for (int x = 0; x < w; x++)
+            dst[x] = (uint8_t)phx_mb_clip3i((s0[x]*weight + s1[x]*w2 + 32) >> 6,
+                                             0, 255);
+}
+
+/* common/macroblock.c:39-42/:78-81/:114-121 — clip the cached direct MV to
+ * the frame edges, then offset it by 16*x/16*y qpel to address the partition
+ * from the MB origin. */
+static void phx_mb_b_mv(const phx_mb_decision_t *d, int list, int blk,
+                        int x4, int y4, int mb_x, int mb_y,
+                        const phx_frame_t *f, int *mvx, int *mvy)
+{
+    const int mb_w = f->i_width / 16, mb_h = f->i_height / 16;
+    *mvx = phx_mb_clip3i(d->mv[list][blk][0],
+                         4 * (-16 * mb_x - 24),
+                         4 * (16 * (mb_w - mb_x - 1) + 24)) + 16 * x4;
+    *mvy = phx_mb_clip3i(d->mv[list][blk][1],
+                         4 * (-16 * mb_y - 24),
+                         4 * (16 * (mb_h - mb_y - 1) + 24)) + 16 * y4;
+}
+
+/* 4:2:0 chroma MC for one partition into planar U/V windows (stride 16),
+ * mirroring common/macroblock.c:58-64/:96-100/:143-146 and mc.c:252-283. */
+static void phx_mb_b_chroma_mc(const phx_frame_t *fref, int mb_x, int mb_y,
+                               int x4, int y4, int w4, int h4,
+                               int mvx, int mvy, uint8_t *cu, uint8_t *cv)
+{
+    const int cs = fref->i_stride_planes[1];
+    const size_t off = (size_t)((mb_y*16 + y4*4)/2)*cs
+                     + (size_t)((mb_x*16 + x4*4)/2)*2;
+    const uint8_t *src = fref->plane_chroma + off;
+    if (mvx | mvy)
+        phx_mc_chroma(cu, 16, cv, 16, src, cs, mvx, 2*mvy >> 1, 2*w4, 2*h4);
+    else
+        phx_mc_deinterleave_chroma(cu, 16, cv, 16, src, cs, 2*w4, 2*h4);
+}
+
+/* x264_macroblock_encode_internal's B_SKIP branch (:697-703) followed by
+ * x264_mb_mc() with b_direct MVs from the decision record.  No residual is
+ * coded: macroblock_encode_skip() leaves nnz/CBP at zero (:624-626/:946-951). */
+int phx_macroblock_encode_b(const phx_param_t *p, phx_frame_t *f,
+                            const phx_frame_t *fref0, const phx_frame_t *fref1,
+                            phx_mb_cache_t *cache, int mb_x, int mb_y,
+                            phx_mb_decision_t *d, int bipred_weight)
+{
+    if (!p || !f || !cache || !d || !f->plane || !f->plane_chroma) return -1;
+    const int mb_w = f->i_width / 16, mb_h = f->i_height / 16;
+    if (mb_x < 0 || mb_x >= mb_w || mb_y < 0 || mb_y >= mb_h) return -1;
+    if (d->i_qp < 0 || d->i_qp > PHX_QUANT_QP_MAX_SPEC) return -1;
+    if (bipred_weight < 1 || bipred_weight > 63) return -1;
+    if (d->mb_type != PHX_B_SKIP && d->mb_type != PHX_B_DIRECT) return -1;
+    /* This entry point is the skip/direct MC path only (macroblock.c:697-703);
+     * a B_DIRECT with a residual needs the row-18 residual encoder on top of
+     * the bidirectional MC, which is out of scope here. */
+    if (d->mb_type == PHX_B_DIRECT && (d->cbp_luma || d->cbp_chroma)) return -1;
+    if (!fref0 || !fref1 || !fref0->plane || !fref1->plane ||
+        !fref0->plane_chroma || !fref1->plane_chroma ||
+        fref0->i_width != f->i_width || fref0->i_height != f->i_height ||
+        fref1->i_width != f->i_width || fref1->i_height != f->i_height)
+        return -1;
+
+    /* (x,y,w,h) in 4x4-block units + the cache MV block, exactly like
+     * x264_mb_mc()'s mb_mc_*xywh() calls (common/macroblock.c:200-244). */
+    static const int d1616[1][5] = { {0,0,4,4,0} };
+    static const int d168[2][5]  = { {0,0,4,2,0}, {0,2,4,2,8} };
+    static const int d816[2][5]  = { {0,0,2,4,0}, {2,0,2,4,2} };
+    static const int d88[4][5]   = { {0,0,2,2,0}, {2,0,2,2,2},
+                                     {0,2,2,2,8}, {2,2,2,2,10} };
+    const int (*part)[5];
+    int n;
+    if (d->i_partition == PHX_D_16x16)      { part = d1616; n = 1; }
+    else if (d->i_partition == PHX_D_16x8)  { part = d168;  n = 2; }
+    else if (d->i_partition == PHX_D_8x16)  { part = d816;  n = 2; }
+    else if (d->i_partition == PHX_D_8x8)   { part = d88;   n = 4; }
+    else return -1;
+    for (int i = 0; i < n; i++)
+        if (d->ref[0][part[i][4]] > 0 || d->ref[1][part[i][4]] > 0)
+            return -1;                     /* only L0/L1 ref 0 are supplied */
+
+    uint8_t fdec[PHX_FDEC_STRIDE * PHX_FDEC_WINDOW_ROWS + PHX_FDEC_STRIDE];
+    uint8_t *p_dst = fdec + PHX_FDEC_STRIDE + 1;
+    memset(fdec, 0, sizeof(fdec));
+    phx_mb_load_fdec_neighbours(f, mb_x, mb_y, p_dst, PHX_FDEC_STRIDE, cache);
+
+    uint8_t *fdec_target = cache->p_fdec ? cache->p_fdec :
+                           f->plane + mb_y*16*f->i_stride + mb_x*16;
+    int fdec_stride = cache->fdec_stride > 0 ? cache->fdec_stride : f->i_stride;
+    cache->i_qp = d->i_qp;                                   /* macroblock.c:620 */
+    cache->b_transform_8x8 = 0;
+    cache->i_cbp_luma = cache->i_cbp_chroma = 0;
+    d->skip = (d->mb_type == PHX_B_SKIP) ? 1 : 0;
+
+    const int cs = f->i_stride_planes[1];
+    for (int i = 0; i < n; i++) {
+        const int x4 = part[i][0], y4 = part[i][1];
+        const int w4 = part[i][2], h4 = part[i][3], blk = part[i][4];
+        const int r0 = d->ref[0][blk], r1 = d->ref[1][blk];
+        int mvx0 = 0, mvy0 = 0, mvx1 = 0, mvy1 = 0;
+        if (r0 >= 0) phx_mb_b_mv(d, 0, blk, x4, y4, mb_x, mb_y, f, &mvx0, &mvy0);
+        if (r1 >= 0) phx_mb_b_mv(d, 1, blk, x4, y4, mb_x, mb_y, f, &mvx1, &mvy1);
+        const size_t c_off = (size_t)((mb_y*16 + y4*4)/2)*cs
+                           + (size_t)((mb_x*16 + x4*4)/2)*2;
+        if (r0 >= 0 && r1 >= 0) {
+            /* common/macroblock.c:112-152 — mb_mc_01xywh(): two MC windows
+             * at stride 16, then implicit weighted average into FDEC. */
+            uint8_t tmp0[16*16], tmp1[16*16];
+            phx_mc_luma_mb(fref0, tmp0, 16, mb_x, mb_y, mvx0, mvy0, 4*w4, 4*h4);
+            phx_mc_luma_mb(fref1, tmp1, 16, mb_x, mb_y, mvx1, mvy1, 4*w4, 4*h4);
+            phx_mb_avg(p_dst + y4*4*PHX_FDEC_STRIDE + x4*4, PHX_FDEC_STRIDE,
+                       tmp0, 16, tmp1, 16, 4*w4, 4*h4, bipred_weight);
+            uint8_t cu0[16*16], cv0[16*16], cu1[16*16], cv1[16*16];
+            phx_mb_b_chroma_mc(fref0, mb_x, mb_y, x4, y4, w4, h4, mvx0, mvy0, cu0, cv0);
+            phx_mb_b_chroma_mc(fref1, mb_x, mb_y, x4, y4, w4, h4, mvx1, mvy1, cu1, cv1);
+            uint8_t cu[16*16], cv[16*16];
+            phx_mb_avg(cu, 16, cu0, 16, cu1, 16, 2*w4, 2*h4, bipred_weight);
+            phx_mb_avg(cv, 16, cv0, 16, cv1, 16, 2*w4, 2*h4, bipred_weight);
+            for (int cy = 0; cy < 2*h4; cy++)
+                for (int cx = 0; cx < 2*w4; cx++) {
+                    f->plane_chroma[c_off + (size_t)cy*cs + 2*cx]   = cu[cy*16+cx];
+                    f->plane_chroma[c_off + (size_t)cy*cs + 2*cx+1] = cv[cy*16+cx];
+                }
+        } else {
+            /* common/macroblock.c:37-75 / :76-102 — unidirectional L0/L1. */
+            const phx_frame_t *rf = (r0 >= 0) ? fref0 : fref1;
+            const int mvx = (r0 >= 0) ? mvx0 : mvx1;
+            const int mvy = (r0 >= 0) ? mvy0 : mvy1;
+            phx_mc_luma_mb(rf, p_dst + y4*4*PHX_FDEC_STRIDE + x4*4,
+                           PHX_FDEC_STRIDE, mb_x, mb_y, mvx, mvy, 4*w4, 4*h4);
+            uint8_t cu[16*16], cv[16*16];
+            phx_mb_b_chroma_mc(rf, mb_x, mb_y, x4, y4, w4, h4, mvx, mvy, cu, cv);
+            for (int cy = 0; cy < 2*h4; cy++)
+                for (int cx = 0; cx < 2*w4; cx++) {
+                    f->plane_chroma[c_off + (size_t)cy*cs + 2*cx]   = cu[cy*16+cx];
+                    f->plane_chroma[c_off + (size_t)cy*cs + 2*cx+1] = cv[cy*16+cx];
+                }
+        }
+    }
+
+    phx_mb_clear_inter_residual(d, cache);      /* macroblock.c:624-626 */
+    d->cbp_luma = d->cbp_chroma = d->i_cbp = 0;
+    cache->i_cbp_luma = cache->i_cbp_chroma = 0;
+    for (int y = 0; y < 16; y++)
+        memcpy(fdec_target + y * fdec_stride, p_dst + y * PHX_FDEC_STRIDE, 16);
+    return 0;
+}
+
 /* x264_macroblock_encode — reference/x264/encoder/macroblock.c:974-982,
  * dispatching macroblock_encode_internal (:618-972).  Cache-nnz and cbp
  * stores mirror common/macroblock.c:1680/1761-1779; reconstructed pixels are
