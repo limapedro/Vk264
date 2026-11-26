@@ -286,6 +286,42 @@ int phx_rdo_macroblock_bits(const phx_cabac_t *live,
                             const phx_rdo_mb_data_t *data,
                             int slice_type, int qp, int lambda2);
 
+/* -------------------------------------------------------------------------
+ * B-slice mbrd support (encoder/analyse.c:2622-2690, :3404-3415).
+ *
+ * phx_rdo_macroblock_bits() now also writes B mb_type headers via the
+ * size-only port of cabac_mb_header_b() (encoder/cabac.c:499-610), so a B
+ * candidate's rd_cost_mb() bit term (rdo.c:162-197) is:
+ *
+ *   int bits = phx_rdo_macroblock_bits(live, mb, data, PHX_SLICE_B,
+ *                                       qp, lambda2);
+ *   int rd = phx_rdo_b_ssd + bits;   (ssd_mb stays in the analysis owner)
+ *
+ * `mb->cache` must carry the same neighbour type/mv/ref/nnz state x264 loads
+ * for the candidate; `data` carries that candidate's MVDs/refs/coefficients.
+ * The caller supplies ssd_mb() (rdo.c:150-160) because it owns fenc/fdec.
+ *
+ * The two helpers below encode x264's early-termination arithmetic exactly.
+ * SHADER: C — serial integer arithmetic, no stream or entropy state.
+ * ------------------------------------------------------------------------- */
+typedef struct {
+    int i_bskip_cost;        /* analyse.c:3348 ssd_mb() of B_SKIP candidate */
+    int i_cost;              /* analyse.c:3399-3402 best SATD inter cost */
+    int i_cost16x16direct;   /* analyse.c:3402 */
+    int rd_direct;           /* analyse.c:2633 a->i_rd16x16direct */
+    int rd_l0;               /* analyse.c:2644 a->l0.i_rd16x16 */
+    int rd_l1;               /* analyse.c:2652 a->l1.i_rd16x16 */
+    int rd_bi;               /* analyse.c:2660 a->i_rd16x16bi */
+} phx_rdo_b_rd_t;
+
+/* analyse.c:2624 — thresh = i_satd*(17+!!psy_rd)/16+1, or COST_MAX. */
+int phx_rdo_b_rd_threshold(int i_satd_inter, int b_early_terminate,
+                           int i_psy_rd);
+
+/* analyse.c:3404-3415 — returns 1 when the MB is promoted to B_SKIP. */
+int phx_rdo_b_early_skip(const phx_rdo_b_rd_t *rd,
+                         int b_mbrd, int b_early_terminate);
+
 /* Verbatim scan tables (common/macroblock.h:181-200), [frame/field]. */
 extern const uint8_t phx_rdo_zigzag4[2][16];
 extern const uint8_t phx_rdo_zigzag8[2][64];

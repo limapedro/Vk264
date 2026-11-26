@@ -491,6 +491,23 @@ int main(void)
     check_mb_size("gold_P_SKIP", PHX_SLICE_P, PHX_P_SKIP, PHX_D_16x16, 26,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 256, "");
 
+    /* B-slice RD golden (instrumented x264, encoder/rdo.c:68-69 ->
+     * encoder/cabac.c:917-1086 with SLICE_TYPE_B and analyse.c:2622/3404). */
+    check_mb_size("gold_B_L0_L0", PHX_SLICE_B, PHX_B_L0_L0, PHX_D_16x16, 26,
+                  1, 0, 0, 0, 8, -4, 0, 5, 0, 11646,
+                  " 32:119->123 40:127->125 43:127->125 44:99->97 45:101->99 46:73->79 47:116->118 50:124->126 51:105->103 52:103->101 53:79->89 74:104->102 75:120->118 76:58->74 93:117->119 94:101->105 95:107->111 134:121->123 135:112->116 196:82->90 248:48->68 252:90->106");
+    {
+        /* analyse.c:2624 — x264 diag.yuv MB1: satd=537, et=1, psy_rd!=0. */
+        check(phx_rdo_b_rd_threshold(537, 1, 1) == 605, "B RD threshold");
+        check(phx_rdo_b_rd_threshold(537, 0, 1) == (1 << 28), "B RD no-ET threshold");
+        /* analyse.c:3404-3415 — x264 diag.yuv MB0 gate=0, MB1 gate=1/TAKEN. */
+        const int none = 268435456; /* me.h:30 COST_MAX */
+        phx_rdo_b_rd_t mb0 = { 1574, 254, 464, 1620, none, none, none };
+        phx_rdo_b_rd_t mb1 = { 1131, 537, 537, 1177, none, none, none };
+        check(phx_rdo_b_early_skip(&mb0, 1, 1) == 0, "B early-skip gate MB0");
+        check(phx_rdo_b_early_skip(&mb1, 1, 1) == 1, "B early-skip MB1");
+    }
+
     printf("%s: %d failures\n", failures ? "FAILED" : "PASSED", failures);
     return failures ? 1 : 0;
 }

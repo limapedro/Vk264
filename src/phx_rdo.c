@@ -1282,6 +1282,9 @@ static void m8_header_p(phx_cabac_size_t *cb, phx_cabac_mb_t *mb,
 
 /* encoder/cabac.c:917-1086 — macroblock_write_cabac_internal(),
  * 4:2:0 frame with b_transform_8x8 == 0 (RDO_SKIP_BS bin costs). */
+static void m8_header_b(phx_cabac_size_t *cb, phx_cabac_mb_t *mb,
+                        const phx_rdo_mb_data_t *data, int i_mb_type);
+
 static int m8_macroblock_size_internal(phx_cabac_size_t *cb,
                                        phx_cabac_mb_t *mb,
                                        const phx_rdo_mb_data_t *data,
@@ -1290,6 +1293,8 @@ static int m8_macroblock_size_internal(phx_cabac_size_t *cb,
     const int i_mb_type = mb->i_type;                        /* :919 */
     if (slice_type == PHX_SLICE_P)
         m8_header_p(cb, mb, data, i_mb_type);                /* :933 */
+    else if (slice_type == PHX_SLICE_B)
+        m8_header_b(cb, mb, data, i_mb_type);                /* :935 */
     else if (slice_type == PHX_SLICE_I)
         m8_header_i(cb, mb, i_mb_type, PHX_SLICE_I);         /* :937 */
 
@@ -1335,6 +1340,144 @@ static int m8_macroblock_size_internal(phx_cabac_size_t *cb,
         }
     }
     return cb->f8_bits_encoded;                             /* rdo.c:184 */
+}
+
+
+/* ------------------------------------------------------------------ */
+/* B-slice mb_type headers + B RD helpers                              */
+/* encoder/cabac.c:499-610, analyse.c:2622-2690/3404-3415, rdo.c:162-197 */
+/* ------------------------------------------------------------------ */
+
+/* common/macroblock.h:97-109, :143-159 (Phoenix constants are identical). */
+static const uint8_t m8_mb_type_list[19][2][2] = {
+    {{0,0},{0,0}}, {{0,0},{0,0}}, {{0,0},{0,0}}, {{0,0},{0,0}},
+    {{1,1},{0,0}}, {{0,0},{0,0}}, {{1,1},{0,0}},
+    {{0,0},{0,0}},                                  /* B_DIRECT */
+    {{1,1},{0,0}}, {{1,0},{0,1}}, {{1,1},{0,1}},    /* B_L0_* */
+    {{0,1},{1,0}}, {{0,0},{1,1}}, {{0,1},{1,1}},    /* B_L1_* */
+    {{1,1},{1,0}}, {{1,0},{1,1}}, {{1,1},{1,1}},    /* B_BI_* */
+    {{0,0},{0,0}}, {{0,0},{0,0}}
+};
+static const uint8_t m8_part_list[2][17] = {
+    { 1,1,1,1, 0,0,0,0, 1,1,1,1, 0, 0,0,0,0 },
+    { 0,0,0,0, 1,1,1,1, 1,1,1,1, 1, 0,0,0,0 }
+};
+/* encoder/cabac.c:548-558 — i_mb_bits[B_L0_L0..B_BI_BI][partition]. */
+static const uint8_t m8_mb_bits[9*3] = {
+    0x31,0x29,0x04, 0x35,0x2d,0x00, 0x43,0x63,0x00,
+    0x3d,0x2f,0x00, 0x39,0x25,0x06, 0x53,0x73,0x00,
+    0x4b,0x6b,0x00, 0x5b,0x7b,0x00, 0x47,0x67,0x21
+};
+
+/* encoder/cabac.c:215-233 — cabac_subpartition_b(). */
+static void m8_subpart_b(phx_cabac_size_t *cb, int i_sub)
+{
+    if (i_sub == PHX_D_DIRECT_8x8) {
+        M8_DEC(cb, 36, 0); return;                     /* :218-220 */
+    }
+    M8_DEC(cb, 36, 1);                                 /* :222 */
+    if (i_sub == PHX_D_BI_8x8) {                       /* :223 */
+        M8_DEC(cb, 37, 1); M8_DEC(cb, 38, 0);
+        M8_DEC(cb, 39, 0); M8_DEC(cb, 39, 0); return;  /* :225-228 */
+    }
+    M8_DEC(cb, 37, 0);                                 /* :231 */
+    M8_DEC(cb, 39, i_sub == PHX_D_L1_8x8);             /* :232 */
+}
+
+/* encoder/cabac.c:499-610 — cabac_mb_header_b(). */
+static void m8_header_b(phx_cabac_size_t *cb, phx_cabac_mb_t *mb,
+                        const phx_rdo_mb_data_t *data, int i_mb_type)
+{
+    int ctx = 0;                                        /* :501 */
+    if ((mb->cache->i_neighbour & PHX_MB_LEFT) &&
+        mb->cache->type_left[0] != PHX_B_SKIP &&
+        mb->cache->type_left[0] != PHX_B_DIRECT) ctx++;  /* :502-503 */
+    if ((mb->cache->i_neighbour & PHX_MB_TOP) &&
+        mb->cache->type_top != PHX_B_SKIP &&
+        mb->cache->type_top != PHX_B_DIRECT) ctx += 2;   /* :504-505 */
+
+    if (i_mb_type == PHX_B_DIRECT) {
+        M8_NOUP(cb, 27 + ctx, 0);                       /* :509 */
+        return;
+    }
+    M8_NOUP(cb, 27 + ctx, 1);                           /* :512 */
+
+    if (i_mb_type == PHX_B_8x8) {
+        M8_NOUP(cb, 27+3, 1); M8_NOUP(cb, 27+4, 1);     /* :516-517 */
+        M8_DEC(cb, 27+5, 1); M8_DEC(cb, 27+5, 1);
+        M8_NOUP(cb, 27+5, 1);                           /* :518-520 */
+        for (int i = 0; i < 4; i++) {
+            int sub = data->sub_partition[i];
+            m8_subpart_b(cb, sub);                      /* :524 */
+            if (data->i_fref[0] > 1 && m8_part_list[0][sub])
+                m8_ref(cb, mb, 0, 4*i, 1);              /* :527-530 */
+            if (data->i_fref[1] > 1 && m8_part_list[1][sub])
+                m8_ref(cb, mb, 1, 4*i, 1);              /* :532-535 */
+        }
+        for (int l = 0; l < 2; l++)
+            for (int i = 0; i < 4; i++)
+                if (m8_part_list[l][data->sub_partition[i]])
+                    m8_mvd(cb, mb, data, l, 4*i);       /* :537-543 */
+        return;
+    }
+
+    if (i_mb_type >= PHX_B_L0_L0 && i_mb_type <= PHX_B_BI_BI) {
+        const uint8_t (*b_list)[2] = m8_mb_type_list[i_mb_type];
+        int idx = (i_mb_type - PHX_B_L0_L0)*3 +
+                  (mb->i_partition - PHX_D_16x8);       /* :561 */
+        int bits = m8_mb_bits[idx];                     /* :562 */
+        M8_NOUP(cb, 27+3, bits & 1);                    /* :564 */
+        M8_DEC(cb, 27+5-(bits&1), (bits>>1)&1); bits >>= 2; /* :565 */
+        if (bits != 1) {
+            M8_DEC(cb, 27+5, bits&1); bits >>= 1;       /* :568 */
+            M8_DEC(cb, 27+5, bits&1); bits >>= 1;       /* :569 */
+            M8_DEC(cb, 27+5, bits&1); bits >>= 1;       /* :570 */
+            if (bits != 1)
+                M8_NOUP(cb, 27+5, bits&1);             /* :572 */
+        }
+        for (int l = 0; l < 2; l++) {
+            if (data->i_fref[l] > 1) {
+                if (b_list[l][0])
+                    m8_ref(cb, mb, l, 0, 1);            /* :579/:586 */
+                if (b_list[l][1] && mb->i_partition != PHX_D_16x16)
+                    m8_ref(cb, mb, l, 8 >> (mb->i_partition == PHX_D_8x16), 1); /* :581/:588 */
+            }
+        }
+        for (int l = 0; l < 2; l++) {
+            if (mb->i_partition == PHX_D_16x16) {
+                if (b_list[l][0]) m8_mvd(cb, mb, data, l, 0);       /* :594 */
+            } else if (mb->i_partition == PHX_D_16x8) {
+                if (b_list[l][0]) m8_mvd(cb, mb, data, l, 0);       /* :598 */
+                if (b_list[l][1]) m8_mvd(cb, mb, data, l, 8);       /* :599 */
+            } else { /* D_8x16 */
+                if (b_list[l][0]) m8_mvd(cb, mb, data, l, 0);       /* :603 */
+                if (b_list[l][1]) m8_mvd(cb, mb, data, l, 4);       /* :604 */
+            }
+        }
+        return;
+    }
+    m8_header_i(cb, mb, i_mb_type, PHX_SLICE_B);         /* :609 */
+}
+
+/* encoder/analyse.c:2624 — early-termination threshold. */
+int phx_rdo_b_rd_threshold(int i_satd_inter, int b_early_terminate, int i_psy_rd)
+{
+    return b_early_terminate
+         ? i_satd_inter * (17 + (i_psy_rd != 0)) / 16 + 1
+         : (1 << 28);                                   /* me.h:30 COST_MAX */
+}
+
+/* encoder/analyse.c:3404-3415 — RD-based B_SKIP promotion. */
+int phx_rdo_b_early_skip(const phx_rdo_b_rd_t *rd,
+                         int b_mbrd, int b_early_terminate)
+{
+    if (!rd || !b_mbrd || !b_early_terminate ||
+        rd->i_cost16x16direct > rd->i_cost * 33 / 32)
+        return 0;                                       /* :3404 */
+    return rd->i_bskip_cost < rd->rd_direct &&
+           rd->i_bskip_cost < rd->rd_bi &&
+           rd->i_bskip_cost < rd->rd_l0 &&
+           rd->i_bskip_cost < rd->rd_l1;                /* :3407-3410 */
 }
 
 int phx_rdo_size_macroblock_cabac(phx_cabac_size_t *out,
