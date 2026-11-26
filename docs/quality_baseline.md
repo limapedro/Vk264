@@ -87,3 +87,23 @@ The IDR is a single whole-frame slice (`src/gpu.cpp` / `shaders/layout.glsl`)
 so one workgroup invocation emits all 8160 MB bodies serially. CAVLC I slices
 have no skip-run dependency between MBs, so the bodies could be emitted in
 parallel and concatenated — the next performance work item.
+
+## Negative quality experiments (reverted)
+
+All measured on the real 1080p clip unless noted; wx264-slow, 60 f, VMAF:
+
+| Experiment | Result | Decision |
+|---|---|---|
+| IDR QP step clamp ±4 → ±10 (`shaders/scan.comp`) | frame-1 PSNR unchanged (40.64) | reverted |
+| chroma QP offset −2 + PPS signalling | 640p PSNR 48.13→48.05, SSIM/VMAF neutral | reverted |
+| ABR RC constants from later tree (fps/3, 5/4 aim cap, ±10 debt, 4.0 step) | 1080p 6000 VMAF 93.96→93.75; 8000 95.92→95.81 | reverted |
+| variance AQ on (`--aq 1`) | 1080p 6000 VMAF 93.96→93.06 | not adopted |
+| initial QP 8/4 at 6000/8000 | bitrate overshoot 7.4–9.6 Mb/s, VMAF lower | not adopted |
+| SATD candidates 4→8 | VMAF 93.960→93.962 | negligible |
+| 8×8 inter transform | decode breakage on multi-row fixtures; no clean gain | reverted |
+| exact CAVLC bit-cost RD (validated 15/15 oracle fixtures) | best +0.123 dB / +0.344 VMAF, below gate; residual 1.8→2.7 ms | reverted |
+
+The only accepted quality changes so far: x264 V/H/DC/Plane I16 prediction with
+SATD+λ bits and x264's intra quantizer deadzone (PR #488), and ABR starting-QP
+clamp to 14 (PR #489). Together they took the 640p clip from 48.13 dB/0.99369
+to 51.35 dB/0.99537 at the same ~6.1 Mb/s.
