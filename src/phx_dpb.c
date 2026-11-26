@@ -174,8 +174,13 @@ static void phx_dpb_expand_border(phx_frame_t *f)
 int phx_dpb_store_frame(phx_dpb_t *dpb, const phx_dpb_store_params_t *p)
 {
     if (!dpb || !p || !p->mb_state || !p->fdec_y || !p->fdec_uv) return -1;
-    if (p->fdec_y_stride < dpb->i_width || p->fdec_uv_stride < dpb->i_width)
-        return -1;
+    /* common.h:571 / encoder.c:1426 — the encoder's FDEC scratch stride is
+     * 32 bytes per MB row, which is SMALLER than a 64-pixel coded width.
+     * Accept that layout explicitly; all other strides must hold a full
+     * picture row. */
+    if (p->fdec_y_stride != PHX_DPB_FDEC_STRIDE &&
+        p->fdec_y_stride < dpb->i_width) return -1;
+    if (p->fdec_uv_stride < dpb->i_width) return -1;      /* NV12 row bytes */
     const phx_mb_state_t *s = p->mb_state;
     if (s->mb_width != dpb->i_mb_width || s->mb_height != dpb->i_mb_height ||
         s->mb_stride != dpb->i_mb_width || !s->type || !s->non_zero_count ||
@@ -197,16 +202,43 @@ int phx_dpb_store_frame(phx_dpb_t *dpb, const phx_dpb_store_params_t *p)
     }
 
     /* macroblock.c:632/636-637 — copy the completed FDEC reconstruction into
-     * the owned frame.  The source buffers are read-only; the single-frame
-     * recon path in phx_encoder.c is left untouched. */
-    for (int y = 0; y < dpb->i_height; y++)
-        memcpy(f->plane + (size_t)y*f->i_stride,
-               p->fdec_y + (size_t)y*p->fdec_y_stride,
-               (size_t)dpb->i_width);
-    for (int y = 0; y < dpb->i_height/2; y++)
-        memcpy(f->plane_chroma + (size_t)y*f->i_stride_planes[1],
-               p->fdec_uv + (size_t)y*p->fdec_uv_stride,
-               (size_t)dpb->i_width);                   /* NV12 row bytes */
+     * the owned frame.  Source buffers are read-only: the encoder's h->recon
+     * and h->fenc->plane_chroma are never written here.
+     *
+     * The encoder passes h->recon + 64 with FDEC_STRIDE=32 (a per-MB scratch
+     * stride, phx_encoder.c:1426).  Assemble the full luma picture MB by MB:
+     * MB (mb_x,mb_y) sits at mb_x*16 + mb_y*16*PHX_DPB_FDEC_STRIDE, and the
+     * destination is padded to phx_frame_new()'s i_stride (frame.c:87). */
+    if (p->fdec_y_stride == PHX_DPB_FDEC_STRIDE) {
+        for (int mb_y = 0; mb_y < dpb->i_mb_height; mb_y++)
+            for (int mb_x = 0; mb_x < dpb->i_mb_width; mb_x++) {
+                const uint8_t *src = p->fdec_y
+                    + (p->fdec_y_mb_major
+                       ? (size_t)(mb_y*dpb->i_mb_width + mb_x)*16
+                           *PHX_DPB_FDEC_STRIDE
+                       : (size_t)(mb_y*16)*PHX_DPB_FDEC_STRIDE + mb_x*16);
+                uint8_t *dst = f->plane
+                    + (size_t)(mb_y*16)*f->i_stride + mb_x*16;
+                for (int y = 0; y < 16; y++)             /* macroblock.c:632 */
+                    memcpy(dst + (size_t)y*f->i_stride,
+                           src + (size_t)y*PHX_DPB_FDEC_STRIDE, 16);
+            }
+    } else {
+        for (int y = 0; y < dpb->i_height; y++)
+            memcpy(f->plane + (size_t)y*f->i_stride,
+                   p->fdec_y + (size_t)y*p->fdec_y_stride,
+                   (size_t)dpb->i_width);
+    }
+    /* phx_chroma.c:193-204 / macroblock.c:636-637 — NV12: 8x8 U/V pairs per
+     * MB, 16 interleaved bytes per chroma row, full-picture source stride. */
+    for (int mb_y = 0; mb_y < dpb->i_mb_height; mb_y++)
+        for (int mb_x = 0; mb_x < dpb->i_mb_width; mb_x++)
+            for (int y = 0; y < 8; y++)
+                memcpy(f->plane_chroma
+                         + (size_t)(mb_y*8+y)*f->i_stride_planes[1] + mb_x*16,
+                       p->fdec_uv
+                         + (size_t)(mb_y*8+y)*p->fdec_uv_stride + mb_x*16,
+                       16);
 
     phx_deblock_cfg_t cfg;
     if (p->cfg) cfg = *p->cfg;
