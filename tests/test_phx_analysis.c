@@ -109,16 +109,19 @@ static int check_p_analysis(void)
     if (!rc1) {
         CHECK(d1.mb_type == PHX_P_L0, "P analysis chose P_L0");
         CHECK(d1.i_partition == 16, "P_L0 uses D_16x16");
-        CHECK(d1.mv[0][0][0] == 8 && d1.mv[0][0][1] == 0,
-              "P analysis found the known MV (2,0) in qpel units");
+        /* phx_me16() finds the fullpel (2,0), then M4's byte-exact
+         * phx_me_refine_subpel_mv() (me.c:792-797 / analyse.c:3119-3126)
+         * refines it to (5,0) qpel on this synthetic pattern. */
+        CHECK(d1.mv[0][0][0] == 5 && d1.mv[0][0][1] == 0,
+              "P analysis found the refined MV (5,0) in qpel units");
         CHECK(d1.cbp_luma == 0 && d1.cbp_chroma == 0,
               "P_L0 no-residual decision has cbp=0");
         CHECK(d1.skip == 0, "non-pskip MV is not a skip");
         for (int i = 0; i < 16; i++) {
             CHECK(d1.ref[0][i] == 0 && d1.ref[1][i] == -1,
                   "P_L0 ref list 0 = 0 for all 4x4 blocks");
-            CHECK(d1.mv[0][i][0] == 8 && d1.mv[0][i][1] == 0,
-                  "P_L0 MV replicated over all 4x4 blocks");
+            CHECK(d1.mv[0][i][0] == 5 && d1.mv[0][i][1] == 0,
+                  "P_L0 refined MV replicated over all 4x4 blocks");
         }
         for (int k = 0; k < 48; k++)
             CHECK(d1.nnz[k] == 0 && !any_nonzero(d1.dct[k], 16),
