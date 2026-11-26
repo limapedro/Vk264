@@ -28,6 +28,28 @@
 #include <string.h>
 #include <math.h>
 
+/* common/common.h:571 / macroblock.c:533 — x264's FDEC scratch is ONE MB:
+ * pixel fdec_buf[54*FDEC_STRIDE], p_fdec[0] = fdec_buf + 2*FDEC_STRIDE.
+ * Phoenix keeps the full FDEC-layout picture at the front of h->recon (so
+ * the *recon out-parameter stays a frame snapshot) and appends the MB-major
+ * scratch after it.  A single scratch is reused by every MB, exactly like
+ * x264; the neighbour borders are reloaded at cache_load (macroblock.c:
+ * 568-610/:1000-1024), never inherited from the previous MB's address. */
+#define PHX_FDEC_SCRATCH_ROWS 54
+#define PHX_FDEC_SCRATCH_BYTES ((size_t)PHX_FDEC_STRIDE * PHX_FDEC_SCRATCH_ROWS)
+/* The full-picture snapshot exposed through *recon uses a frame stride, not
+ * FDEC_STRIDE=32: with a 32-byte stride a 4-MB-wide row wraps MB2/MB3 into
+ * the next row.  x264's h->fdec->plane[] has the same frame stride. */
+#define phx_recon_frame_stride(h) ((h)->i_width)  /* 16-pixel aligned at open */
+static size_t phx_recon_frame_bytes(const phx_t *h)
+{
+    return 64 + (size_t)(h->i_mb_height*16 + 40) * phx_recon_frame_stride(h);
+}
+static uint8_t *phx_fdec_scratch(const phx_t *h)
+{
+    return h->recon + phx_recon_frame_bytes(h);
+}
+
 /* x264 validate_parameters (encoder.c:423, called from encoder.c:1552).
   * x264 does NOT require mod16 input: it codes the 16-pixel-aligned size and
   * signals the remainder as SPS crop (encoder/set.c:106-107/:161-172).  Only
@@ -184,12 +206,12 @@ phx_t *phx_encoder_open(const phx_param_t *p)
     h->rbsp = (uint8_t *)malloc((size_t)h->i_bitstream);
     h->bitstream = (uint8_t *)malloc((size_t)h->i_bitstream);
 
-    /* Reconstructed plane in FDEC_STRIDE layout (common/common.h:571,
-     * encoder.c:2783 -> macroblock.c:501-548).  The first 64 bytes and 2
-     * leading rows are padding for the x=-1 / y=-1 neighbours. */
+    /* Full-picture reconstruction snapshot (x264's h->fdec->plane), with a
+     * frame stride and a 64-byte/2-row left/top pad, followed by the MB-major
+     * FDEC scratch (common/common.h:571, macroblock.c:533). */
     {
-        int rows = h->i_mb_height * 16 + 40;
-        h->recon = (uint8_t *)calloc((size_t)rows * PHX_FDEC_STRIDE + 128, 1);
+        h->recon = (uint8_t *)calloc(phx_recon_frame_bytes(h)
+                                    + PHX_FDEC_SCRATCH_BYTES, 1);
     }
     /* encoder.c:3454/3882 — reconstructed reference pictures. */
     h->recon_dpb = phx_dpb_create(h->i_width, h->i_height, h->param.i_bframe);
@@ -800,7 +822,7 @@ static void phx_encoder_reset_mb_state(phx_t *h, int slice_type)
             memset(s->mvd[l][i], 0, sizeof(s->mvd[l][i]));
         }
     }
-    memset(h->recon, 0, (size_t)((h->i_mb_height*16 + 40) * PHX_FDEC_STRIDE + 128));
+    memset(h->recon, 0, phx_recon_frame_bytes(h) + PHX_FDEC_SCRATCH_BYTES);
 }
 
 /* docs/SHADER_NOTES.md:126-144 — publish the class-B decision into the class-C
@@ -1425,10 +1447,25 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
         for (int mb_x = 0; mb_x < h->i_mb_width; mb_x++) {
             int mb_xy = mb_y * h->i_mb_width + mb_x;   /* encoder.c:2814 */
             phx_mb_cache_t *c = &h->mb_cache;
-            c->p_fdec = h->recon + 64 + (size_t)(mb_y*16)*PHX_FDEC_STRIDE
-                        + mb_x*16;                     /* macroblock.c:533 */
+            /* macroblock.c:533 — p_fdec = fdec_buf + 2*FDEC_STRIDE.  Phoenix's
+             * scratch uses the extra +1 left-border column that the analysis
+             * and mbencode windows already assume (phx_analysis.c:1842).
+             * Crucially this is PER MB, not a row-major slice of h->recon:
+             * with FDEC_STRIDE=32 a 4-MB-wide row previously wrapped MB2/MB3
+             * onto MB0/MB1 of the next row and corrupted every neighbour. */
+            uint8_t *scratch = phx_fdec_scratch(h);
+            c->p_fdec = scratch + 2*PHX_FDEC_STRIDE + 1;
+            c->p_fdec_u = scratch + 20*PHX_FDEC_STRIDE;    /* macroblock.c:537 */
+            c->p_fdec_v = scratch + 20*PHX_FDEC_STRIDE + 16; /* :546 */
             c->fdec_stride = PHX_FDEC_STRIDE;
-            phx_macroblock_cache_load(h->mb_state, c, mb_x, mb_y, 0); /* :2859 */
+            /* encoder.c:2859 -> macroblock.c:568-610/:1000-1024 — reload the
+             * left/top/top-left/top-right reconstructed neighbours into the
+             * scratch from the full picture before prediction/analysis. */
+            phx_macroblock_cache_load_fdec(h->mb_state, c, mb_x, mb_y, 0,
+                                           h->recon_frame->plane,
+                                           h->recon_frame->i_stride,
+                                           h->recon_frame->plane_chroma,
+                                           h->recon_frame->i_stride_planes[1]);
 
             memset(&d, 0, sizeof(d));                  /* fresh explicit decision */
             /* ratecontrol.c:1754-1768 — frame QP plus this MB's AQ offset.
@@ -1547,17 +1584,23 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 memset(d.chroma_dct, 0, sizeof(d.chroma_dct));
                 memset(d.chroma_nnz, 0, sizeof(d.chroma_nnz));
             }
-            /* encoder.c:3978 / macroblock.c:632-637 — copy this MB's
+            /* encoder.c:3978 / macroblock.c:1628-1635 — copy this MB's
              * reconstructed samples out of the per-MB FDEC scratch into the
-             * full picture (x264's h->fdec->plane).  The scratch stride 32
-             * only holds two MBs per row, so it cannot be used as a frame. */
+             * full picture (x264's h->fdec->plane) AND into the FDEC-layout
+             * frame snapshot exposed via *recon.  The scratch stride 32 only
+             * holds two MBs per row, so it cannot itself be used as a frame. */
             {
                 int fs = h->recon_frame->i_stride;
                 uint8_t *dy = h->recon_frame->plane
                             + (size_t)(mb_y*16)*fs + mb_x*16;
-                for (int y = 0; y < 16; y++)
+                int rs = phx_recon_frame_stride(h);        /* full-frame stride */
+                uint8_t *ry = h->recon + 64 + (size_t)(mb_y*16)*rs + mb_x*16;
+                for (int y = 0; y < 16; y++) {
                     memcpy(dy + (size_t)y*fs,
                            c->p_fdec + y*PHX_FDEC_STRIDE, 16);
+                    memcpy(ry + (size_t)y*rs,
+                           c->p_fdec + y*PHX_FDEC_STRIDE, 16);
+                }
                 int cs = h->recon_frame->i_stride_planes[1];
                 int fcs = h->fenc->i_stride_planes[1];
                 uint8_t *dc = h->recon_frame->plane_chroma
@@ -1625,22 +1668,13 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
             }
 
             h->mb_state->type[mb_xy] = (uint8_t)d.mb_type; /* cache_save contract */
-            /* phx_mbcache.c:418 indexes intra_border_backup[..][..][mb_x*16],
-             * but phx_mbcache.h:53 declares that array as [3][3][16].  For a
-             * picture wider than 3 MBs the backup write runs past the struct
-             * and corrupts the heap.  That backup is dead state in this port
-             * (no encoder/analysis reader consumes it; only test_mbcache does,
-             * with mb_x<3), so suppress it for wide frames by withholding
-             * p_fdec from cache_save.  TODO(phx_mbcache owner): size the array
-             * to mb_width*16 as x264 does (macroblock.c:360) and remove this
-             * guard.  SHADER: C — serial scalar restore, no stream effect on
-             * the 64x64 parity path (mb_width == 4 <= 3 planes' worth). */
-            {
-                uint8_t *saved_p_fdec = c->p_fdec;
-                if (h->i_mb_width > 3) c->p_fdec = NULL;
-                phx_macroblock_cache_save(h->mb_state, c, 0); /* :2972 */
-                c->p_fdec = saved_p_fdec;
-            }
+            /* macroblock.c:1638-1655 / :1680 — back up this MB's bottom row
+             * into intra_border_backup[mb_y&1][..][mb_x*16].  The arrays are
+             * sized mb_width*16+48 with a +16 emulated left edge
+             * (phx_mbcache.c:64-66, x264 macroblock.c:360-361), so no width
+             * guard is needed; the next MB's cache_load reads this row back
+             * as its top neighbour (macroblock.c:578-579/:589-598). */
+            phx_macroblock_cache_save(h->mb_state, c, 0); /* :2972 */
         }
     }
 

@@ -499,6 +499,81 @@ void phx_macroblock_cache_load(phx_mb_state_t *s, phx_mb_cache_t *c,
     }
 }
 
+/* common/macroblock.c:568-610 + :1000-1024 — seed the per-MB FDEC scratch
+ * from the full-picture reconstruction.  This is the encoder-side half of
+ * macroblock_cache_load(): x264 keeps ONE MB of scratch (macroblock.c:533,
+ * fdec_buf + 2*FDEC_STRIDE), so its left/top/top-left/top-right samples have
+ * to be reloaded for every MB.  Phoenix's scratch is likewise MB-major; the
+ * full picture lives in h->recon_frame (encoder.c:3978).
+ * SHADER: B — one ordered copy per MB, no hidden state. */
+void phx_macroblock_cache_load_fdec(phx_mb_state_t *s, phx_mb_cache_t *c,
+                                    int mb_x, int mb_y, int b_mbaff,
+                                    const uint8_t *recon_y, int recon_y_stride,
+                                    const uint8_t *recon_uv, int recon_uv_stride)
+{
+    phx_macroblock_cache_load(s, c, mb_x, mb_y, b_mbaff);  /* :857 */
+    if (!c->p_fdec || !recon_y || recon_y_stride <= 0) return;
+
+    int fs = c->fdec_stride > 0 ? c->fdec_stride : 32;     /* common.h:571 */
+    uint8_t *d = c->p_fdec;
+    const int rx = mb_x*16, ry = mb_y*16;                  /* :575-577 */
+    const int width = s->mb_width*16;
+    const int height = s->mb_height*16;
+    /* macroblock.c:578-579 — fdec_idx = !(mb_y&1) for progressive MBs and
+     * intra_fdec = &h->intra_border_backup[fdec_idx][i][mb_x*16].  Phoenix's
+     * un-deblocked full picture is that backup's source (macroblock.c:1645),
+     * so read the same row from recon_y.  frame.c:546-548 replicates row 0
+     * into the top padding at the first MB row. */
+    int ty = mb_y > 0 ? ry - 1 : 0;
+    int tlx = rx > 0 ? rx - 1 : 0;                         /* frame.c:541 */
+    int trx = rx + 16 < width ? rx + 16 : width - 1;       /* frame.c:543 */
+    const uint8_t *top = recon_y + (size_t)ty*recon_y_stride;
+
+    /* macroblock.c:597 — memcpy(p_fdec[0]-FDEC_STRIDE, intra_fdec, 24).
+     * The first 16 bytes are the MB above; the last 8 are the top-right
+     * neighbour's bottom-left corner.  Phoenix's p_fdec has its own left
+     * border byte, so the 24 bytes land at [-fs .. -fs+23]. */
+    memcpy(d - fs,     top + rx,  16);
+    memcpy(d - fs + 16, top + trx, 8);
+    /* macroblock.c:598 — p_fdec[i][-FDEC_STRIDE-1] = intra_fdec[-1]. */
+    d[-1 - fs] = top[tlx];
+    /* macroblock.c:600-610 — the MBAFF/b_reencode_mb left edge is copied
+     * from plane_fdec[-1+j*i_stride2].  For a progressive encoder the same
+     * authoritative samples are the previous MB's rightmost reconstructed
+     * column (macroblock.c:1002-1003 x264_copy_column8).  Seeding them from
+     * the assembled picture makes MB-major scratch independent of walk
+     * order (x264's fdec_buf reuse is only valid because it walks MB-major). */
+    for (int y = 0; y < 16; y++) {
+        int sy = ry + y < height ? ry + y : height - 1;   /* frame.c:549-552 */
+        d[-1 + y*fs] = recon_y[(size_t)sy*recon_y_stride + tlx];
+    }
+
+    if (!c->p_fdec_u || !recon_uv || recon_uv_stride <= 0) return;
+    /* macroblock.c:586-592 — 4:2:0 chroma top row, 8 U bytes then 8 V bytes,
+     * with the two top-left corners at [-FDEC_STRIDE-1]. */
+    uint8_t *u = c->p_fdec_u, *v = c->p_fdec_v;
+    int cy = mb_y > 0 ? (ry - 1) >> 1 : 0;
+    int cx = rx >> 1;
+    int clx = cx > 0 ? cx - 1 : 0;
+    const uint8_t *ctop = recon_uv + (size_t)cy*recon_uv_stride;
+    /* The source is NV12 interleaved, so copy the 8 U/V bytes with a stride
+     * of two into x264's two separate chroma windows. */
+    for (int j = 0; j < 8; j++) {                          /* :589-590 */
+        u[-fs + j] = ctop[2*(cx + j)];
+        v[-fs + j] = ctop[2*(cx + j) + 1];
+    }
+    u[-1 - fs] = ctop[2*clx];                              /* :591 */
+    v[-1 - fs] = ctop[2*clx + 1];                          /* :592 */
+    /* macroblock.c:1016-1017 — chroma left edge = column 7 of the same
+     * plane (x264_copy_column8 at :561-565). */
+    for (int y = 0; y < 8; y++) {
+        int sy = (ry + 2*y) >> 1;
+        if (sy >= height >> 1) sy = (height >> 1) - 1;
+        u[-1 + y*fs] = recon_uv[(size_t)sy*recon_uv_stride + 2*clx];
+        v[-1 + y*fs] = recon_uv[(size_t)sy*recon_uv_stride + 2*clx + 1];
+    }
+}
+
 /* common/macroblock.c:1638-1678 — macroblock_backup_intra().  The row
  * pointers are allocated exactly as x264 macroblock.c:357-362 does. */
 void phx_macroblock_backup_intra(phx_mb_state_t *s, int mb_x, int mb_y,
