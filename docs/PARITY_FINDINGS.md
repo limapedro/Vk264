@@ -399,4 +399,17 @@ real CAVLC I8 stream the first changed residual byte is 707, but the overall
 first byte diff remains 672 — an earlier MB-header gap, not residual. The
 mbrd inter-RD work for high presets is still in flight.
 
+## F37 — mbrd inter RD ported but input-gated
+
+Implemented x264's inter RD candidate costs (analyse.c:2556/2616/2633/2644/2652),
+winner selection (:3576-3589), B_SKIP gate (:3404-3415) and analyse_update_cache
+publication. Instrumented goldens capture x264's per-candidate ssd/bits/f8/cost.
+
+The decision switch is deliberately OFF: Phoenix's ssd_mb inputs were not exact.
+Fixed the FENC-stride indexing bug (rdo.c:127-133, PR #472), but chroma candidate
+data still diverges: phx_test_analysis reports AC nnz 0 where x264 has 1 for all
+four chroma AC blocks. Enabling inexact costs would drop first-B-frame type
+agreement from 10/16 to 3/16, so no fake win. ctest 30/30 PASS; chroma-candidate
+fix delegated.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
