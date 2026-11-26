@@ -524,22 +524,22 @@ static void phx_init_neighbours(phx_analysis_ctx_t *c)
 
 /* x264 common/macroblock.c:501-548 (p_fdec layout, FDEC_STRIDE=32) and
  * macroblock.c:883/907/960-977 (unavailable neighbours = -1/128).
- * TODO: phx_frame_t has no reconstructed plane; until the encoder supplies one
- * through cache->p_fdec, outer neighbour samples below are proxied from the
- * source plane. SHADER: B — seeds the per-MB reconstruction scratch. */
+ * The encoder hands us cache->p_fdec pointing into its live reconstruction
+ * frame (phx_encoder.c:1396, x264 encoder.c:2861 -> macroblock.c:533).  Its
+ * one-pixel left/top border is the *reconstructed* neighbour from the previous
+ * MB/row (x264 common/macroblock.c:1645-1655 + frame.c:535-553); overwriting it
+ * with source samples makes every intra predictor see the wrong edge and
+ * changes the DCT/SATD of the following block.  Keep that border untouched.
+ * Only a private scratch buffer (standalone analysis without a caller FDEC)
+ * needs seeding and source-plane proxying.  SHADER: B — seeds scratch only. */
 static void phx_setup_fdec(phx_analysis_ctx_t *c)
 {
+    if (!c->fdec_buf) return;              /* caller FDEC is authoritative */
+
     int fs = c->fdec_stride;
     int in = c->cache->i_neighbour_intra;
     uint8_t *d = c->fdec;
-    if (c->fdec_buf) {
-        memset(c->fdec_buf, 128, (size_t)fs * 48);
-    } else {
-        /* Caller-owned FDEC: seed only the MB and its one-pixel neighbour
-         * border, exactly the region x264 exposes to the predictors. */
-        for (int y = -1; y < 16; y++)
-            memset(d - 1 + y*fs, 128, 18);
-    }
+    memset(c->fdec_buf, 128, (size_t)fs * 48);
     if (in & PHX_MB_LEFT) {
         for (int y = 0; y < 16; y++)
             d[-1 + y*fs] = c->fenc[-1 + y*c->fenc_stride];

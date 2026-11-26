@@ -35,6 +35,7 @@
 #include "phx_cabac.h"
 #include "phx_lookahead.h"
 #include "phx_slice.h"
+#include "phx_ratecontrol.h"
 
 /* Legacy sentinel kept only so old callers still compile: phx_encode() no
  * longer returns it once the per-MB pipeline is wired.  Source: the old
@@ -63,7 +64,14 @@ typedef struct {
  * stage and is never parallelised. */
 typedef struct phx_t {
     phx_param_t param;              /* encoder.c:1516 — private copy of param */
-    int i_width, i_height;          /* coded picture size */
+    int i_width, i_height;          /* coded picture size (16-pixel aligned) */
+    int i_width_display, i_height_display; /* x264 param.i_width/i_height: the
+                                            * un-padded input size.  x264 codes
+                                            * mod16 dimensions and signals the
+                                            * remainder as SPS cropping (set.c:
+                                            * :116/:161-172); only the display
+                                            * size is read from the caller's
+                                            * picture.  SHADER: C — scalar. */
     int i_mb_width, i_mb_height;    /* encoder.c:1590-1592 */
     phx_sps_t sps;                  /* encoder.c:1579 */
     phx_pps_t pps;                  /* encoder.c:1581 */
@@ -73,6 +81,16 @@ typedef struct phx_t {
     int i_bitstream;                /* encoder.c:1724 — out.i_bitstream */
     phx_nal_t nal[2];               /* encoder.c:2130 / per-frame NAL array */
     phx_frame_t *fenc;              /* encoder.c:3454 — frame being encoded */
+
+    /* One-pass rate control (encoder.c:3857 start / :3978 end).  NULL on the
+     * CQP path: x264's --qp form never allocates/starts ratecontrol, and the
+     * parity streams must stay byte-identical.  Only an explicit
+     * phx_encoder_configure_ratecontrol() call creates this handle, with
+     * phx_param_t::rc_method != PHX_RC_CQP.  SHADER: C — one serial scalar
+     * state machine, started before each slice and ended after its NAL. */
+    phx_ratecontrol_t *rc;          /* ratecontrol.c:1431/1828 */
+    int i_target_frame_bits;        /* cfg.bitrate / cfg.fps / 8, for start() */
+    int i_last_frame_qp;            /* read-only view of the QP actually used */
 
     /* Serial lookahead pipeline.  x264 keeps every input picture alive in its
      * frame pool until the slice-type decision has consumed it
@@ -150,6 +168,24 @@ int phx_headers(phx_t *h, phx_nal_t **out, int *nnal);
  * the port of set.c:305/:505 + bitstream.c:55) with the handle's parameters.
  * SHADER: C — serial header stage. */
 int phx_encoder_header_bytes(phx_t *h, uint8_t *dst, int capacity);
+
+/* Enable one-pass rate control for a non-CQP encode.  This is the explicit
+ * bridge from phx_ratecontrol.h into the encoder: phx_param_t has no bitrate
+ * field, so x264's param.rc.i_bitrate/fps knobs (base.c:403, ratecontrol.c:757)
+ * arrive through phx_ratecontrol_config_t instead.  Call it once, before the
+ * first phx_encode().  Returns -1 for a CQP handle, a NULL/!bitrate-valid cfg,
+ * or after a frame has been encoded; 0 on success.  When it is not called the
+ * handle keeps the unchanged CQP constant-QP path.
+ * AQ/MB-tree are intentionally left at the preset defaults (base.c:415/427):
+ * x264 enables variance AQ and MB-tree for ABR/CRF and disables both only for
+ * --qp (or for the presets that disable them, base.c:496/517).
+ * SHADER: C — one-time host-side uniform setup (ratecontrol.c:750-825). */
+int phx_encoder_configure_ratecontrol(phx_t *h, const phx_ratecontrol_config_t *cfg);
+
+/* QP actually used by the most recent decided frame (ratecontrol.c:1748).
+ * Returns -1 for a NULL handle or before the first frame.  Read-only: no
+ * encoder state is advanced.  SHADER: C — scalar view. */
+int phx_encoder_last_qp(const phx_t *h);
 
 /* encoder.c:3499-3513 / 3881-3882 / 2613-2637 — derive one frame's slice
  * context from the decided frame type and the picture's *display-order*

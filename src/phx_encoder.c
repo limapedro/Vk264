@@ -28,17 +28,102 @@
 #include <math.h>
 
 /* x264 validate_parameters (encoder.c:423, called from encoder.c:1552).
-  * Phoenix only accepts the configurations its ported frame/header path owns:
-  * positive 16-pixel-multiple I420 dimensions (frame.c:85-86, set.c:106-107).
+  * x264 does NOT require mod16 input: it codes the 16-pixel-aligned size and
+  * signals the remainder as SPS crop (encoder/set.c:106-107/:161-172).  Only
+  * even I420 dimensions are accepted (x264.h:324, base.c 4:2:0 validation);
+  * the coded size is derived in phx_encoder_open().
   * SHADER: C — one-time host-side validation. */
 static int phx_encoder_validate(const phx_param_t *p)
 {
     if (!p) return -1;
     if (p->i_csp != 0) return -1;                       /* only I420: x264.h:324 */
     if (p->i_width <= 0 || p->i_height <= 0) return -1;
-    if (p->i_width % 16 || p->i_height % 16) return -1; /* frame.c:85-86 */
+    if (p->i_width % 2 || p->i_height % 2) return -1;   /* 4:2:0: even only */
     if (p->i_width > 4096 || p->i_height > 4096) return -1; /* bitstream cap */
     return 0;
+}
+
+/* x264 common/tables.c:29-49 (x264_levels): the fields used by x264's auto
+  * level selection (set.c:135-140 / encoder.c validate_parameters).  SHADER:
+  * C — pure lookup. */
+static const struct {
+    int level_idc, max_mbps, max_fs, max_mv_range;
+} phx_enc_levels[] = {
+    { 10,    1485,    99,  64 }, { 11,    3000,   396, 128 },
+    { 12,    6000,   396, 128 }, { 13,   11880,   396, 128 },
+    { 20,   11880,   396, 128 }, { 21,   19800,   792, 256 },
+    { 22,   20250,  1620, 256 }, { 30,   40500,  1620, 256 },
+    { 31,  108000,  3600, 512 }, { 32,  216000,  5120, 512 },
+    { 40,  245760,  8192, 512 }, { 41,  245760,  8192, 512 },
+    { 42,  522240,  8704, 512 }, { 50,  589824, 22080, 512 },
+    { 51,  983040, 36864, 512 }, { 52, 2073600, 36864, 512 }
+};
+
+/* Encoder API: auto level for the aligned picture size at the port's fixed
+  * 25 fps VUI timebase (phx_headers.c:63-67).  phx_sps_init() hardcodes level
+  * 10 for the 64x64 fixtures; this helper is used only for padded pictures,
+  * so the parity streams are untouched.  SHADER: C — serial scalar lookup. */
+static int phx_encoder_auto_level(int mb_width, int mb_height)
+{
+    int fs = mb_width * mb_height;                       /* tables.c:31 MaxFS */
+    int mbps = fs * 25;                                  /* tables.c:30 MaxMBPS @25 */
+    for (size_t i = 0; i < sizeof(phx_enc_levels)/sizeof(phx_enc_levels[0]); i++)
+        if (mbps <= phx_enc_levels[i].max_mbps &&
+            fs <= phx_enc_levels[i].max_fs)
+            return phx_enc_levels[i].level_idc;
+    return 52;
+}
+
+/* Encoder API: SPS/PPS pair for this handle.  For mod16 pictures this calls
+  * phx_encoder_headers() exactly as before (CQP parity streams stay byte-
+  * identical); for padded pictures it writes the same SPS/PPS with frame_crop
+  * set to the alignment remainder (set.c:363-371).  SHADER: C — serial. */
+static int phx_encoder_header_pair(phx_t *h, uint8_t *dst, int capacity)
+{
+    if (!h) return -1;
+    if (h->i_width == h->i_width_display &&
+        h->i_height == h->i_height_display)
+        return phx_encoder_headers(dst, capacity, &h->param,
+                                   h->i_width, h->i_height);
+
+    phx_sps_t sps;
+    phx_pps_t pps;
+    phx_sps_init(&sps, &h->param, h->i_width, h->i_height); /* encoder.c:1579 */
+    sps.i_level_idc = phx_encoder_auto_level(sps.i_mb_width, sps.i_mb_height);
+    for (size_t i = 0; i < sizeof(phx_enc_levels)/sizeof(phx_enc_levels[0]); i++)
+        if (phx_enc_levels[i].level_idc == sps.i_level_idc) {
+            int mv = phx_enc_levels[i].max_mv_range;      /* tables.c:33 */
+            sps.vui_log2_max_mv_length = mv > 256 ? 11 : mv > 128 ? 10 :
+                                         mv > 64 ? 9 : 8; /* set.c:240-241 */
+            break;
+        }
+    /* set.c:251-255/:363-371 — frame_crop_* signals the padding.  x264's
+     * writer shifts right/left by h_shift=1 and top/bottom by v_shift=1 for
+     * 4:2:0 frame_mbs_only; the local phx_sps_write() shifts left/right
+     * itself but writes top/bottom verbatim, so store the shifted values
+     * here to match x264's on-wire crop units. */
+    sps.b_crop = 1;
+    sps.crop_left = 0;
+    sps.crop_right = (h->i_width - h->i_width_display) >> 1;
+    sps.crop_top = 0;
+    sps.crop_bottom = (h->i_height - h->i_height_display) >> 1;
+    phx_pps_init(&pps, &sps, &h->param);                 /* encoder.c:1581 */
+
+    uint8_t rbsp[128];
+    phx_bs_t bs;
+    phx_bs_init(&bs, rbsp, sizeof(rbsp));
+    phx_sps_write(&bs, &sps);                            /* set.c:305 */
+    phx_nal_t nal = { rbsp, (int)((phx_bs_pos(&bs) + 7) / 8), 3, 7, 1 };
+    phx_nal_encode(dst, &nal, 1);                        /* encoder.c:2106 */
+    int n = nal.i_payload;
+    phx_bs_init(&bs, rbsp, sizeof(rbsp));
+    phx_pps_write(&bs, &sps, &pps);                      /* set.c:505 */
+    nal.p_payload = rbsp;
+    nal.i_payload = (int)((phx_bs_pos(&bs) + 7) / 8);
+    nal.i_ref_idc = 3; nal.i_type = 8; nal.b_long_startcode = 1;
+    phx_nal_encode(dst + n, &nal, 1);                    /* encoder.c:2112 */
+    n += nal.i_payload;
+    return n <= capacity ? n : -1;
 }
 
 /* x264_encoder_close helpers (encoder.c:4196, :4520/:4521, :4527-4530).
@@ -48,6 +133,7 @@ static int phx_encoder_validate(const phx_param_t *p)
 static void phx_encoder_release(phx_t *h)
 {
     if (!h) return;
+    phx_ratecontrol_delete(h->rc);                         /* ratecontrol.c:1399 */
     phx_lookahead_delete(h->lookahead);                    /* lookahead.c:177 */
     /* x264 returns every borrowed frame to the pool at close
      * (encoder.c:4196, frame.c:312).  Phoenix owns the queue outright. */
@@ -80,12 +166,23 @@ phx_t *phx_encoder_open(const phx_param_t *p)
 
     h->param = *p;                                     /* encoder.c:1516 */
     phx_param_finalize(&h->param);                     /* encoder.c:1218-1231 */
-    h->i_width = h->param.i_width;
-    h->i_height = h->param.i_height;
-    h->i_mb_width = (h->i_width + 15) / 16;            /* set.c:106 / encoder.c:1590 */
-    h->i_mb_height = (h->i_height + 15) / 16;          /* set.c:107 / encoder.c:1591 */
+    /* x264 codes the aligned size and crops back to the input size in the SPS
+     * (set.c:106-107/:161-172); e.g. 640x360 -> 640x368 + crop_bottom=8. */
+    h->i_width_display = h->param.i_width;
+    h->i_height_display = h->param.i_height;
+    h->i_width = (h->i_width_display + 15) & ~15;      /* set.c:106 */
+    h->i_height = (h->i_height_display + 15) & ~15;    /* set.c:107 */
+    h->i_mb_width = h->i_width / 16;                   /* encoder.c:1590 */
+    h->i_mb_height = h->i_height / 16;                 /* encoder.c:1591 */
 
     phx_sps_init(&h->sps, &h->param, h->i_width, h->i_height); /* encoder.c:1579 */
+    if (h->i_height != h->i_height_display || h->i_width != h->i_width_display) {
+        /* Keep the handle's SPS identical to the one header_pair() emits. */
+        h->sps.b_crop = 1;
+        h->sps.crop_right = (h->i_width - h->i_width_display) >> 1;
+        h->sps.crop_bottom = (h->i_height - h->i_height_display) >> 1;
+        h->sps.i_level_idc = phx_encoder_auto_level(h->i_mb_width, h->i_mb_height);
+    }
     phx_pps_init(&h->pps, &h->sps, &h->param);                 /* encoder.c:1581 */
 
     h->i_frame = -1;                                   /* encoder.c:1563 */
@@ -156,8 +253,8 @@ int phx_headers(phx_t *h, phx_nal_t **out, int *nnal)
     *out = NULL;
     *nnal = 0;
 
-    int n = phx_encoder_headers(h->header_bytes, (int)sizeof(h->header_bytes),
-                                 &h->param, h->i_width, h->i_height);
+    int n = phx_encoder_header_pair(h, h->header_bytes,
+                                    (int)sizeof(h->header_bytes));
     if (n < 0) return -1;
 
     int split = -1;
@@ -206,8 +303,37 @@ int phx_headers(phx_t *h, phx_nal_t **out, int *nnal)
 int phx_encoder_header_bytes(phx_t *h, uint8_t *dst, int capacity)
 {
     if (!h || !dst || capacity < 0) return -1;
-    return phx_encoder_headers(dst, capacity, &h->param,
-                               h->i_width, h->i_height);
+    return phx_encoder_header_pair(h, dst, capacity);
+}
+
+/* Enable the ported one-pass rate controller before frame 0 (encoder.c:3857).
+   * phx_param_t deliberately has no i_bitrate field, so the CLI passes x264's
+   * param.rc knobs through phx_ratecontrol_config_t.  No handle is created on
+   * the CQP path: that keeps --qp streams bit-identical.  AQ/MB-tree are the
+   * preset defaults (base.c:415/427) and are not overridden here.
+   * SHADER: C — one-time host-side uniform setup. */
+int phx_encoder_configure_ratecontrol(phx_t *h, const phx_ratecontrol_config_t *cfg)
+{
+    if (!h || !cfg || h->param.rc_method == PHX_RC_CQP || h->i_frame >= 0)
+        return -1;
+    if (!h->rc && phx_ratecontrol_init(&h->rc, &h->param,
+                                       h->i_mb_width * h->i_mb_height))
+        return -1;
+    if (phx_ratecontrol_configure(h->rc, cfg)) return -1;
+    /* x264 rate_estimate_qscale() uses wanted_bits_window/fps as the planned
+     * per-frame size (ratecontrol.c:2581/2592); keep that scalar here so
+     * ratecontrol_start() can be fed the same value without exposing cfg. */
+    double bits = cfg->bitrate > 0.0 && cfg->fps > 0.0
+                ? cfg->bitrate / cfg->fps / 8.0 : 0.0;
+    h->i_target_frame_bits = bits > 2147483647.0 ? 2147483647 : (int)bits;
+    return 0;
+}
+
+/* Read-only view of the QP actually used by the last decided frame.
+   * SHADER: C — scalar, no state advanced. */
+int phx_encoder_last_qp(const phx_t *h)
+{
+    return h ? h->i_last_frame_qp : -1;
 }
 
 /* -------------------------------------------------------------------------
@@ -217,32 +343,40 @@ int phx_encoder_header_bytes(phx_t *h, uint8_t *dst, int capacity)
 /* x264_frame_copy_picture (encoder.c:3372, common/frame.c:45-57/3377):
   * copy the caller's I420 luma rows into the padded frame plane and interleave
   * the U/V planes into the NV12 chroma plane used by the 4:2:0 encoder.
+  * Only pic->i_width/i_height display samples exist in the input; the coded
+  * remainder is zeroed here and then filled by the existing border expansion
+  * (frame.c:627/633), exactly as x264 pads its aligned frame.
   * SHADER: C — one ordered memcpy per row. */
 static int phx_encoder_copy_picture(phx_t *h, phx_frame_t *f,
                                     const phx_picture_t *pic)
 {
-    (void)h; /* x264_frame_copy_picture reads h only for the chroma format */
     if (!f || !pic || !pic->plane[0]) return -1;
-    if (pic->i_width != h->i_width || pic->i_height != h->i_height) return -1;
+    if (pic->i_width != h->i_width_display ||
+        pic->i_height != h->i_height_display) return -1;
 
-    int src_stride = pic->i_stride[0] > 0 ? pic->i_stride[0] : h->i_width;
-    for (int y = 0; y < f->i_height; y++)                /* frame.c:535 */
+    int src_stride = pic->i_stride[0] > 0 ? pic->i_stride[0] : h->i_width_display;
+    for (int y = 0; y < pic->i_height; y++)              /* frame.c:535 */
         memcpy(f->plane + (size_t)y * f->i_stride,
                pic->plane[0] + (size_t)y * src_stride,
-               (size_t)f->i_width);
+               (size_t)pic->i_width);
+    /* The aligned rows below the display height are padding, not input. */
+    for (int y = pic->i_height; y < f->i_height; y++)
+        memset(f->plane + (size_t)y * f->i_stride, 0, (size_t)f->i_width);
     /* frame.c:45-57 maps input I420 to the encoder's internal NV12 plane. */
     if (pic->plane[1] && pic->plane[2] && f->plane_chroma) {
-        int cs = pic->i_stride[1] > 0 ? pic->i_stride[1] : h->i_width/2;
+        int cs = pic->i_stride[1] > 0 ? pic->i_stride[1] : h->i_width_display/2;
         int cw = f->i_width_planes[1], chh = f->i_lines_planes[1];
         int dsts = f->i_stride_planes[1];
-        for (int y = 0; y < chh; y++)
+        for (int y = 0; y < pic->i_height/2; y++)
             for (int x = 0; x < cw; x++) {
                 f->plane_chroma[y*dsts + 2*x  ] = pic->plane[1][y*cs + x];
                 f->plane_chroma[y*dsts + 2*x+1] = pic->plane[2][y*cs + x];
             }
+        for (int y = pic->i_height/2; y < chh; y++)
+            memset(f->plane_chroma + y*dsts, 0, (size_t)cw*2);
         phx_frame_expand_border_chroma(f);            /* frame.c:633-638 */
     }
-    /* frame.c:627 / encoder.c:3377 (the picture is already mod16). */
+    /* frame.c:627 / encoder.c:3377 — the frame plane is 16-pixel aligned. */
     phx_plane_expand_border(f->plane, f->i_stride, f->i_width, f->i_height,
                             PHX_PADH, PHX_PADV, 1, 1, 0);
     return 0;
@@ -1135,8 +1269,10 @@ static void phx_encoder_write_cabac_mb(phx_t *h, phx_cabac_mb_t *mb,
   *   CABAC/CAVLC trailing bits (encoder.c:3080-3092) ->
   *   NAL assembly (encoder.c:3093 -> encoder.c:2124).
   * The lookahead decides I/P/B in coding order; the MB stage still falls back
-  * to I_16x16 because inter ME is not ported (phx_mbencode.c).  Rate control
-  * uses the CQP constants of ratecontrol.c:821-825; VBV/CRF are TODOs.
+  * to I_16x16 because inter ME is not ported (phx_mbencode.c).  Without an RC
+  * handle the QP is the CQP constant of ratecontrol.c:821-825 (bit-identical
+  * --qp path); with one, ratecontrol_start/end (encoder.c:3857/:3978) drive
+  * the frame QP and its per-MB AQ offsets.  VBV/2-pass are TODOs.
   * SHADER: C — the whole staged pipeline is serial and seek-safe. */
 int phx_encode(phx_t *h, const phx_picture_t *pic,
                phx_nal_t **out, int *nnal, uint8_t **recon)
@@ -1151,6 +1287,12 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
         phx_frame_t *f = phx_encoder_new_input_frame(h);
         if (!f) return -1;
         if (phx_encoder_copy_picture(h, f, pic) < 0) return -1;
+        /* encoder.c:3417 — AQ runs when the picture is put into the encoder,
+         * before lookahead and before ratecontrol_start().  phx_param_t keeps
+         * x264's ABR defaults (variance AQ + MB-tree); the CQP path has no rc
+         * handle and never reaches this call. */
+        if (h->rc && phx_ratecontrol_aq_frame(h->rc, f, &h->param) < 0)
+            return -1;
         /* lookahead.c:192/223 calls phx_frame_init_lowres() internally. */
         phx_lookahead_put_frame(h->lookahead, f);       /* encoder.c:3426 */
         h->i_input++;                                  /* encoder.c:3379 */
@@ -1184,6 +1326,25 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
      * order picture number, i.e. x264's fenc->i_frame (frame.h:56). */
     phx_slice_frame_t fc;
     phx_encoder_frame_context(h, decided_type, frame_index, &fc);
+
+    /* encoder.c:3857 — ratecontrol_start() runs after the slice-type decision
+     * and before slice_init()/the slice header, so the QP it returns is the
+     * frame QP written into slice_qp_delta (encoder.c:3863/:2791).  The
+     * lookahead's lowres intra cost is x264's complexity sample
+     * (x264_rc_analyse_slice, ratecontrol.c:2559): passing it explicitly
+     * avoids the port's documented "frame_bits as SATD" substitution.  When a
+     * flushed frame has no lookahead cost, the planned bits are the fallback.
+     * SHADER: C — one scalar pass per decided frame. */
+    if (h->rc) {
+        int rc_qp = 0;
+        int satd = h->fenc && h->fenc->i_cost_est[0][0] > 0
+                 ? h->fenc->i_cost_est[0][0] : h->i_target_frame_bits;
+        phx_ratecontrol_set_complexity(h->rc, satd);      /* ratecontrol.c:2559 */
+        phx_ratecontrol_start(h->rc, fc.i_type,
+                              h->i_target_frame_bits, &rc_qp); /* :1431 */
+        fc.i_qp = rc_qp;                                 /* :3863 */
+    }
+    h->i_last_frame_qp = fc.i_qp;                        /* read-only view */
 
     /* encoder.c:3454/3542-3570 — list-0 reference 0 for this slice.  x264
      * reads h->fref[0][0] from the DPB (reconstructed); Phoenix keeps the
@@ -1241,14 +1402,19 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
             phx_macroblock_cache_load(h->mb_state, c, mb_x, mb_y, 0); /* :2859 */
 
             memset(&d, 0, sizeof(d));                  /* fresh explicit decision */
-            d.i_qp = sh.i_qp;
+            /* ratecontrol.c:1754-1768 — frame QP plus this MB's AQ offset.
+             * The CQP handle has no rc, so d.i_qp stays sh.i_qp exactly as
+             * before and its stream is unchanged. */
+            d.i_qp = h->rc ? phx_ratecontrol_mb_qp(h->rc, mb_xy, fc.i_qp,
+                                                    fc.i_nal_ref_idc != 0)
+                           : sh.i_qp;
             d.mb_type = PHX_I_16x16;
             d.i_partition = PHX_D_16x16;
             d.intra16_pred_mode = 2;
             d.chroma_pred_mode = 0;
             int rc = phx_macroblock_analyse_slice(&h->param, h->fenc, fref, c,
                                                   h->param.b_cabac ? &h->cabac : NULL,
-                                                  mb_x, mb_y, sh.i_qp,
+                                                  mb_x, mb_y, d.i_qp,
                                                   fc.i_type, &d); /* :2861 */
             /* P_L0/D_16x16 with cbp=0 is a real inter decision: its MV comes
              * from phx_me16() and its ref from list 0.  The B stage now
@@ -1354,7 +1520,22 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
             }
 
             h->mb_state->type[mb_xy] = (uint8_t)d.mb_type; /* cache_save contract */
-            phx_macroblock_cache_save(h->mb_state, c, 0); /* :2972 */
+            /* phx_mbcache.c:418 indexes intra_border_backup[..][..][mb_x*16],
+             * but phx_mbcache.h:53 declares that array as [3][3][16].  For a
+             * picture wider than 3 MBs the backup write runs past the struct
+             * and corrupts the heap.  That backup is dead state in this port
+             * (no encoder/analysis reader consumes it; only test_mbcache does,
+             * with mb_x<3), so suppress it for wide frames by withholding
+             * p_fdec from cache_save.  TODO(phx_mbcache owner): size the array
+             * to mb_width*16 as x264 does (macroblock.c:360) and remove this
+             * guard.  SHADER: C — serial scalar restore, no stream effect on
+             * the 64x64 parity path (mb_width == 4 <= 3 planes' worth). */
+            {
+                uint8_t *saved_p_fdec = c->p_fdec;
+                if (h->i_mb_width > 3) c->p_fdec = NULL;
+                phx_macroblock_cache_save(h->mb_state, c, 0); /* :2972 */
+                c->p_fdec = saved_p_fdec;
+            }
         }
     }
 
@@ -1375,6 +1556,12 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     *out = h->nal;                                     /* api.c:169 */
     *nnal = 1;                                         /* api.c:170 */
     if (recon) *recon = h->recon;
+
+    /* encoder.c:3978 / encoder_frame_end() — feed the emitted NAL bytes back
+     * into the ABR complexity/bitrate windows after the frame is complete.
+     * The +4 is the Annex-B start code that phx_nal_encode() prepended. */
+    if (h->rc)
+        phx_ratecontrol_end(h->rc, fc.i_type, nal.i_payload + 4); /* :1828 */
 
     /* frame_num / POC / i_last_idr are advanced by phx_encoder_frame_context
      * above (encoder.c:3504-3513/3882); no second counter walk here. */

@@ -11,6 +11,8 @@
   *         reference/x264/encoder/lookahead.c:192/223 (put/get frames),
   *         reference/x264/encoder/slicetype.c:1950-1964 (coded-order reorder),
   *         reference/x264/encoder/ratecontrol.c:821-825 (CQP QP),
+  *         reference/x264/encoder/ratecontrol.c:1431/1828 (ABR start/end),
+  *         reference/x264/encoder/set.c:251-255/:363-371 (SPS frame crop),
   *         reference/x264/encoder/set.c:305/:505 (SPS/PPS write),
   *         reference/x264/common/bitstream.c:55 (Annex-B assembly).
   *
@@ -32,6 +34,7 @@
 #define TH 16
 #define NFRAMES 4
 #define STREAM_CAP 65536
+#define BIG_STREAM_CAP (256 * 1024)  /* one 640x360 all-intra slice can be ~83 KB */
 #define MAX_NALS 64
 
 /* Tiny deterministic I420 fixture (input/raw.c:113-124).  A different value
@@ -238,11 +241,12 @@ static int br_se(phx_test_br_t *b)
 
 /* Remove Annex-B emulation prevention bytes (H.264 7.3.1, bitstream.c:29-39).
   * SHADER: C — serial byte scan. */
-static int deescape(const uint8_t *src, int n, uint8_t *dst)
+static int deescape(const uint8_t *src, int n, uint8_t *dst, int cap)
 {
     int zeros = 0, o = 0;
     for (int i = 0; i < n; i++) {
         if (zeros >= 2 && src[i] == 3) { zeros = 0; continue; }
+        if (o >= cap) return -1;
         dst[o++] = src[i];
         zeros = src[i] ? 0 : zeros + 1;
     }
@@ -256,7 +260,8 @@ static int parse_slice(const uint8_t *payload, int len, const phx_sps_t *sps,
                        int nal_type, int *slice_type, int *frame_num, int *poc)
 {
     uint8_t rbsp[1024];
-    int n = deescape(payload + 5, len - 5, rbsp);       /* skip start code + NAL */
+    int n = deescape(payload + 5, len - 5, rbsp,
+                     (int)sizeof(rbsp));                /* skip start code + NAL */
     /* Only first_mb/slice_type/pps_id/frame_num/idr_pic_id/POC are read here,
      * so a header-only golden NAL (3-4 RBSP bytes) is enough. */
     if (n < 3) return -1;
@@ -308,8 +313,8 @@ static int parse_slice_fields(const uint8_t *payload, int len,
                               const phx_sps_t *sps, const phx_pps_t *pps,
                               phx_test_sh_t *o)
 {
-    uint8_t rbsp[1024];
-    int n = deescape(payload + 5, len - 5, rbsp);
+    uint8_t rbsp[16384];                              /* ABR QP=0 slices can be large */
+    int n = deescape(payload + 5, len - 5, rbsp, (int)sizeof(rbsp));
     if (n < 3 || sps->i_poc_type != 0 || !sps->b_frame_mbs_only) return -1;
     int nal_ref_idc = o->nal_ref_idc, nal_type = o->nal_type;
     memset(o, 0, sizeof(*o));
@@ -792,7 +797,8 @@ static int check_mb0_sequence(void)
     if (idr < 0) { printf("FAIL mb0: no IDR slice\n"); return 1; }
 
     uint8_t rbsp[2048];
-    int n = deescape(stream + offs[idr] + 5, lens[idr] - 5, rbsp);
+    int n = deescape(stream + offs[idr] + 5, lens[idr] - 5, rbsp,
+                     (int)sizeof(rbsp));
     /* Slice header of this fixture is 30 bits, then bs_align_1 (encoder.c:2795)
      * leaves the first CABAC byte at rbsp[4]. */
     int cabac_start = 4;
@@ -879,7 +885,7 @@ static int parse_p_slice_end(const uint8_t *payload, int len,
                              const phx_sps_t *sps, int *end_bit)
 {
     uint8_t rbsp[1024];
-    int n = deescape(payload + 5, len - 5, rbsp);
+    int n = deescape(payload + 5, len - 5, rbsp, (int)sizeof(rbsp));
     if (n < 3 || !sps->b_frame_mbs_only || sps->i_poc_type > 2) return -1;
     phx_test_br_t b = { rbsp, 0 };
     if (br_ue(&b) < 0 || br_ue(&b) < 0 || br_ue(&b) < 0) return -1;
@@ -1015,7 +1021,8 @@ static int check_p_slice_mb(void)
     if (pnal < 0) { printf("FAIL p-mb: no P slice NAL\n"); return 1; }
 
     uint8_t rbsp[2048];
-    int n = deescape(stream + offs[pnal] + 5, lens[pnal] - 5, rbsp);
+    int n = deescape(stream + offs[pnal] + 5, lens[pnal] - 5, rbsp,
+                     (int)sizeof(rbsp));
     int end_bit = -1;
     if (parse_p_slice_end(stream + offs[pnal], lens[pnal], &sps, &end_bit) ||
         end_bit < 0 || n < 8) {
@@ -1040,6 +1047,344 @@ static int check_p_slice_mb(void)
     }
     if (!fails)
         printf("  p-mb: P_L0 / D_16x16, MVD 8/0 qpel from real full-pel ME\n");
+    return fails;
+}
+
+/* ---- one-pass ABR (bitrate mode) ---------------------------------------- */
+/* High-motion fixture: every frame is independent pseudo-random noise, so the
+ * lookahead's lowres intra cost (frame.h:123) differs from frame to frame and
+ * phx_ratecontrol_start() must derive a QP from the ABR state, not reuse the
+ * CQP constant.  Source: ratecontrol.c:1431-1538 (start), :1828-1928 (end),
+ * :2585-2597 (complexity/overflow), encoder.c:3857/3978 (call sites).
+ * SHADER: C — serial host fixture + scalar QP parse. */
+#define BW 64
+#define BH 64
+#define BNFRAMES 6
+
+static uint8_t motion_fixture[BNFRAMES][BW*BH + 2*(BW*BH)/4];
+
+static void make_motion_fixture(void)
+{
+    uint32_t s = 0x12345678u;
+    for (int f = 0; f < BNFRAMES; f++) {
+        for (size_t k = 0; k < sizeof(motion_fixture[f]); k++) {
+            s = s * 1664525u + 1013904223u;             /* deterministic */
+            motion_fixture[f][k] = (uint8_t)(s >> 24);
+        }
+    }
+}
+
+/* x264 --qp (CQP) vs --bitrate 6000 (ABR) on identical tool settings.  AQ and
+ * MB-tree are left at their x264 defaults for ABR (base.c:415/427) and are
+ * disabled only on the CQP control, as the CLI does.  SHADER: C — params. */
+static void make_bitrate_param(phx_param_t *p, int abr)
+{
+    phx_param_default(p);                              /* base.c:344 */
+    phx_param_apply_preset(p, "medium");               /* base.c:553 */
+    p->i_width = BW; p->i_height = BH;
+    p->i_qp_constant = 28;
+    p->b_cabac = 1;
+    p->i_bframe = 1;                                   /* POC type 0 for header parse */
+    p->i_keyint_max = p->i_keyint_min = 30;
+    p->i_scenecut_threshold = 0;
+    p->rc_method = abr ? PHX_RC_ABR : PHX_RC_CQP;
+    if (!abr) {
+        p->i_aq_mode = 0;
+        p->b_mb_tree = 0;
+    }
+    phx_param_finalize(p);                             /* encoder.c:1218 */
+}
+
+static int encode_bitrate_run(phx_param_t *p, int abr, int kbps,
+                              uint8_t *stream, int cap,
+                              int *used, int types[MAX_NALS], int offs[MAX_NALS],
+                              int lens[MAX_NALS], int *nn, int *last_qp)
+{
+    phx_t *h = phx_encoder_open(p);                    /* encoder.c:1507 */
+    if (!h) { printf("FAIL bitrate: open (abr=%d)\n", abr); return 1; }
+    if (abr) {
+        phx_ratecontrol_config_t cfg;
+        memset(&cfg, 0, sizeof(cfg));
+        cfg.bitrate = (double)kbps * 1000.0;           /* kbps -> bits/s */
+        cfg.fps = 25.0;                                /* ratecontrol.c:757 */
+        cfg.qcompress = 0.6;                           /* base.c:423 */
+        cfg.rate_tolerance = 1.0;                      /* base.c:404 */
+        cfg.qp_min = PHX_RC_QP_MIN;
+        cfg.qp_max = PHX_RC_QP_MAX;
+        cfg.qp_step = 4;                               /* base.c:412 */
+        if (phx_encoder_configure_ratecontrol(h, &cfg)) {
+            printf("FAIL bitrate: configure\n");
+            phx_encoder_close(h);
+            return 1;
+        }
+    }
+    int fails = 0;
+    /* encoder.c:2096 — emit SPS+PPS+SEI once, like tools/phx_cli.c does. */
+    phx_nal_t *hnals = NULL;
+    int hnnal = 0;
+    if (phx_headers(h, &hnals, &hnnal) <= 0 || hnnal != 3 ||
+        append_nals(stream, cap, used, &hnals[0], types, offs, lens, nn) ||
+        append_nals(stream, cap, used, &hnals[1], types, offs, lens, nn) ||
+        append_nals(stream, cap, used, &hnals[2], types, offs, lens, nn)) {
+        printf("FAIL bitrate: header emission\n");
+        ++fails;
+    }
+    for (int f = 0; f < BNFRAMES; f++) {
+        phx_picture_t pic;
+        memset(&pic, 0, sizeof(pic));
+        pic.plane[0] = motion_fixture[f];              /* high-motion I420 */
+        pic.plane[1] = pic.plane[0] + BW*BH;
+        pic.plane[2] = pic.plane[1] + (BW*BH)/4;
+        pic.i_stride[0] = BW; pic.i_stride[1] = pic.i_stride[2] = BW/2;
+        pic.i_width = BW; pic.i_height = BH;
+        phx_nal_t *out = NULL;
+        int nnal = 0;
+        uint8_t *recon = NULL;
+        if (phx_encode(h, &pic, &out, &nnal, &recon) < 0 ||
+            (nnal && append_nals(stream, cap, used, &out[0],
+                                 types, offs, lens, nn))) {
+            printf("FAIL bitrate: encode frame %d (abr=%d)\n", f, abr);
+            ++fails;
+            break;
+        }
+    }
+    for (;;) {
+        phx_nal_t *out = NULL;
+        int nnal = 0;
+        uint8_t *recon = NULL;
+        int rc = phx_encoder_encode(h, NULL, &out, &nnal, &recon);
+        for (int j = 0; j < nnal; j++)
+            if (append_nals(stream, cap, used, &out[j],
+                            types, offs, lens, nn)) ++fails;
+        if (rc == 0) break;
+    }
+    if (last_qp) *last_qp = phx_encoder_last_qp(h);    /* read-only view */
+    phx_encoder_close(h);                              /* api.c:130 */
+    return fails;
+}
+
+/* Read slice_qp_delta (encoder.c:353/:199) of each slice NAL; headers occupy
+ * NALs 0..2.  SHADER: C — serial scalar parse of one bitstream. */
+static int parse_run_qps(const uint8_t *stream, const int *offs, const int *lens,
+                         int nslices, const phx_sps_t *sps, const phx_pps_t *pps,
+                         int *qps, int *slice_types, int *expect_cqp)
+{
+    int fails = 0;
+    for (int i = 0; i < nslices; i++) {
+        phx_test_sh_t o;
+        memset(&o, 0, sizeof(o));
+        o.nal_ref_idc = (stream[offs[i+3] + 4] >> 5) & 3;
+        o.nal_type = stream[offs[i+3] + 4] & 0x1f;
+        if (parse_slice_fields(stream + offs[i+3], lens[i+3], sps, pps, &o)) {
+            printf("FAIL bitrate: parse slice %d\n", i);
+            ++fails;
+            continue;
+        }
+        qps[i] = pps->i_pic_init_qp + o.qp_delta;      /* encoder.c:199 */
+        slice_types[i] = o.slice_type;
+        if (qps[i] < 0 || qps[i] > PHX_QP_MAX_SPEC) {
+            printf("FAIL bitrate: QP %d out of range\n", qps[i]);
+            ++fails;
+        }
+        if (expect_cqp)
+            expect_cqp[i] = o.slice_type == PHX_SLICE_I ? 25  /* -6*log2(1.4) */
+                          : o.slice_type == PHX_SLICE_B ? 30  /* +6*log2(1.3) */
+                          : 28;
+    }
+    return fails;
+}
+
+static void print_qps(const char *label, const int *qps, int n)
+{
+    printf("  bitrate: %s", label);
+    for (int i = 0; i < n; i++) printf(" %d", qps[i]);
+    printf("\n");
+}
+
+static int check_bitrate_mode(void)
+{
+    make_motion_fixture();
+    phx_param_t p;
+    uint8_t sc[STREAM_CAP], sa[STREAM_CAP], sl[STREAM_CAP];
+    int types_c[MAX_NALS], offs_c[MAX_NALS], lens_c[MAX_NALS], nn_c = 0, used_c = 0;
+    int types_a[MAX_NALS], offs_a[MAX_NALS], lens_a[MAX_NALS], nn_a = 0, used_a = 0;
+    int types_l[MAX_NALS], offs_l[MAX_NALS], lens_l[MAX_NALS], nn_l = 0, used_l = 0;
+    int last_qp = -1;
+    int fails = 0;
+
+    make_bitrate_param(&p, 0);
+    fails += encode_bitrate_run(&p, 0, 0, sc, STREAM_CAP, &used_c,
+                                types_c, offs_c, lens_c, &nn_c, NULL);
+    make_bitrate_param(&p, 1);
+    fails += encode_bitrate_run(&p, 1, 6000, sa, STREAM_CAP, &used_a,
+                                types_a, offs_a, lens_a, &nn_a, &last_qp);
+    make_bitrate_param(&p, 1);
+    fails += encode_bitrate_run(&p, 1, 150, sl, STREAM_CAP, &used_l,
+                                types_l, offs_l, lens_l, &nn_l, NULL);
+    if (fails) return fails;
+
+    if (used_a <= 0 || used_l <= 0 || nn_a < 4 || nn_l < 4 ||
+        sa[0] || sa[1] || sa[2] || sa[3] != 1 || sa[4] != 0x67 ||
+        sl[0] || sl[1] || sl[2] || sl[3] != 1 || sl[4] != 0x67) {
+        printf("FAIL bitrate: empty/broken Annex-B stream (%d/%d bytes)\n",
+               used_a, used_l);
+        return 1;
+    }
+
+    phx_sps_t sps;
+    phx_pps_t pps;
+    phx_sps_init(&sps, &p, BW, BH);                    /* encoder.c:1579 */
+    phx_pps_init(&pps, &sps, &p);                      /* encoder.c:1581 */
+    int nslices = nn_a - 3;                            /* headers are NALs 0..2 */
+    if (nslices <= 0 || nslices > BNFRAMES || nn_c - 3 != nslices ||
+        nn_l - 3 != nslices) {
+        printf("FAIL bitrate: slice counts %d/%d/%d\n", nn_c-3, nslices, nn_l-3);
+        return 1;
+    }
+    int qp_c[BNFRAMES], qp_a[BNFRAMES], qp_l[BNFRAMES], want[BNFRAMES];
+    int st[BNFRAMES];
+    fails += parse_run_qps(sc, offs_c, lens_c, nslices, &sps, &pps,
+                           qp_c, st, want);
+    fails += parse_run_qps(sa, offs_a, lens_a, nslices, &sps, &pps,
+                           qp_a, st, NULL);
+    fails += parse_run_qps(sl, offs_l, lens_l, nslices, &sps, &pps,
+                           qp_l, st, NULL);
+    if (fails) return fails;
+
+    int different = 0, varied = 0, cqp_ok = 1;
+    for (int i = 0; i < nslices; i++) {
+        if (qp_a[i] != qp_c[i]) different = 1;
+        if (qp_l[i] != qp_l[0]) varied = 1;
+        if (qp_c[i] != want[i]) cqp_ok = 0;
+    }
+    printf("  bitrate: CQP/6000k/%dk QPs over %d high-motion frames "
+           "(%d/%d-byte Annex-B streams)\n",
+           150, nslices, used_a, used_l);
+    print_qps("fixed QP   ", qp_c, nslices);
+    print_qps("6000 kbps  ", qp_a, nslices);
+    print_qps("150 kbps   ", qp_l, nslices);
+    printf("  bitrate: last_qp=%d, last stream QP=%d\n",
+           last_qp, qp_a[nslices-1]);
+    if (!cqp_ok) { printf("FAIL bitrate: CQP control QP changed\n"); ++fails; }
+    if (!different) {
+        printf("FAIL bitrate: ABR did not change the QP vs fixed QP\n");
+        ++fails;
+    }
+    /* 6000 kbps on a 64x64 fixture saturates QP at 0; the lower-rate run
+     * demonstrates that the same per-frame ABR state actually tracks content. */
+    if (!varied) {
+        printf("FAIL bitrate: low-rate ABR QP is constant across frames\n");
+        ++fails;
+    }
+    if (last_qp != qp_a[nslices-1]) {
+        printf("FAIL bitrate: last_qp=%d, stream QP=%d\n",
+               last_qp, qp_a[nslices-1]);
+        ++fails;
+    }
+    return fails;
+}
+
+/* ---- non-mod16 / large picture ------------------------------------------ */
+/* x264 codes 640x360 as 640x368 with frame_crop_bottom=8/2=4 in 4:2:0
+ * (set.c:251-255/:363-371).  The old phx_encoder_validate() rejected the
+ * non-mod16 height, so a real 640x360 encode could not open.  This test also
+ * exercises the wide-frame intra_border_backup guard in phx_encode().
+ * SHADER: C — serial host fixture and open/encode/close. */
+#define LW 640
+#define LH 360
+#define LNFRAMES 4
+static uint8_t big_fixture[LNFRAMES][LW*LH + 2*(LW*LH)/4];
+
+static int check_large_dimensions(void)
+{
+    phx_param_t p;
+    phx_param_default(&p);                             /* base.c:344 */
+    phx_param_apply_preset(&p, "medium");              /* base.c:553 */
+    p.i_width = LW; p.i_height = LH;
+    p.i_qp_constant = 28;
+    p.b_cabac = 1;
+    p.i_bframe = 0;                                    /* one NAL per frame */
+    p.i_keyint_max = p.i_keyint_min = 30;
+    p.i_scenecut_threshold = 0;
+    p.rc_method = PHX_RC_CQP;
+    p.i_aq_mode = 0; p.b_mb_tree = 0;
+    phx_param_finalize(&p);                            /* encoder.c:1218 */
+
+    for (int f = 0; f < LNFRAMES; f++)
+        for (size_t k = 0; k < sizeof(big_fixture[f]); k++)
+            big_fixture[f][k] = (uint8_t)((k*7 + f*37 + 13) & 255);
+
+    phx_t *h = phx_encoder_open(&p);                  /* encoder.c:1507 */
+    if (!h) { printf("FAIL 640x360: open\n"); return 1; }
+    if (h->i_width != 640 || h->i_height != 368 ||
+        h->i_width_display != 640 || h->i_height_display != 360 ||
+        !h->sps.b_crop || h->sps.crop_bottom != 4) {
+        printf("FAIL 640x360: geometry %dx%d display %dx%d crop=%d/%d\n",
+               h->i_width, h->i_height, h->i_width_display,
+               h->i_height_display, h->sps.b_crop, h->sps.crop_bottom);
+        phx_encoder_close(h);
+        return 1;
+    }
+
+    static uint8_t stream[BIG_STREAM_CAP];
+    int used = 0, nn = 0, types[MAX_NALS], offs[MAX_NALS], lens[MAX_NALS];
+    int fails = 0;
+    phx_nal_t *hnals = NULL;
+    int hnnal = 0;
+    if (phx_headers(h, &hnals, &hnnal) <= 0 || hnnal != 3 ||
+        append_nals(stream, BIG_STREAM_CAP, &used, &hnals[0], types, offs, lens, &nn) ||
+        append_nals(stream, BIG_STREAM_CAP, &used, &hnals[1], types, offs, lens, &nn) ||
+        append_nals(stream, BIG_STREAM_CAP, &used, &hnals[2], types, offs, lens, &nn)) {
+        printf("FAIL 640x360: header emission\n");
+        ++fails;
+    }
+    for (int f = 0; f < LNFRAMES; f++) {
+        phx_picture_t pic;
+        memset(&pic, 0, sizeof(pic));
+        size_t y = (size_t)LW * LH, c = y / 4;
+        pic.plane[0] = big_fixture[f];
+        pic.plane[1] = pic.plane[0] + y;
+        pic.plane[2] = pic.plane[1] + c;
+        pic.i_stride[0] = LW; pic.i_stride[1] = pic.i_stride[2] = LW/2;
+        pic.i_width = LW; pic.i_height = LH;
+        phx_nal_t *out = NULL;
+        int nnal = 0;
+        uint8_t *recon = NULL;
+        if (phx_encode(h, &pic, &out, &nnal, &recon) < 0) {
+            printf("FAIL 640x360: encode %d\n", f);
+            ++fails;
+            break;
+        }
+        for (int j = 0; j < nnal; j++)
+            if (append_nals(stream, BIG_STREAM_CAP, &used, &out[j],
+                            types, offs, lens, &nn)) {
+                printf("FAIL 640x360: append frame %d nal %d\n", f, j);
+                ++fails;
+            }
+    }
+    for (;;) {
+        phx_nal_t *out = NULL;
+        int nnal = 0;
+        uint8_t *recon = NULL;
+        int rc = phx_encoder_encode(h, NULL, &out, &nnal, &recon);
+        for (int j = 0; j < nnal; j++)
+            if (append_nals(stream, BIG_STREAM_CAP, &used, &out[j],
+                            types, offs, lens, &nn)) {
+                printf("FAIL 640x360: append flush nal %d\n", j);
+                ++fails;
+            }
+        if (rc == 0) break;
+    }
+    phx_encoder_close(h);                              /* api.c:130 */
+    if (nn < 4 || used < 32 || stream[0] || stream[1] ||
+        stream[2] || stream[3] != 1 || stream[4] != 0x67) {
+        printf("FAIL 640x360: %d NALs, %d bytes, Annex-B %02X %02X %02X %02X\n",
+               nn, used, stream[0], stream[1], stream[2], stream[3]);
+        ++fails;
+    } else if (!fails) {
+        printf("  large: 640x360 -> coded 640x368 crop_bottom=4, "
+               "%d-byte Annex-B stream, %d NALs\n", used, nn);
+    }
     return fails;
 }
 
@@ -1085,6 +1430,10 @@ int main(void)
     fails += check_mb0_sequence();
 
     fails += check_p_slice_mb();
+
+    /* One-pass ABR bitrate mode and non-mod16 / 640x360 large-picture path. */
+    fails += check_bitrate_mode();
+    fails += check_large_dimensions();
 
     /* Aliases from docs/ORACLE_DESIGN.md:40-45 and invalid-parameter path
       * (validate_parameters, encoder.c:423/1552). */

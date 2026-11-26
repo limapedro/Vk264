@@ -16,6 +16,7 @@
 #include "phx_rdo.h"            /* high-ref MBRD / RDO scratch bounds */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int fails = 0;
@@ -186,6 +187,63 @@ static int check_analysis_leaves_cabac_untouched(void)
     CHECK(memcmp(state, cb.state, sizeof(state)) == 0,
           "analysis does not modify live CABAC contexts");
 
+    phx_mb_state_delete(s);
+    phx_frame_delete(f);
+    return 0;
+}
+
+/* The encoder passes cache->p_fdec pointing into its live reconstruction frame
+ * (phx_encoder.c:1396, x264 encoder.c:2861 -> macroblock.c:533).  x264's
+ * predictors read the *reconstructed* left/top border written there by the
+ * previous MB (common/macroblock.c:1645-1655, frame.c:535-553), never the
+ * source samples.  A regression that re-seeded that border from p_fenc changed
+ * MB1 block0's predictors (105/118/131/144 instead of 106/115/132/141 on the
+ * medium/cabac fixture), shifted its SATD and flipped block1's intra4x4 mode
+ * at CABAC bin 715.  Verify the caller-owned FDEC border is left untouched.
+ * SHADER: B — host-side check of the caller-owned reconstruction boundary. */
+static int check_caller_fdec_border(void)
+{
+    phx_param_t p;
+    phx_param_default(&p);
+    p.i_width = 32; p.i_height = 16;                 /* two MBs in one row */
+    p.analyse_intra = 3;
+    phx_param_finalize(&p);
+
+    phx_frame_t *f = phx_frame_new(32, 16, 0);
+    phx_mb_state_t *s = phx_mb_state_new(2, 1);
+    if (!f || !s) { printf("FAIL fdec-border: allocation\n"); return 1; }
+    fill_frame(f);
+    s->slice_type = PHX_SLICE_I;
+    s->first_mb = 0;
+    for (int i = 0; i < 2; i++) s->type[i] = PHX_I_16x16;
+
+    const int fs = PHX_FDEC_STRIDE;
+    uint8_t *buf = (uint8_t *)calloc((size_t)fs * 48 + 4, 1);
+    uint8_t *p_fdec = buf + 2*fs + 1;                 /* macroblock.c:533 */
+    if (!buf) { printf("FAIL fdec-border: allocation\n"); return 1; }
+    for (int y = -1; y < 16; y++) p_fdec[-1 + y*fs] = (uint8_t)(200 + y);
+    for (int x = 0; x < 18; x++) p_fdec[x - fs] = (uint8_t)(160 + x);
+
+    phx_mb_cache_t cache;
+    phx_mb_decision_t d;
+    memset(&cache, 0, sizeof(cache));
+    memset(&d, 0, sizeof(d));
+    phx_macroblock_cache_load(s, &cache, 1, 0, 0);
+    CHECK(cache.i_neighbour_intra & PHX_MB_LEFT,
+          "fdec-border: left neighbour available at MB(1,0)");
+    cache.p_fdec = p_fdec;
+    cache.fdec_stride = fs;
+    CHECK(phx_macroblock_analyse_slice(&p, f, NULL, &cache, NULL,
+                                       1, 0, 26, PHX_SLICE_I, &d) == 0,
+          "fdec-border: analysis succeeds with caller FDEC");
+    for (int y = 0; y < 16; y++)
+        CHECK(p_fdec[-1 + y*fs] == (uint8_t)(200 + y),
+              "analysis preserves reconstructed left border (not source)");
+    for (int x = 0; x < 16; x++)
+        CHECK(p_fdec[x - fs] == (uint8_t)(160 + x),
+              "analysis preserves reconstructed top border (not source)");
+
+    free(buf);
     phx_mb_state_delete(s);
     phx_frame_delete(f);
     return 0;
@@ -492,6 +550,7 @@ int main(void)
 
     fails += check_p_analysis();
     fails += check_analysis_leaves_cabac_untouched();
+    fails += check_caller_fdec_border();
     fails += check_high_ref_analysis();
 
     /* Bad arguments must fail cleanly without touching the decision. */
