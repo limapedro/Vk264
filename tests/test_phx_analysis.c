@@ -748,6 +748,117 @@ static int check_pskip_decision_golden(const char *preset)
     return 0;
 }
 
+/* ---- B-direct / B_SKIP integration golden (B1 API) ----------------------- */
+
+/* B1's predictor/probe are golden-tested against x264 in phx_mvdirect.c.  This
+ * test pins Phoenix's B-slice *integration*: for a static frame triplet with
+ * an all-P_SKIP colocated picture, x264 emits all-16 B_SKIP (analyse.c:3334-
+ * 3359); the decision must carry PHX_B_SKIP, d.skip and B1's exact direct
+ * MV/ref arrays — never an intra fallback.  SHADER: B — A/B boundary golden. */
+static int check_b_skip_golden(void)
+{
+    phx_param_t p;
+    phx_param_default(&p);
+    p.i_width = 64; p.i_height = 64;
+    if (phx_param_apply_preset(&p, "veryfast")) {
+        printf("FAIL bskip-golden: bad preset\n");
+        return 1;
+    }
+    phx_param_finalize(&p);
+
+    phx_frame_t *fenc = phx_frame_new(64, 64, 0);
+    phx_frame_t *fref0 = phx_frame_new(64, 64, 0);
+    phx_frame_t *fref1 = phx_frame_new(64, 64, 0);
+    phx_mb_state_t *colst = phx_mb_state_new(4, 4);
+    if (!fenc || !fref0 || !fref1 || !colst) {
+        printf("FAIL bskip-golden: allocation\n");
+        return 1;
+    }
+    fill_parity_fixture(fenc);                 /* identical static frames */
+    fill_parity_fixture(fref0);
+    fill_parity_fixture(fref1);
+    colst->slice_type = PHX_SLICE_P;
+    colst->first_mb = 0;
+    for (int i = 0; i < 16; i++) colst->type[i] = PHX_P_SKIP;
+    for (int l = 0; l < 2; l++)
+        for (int i = 0; i < 4*16; i++) colst->ref[l][i] = 0;
+
+    uint8_t part[16];
+    for (int i = 0; i < 16; i++) part[i] = PHX_MVDIR_D_16x16;
+    phx_mvdirect_col_t col;
+    memset(&col, 0, sizeof(col));
+    col.mb_type = colst->type;
+    col.mb_partition = part;
+    col.ref[0] = colst->ref[0]; col.ref[1] = colst->ref[1];
+    col.mv[0] = colst->mv[0]; col.mv[1] = colst->mv[1];
+    col.field = NULL;
+    col.i_poc = 2;
+    col.i_delta_poc[0] = -1; col.i_delta_poc[1] = 1;
+    col.i_mb_stride = 4;
+    col.i_b8_stride = 8;
+    col.i_b4_stride = 16;
+
+    phx_analysis_b_input_t b;
+    memset(&b, 0, sizeof(b));
+    b.fref1 = fref1;
+    b.col = &col;
+    b.cur_poc = 4;
+    b.b_direct_spatial = 1;
+    b.bipred_weight = 32;
+
+    const int fs = PHX_FDEC_STRIDE;
+    uint8_t *buf = (uint8_t *)calloc((size_t)fs * 48 + 64, 1);
+    if (!buf) { printf("FAIL bskip-golden: allocation\n"); return 1; }
+
+    for (int mb = 0; mb < 16; mb++) {
+        int x = mb & 3, y = mb >> 2;
+        phx_mb_cache_t cache;
+        phx_mb_decision_t d;
+        phx_mvdirect_input_t din;
+        phx_mvdirect_result_t direct;
+        memset(&cache, 0, sizeof(cache));
+        memset(&d, 0, sizeof(d));
+        phx_macroblock_cache_load(colst, &cache, x, y, 0);
+        cache.p_fdec = buf + 2*fs + 1 + x*16;
+        cache.fdec_stride = fs;
+        int rc = phx_macroblock_analyse_slice_b(&p, fenc, fref0, &b, &cache,
+                                                NULL, x, y, 28, &d);
+        CHECKF(rc == 0, "bskip-golden: MB %d analysis succeeds", mb);
+        if (rc) continue;
+        CHECKF(d.skip == 1 && d.mb_type == PHX_B_SKIP,
+               "bskip-golden: MB %d is B_SKIP (got type=%d skip=%d)",
+               mb, d.mb_type, d.skip);
+
+        /* Independently compute B1's direct prediction with identical inputs. */
+        memset(&din, 0, sizeof(din));
+        din.cache = &cache;
+        din.mb_x = x; din.mb_y = y; din.mb_xy = mb;
+        din.i_b8_xy = 2*(y*8 + x);
+        din.i_b4_xy = 4*(y*16 + x);
+        din.direct_mode = p.i_direct_mv_pred;
+        din.b_direct_spatial = 1;
+        din.i_threads = 1;
+        din.col = &col;
+        din.cur_poc = 4;
+        CHECKF(phx_mvdirect_predict(&din, &direct) == 0,
+               "bskip-golden: MB %d direct prediction succeeds", mb);
+        for (int l = 0; l < 2; l++)
+            for (int i = 0; i < 16; i++) {
+                CHECKF(d.ref[l][i] == direct.ref[l][i] &&
+                       d.mv[l][i][0] == direct.mv[l][i][0] &&
+                       d.mv[l][i][1] == direct.mv[l][i][1],
+                       "bskip-golden: MB %d ref/mv[%d][%d] differs", mb, l, i);
+            }
+    }
+
+    free(buf);
+    phx_mb_state_delete(colst);
+    phx_frame_delete(fenc);
+    phx_frame_delete(fref0);
+    phx_frame_delete(fref1);
+    return 0;
+}
+
 int main(void)
 {
     phx_param_t p;
@@ -828,8 +939,13 @@ int main(void)
     /* (1,1) is the right-edge MB of a 2x2 MB frame, so TOPRIGHT is absent. */
     /* x264 sets MB_TOPLEFT in i_neighbour but not in i_neighbour_intra
      * (macroblock.c:816-824). */
-    CHECK(cache.i_neighbour_intra == (PHX_MB_LEFT|PHX_MB_TOP),
-          "left/top intra neighbours available at MB(1,1)");
+    /* x264 common/macroblock.c:771-785 (LEFT), :791-802 (TOP), :816-827
+     * (TOPLEFT) all set i_neighbour_intra for MB(1,1): the left/top/top-left
+     * MBs exist, are intra and share the slice (b_constrained_intra == 0).
+     * TOPRIGHT (:831-843) is absent at the right edge of a 2x2 MB frame.
+     * The old expectation omitted TOPLEFT and was stale after M11's golden. */
+    CHECK(cache.i_neighbour_intra == (PHX_MB_LEFT|PHX_MB_TOP|PHX_MB_TOPLEFT),
+          "left/top/top-left intra neighbours available at MB(1,1)");
     memset(&d2, 0, sizeof(d2));
     rc2 = phx_macroblock_analyse(&p, f, &cache, 1, 1, 26, &d2);
     CHECK(rc2 == 0, "interior MB analysis returns success");
@@ -859,6 +975,9 @@ int main(void)
     fails += check_pskip_decision_golden("superfast");
     fails += check_pskip_decision_golden("veryfast");
     fails += check_pskip_decision_golden("medium");
+
+    /* B-direct/B_SKIP integration golden (B1 API, x264 all-16 B_SKIP frame). */
+    fails += check_b_skip_golden();
 
     /* Bad arguments must fail cleanly without touching the decision. */
     CHECK(phx_macroblock_analyse(NULL, f, &cache, 0, 0, 26, &d2) == -1,
