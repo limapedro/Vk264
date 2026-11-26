@@ -266,4 +266,24 @@ After the chroma-predictor fix, the scaled-clip first divergent bin moved 1167 �
 
 Z1 instrumented the real fixture: x264's I16 MB4 search sees a reconstructed top border of 203,203 and picks mode 0 (V, cost 6752) over mode 5 (DC_TOP, 7160). Phoenix sees 110,110 and picks mode 5 (18310 vs 18382). The quantized luma DC already matches x264 (`dc=102`, `nnz=1`, `pred16=6`), and SAD mbcmp, bit costs and tie-break order are source-aligned — so forcing mode 0 would be a fixture-specific approximation. The wrong border comes from the I16 DC dequant/IDCT reconstruction helpers (`phx_dct.c`/`phx_quant.c` vs `common/dct.c`/`common/quant.c`), now delegated with a full-16x16 golden requirement.
 
+## F26 — FDEC layout fixed; B-slice gap is missing B-inter modes
+
+The per-MB FDEC scratch used a row-major slice of `h->recon` with stride 32
+(x264 `common.h:571`), which only holds two MBs per 16-row band: for
+`mb_width>2` MB2 overwrote MB0 and MB3 overwrote MB1. Replaced with x264's
+MB-major 54×32 scratch (`common/macroblock.c:533/537/546`), a new
+`phx_macroblock_cache_load_fdec()` seeding luma/chroma neighbour borders
+(`:568-610/:586-592/:1000-1024`), and a full-frame snapshot with frame stride.
+Golden: strict P-MB MVD **(7,0)** now matches x264; 4096/4096 active recon
+pixels identical; MB0 scratch window 306/306 bytes. **Full ctest 29/29 PASS.**
+
+B-diagnosis on the same real clip: x264 has 132/304 (medium) and 158/304
+(veryfast) B_SKIP MBs; Phoenix only 14/304 and 8/304, with 290/304 and
+296/304 falling back to intra because `phx_analysis` runs ME only for P slices
+and `phx_encoder` forces every non-skip B decision to intra. x264 B NALs are
+12–74 B, Phoenix 228–272 B. Also, `probe_bskip` is applied without x264's
+mbrd-gated SSD/RD compare (`analyse.c:3346-3350/:3404-3415`), causing an
+over-skip at frame 1 MB 0. Both are delegated as one end-to-end B-inter task;
+the remaining L1 reference sample mismatch is a separate DPB task.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
