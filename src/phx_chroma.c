@@ -302,12 +302,19 @@ int phx_macroblock_encode_chroma(const phx_param_t *p, phx_frame_t *f,
             cache->non_zero_count[phx_scan8[idx]] = 1;  /* macroblock.c:414 */
         }
 
-        /* 4:2:0 chroma DC: i_qp+3 with the >>1 / <<1 deadzone scaling
-         * (macroblock.c:424-426).  chroma_qp <= 39 (macroblock.h:249-270),
-         * so chroma_qp+3 stays inside quant4_mf[][0..51]. */
+        /* 4:2:0 chroma DC: macroblock.c:425-426 uses
+         * h->quant4_mf[CQM_4IC+b_inter][i_qp+3*chroma422][0] >> 1 and
+         * h->quant4_bias[...][i_qp+3*chroma422][0] << 1, where i_qp is the
+         * chroma QP (macroblock.c:940) and chroma422 == 0 in the 4:2:0 branch
+         * (:494-495).  The three-step offset applies to 4:2:2 only, so 4:2:0
+         * indexes quant4_mf/bias with chroma_qp itself.  Using chroma_qp+3
+         * made MB0's U/V DC arrays {15,-9,0,0}/{15,0,-9,0} where x264's
+         * instrumented encoder emits {21,-12,0,0}/{21,0,-12,0} at chroma
+         * QP 20 (M6Q/M6QUANT/M6DC hooks, encoder/macroblock.c:425/:429).
+         * SHADER: B — per-chroma DC quantizer call with the 4:2:0 index. */
         const int nz_dc = phx_quant_2x2_dc(dct_dc,
-            qt.quant4_mf[PHX_CQM_4IC][chroma_qp+3][0] >> 1,
-            qt.quant4_bias[PHX_CQM_4IC][chroma_qp+3][0] << 1); /* :425-426 */
+            qt.quant4_mf[PHX_CQM_4IC][chroma_qp][0] >> 1,
+            qt.quant4_bias[PHX_CQM_4IC][chroma_qp][0] << 1); /* :425-426 */
         d->chroma_nnz[ch][0] = (uint8_t)nz_dc;          /* macroblock.c:429 */
         cache->non_zero_count[phx_scan8[PHX_CHROMA_DC+ch]] = (uint8_t)nz_dc;
         phx_zigzag_scan_2x2_dc(scan, dct_dc);           /* macroblock.c:457/477 */

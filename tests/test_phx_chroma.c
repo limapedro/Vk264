@@ -1,20 +1,27 @@
-/* Standalone test for the 4:2:0 chroma macroblock encoder.
+/* Standalone golden test for the 4:2:0 chroma macroblock encoder.
  *
- * Checks, with deterministic NV12 input:
- *   - appended chroma plane geometry (interleaved U/V, frame.c:89-99/240);
- *   - the 2x2 DC and four 4x4 AC coefficient blocks really contain nonzero
- *     values for a non-flat chroma block (macroblock.c:379/:402/:425);
+ * Golden source: an instrumented build of the vendored x264 C objects
+ * (build/x264_ref/obj) patched only in temporary copies of
+ * encoder/analyse.c (mb_analyse_intra_chroma, analyse.c:586-665),
+ * encoder/macroblock.c (mb_encode_chroma_internal, macroblock.c:259-498) and
+ * common/predict.c (x264_predict_8x8c_init, predict.c:936-945).  The hooks
+ * print M6ANA/M6D4/M6Q/M6QUANT/M6DC/M6AC/PRED records; no x264 bytes are
+ * copied into Phoenix and no repository file outside this test is changed.
+ *
+ * Checks, with a fixed NV12 neighbourhood:
+ *   - x264's chroma mode, 2x2 DC array and four 4x4 AC arrays for synth MB0
+ *     at chroma QP 20 and chroma QP 23, bit-for-bit;
+ *   - all seven 8x8c predictors (predict.c:167-299) on one fixed FDEC window;
  *   - chroma_nnz / d->nnz / cache nnz / cbp consistency
  *     (macroblock.c:115-121/:429/:487-489);
  *   - a flat block under DC_128 prediction quantizes to all-zero;
  *   - byte-identical decisions and reconstruction on a repeated run.
  *
- * No bitstream parity is claimed: this verifies the B-stage chroma record and
- * reconstruction, not equality with an x264 bitstream.
- *
- * SHADER: B — verifies the chroma half of the B->C handoff.
+ * SHADER: B — verifies the chroma half of the B->C handoff against x264.
  */
 #include "phx_chroma.h"
+#include "phx_predict.h"
+#include "phx_dct.h"
 #include "phx_analysis.h"
 #include "phx_mbencode.h"
 #include "phx_param.h"
@@ -235,21 +242,191 @@ static void phx_test_x264_zigzag2_dc(int16_t level[4], const int16_t natural[4])
     level[3] = natural[1*2+1];          /* ZIG(3,1,1): macroblock.c:40 */
 }
 
-/* Golden first-MB medium/cabac chroma state, taken from the instrumented
- * x264 encoder (build/x264_ref/obj harness, encoder/cabac.c L1DC hook):
- * chroma_pred_mode 6 (DC_128), cbp_chroma 2 (DC+AC).  quant_2x2_dc with
- * chroma QP 20 (medium's offset -2 applied to luma QP 22) leaves the natural
- * 2x2 block {15,0,-9,0}; zigzag_scan_2x2_dc (macroblock.c:34-41) swaps the
- * two middle samples, so the array handed to CABAC is {15,-9,0,0}
- * (macroblock.c:457/:477 -> :487-489, cabac.c:1069-1070).
- * SHADER: B — golden B-stage chroma handoff assertion. */
+/* Assert all four entropy-visible chroma AC arrays of one channel against
+ * an instrumented x264 dump (macroblock.c:402-415, zigzagf.scan_4x4 at :410).
+ * SHADER: B — per-array golden comparison, no tolerance. */
+static void phx_test_check_ac(const phx_mb_decision_t *d, int ch,
+                              const int16_t want[4][16])
+{
+    for (int b = 0; b < 4; b++) {
+        if (memcmp(d->chroma_dct[ch][1+b], want[b],
+                   16*sizeof(int16_t)) != 0) {
+            printf("FAIL x264 golden AC ch=%d block=%d:", ch, b);
+            for (int i = 0; i < 16; i++) printf(" %d", d->chroma_dct[ch][1+b][i]);
+            printf("\n");
+            ++fails;
+        }
+        if (d->chroma_nnz[ch][1+b] != 1) {
+            printf("FAIL x264 golden AC nnz ch=%d block=%d\n", ch, b);
+            ++fails;
+        }
+    }
+}
+
+/* x264's seven 8x8c predictors (common/predict.c:167-299) on one fixed FDEC
+ * neighbourhood, from the instrumented common_predict.obj golden harness:
+ * left column 100+3*y, top row 60+7*x, top-left 210 (predict.c:288/292).
+ * SHADER: B — per-byte golden comparison of the predictor output. */
+static void phx_test_predict_golden(void)
+{
+    static const uint8_t want[7][64] = {
+        { /* 0 I_PRED_CHROMA_DC, predict.c:221-259 */
+          93,93,93,93,106,106,106,106, 93,93,93,93,106,106,106,106,
+          93,93,93,93,106,106,106,106, 93,93,93,93,106,106,106,106,
+         120,120,120,120,113,113,113,113, 120,120,120,120,113,113,113,113,
+         120,120,120,120,113,113,113,113, 120,120,120,120,113,113,113,113 },
+        { /* 1 H, predict.c:260-269 */
+         103,103,103,103,103,103,103,103, 106,106,106,106,106,106,106,106,
+         109,109,109,109,109,109,109,109, 112,112,112,112,112,112,112,112,
+         115,115,115,115,115,115,115,115, 118,118,118,118,118,118,118,118,
+         121,121,121,121,121,121,121,121, 124,124,124,124,124,124,124,124 },
+        { /* 2 V, predict.c:270-281 */
+          67,74,81,88,95,102,109,116, 67,74,81,88,95,102,109,116,
+          67,74,81,88,95,102,109,116, 67,74,81,88,95,102,109,116,
+          67,74,81,88,95,102,109,116, 67,74,81,88,95,102,109,116,
+          67,74,81,88,95,102,109,116, 67,74,81,88,95,102,109,116 },
+        { /* 3 planar P, predict.c:282-306 */
+         142,139,136,133,130,127,124,121, 138,135,132,129,126,123,120,117,
+         133,130,127,124,121,118,115,112, 129,126,123,120,117,114,111,108,
+         125,122,119,116,113,110,107,104, 120,117,114,111,108,105,102,99,
+         116,113,110,107,104,101,98,95, 112,109,106,103,100,97,94,91 },
+        { /* 4 DC_LEFT, predict.c:176-201 */
+         108,108,108,108,108,108,108,108, 108,108,108,108,108,108,108,108,
+         108,108,108,108,108,108,108,108, 108,108,108,108,108,108,108,108,
+         120,120,120,120,120,120,120,120, 120,120,120,120,120,120,120,120,
+         120,120,120,120,120,120,120,120, 120,120,120,120,120,120,120,120 },
+        { /* 5 DC_TOP, predict.c:202-220 */
+          78,78,78,78,106,106,106,106, 78,78,78,78,106,106,106,106,
+          78,78,78,78,106,106,106,106, 78,78,78,78,106,106,106,106,
+          78,78,78,78,106,106,106,106, 78,78,78,78,106,106,106,106,
+          78,78,78,78,106,106,106,106, 78,78,78,78,106,106,106,106 },
+        { /* 6 DC_128, predict.c:167-175 */
+         128,128,128,128,128,128,128,128, 128,128,128,128,128,128,128,128,
+         128,128,128,128,128,128,128,128, 128,128,128,128,128,128,128,128,
+         128,128,128,128,128,128,128,128, 128,128,128,128,128,128,128,128,
+         128,128,128,128,128,128,128,128, 128,128,128,128,128,128,128,128 }
+    };
+    const int fs = PHX_FDEC_STRIDE;
+    phx_predict_t pf[7];
+    phx_predict_8x8c_init(pf);
+    for (int mode = 0; mode < 7; mode++) {
+        uint8_t buf[PHX_FDEC_STRIDE*10 + PHX_FDEC_STRIDE];
+        memset(buf, 0, sizeof(buf));
+        uint8_t *p = buf + fs + 1;          /* common/common.h:570-571 */
+        for (int y = -1; y < 8; y++)
+            for (int x = -1; x < 8; x++)
+                p[x + y*fs] = (uint8_t)((x == -1 && y == -1) ? 210 :
+                    (x == -1 ? 100 + 3*(y+1) :
+                     (y == -1 ? 60 + 7*(x+1) : 0)));
+        pf[mode](p, fs);
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 8; x++)
+                if (p[x + y*fs] != want[mode][y*8+x]) {
+                    printf("FAIL x264 PRED mode=%d (%d,%d) got %d want %d\n",
+                           mode, x, y, p[x+y*fs], want[mode][y*8+x]);
+                    ++fails;
+                }
+    }
+    printf("x264 8x8c predictors: 7/7 modes byte-exact (predict.c:167-299)\n");
+}
+
+/* Raw chroma DCT inputs for the fixed MB0 neighbourhood, from the instrumented
+ * x264 hooks macroblock.c:379 (M6D4) and :425 (M6Q):
+ *   U dct4x4 DC {120,440,120,440} -> dct_dc natural {1120,0,-640,0};
+ *   V dct4x4 DC {120,120,440,440} -> dct_dc natural {1120,-640,0,0}.
+ * The 2x2 Hadamard below is written out from macroblock.c:84-91 (not copied
+ * from Phoenix).  SHADER: B — per-coefficient golden on the DC path input. */
+static void phx_test_raw_dc_golden(void)
+{
+    phx_param_t p;
+    phx_param_default(&p);
+    phx_param_apply_preset(&p, "medium");
+    phx_param_finalize(&p);
+    phx_frame_t *f = phx_frame_new(TEST_W, TEST_H, 0);
+    CHECK(f != NULL, "raw DC golden frame");
+    if (!f) return;
+    const int s = f->i_stride_planes[1], fs = PHX_FDEC_STRIDE;
+    for (int y = 0; y < f->i_lines_planes[1]; y++)
+        for (int x = 0; x < f->i_width_planes[1]; x++) {
+            f->plane_chroma[y*s + 2*x + 0] = (uint8_t)(128 + 5*(x & 7));
+            f->plane_chroma[y*s + 2*x + 1] = (uint8_t)(128 + 5*(y & 7));
+        }
+    static const int16_t want_d4[2][4] = {
+        { 120, 440, 120, 440 }, { 120, 120, 440, 440 }
+    };
+    static const int16_t want_raw[2][4] = {
+        { 1120, 0, -640, 0 }, { 1120, -640, 0, 0 }
+    };
+    phx_predict_t pred8[7];
+    phx_predict_8x8c_init(pred8);
+    for (int ch = 0; ch < 2; ch++) {
+        uint8_t fenc[8*PHX_FENC_STRIDE];
+        uint8_t fdec[PHX_FDEC_STRIDE*10 + PHX_FDEC_STRIDE];
+        memset(fdec, 128, sizeof(fdec));
+        uint8_t *dst = fdec + fs + 1;
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 8; x++)
+                fenc[y*PHX_FENC_STRIDE + x] =
+                    f->plane_chroma[y*s + 2*x + ch];
+        pred8[6](dst, fs);                  /* DC_128, analyse.c:487 */
+        phx_dctcoef d4[4][16];
+        phx_sub8x8_dct(d4, fenc, PHX_FENC_STRIDE, dst, fs);
+        int16_t raw[4];
+        int d0 = d4[0][0] + d4[1][0], d1 = d4[2][0] + d4[3][0];
+        int d2 = d4[0][0] - d4[1][0], d3 = d4[2][0] - d4[3][0];
+        raw[0] = (int16_t)(d0 + d1);         /* macroblock.c:88 */
+        raw[1] = (int16_t)(d0 - d1);         /* macroblock.c:90 */
+        raw[2] = (int16_t)(d2 + d3);         /* macroblock.c:89 */
+        raw[3] = (int16_t)(d2 - d3);         /* macroblock.c:91 */
+        for (int i = 0; i < 4; i++) {
+            CHECK(d4[i][0] == want_d4[ch][i], "x264 M6D4 4x4 DC golden");
+            CHECK(raw[i] == want_raw[ch][i], "x264 M6Q raw 2x2 DC golden");
+        }
+    }
+    printf("x264 raw chroma DCT: 2x4 DC + 2x2 Hadamard byte-exact\n");
+    phx_frame_delete(f);
+}
+
+/* Fixed NV12 neighbourhood golden: MB0 U = 128+5*x, V = 128+5*y, medium/cabac
+ * at MB QP 22 (chroma QP 20).  Instrumented x264 (patched analyse.c:664 and
+ * macroblock.c:425/:429/:488, linked with build/x264_ref/obj) reports:
+ *   M6ANA mb=0 neigh=0 qp=22 qpc=20 ... mode=6 satd=1603 dirs=0,0,0,0,0,0,1603
+ *   M6Q   mb=0 ch=0 qpc=20 mf=1260 bias=18 raw=1120 0 -640 0
+ *   M6QUANT mb=0 ch=0: 21 0 -12 0 / ch=1: 21 -12 0 0
+ *   M6DC 0 0: 21 -12 0 0 ; M6DC 0 1: 21 0 -12 0
+ *   M6AC 0 0 b: 0 -3 0 ... ; M6AC 0 1 b: 0 0 -3 0 ...   (b=0..3)
+ * cbp_chroma 2 (DC+AC, macroblock.c:487-489).  The natural 2x2 order is
+ * {21,0,-12,0}; zigzag_scan_2x2_dc (macroblock.c:34-41) yields the two
+ * CABAC-visible arrays below.
+ * SHADER: B — exact x264 mode/DC/AC golden for one fixed neighbourhood. */
 static void phx_test_golden_first_mb(void)
 {
-    /* quant_2x2_dc's natural Hadamard order (macroblock.c:425-426), mapped
-     * through x264's formula into the order CABAC receives. */
-    static const int16_t natural_dc[4] = { 15, 0, -9, 0 };
-    int16_t golden_dc[4];
-    phx_test_x264_zigzag2_dc(golden_dc, natural_dc);
+    /* quant_2x2_dc's natural order (macroblock.c:425-426, 4:2:0 index i_qp),
+     * mapped into CABAC order by the x264 ZIG formula. */
+    static const int16_t natural_dc[4] = { 21, 0, -12, 0 };
+    static const int16_t golden_dc_u[4] = { 21, -12, 0, 0 };
+    static const int16_t golden_dc_v[4] = { 21, 0, -12, 0 };
+    static const int16_t golden_ac_u[4][16] = {
+        { 0,-3,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 },
+        { 0,-3,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 },
+        { 0,-3,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 },
+        { 0,-3,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 }
+    };
+    static const int16_t golden_ac_v[4][16] = {
+        { 0,0,-3,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 },
+        { 0,0,-3,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 },
+        { 0,0,-3,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 },
+        { 0,0,-3,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 }
+    };
+    int16_t derived_dc[4];
+    phx_test_x264_zigzag2_dc(derived_dc, natural_dc);
+    CHECK(memcmp(derived_dc, golden_dc_u, sizeof(golden_dc_u)) == 0,
+          "x264 ZIG formula derives U DC array");
+    int16_t derived_dc_v[4];
+    phx_test_x264_zigzag2_dc(derived_dc_v,
+                             (const int16_t[]){ 21, -12, 0, 0 });
+    CHECK(memcmp(derived_dc_v, golden_dc_v, sizeof(golden_dc_v)) == 0,
+          "x264 ZIG formula derives V DC array");
 
     phx_param_t p;
     phx_param_default(&p);
@@ -274,13 +451,14 @@ static void phx_test_golden_first_mb(void)
         phx_frame_t *f = phx_frame_new(TEST_W, TEST_H, 0);
         CHECK(f != NULL, "golden frame allocation");
         if (!f) return;
-        /* First-MB NV12 source U/V: 128 + 5*x (no neighbours => DC_128). */
+        /* Fixed first-MB NV12 source: U = 128+5*x, V = 128+5*y.  With no
+         * coded neighbours x264's chroma_mode_available[0] is {DC_128}
+         * (analyse.c:487/:537-542), so M6ANA reports mode 6. */
         const int s = f->i_stride_planes[1];
         for (int y = 0; y < f->i_lines_planes[1]; y++)
             for (int x = 0; x < f->i_width_planes[1]; x++) {
-                const uint8_t v = (uint8_t)(128 + 5*(x & 7));
-                f->plane_chroma[y*s + 2*x + 0] = v;
-                f->plane_chroma[y*s + 2*x + 1] = v;
+                f->plane_chroma[y*s + 2*x + 0] = (uint8_t)(128 + 5*(x & 7));
+                f->plane_chroma[y*s + 2*x + 1] = (uint8_t)(128 + 5*(y & 7));
             }
 
         phx_mb_state_t *st = phx_mb_state_new(TEST_MBS, TEST_MBS);
@@ -303,17 +481,22 @@ static void phx_test_golden_first_mb(void)
               "golden chroma encode");
         *nz = phx_test_check_nnz(d, c);
 
-        CHECK(d->chroma_pred_mode == 6, "golden mode 6 retained");
-        CHECK(d->cbp_chroma == 2, "golden cbp_chroma == 2 (DC+AC)");
+        CHECK(d->chroma_pred_mode == 6, "x264 golden mode 6 (M6ANA)");
+        CHECK(d->cbp_chroma == 2, "x264 golden cbp_chroma == 2 (DC+AC)");
         for (int ch = 0; ch < 2; ch++) {
-            CHECK(memcmp(d->chroma_dct[ch][0], golden_dc,
-                         sizeof(golden_dc)) == 0,
-                  ch ? "golden V DC [15,-9,0,0]"
-                     : "golden U DC [15,-9,0,0]");
-            CHECK(d->chroma_nnz[ch][0] == 1, "golden chroma DC nnz");
-            for (int b = 1; b < 5; b++)
-                CHECK(d->chroma_nnz[ch][b] == 1, "golden chroma AC nnz");
+            const int16_t *want_dc = ch ? golden_dc_v : golden_dc_u;
+            if (memcmp(d->chroma_dct[ch][0], want_dc,
+                       4*sizeof(int16_t)) != 0) {
+                printf("FAIL x264 DC ch=%d got %d,%d,%d,%d want %d,%d,%d,%d\n",
+                       ch, d->chroma_dct[ch][0][0], d->chroma_dct[ch][0][1],
+                       d->chroma_dct[ch][0][2], d->chroma_dct[ch][0][3],
+                       want_dc[0], want_dc[1], want_dc[2], want_dc[3]);
+                ++fails;
+            }
+            CHECK(d->chroma_nnz[ch][0] == 1, "x264 golden chroma DC nnz");
         }
+        phx_test_check_ac(d, 0, golden_ac_u);
+        phx_test_check_ac(d, 1, golden_ac_v);
         CHECK((d->i_cbp & 0x30) == 0x20, "golden cbp bits in i_cbp");
         CHECK((d->i_cbp & 0x600) == 0x600, "golden CABAC chroma DC flags");
 
@@ -337,15 +520,30 @@ static void phx_test_golden_first_mb(void)
            d1.chroma_dct[1][0][0], d1.chroma_dct[1][0][1], nz1, h1);
 }
 
-/* Second independent golden: the exact first-MB U/V ramps of the synth
- * fixture (U = 128+5*x, V = 128+5*y), medium/cabac at MB QP 25.  x264's
- * instrumented encoder (build/x264_ref/obj, encoder/cabac.c L1DC hook) puts
- * the nonzero second coefficient at zigzag index 1 for U and index 2 for V;
- * that is precisely the macroblock.c:34-41 swap.  Magnitudes come from the
- * shared quant/DCT stages and are deliberately not asserted here.
- * SHADER: B — golden B-stage chroma DC *order* assertion. */
+/* Entropy-visible synth-fixture MB0 golden: U = 128+5*x, V = 128+5*y,
+ * medium/cabac at MB QP 25 (chroma QP 23).  The instrumented x264 run with
+ * --qp 28 (MB QP 25) reports M6ANA mode=6 qpc=23 and:
+ *   M6DC 0 0: 15 -9 0 0 ; M6DC 0 1: 15 0 -9 0
+ *   M6AC 0 0 b: 0 -2 0 ... ; M6AC 0 1 b: 0 0 -2 0 ...   (b=0..3)
+ * These are the arrays CABAC sees (macroblock.c:457/:477, cabac.c:1069-1070);
+ * the middle DC samples are swapped by macroblock.c:34-41.
+ * SHADER: B — exact x264 entropy-visible chroma array assertion. */
 static void phx_test_golden_uv_ramps(void)
 {
+    static const int16_t golden_dc_u[4] = { 15, -9, 0, 0 };
+    static const int16_t golden_dc_v[4] = { 15, 0, -9, 0 };
+    static const int16_t golden_ac_u[4][16] = {
+        { 0,-2,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 },
+        { 0,-2,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 },
+        { 0,-2,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 },
+        { 0,-2,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 }
+    };
+    static const int16_t golden_ac_v[4][16] = {
+        { 0,0,-2,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 },
+        { 0,0,-2,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 },
+        { 0,0,-2,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 },
+        { 0,0,-2,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 }
+    };
     phx_param_t p;
     phx_param_default(&p);
     phx_param_apply_preset(&p, "medium");
@@ -378,6 +576,9 @@ static void phx_test_golden_uv_ramps(void)
     d.i_qp = 25;                        /* qp_idx 12-2+25 = 35 -> chroma QP 23 */
     CHECK(phx_macroblock_analyse(&p, f, &c, 0, 0, d.i_qp, &d) == 0,
           "ramp golden analysis");
+    /* x264's mb_analyse_intra_chroma (analyse.c:586-665) picks mode 6 at MB0:
+     * chroma_mode_available[0] = {DC_128} (analyse.c:487/:537-542). */
+    CHECK(d.chroma_pred_mode == 6, "ramp analysis chroma mode 6 (M6ANA)");
     if (d.mb_type == PHX_I_8x8) d.mb_type = PHX_I_16x16;
     d.b_transform_8x8 = 0;
     CHECK(phx_macroblock_encode(&p, f, &c, 0, 0, &d) == 0,
@@ -387,13 +588,13 @@ static void phx_test_golden_uv_ramps(void)
     CHECK(phx_macroblock_encode_chroma(&p, f, &c, 0, 0, &d) == 0,
           "ramp golden chroma encode");
     phx_test_check_nnz(&d, &c);
-    /* x264 L1DC for the U ramp: {a,-b,0,0}; V ramp: {a,0,-b,0}. */
-    CHECK(d.chroma_dct[0][0][0] > 0 && d.chroma_dct[0][0][1] < 0 &&
-          d.chroma_dct[0][0][2] == 0 && d.chroma_dct[0][0][3] == 0,
-          "ramp golden U DC order (x264 zigzag)");
-    CHECK(d.chroma_dct[1][0][0] > 0 && d.chroma_dct[1][0][1] == 0 &&
-          d.chroma_dct[1][0][2] < 0 && d.chroma_dct[1][0][3] == 0,
-          "ramp golden V DC order (x264 zigzag)");
+    CHECK(d.chroma_pred_mode == 6, "x264 ramp M6ANA mode 6");
+    CHECK(memcmp(d.chroma_dct[0][0], golden_dc_u, sizeof(golden_dc_u)) == 0,
+          "x264 synth MB0 U DC {15,-9,0,0}");
+    CHECK(memcmp(d.chroma_dct[1][0], golden_dc_v, sizeof(golden_dc_v)) == 0,
+          "x264 synth MB0 V DC {15,0,-9,0}");
+    phx_test_check_ac(&d, 0, golden_ac_u);
+    phx_test_check_ac(&d, 1, golden_ac_v);
     printf("ramp MB: U_DC=%d,%d,%d,%d V_DC=%d,%d,%d,%d cbp_chroma=%d\n",
            d.chroma_dct[0][0][0], d.chroma_dct[0][0][1],
            d.chroma_dct[0][0][2], d.chroma_dct[0][0][3],
@@ -409,7 +610,9 @@ int main(void)
     phx_test_case(1, 1, 0, "DC");     /* top/left neighbours available */
     phx_test_case(1, 1, 3, "planar");
     phx_test_case(0, 0, 6, "DC128");  /* frame edge: available-mode fallback */
-    phx_test_golden_first_mb();       /* medium/cabac first-MB golden state */
+    phx_test_predict_golden();        /* x264 predict.c:167-299, 7/7 modes */
+    phx_test_raw_dc_golden();         /* x264 M6D4/M6Q raw DC inputs */
+    phx_test_golden_first_mb();       /* x264 mode/DC/AC at chroma QP 20 */
     phx_test_golden_uv_ramps();       /* synth U/V ramps, x264 zigzag golden */
 
     phx_mb_decision_t d;
@@ -449,8 +652,8 @@ int main(void)
         phx_frame_delete(f);
     }
 
-    printf("No bitstream parity claim: coefficients checked for internal "
-           "consistency only.\n");
+    printf("Golden scope: x264 mode/DC/AC arrays and 8x8c predictors; full "
+           "bitstream parity is not claimed here.\n");
     if (fails) {
         printf("FAIL %d check(s)\n", fails);
         return 1;
