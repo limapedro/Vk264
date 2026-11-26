@@ -286,4 +286,16 @@ mbrd-gated SSD/RD compare (`analyse.c:3346-3350/:3404-3415`), causing an
 over-skip at frame 1 MB 0. Both are delegated as one end-to-end B-inter task;
 the remaining L1 reference sample mismatch is a separate DPB task.
 
+## F27 — post-FDEC matrix: first diffs much later
+
+Focused 80-pair matrix (4 clips × 10 presets × 2 entropies, 320×180/8f) at the post-FDEC HEAD:
+
+```
+byte_exact 0/80; clean Phoenix decode 5/80 (ultrafast CAVLC x4, veryfast CAVLC x1)
+ultrafast size ratio 0.83 vs x264; first diff min 3673 (was ~600 before FDEC)
+higher presets still 2.4-3.5x larger, first diffs 668-682
+```
+
+Moving the first divergence from byte ~600 to ~3673 means several complete NALs now match byte-for-byte; the remaining gaps are later MB decisions and B-slice payloads. Still not parity — B-inter and L1 reference work are in flight.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
