@@ -458,4 +458,12 @@ i_mvc=0 gives the same result, so the candidate list / call arguments are not
 reaching the search as expected. phx_g_inter_rd_decision_enable stays OFF.
 Joint analysis+ME trace delegated with full-pipeline golden requirement.
 
+## F43 — matrix after mvc wiring
+
+Focused 80-pair matrix: 0 byte-exact, 6/80 clean Phoenix decode. Size ratios:
+ultrafast 0.83, superfast/veryfast/faster 0.99, fast/medium 1.11, slow 1.16,
+slower 1.18, veryslow 1.26, placebo 2.64. Ultrafast first diff 3673; all other
+presets 668-682. Bin 395 chroma-AC divergence diagnosis delegated in parallel
+with the full-pipeline mvc ME trace.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
