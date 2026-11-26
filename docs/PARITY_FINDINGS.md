@@ -202,4 +202,17 @@ per-MB QP  frame1 B qp=30 lambda=8; frame2 BREF qp=29 lambda=7  (bit-identical)
 
 Added `phx_ratecontrol_set_kept_as_ref()` (BREF midpoint) and `phx_ratecontrol_lambda()`; wired the former into `phx_encoder.c` before `phx_ratecontrol_start()`. The residual M4 gap is now definitively frame type (Phoenix P where x264 codes B) and raw-vs-reconstructed references, not rate control.
 
+## F19 — headers byte-exact across all 320 pairs
+
+Re-ran the same 16-video × 10-preset × 2-entropy scaled matrix after the F17 SPS fixes:
+
+| metric | before | after |
+|---|---:|---:|
+| byte-exact streams | 0/320 | 0/320 |
+| first stream diff | 7 / 13 / 13 (min/median/max) | **595 / 676 / 2580** |
+| ffmpeg decode errors, Phoenix | median 17 | median 17 |
+| clean Phoenix streams | 6/320 (all ultrafast/CAVLC) | 6/320 |
+
+Every case now has byte-identical SPS, PPS, SEI, NAL framing and slice headers; all divergence is inside slice entropy (MB decisions/coefficients). The decode-error count did not change, confirming these are bitstream-syntax/state defects, not header defects. Per-preset clean counts: ultrafast 6/32, all others 0/32; ultrafast CABAC/CAVLC stream sizes are now close to x264 (ratio ~0.93), while higher presets remain 3.6–5.6× larger because Phoenix codes B frames as intra (B1's direct/B_SKIP goldens are landed but not yet integrated).
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
