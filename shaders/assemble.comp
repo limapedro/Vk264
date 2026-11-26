@@ -1,0 +1,13 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "layout.glsl"
+
+layout(local_size_x=128) in;
+
+void main() {
+    uint slot = gl_WorkGroupID.x;
+    uvec2 record = slices[slot];
+    if (record.x > pc.slotWords) return;
+    for (uint i = gl_LocalInvocationID.x; i < record.x; i += gl_WorkGroupSize.x)
+        outputWords[4u + record.y + i] = scratchWords[slot * pc.slotWords + i];
+}

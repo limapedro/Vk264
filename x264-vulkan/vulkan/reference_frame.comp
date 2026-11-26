@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Six-tap filters translated from x264 common/mc.c.
+#version 450
+layout(local_size_x = 64) in;
+
+layout(std430, binding = 0) buffer Frame {
+    uint width, height, border, planeSize;
+    uint samples[];
+};
+
+int sourceAt(int x, int y) {
+    int sourceX = clamp(x, 0, int(width)-1);
+    int sourceY = clamp(y, 0, int(height)-1);
+    return int(samples[sourceY*int(width)+sourceX]);
+}
+
+const int tap[6] = int[6](1,-5,20,20,-5,1);
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= planeSize) return;
+    uint stride = width+2*border;
+    int x = int(index%stride)-int(border), y = int(index/stride)-int(border);
+    int horizontal = 0, vertical = 0, diagonal = 0;
+    for (int i = 0; i < 6; ++i) {
+        horizontal += tap[i]*sourceAt(x+i-2, y);
+        int column = 0;
+        for (int j = 0; j < 6; ++j)
+            column += tap[j]*sourceAt(x+i-2, y+j-2);
+        if (i == 2) vertical = column;
+        diagonal += tap[i]*column;
+    }
+    uint outputStart = width*height;
+    samples[outputStart+index] = uint(clamp((horizontal+16) >> 5, 0, 255));
+    samples[outputStart+planeSize+index] = uint(clamp((vertical+16) >> 5, 0, 255));
+    samples[outputStart+2*planeSize+index] = uint(clamp((diagonal+512) >> 10, 0, 255));
+}

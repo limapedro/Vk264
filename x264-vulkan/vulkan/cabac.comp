@@ -1,0 +1,529 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Translated from common/cabac.c. Copyright (C) 2003-2024 x264 project.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "macroblock4_order.glsl"
+#include "mv_predict_math.glsl"
+layout(local_size_x = 64) in;
+
+#ifndef CABAC_MAX_OPERATIONS
+#define CABAC_MAX_OPERATIONS 160
+#endif
+#ifndef CABAC_RESIDUAL_WORDS
+#define CABAC_RESIDUAL_WORDS 8192
+#endif
+const int maxOperations = CABAC_MAX_OPERATIONS;
+#ifndef CABAC_MAX_BYTES
+#define CABAC_MAX_BYTES 768
+#endif
+const int maxBytes = CABAC_MAX_BYTES;
+const int decision = 0, bypass = 1, ueBypass = 2, terminal = 3, residual = 4;
+const int intraType = 5, intra4x4Mode = 6, intraChromaMode = 7;
+const int intra16Macroblock = 8;
+const int codedBlockPattern = 9, qpDelta = 10, transformSize = 11;
+const int macroblockSkip = 12, mvdComponent = 13, inter16Macroblock = 14;
+const int chromaOffset = 4+16+16*15;
+const int chromaPlaneWords = 2+4+4*15;
+const int macroblockWords = chromaOffset+2+2*chromaPlaneWords;
+struct Operation {
+    int kind, first, second;
+};
+struct Fixture {
+    int qp, model, chroma444, frame, count, finish;
+    Operation operations[maxOperations];
+    int coefficients[64];
+    uint context[1024];
+    uint bytes[maxBytes];
+    int low, range, queue, outstanding, position, effectiveQp, mvdMagnitude;
+};
+layout(std430, binding = 0) buffer Corpus {
+    int contextInit[4][1024][2];
+    int rangeLps[64][4];
+    int transition[128][2];
+    int renormShift[64];
+    int significantBase[2][16], lastBase[2][16], levelBase[16], countMinusOne[14];
+    int significant8x8[2][64], last8x8[63], significance422[7];
+    int residualBank[CABAC_RESIDUAL_WORDS];
+    Fixture fixtures[];
+};
+
+#ifdef CABAC_SHARED_FRAME
+shared uint frameContext[1024];
+shared int frameRangeLps[64][4], frameTransition[128][2], frameRenormShift[64];
+#endif
+
+struct Coder {
+    int low, range, queue, outstanding, position;
+};
+
+void writeByte(uint fixture, int position, uint value) {
+    if (position < maxBytes) fixtures[fixture].bytes[position] = value;
+}
+
+void putByte(uint fixture, inout Coder coder) {
+    if (coder.queue < 0) return;
+    int outputByte = coder.low >> (coder.queue + 10);
+    coder.low &= (0x400 << coder.queue) - 1;
+    coder.queue -= 8;
+    if ((outputByte & 255) == 255) {
+        ++coder.outstanding;
+        return;
+    }
+    int carry = outputByte >> 8;
+    if (carry != 0 && coder.position <= maxBytes)
+        fixtures[fixture].bytes[coder.position-1] =
+            (fixtures[fixture].bytes[coder.position-1] + uint(carry)) & 255u;
+    while (coder.outstanding > 0) {
+        writeByte(fixture, coder.position++, uint(carry - 1) & 255u);
+        --coder.outstanding;
+    }
+    writeByte(fixture, coder.position++, uint(outputByte) & 255u);
+}
+
+void renormalize(uint fixture, inout Coder coder) {
+#ifdef CABAC_SHARED_FRAME
+    int shift = frameRenormShift[coder.range >> 3];
+#else
+    int shift = renormShift[coder.range >> 3];
+#endif
+    coder.range <<= shift;
+    coder.low <<= shift;
+    coder.queue += shift;
+    putByte(fixture, coder);
+}
+
+void encodeDecision(uint fixture, inout Coder coder, int index, int bit) {
+#ifdef CABAC_SHARED_FRAME
+    int state = int(frameContext[index]);
+    int lps = frameRangeLps[state >> 1][(coder.range >> 6)-4];
+#else
+    int state = int(fixtures[fixture].context[index]);
+    int lps = rangeLps[state >> 1][(coder.range >> 6)-4];
+#endif
+    coder.range -= lps;
+    if (bit != (state & 1)) {
+        coder.low += coder.range;
+        coder.range = lps;
+    }
+#ifdef CABAC_SHARED_FRAME
+    frameContext[index] = uint(frameTransition[state][bit]);
+#else
+    fixtures[fixture].context[index] = uint(transition[state][bit]);
+#endif
+    renormalize(fixture, coder);
+}
+
+void encodeBypass(uint fixture, inout Coder coder, int negatedBit) {
+    coder.low <<= 1;
+    coder.low += negatedBit & coder.range;
+    ++coder.queue;
+    putByte(fixture, coder);
+}
+
+const int bypassLut[16] = int[16](
+    -1, 0x2, 0x14, 0x68, 0x1d0, 0x7a0, 0x1f40, 0x7e80,
+    0x1fd00, 0x7fa00, 0x1ff400, 0x7fe800, 0x1ffd000, 0x7ffa000, 0x1fff4000, 0x7ffe8000
+);
+
+void encodeUeBypass(uint fixture, inout Coder coder, int expBits, int value) {
+    uint v = uint(value + (1 << expBits));
+    int k = findMSB(v);
+    uint x = (uint(bypassLut[k-expBits]) << expBits) + v;
+    k = 2*k + 1 - expBits;
+    int chunk = ((k-1) & 7) + 1;
+    do {
+        k -= chunk;
+        coder.low <<= chunk;
+        coder.low += int((x >> k) & 255u) * coder.range;
+        coder.queue += chunk;
+        putByte(fixture, coder);
+        chunk = 8;
+    } while (k > 0);
+}
+
+void encodeFlush(uint fixture, inout Coder coder, int frame) {
+    coder.low += coder.range - 2;
+    coder.low |= 1;
+    coder.low <<= 9;
+    coder.queue += 9;
+    putByte(fixture, coder);
+    putByte(fixture, coder);
+    coder.low <<= -coder.queue;
+    coder.low |= ((0x35a4e4f5 >> (frame & 31)) & 1) << 10;
+    coder.queue = 0;
+    putByte(fixture, coder);
+    while (coder.outstanding > 0) {
+        writeByte(fixture, coder.position++, 255u);
+        --coder.outstanding;
+    }
+}
+
+void encodeIntraType(uint fixture, inout Coder coder, int contexts, int flags, int frame) {
+    int context0 = contexts & 63;
+    int type = (flags >> 6) & 3;
+    if (type <= 1) {
+        encodeDecision(fixture, coder, context0, 0);
+        return;
+    }
+    encodeDecision(fixture, coder, context0, 1);
+    if (type == 3) {
+        encodeFlush(fixture, coder, frame);
+        return;
+    }
+    coder.range -= 2;
+    renormalize(fixture, coder);
+
+    int mode = (flags >> 8) & 7;
+    if (mode >= 4) mode = 2;
+    int chroma = (flags >> 12) & 3;
+    encodeDecision(fixture, coder, (contexts >> 6) & 63, (flags >> 11) & 1);
+    encodeDecision(fixture, coder, (contexts >> 12) & 63, int(chroma != 0));
+    if (chroma != 0) encodeDecision(fixture, coder, (contexts >> 18) & 63, chroma >> 1);
+    encodeDecision(fixture, coder, (contexts >> 24) & 63, mode >> 1);
+    encodeDecision(fixture, coder, flags & 63, mode & 1);
+}
+void encodeIntra4x4Mode(uint fixture, inout Coder coder, int predictor, int mode) {
+    encodeDecision(fixture, coder, 68, int(predictor == mode));
+    if (predictor == mode) return;
+    if (mode > predictor) --mode;
+    for (int i = 0; i < 3; ++i) encodeDecision(fixture, coder, 69, (mode >> i) & 1);
+}
+void encodeIntraChromaMode(uint fixture, inout Coder coder, int mode, int neighbors) {
+    int context = 64 + int((neighbors & 5) == 5) + int((neighbors & 10) == 10);
+    if (mode >= 4) mode = 0;
+    encodeDecision(fixture, coder, context, int(mode > 0));
+    if (mode > 0) encodeDecision(fixture, coder, 67, int(mode > 1));
+    if (mode > 1) encodeDecision(fixture, coder, 67, int(mode > 2));
+}
+
+void encodeLumaCbp(uint fixture, inout Coder coder, int cbp, int left, int top) {
+    encodeDecision(fixture, coder, 76-((left >> 1) & 1)-((top >> 1) & 2), cbp & 1);
+    encodeDecision(fixture, coder, 76-(cbp & 1)-((top >> 2) & 2), (cbp >> 1) & 1);
+    encodeDecision(fixture, coder, 76-((left >> 3) & 1)-((cbp << 1) & 2), (cbp >> 2) & 1);
+    encodeDecision(fixture, coder, 76-((cbp >> 2) & 1)-(cbp & 2), (cbp >> 3) & 1);
+}
+void encodeChromaCbp(uint fixture, inout Coder coder, int cbp, int left, int top) {
+    int a = left & 48, b = top & 48;
+    int context = int(a != 0 && left != -1)+2*int(b != 0 && top != -1);
+    encodeDecision(fixture, coder, 77+context, int(cbp != 0));
+    if (cbp != 0) {
+        context = 4+int(a == 32)+2*int(b == 32);
+        encodeDecision(fixture, coder, 77+context, cbp >> 1);
+    }
+}
+int encodeQpDelta(uint fixture, inout Coder coder, int qp, int lastQp,
+                  bool emptyIntra16, bool previousHadDelta) {
+    if (emptyIntra16 && qp > lastQp) qp = lastQp;
+    int delta = qp-lastQp;
+    int context = int(previousHadDelta);
+    if (delta != 0) {
+        const int maxQp = 51;
+        int value = delta > 0 ? 2*delta-1 : -2*delta;
+        if (value >= maxQp && value != maxQp+1) value = 2*maxQp+1-value;
+        do {
+            encodeDecision(fixture, coder, 60+context, 1);
+            context = 2+(context >> 1);
+        } while (--value != 0);
+    }
+    encodeDecision(fixture, coder, 60+context, 0);
+    return qp;
+}
+void encodeTransformSize(uint fixture, inout Coder coder, int neighbors, int size8x8) {
+    encodeDecision(fixture, coder, 399+neighbors, size8x8);
+}
+void encodeTerminal(uint fixture, inout Coder coder) {
+    coder.range -= 2;
+    renormalize(fixture, coder);
+}
+void encodeMacroblockSkip(uint fixture, inout Coder coder, int neighbors, bool bidirectional, int skip) {
+    encodeDecision(fixture, coder, 11+neighbors+(bidirectional ? 13 : 0), skip);
+}
+int encodeMvdComponent(uint fixture, inout Coder coder, int axis, int delta, int context) {
+    int base = axis == 0 ? 40 : 47;
+    encodeDecision(fixture, coder, base+context, int(delta != 0));
+    if (delta == 0) return 0;
+    int magnitude = abs(delta);
+    for (int i = 1; i < min(magnitude, 9); ++i)
+        encodeDecision(fixture, coder, base+min(i+2, 6), 1);
+    if (magnitude < 9)
+        encodeDecision(fixture, coder, base+min(magnitude+2, 6), 0);
+    else
+        encodeUeBypass(fixture, coder, 3, magnitude-9);
+    encodeBypass(fixture, coder, delta >> 31);
+    return min(magnitude, 66);
+}
+
+const int level1Context[8] = int[8](1, 2, 3, 4, 0, 0, 0, 0);
+const int levelGt1Context[8] = int[8](5, 5, 5, 5, 6, 7, 8, 9);
+const int levelGt1Context422[8] = int[8](5, 5, 5, 5, 6, 7, 8, 8);
+const int level1Transition[8] = int[8](1, 2, 3, 3, 4, 5, 6, 7);
+const int levelGt1Transition[8] = int[8](4, 4, 4, 4, 5, 6, 7, 7);
+
+int coefficient(uint fixture, int externalOffset, int index) {
+    return externalOffset < 0 ? fixtures[fixture].coefficients[index] : residualBank[externalOffset+index];
+}
+void encodeResidual(uint fixture, inout Coder coder, int category, int field, bool chroma422dc,
+                    int externalOffset) {
+    int countM1 = chroma422dc ? 7 : countMinusOne[category];
+    int last = countM1;
+    while (last >= 0 && coefficient(fixture, externalOffset, last) == 0) --last;
+
+    int contextSig = significantBase[field][category];
+    int contextLast = lastBase[field][category];
+    int contextLevel = levelBase[category];
+    for (int i = 0; i <= last && i < countM1; ++i) {
+        int sigOffset = chroma422dc ? significance422[i] : countM1 == 63 ? significant8x8[field][i] : i;
+        int lastOffset = chroma422dc ? significance422[i] : countM1 == 63 ? last8x8[i] : i;
+        bool nonzero = coefficient(fixture, externalOffset, i) != 0;
+        encodeDecision(fixture, coder, contextSig + sigOffset, int(nonzero));
+        if (nonzero) encodeDecision(fixture, coder, contextLast + lastOffset, int(i == last));
+    }
+    int node = 0;
+    for (int i = last; i >= 0; --i) {
+        int level = coefficient(fixture, externalOffset, i);
+        if (level == 0) continue;
+        int magnitude = abs(level);
+        encodeDecision(fixture, coder, contextLevel + level1Context[node], int(magnitude > 1));
+        if (magnitude > 1) {
+            int context = contextLevel + (chroma422dc ? levelGt1Context422[node] : levelGt1Context[node]);
+            for (int repeat = min(magnitude, 15)-2; repeat > 0; --repeat)
+                encodeDecision(fixture, coder, context, 1);
+            if (magnitude < 15) encodeDecision(fixture, coder, context, 0);
+            else encodeUeBypass(fixture, coder, 0, magnitude-15);
+            node = levelGt1Transition[node];
+        } else {
+            node = level1Transition[node];
+        }
+        encodeBypass(fixture, coder, level >> 31);
+    }
+}
+
+int lumaCodedFlag(int frameBase, int width, int x4, int y4, bool intra) {
+    if (x4 < 0 || y4 < 0) return int(intra);
+    int mb = (y4/4)*width+x4/4;
+    int raster = (y4%4)*4+(x4%4);
+    return (residualBank[frameBase+mb*macroblockWords+3] >> raster) & 1;
+}
+int chromaAcFlag(int frameBase, int width, int plane, int x4, int y4, bool intra) {
+    if (x4 < 0 || y4 < 0) return int(intra);
+    int mb = (y4/2)*width+x4/2;
+    int block = 2*(y4%2)+x4%2;
+    int offset = frameBase+mb*macroblockWords+chromaOffset+2+plane*chromaPlaneWords;
+    return (residualBank[offset+1] >> block) & 1;
+}
+void encodeChroma420Residual(uint f, inout Coder coder, int frameBase, int base, int width,
+                             int x, int y, int cbp, bool intra) {
+    if (cbp == 0) return;
+    for (int plane = 0; plane < 2; ++plane) {
+        int offset = base+chromaOffset+2+plane*chromaPlaneWords;
+        int left = x == 0 ? int(intra) : residualBank[offset-macroblockWords];
+        int top = y == 0 ? int(intra) : residualBank[offset-width*macroblockWords];
+        int coded = residualBank[offset];
+        encodeDecision(f, coder, 97+left+2*top, coded);
+        if (coded != 0) encodeResidual(f, coder, 3, 0, false, offset+2);
+    }
+    if (cbp != 2) return;
+    for (int plane = 0; plane < 2; ++plane) {
+        int offset = base+chromaOffset+2+plane*chromaPlaneWords;
+        for (int b = 0; b < 4; ++b) {
+            int x4 = 2*x+b%2, y4 = 2*y+b/2;
+            int coded = chromaAcFlag(frameBase, width, plane, x4, y4, intra);
+            int left = chromaAcFlag(frameBase, width, plane, x4-1, y4, intra);
+            int top = chromaAcFlag(frameBase, width, plane, x4, y4-1, intra);
+            encodeDecision(f, coder, 101+left+2*top, coded);
+            if (coded != 0) encodeResidual(f, coder, 4, 0, false, offset+6+b*15);
+        }
+    }
+}
+void encodeIntra16Macroblock(uint f, inout Coder coder, int frameBase, int position, int frame) {
+    int mb = position & 65535, width = position >> 16;
+    int x = mb%width, y = mb/width;
+    int base = frameBase+mb*macroblockWords;
+    int mode = residualBank[base];
+    int ac = residualBank[base+1], dc = residualBank[base+2];
+    if (mb != 0) encodeTerminal(f, coder);
+    int typeContext = 3 + int(x != 0) + int(y != 0);
+    int contexts = typeContext | (6 << 6) | (7 << 12) | (8 << 18) | (9 << 24);
+    int chromaCbp = residualBank[base+chromaOffset];
+    encodeIntraType(f, coder, contexts,
+                    10 | (2 << 6) | (mode << 8) | (ac << 11) | (chromaCbp << 12), frame);
+    // The integrated stream uses DC prediction for both chroma planes and constant slice QP.
+    encodeIntraChromaMode(f, coder, residualBank[base+chromaOffset+1], 0);
+    encodeQpDelta(f, coder, fixtures[f].qp, fixtures[f].qp, false, false);
+    int leftDc = x == 0 ? 1 : residualBank[base-macroblockWords+2];
+    int topDc = y == 0 ? 1 : residualBank[base-width*macroblockWords+2];
+    encodeDecision(f, coder, 85 + leftDc + 2*topDc, dc);
+    if (dc != 0) encodeResidual(f, coder, 0, 0, false, base+4);
+    for (int b = 0; ac != 0 && b < 16; ++b) {
+        int raster = blockToRaster[b];
+        int x4 = 4*x+raster%4, y4 = 4*y+raster/4;
+        int coded = lumaCodedFlag(frameBase, width, x4, y4, true);
+        int leftAc = lumaCodedFlag(frameBase, width, x4-1, y4, true);
+        int topAc = lumaCodedFlag(frameBase, width, x4, y4-1, true);
+        encodeDecision(f, coder, 89 + leftAc + 2*topAc, coded);
+        if (coded != 0) encodeResidual(f, coder, 1, 0, false, base+20+b*15);
+    }
+    encodeChroma420Residual(f, coder, frameBase, base, width, x, y, chromaCbp, true);
+}
+
+int codedBlockPatternAt(int base) {
+    return residualBank[base+1] | (residualBank[base+chromaOffset] << 4);
+}
+
+ivec2 interMotionAt(int frameBase, int mb) {
+    int base = frameBase+mb*macroblockWords;
+    return ivec2(residualBank[base], residualBank[base+2]);
+}
+
+ivec2 interMotionDelta(int frameBase, int width, int mb) {
+    int x = mb%width, y = mb/width;
+    bool hasLeft = x > 0, hasTop = y > 0;
+    bool hasRightTop = hasTop && x+1 < width;
+    bool hasLeftTop = hasTop && hasLeft;
+    ivec2 left = hasLeft ? interMotionAt(frameBase, mb-1) : ivec2(0);
+    ivec2 top = hasTop ? interMotionAt(frameBase, mb-width) : ivec2(0);
+    ivec2 rightTop = hasRightTop ? interMotionAt(frameBase, mb-width+1) : ivec2(0);
+    ivec2 leftTop = hasLeftTop ? interMotionAt(frameBase, mb-width-1) : ivec2(0);
+    ivec4 refs = ivec4(hasLeft ? 0 : -2, hasTop ? 0 : -2, hasRightTop ? 0 : -2, hasLeftTop ? 0 : -2);
+    ivec2 predictor = predictMotion16(0, refs, left, top, rightTop, leftTop);
+    return interMotionAt(frameBase, mb)-predictor;
+}
+
+void encodeInter16Macroblock(uint f, inout Coder coder, int frameBase, int position) {
+    int mb = position & 65535, width = position >> 16;
+    int x = mb%width, y = mb/width;
+    if (mb != 0) encodeTerminal(f, coder);
+    // P_L0 16x16 with one active reference.
+    encodeMacroblockSkip(f, coder, int(x != 0)+int(y != 0), false, 0);
+    encodeDecision(f, coder, 14, 0);
+    encodeDecision(f, coder, 15, 0);
+    encodeDecision(f, coder, 16, 0);
+    ivec2 delta = interMotionDelta(frameBase, width, mb);
+    ivec2 leftMagnitude = x == 0 ? ivec2(0) : min(abs(interMotionDelta(frameBase, width, mb-1)), ivec2(66));
+    ivec2 topMagnitude = y == 0 ? ivec2(0) : min(abs(interMotionDelta(frameBase, width, mb-width)), ivec2(66));
+    ivec2 contexts = motionDeltaContexts(leftMagnitude, topMagnitude);
+    for (int axis = 0; axis < 2; ++axis)
+        encodeMvdComponent(f, coder, axis, delta[axis], contexts[axis]);
+
+    int base = frameBase+mb*macroblockWords;
+    int lumaCbp = residualBank[base+1], chromaCbp = residualBank[base+chromaOffset];
+    int left = x == 0 ? -1 : codedBlockPatternAt(base-macroblockWords);
+    int top = y == 0 ? -1 : codedBlockPatternAt(base-width*macroblockWords);
+    encodeLumaCbp(f, coder, lumaCbp, left, top);
+    encodeChromaCbp(f, coder, chromaCbp, left, top);
+    int size8x8 = (residualBank[base+3] >> 16) & 1;
+    if (lumaCbp != 0 && (residualBank[base+3] & 131072) != 0) {
+        int left8 = x == 0 ? 0 : (residualBank[base-macroblockWords+3] >> 16) & 1;
+        int top8 = y == 0 ? 0 : (residualBank[base-width*macroblockWords+3] >> 16) & 1;
+        encodeTransformSize(f, coder, left8+top8, size8x8);
+    }
+    if ((lumaCbp | chromaCbp) != 0)
+        encodeQpDelta(f, coder, fixtures[f].qp, fixtures[f].qp, false, false);
+    if (size8x8 != 0) {
+        for (int b = 0; b < 4; ++b)
+            if ((lumaCbp & (1 << b)) != 0)
+                encodeResidual(f, coder, 5, 0, false, base+4+b*64);
+    }
+    for (int b = 0; size8x8 == 0 && b < 16; ++b) {
+        if ((lumaCbp & (1 << (b/4))) == 0) continue;
+        int raster = blockToRaster[b];
+        int x4 = 4*x+raster%4, y4 = 4*y+raster/4;
+        int coded = lumaCodedFlag(frameBase, width, x4, y4, false);
+        int leftCoded = lumaCodedFlag(frameBase, width, x4-1, y4, false);
+        int topCoded = lumaCodedFlag(frameBase, width, x4, y4-1, false);
+        encodeDecision(f, coder, 93+leftCoded+2*topCoded, coded);
+        if (coded != 0) encodeResidual(f, coder, 2, 0, false, base+4+b*16);
+    }
+    encodeChroma420Residual(f, coder, frameBase, base, width, x, y, chromaCbp, false);
+}
+
+void encodeOperations(uint fixture) {
+    Coder coder = Coder(0, 0x1fe, -9, 0, 1); // Slot zero holds the preceding slice-header byte.
+    for (int i = 0; i < fixtures[fixture].count; ++i) {
+        Operation op = fixtures[fixture].operations[i];
+        switch (op.kind) {
+            case decision: encodeDecision(fixture, coder, op.first, op.second); break;
+            case bypass: encodeBypass(fixture, coder, op.first); break;
+            case ueBypass: encodeUeBypass(fixture, coder, op.first, op.second); break;
+            case terminal: encodeTerminal(fixture, coder); break;
+            case residual: encodeResidual(fixture, coder, op.first, op.second & 1, (op.second & 2) != 0,
+                                          (op.second >> 2)-1); break;
+            case intraType: encodeIntraType(fixture, coder, op.first, op.second, fixtures[fixture].frame); break;
+            case intra4x4Mode: encodeIntra4x4Mode(fixture, coder, op.first, op.second); break;
+            case intraChromaMode: encodeIntraChromaMode(fixture, coder, op.first, op.second); break;
+            case intra16Macroblock:
+                encodeIntra16Macroblock(fixture, coder, op.first, op.second, fixtures[fixture].frame);
+                break;
+            case codedBlockPattern: {
+                int left = (op.second & 127)-1;
+                int top = (op.second >> 7)-1;
+                encodeLumaCbp(fixture, coder, op.first & 15, left, top);
+                encodeChromaCbp(fixture, coder, op.first >> 4, left, top);
+                break;
+            }
+            case qpDelta:
+                fixtures[fixture].effectiveQp =
+                    encodeQpDelta(fixture, coder, op.first & 63, op.first >> 6,
+                                  (op.second & 3) == 1,
+                                  (op.second & 4) != 0 && (op.second & 24) != 0);
+                break;
+            case transformSize: encodeTransformSize(fixture, coder, op.first, op.second); break;
+            case macroblockSkip:
+                encodeMacroblockSkip(fixture, coder, op.first & 3, (op.first & 4) != 0, op.second & 1);
+                if ((op.second & 2) != 0) encodeTerminal(fixture, coder);
+                break;
+            case mvdComponent:
+                fixtures[fixture].mvdMagnitude = encodeMvdComponent(fixture, coder, op.second & 1,
+                                                                    op.first, op.second >> 1);
+                break;
+            case inter16Macroblock: encodeInter16Macroblock(fixture, coder, op.first, op.second); break;
+        }
+    }
+    if (fixtures[fixture].finish != 0) encodeFlush(fixture, coder, fixtures[fixture].frame);
+    fixtures[fixture].low = coder.low;
+    fixtures[fixture].range = coder.range;
+    fixtures[fixture].queue = coder.queue;
+    fixtures[fixture].outstanding = coder.outstanding;
+    fixtures[fixture].position = coder.position;
+}
+
+uint initialContext(int model, int qp, int index) {
+    int m = contextInit[model][index][0], n = contextInit[model][index][1];
+    int state = clamp(((m*qp) >> 4) + n, 1, 126);
+    return uint((min(state, 127-state) << 1) | (state >> 6));
+}
+
+void main() {
+#ifdef CABAC_SHARED_FRAME
+    uint fixture = gl_WorkGroupID.x;
+    if (fixture >= fixtures.length()) return;
+    int lane = int(gl_LocalInvocationIndex);
+    for (int i = 0; i < 4; ++i) frameRangeLps[lane][i] = rangeLps[lane][i];
+    for (int i = lane; i < 128; i += 64) {
+        frameTransition[i][0] = transition[i][0];
+        frameTransition[i][1] = transition[i][1];
+    }
+    frameRenormShift[lane] = renormShift[lane];
+    const int stride = 64;
+#else
+    uint fixture = gl_GlobalInvocationID.x;
+    if (fixture >= fixtures.length()) return;
+    const int lane = 0, stride = 1;
+#endif
+    int model = fixtures[fixture].model;
+    int qp = fixtures[fixture].qp;
+    int contexts = fixtures[fixture].chroma444 != 0 ? 1024 : 460;
+    for (int i = lane; i < contexts; i += stride) {
+#ifdef CABAC_SHARED_FRAME
+        frameContext[i] = initialContext(model, qp, i);
+#else
+        fixtures[fixture].context[i] = initialContext(model, qp, i);
+#endif
+    }
+#ifdef CABAC_SHARED_FRAME
+    barrier();
+    if (lane == 0) encodeOperations(fixture);
+#else
+    encodeOperations(fixture);
+#endif
+}

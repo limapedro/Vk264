@@ -1,0 +1,85 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Translated from common/quant.c and common/tables.c.
+// Copyright (C) 2003-2024 x264 project.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 64) in;
+
+#include "decimate4_table.glsl"
+
+#include "decimate8_table.glsl"
+
+struct RunLevel {
+    int last, mask, total;
+    int level[18];
+};
+struct Fixture {
+    int coefficients[64];
+    int denoised[64];
+    uint residualSum[64], noiseOffset[64];
+    int denoiseSize;
+    int scores[3], last[5];
+    RunLevel runLevel[4];
+};
+layout(std430, binding = 0) buffer Corpus { Fixture fixtures[]; };
+
+int coeffLast(uint fixture, int offset, int count) {
+    int index = count - 1;
+    while (index >= 0) {
+        if (fixtures[fixture].coefficients[offset + index] != 0) break;
+        --index;
+    }
+    return index;
+}
+
+int decimateScore(uint fixture, int offset, int count) {
+    int score = 0;
+    int index = coeffLast(fixture, offset, count);
+    while (index >= 0) {
+        int coefficient = fixtures[fixture].coefficients[offset + index];
+        --index;
+        if (uint(coefficient + 1) > 2u) return 9;
+        int run = 0;
+        while (index >= 0) {
+            if (fixtures[fixture].coefficients[offset + index] != 0) break;
+            --index;
+            ++run;
+        }
+        score += count == 64 ? decimateTable8[run] : decimateTable4[run];
+    }
+    return score;
+}
+
+void main() {
+    uint fixture = gl_GlobalInvocationID.x;
+    if (fixture >= fixtures.length()) return;
+
+    fixtures[fixture].scores[0] = decimateScore(fixture, 1, 15);
+    fixtures[fixture].scores[1] = decimateScore(fixture, 0, 16);
+    fixtures[fixture].scores[2] = decimateScore(fixture, 0, 64);
+    const int sizes[5] = int[5](4, 8, 15, 16, 64);
+    for (int sizeIndex = 0; sizeIndex < 5; ++sizeIndex) {
+        int index = coeffLast(fixture, 0, sizes[sizeIndex]);
+        fixtures[fixture].last[sizeIndex] = index;
+        // x264 calls coeff_level_run only when the block has a nonzero coefficient.
+        if (sizeIndex == 4 || index < 0) continue;
+        fixtures[fixture].runLevel[sizeIndex].last = index;
+        int total = 0, mask = 0;
+        for (; index >= 0; --index) {
+            int coefficient = fixtures[fixture].coefficients[index];
+            if (coefficient == 0) continue;
+            fixtures[fixture].runLevel[sizeIndex].level[total++] = coefficient;
+            mask |= 1 << index;
+        }
+        fixtures[fixture].runLevel[sizeIndex].mask = mask;
+        fixtures[fixture].runLevel[sizeIndex].total = total;
+    }
+
+    for (int i = 0; i < fixtures[fixture].denoiseSize; ++i) {
+        int coefficient = fixtures[fixture].denoised[i];
+        int magnitude = abs(coefficient);
+        fixtures[fixture].residualSum[i] += uint(magnitude);
+        int filtered = max(magnitude - int(fixtures[fixture].noiseOffset[i]), 0);
+        fixtures[fixture].denoised[i] = coefficient < 0 ? -filtered : filtered;
+    }
+}

@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#version 450
+layout(local_size_x = 1) in;
+
+layout(std430, binding = 0) buffer RateState {
+    int interQp, idrQp, bitDebt;
+    int budget, gop, fps, gopPosition, actualBits;
+} rate;
+
+void main() {
+    int interFrames = rate.gop - 1;
+    int extra = rate.budget * min(5, interFrames / 8);
+    bool separateIdr = rate.gopPosition == 0 && interFrames > 0;
+    int share = extra / max(1, interFrames);
+    int remainder = extra % max(1, interFrames);
+    int allocation = separateIdr ? rate.budget + extra
+        : rate.budget - share - int(rate.gopPosition <= remainder && remainder != 0);
+    int correction = rate.bitDebt / max(8, rate.fps / 2);
+    int aim = clamp(allocation - correction, max(1, allocation / 2), allocation * 3 / 2);
+    rate.bitDebt = clamp(rate.bitDebt + rate.actualBits - allocation, -30 * rate.budget, 30 * rate.budget);
+
+    float ratio = float(max(1, rate.actualBits)) / float(aim);
+    int limit = separateIdr ? 4 : 2;
+    int step = clamp(int(round((separateIdr ? 5.0 : 3.0) * log2(ratio))), -limit, limit);
+    if (separateIdr)
+        rate.idrQp = clamp(rate.idrQp + step, 0, 51);
+    else
+        rate.interQp = clamp(rate.interQp + step, 0, 51);
+}

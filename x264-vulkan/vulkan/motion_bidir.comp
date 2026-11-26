@@ -1,0 +1,110 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Translated from encoder/me.c. Copyright (C) 2003-2024 x264 project.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "motion_sampling.glsl"
+#include "hadamard4.glsl"
+layout(local_size_x = 64) in;
+
+const int stride = 56, planeSize = stride*stride, origin = 20*stride+20;
+const int costRadius = 128;
+const ivec2 sizes[7] = ivec2[7](ivec2(16,16), ivec2(16,8), ivec2(8,16), ivec2(8,8),
+                              ivec2(8,4), ivec2(4,8), ivec2(4,4));
+const ivec4 diamond[33] = ivec4[33](
+    ivec4(0,0,0,0),
+    ivec4(0,0,0,1), ivec4(0,0,0,-1), ivec4(0,0,1,0), ivec4(0,0,-1,0),
+    ivec4(0,1,0,0), ivec4(0,-1,0,0), ivec4(1,0,0,0), ivec4(-1,0,0,0),
+    ivec4(0,0,1,1), ivec4(0,0,-1,-1), ivec4(0,1,1,0), ivec4(0,-1,-1,0),
+    ivec4(1,1,0,0), ivec4(-1,-1,0,0), ivec4(1,0,0,1), ivec4(-1,0,0,-1),
+    ivec4(0,1,0,1), ivec4(0,-1,0,-1), ivec4(1,0,1,0), ivec4(-1,0,-1,0),
+    ivec4(0,0,-1,1), ivec4(0,0,1,-1), ivec4(0,-1,1,0), ivec4(0,1,-1,0),
+    ivec4(-1,1,0,0), ivec4(1,-1,0,0), ivec4(1,0,0,-1), ivec4(-1,0,0,1),
+    ivec4(0,-1,0,1), ivec4(0,1,0,-1), ivec4(-1,0,1,0), ivec4(1,0,-1,0));
+
+struct Fixture {
+    int pixelSize, weight, useSatd, reserved;
+    ivec4 mv, mvp, minMv, maxMv;
+    uint motionCost[2][2*costRadius+1];
+    uint source[16*16];
+    uint reference[2][4][planeSize];
+    uint scratch[32*16];
+};
+layout(std430, binding = 0) buffer Corpus { Fixture fixtures[]; };
+
+int sampleReference(uint f, int list, Reference ref, int position) {
+    int a = int(fixtures[f].reference[list][ref.plane0][ref.start0+position]);
+    if (ref.plane1 < 0) return a;
+    int b = int(fixtures[f].reference[list][ref.plane1][ref.start1+position]);
+    return (a+b+1) >> 1;
+}
+int predicted(uint f, Reference a, Reference b, int weight, int x, int y) {
+    int p = y*stride+x;
+    return implicitBiPixel(sampleReference(f, 0, a, p), sampleReference(f, 1, b, p), weight);
+}
+int difference(uint f, Reference a, Reference b, int weight, int x, int y) {
+    return int(fixtures[f].source[y*16+x]) - predicted(f, a, b, weight, x, y);
+}
+int pairCost(uint f, ivec4 mv, ivec4 mvp, ivec2 size, int weight, bool satd) {
+    Reference a = quarterReference(mv.xy, stride, origin);
+    Reference b = quarterReference(mv.zw, stride, origin);
+    ivec4 delta = mv-mvp+costRadius;
+    int result = int(fixtures[f].motionCost[0][delta.x] + fixtures[f].motionCost[0][delta.y]
+                   + fixtures[f].motionCost[1][delta.z] + fixtures[f].motionCost[1][delta.w]);
+    if (satd) {
+        for (int y = 0; y < size.y; y += 4)
+            for (int x = 0; x < size.x; x += 4) {
+                ivec4 rows[4];
+                for (int r = 0; r < 4; ++r)
+                    rows[r] = ivec4(difference(f,a,b,weight,x,y+r), difference(f,a,b,weight,x+1,y+r),
+                                    difference(f,a,b,weight,x+2,y+r), difference(f,a,b,weight,x+3,y+r));
+                result += satd4x4(rows);
+            }
+    } else {
+        for (int y = 0; y < size.y; ++y)
+            for (int x = 0; x < size.x; ++x)
+                result += abs(difference(f,a,b,weight,x,y));
+    }
+    return result;
+}
+
+void main() {
+    uint f = gl_GlobalInvocationID.x;
+    if (f >= fixtures.length()) return;
+    ivec4 best = fixtures[f].mv;
+    if (any(lessThan(best, fixtures[f].minMv+8)) ||
+        any(greaterThan(best, fixtures[f].maxMv-8))) return;
+    ivec2 size = sizes[fixtures[f].pixelSize];
+    int weight = fixtures[f].weight;
+    bool satd = fixtures[f].useSatd != 0;
+    ivec4 mvp = fixtures[f].mvp;
+    uint visited[128];
+    for (int i = 0; i < 128; ++i) visited[i] = 0;
+
+    int bestCost = 1 << 28;
+    ivec4 last = best;
+    for (int pass = 0; pass < 8; ++pass) {
+        int winner = 0;
+        for (int j = pass == 0 ? 0 : 1; j < 33; ++j) {
+            ivec4 point = best + diamond[j];
+            ivec4 key = point & 7;
+            int index = (key.x << 9) | (key.y << 6) | (key.z << 3) | key.w;
+            uint bit = 1u << (index & 31);
+            if (pass != 0 && (visited[index >> 5] & bit) != 0) continue;
+            visited[index >> 5] |= bit;
+            int cost = pairCost(f, point, mvp, size, weight, satd);
+            if (cost < bestCost) {
+                bestCost = cost;
+                winner = j;
+            }
+            last = point;
+        }
+        if (winner == 0) break;
+        best += diamond[winner];
+    }
+    fixtures[f].mv = best;
+    Reference a = quarterReference(last.xy, stride, origin);
+    Reference b = quarterReference(last.zw, stride, origin);
+    for (int y = 0; y < size.y; ++y)
+        for (int x = 0; x < size.x; ++x)
+            fixtures[f].scratch[y*32+x] = uint(predicted(f, a, b, weight, x, y));
+}

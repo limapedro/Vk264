@@ -1,178 +1,61 @@
-cmake_minimum_required(VERSION 3.20)
-project(vk264_phoenix VERSION 0.1.0 LANGUAGES C)
+cmake_minimum_required(VERSION 3.21)
+project(Wx264 LANGUAGES CXX)
 
-# Phoenix is a function-for-function CPU port of x264 (see reference/x264/).
-# Every ported function lives in src/ with a unit test in tests/.
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED ON)
+find_package(Vulkan REQUIRED COMPONENTS glslc)
 
+set(shader_dir "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+foreach(shader IN ITEMS pyramid halfpel motion spatial older_references residual flat_intra deblock deblock_frame mb_flags mb_entropy entropy scan assemble)
+    set(output "${shader_dir}/${shader}.spv")
+    add_custom_command(OUTPUT "${output}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${shader_dir}"
+        COMMAND Vulkan::glslc --target-env=vulkan1.1 -O
+                "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader}.comp" -o "${output}"
+        DEPENDS "shaders/${shader}.comp" "shaders/layout.glsl"
+                "shaders/transform.glsl" "shaders/bitstream.glsl" "shaders/deblock_tables.glsl"
+                "shaders/macroblock_syntax.glsl" "shaders/deblock_filter.glsl"
+                "x264-vulkan/vulkan/cavlc_residual.glsl"
+        VERBATIM)
+    list(APPEND shaders "${output}")
+endforeach()
+
+add_custom_target(wx264_shaders DEPENDS ${shaders})
+add_executable(wx264 src/main.cpp src/gpu.cpp)
+add_dependencies(wx264 wx264_shaders)
+target_link_libraries(wx264 PRIVATE Vulkan::Vulkan)
+target_compile_features(wx264 PRIVATE cxx_std_17)
+target_compile_definitions(wx264 PRIVATE WX_SHADER_DIR="${shader_dir}")
 if(MSVC)
-    add_compile_options(/W3)
+    target_compile_options(wx264 PRIVATE /W4)
 else()
-    add_compile_options(-Wall -Wextra)
+    target_compile_options(wx264 PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-add_library(phx STATIC
-    src/phx_param.c
-    src/phx_tables.c
-    src/phx_cost.c
-    src/phx_frame.c
-    src/phx_mbcache.c
-    src/phx_bitstream.c
-    src/phx_cabac.c
-    src/phx_headers.c
-    src/phx_encoder.c
-    src/phx_slice.c
-    src/phx_cabac_syntax.c
-    src/phx_predict.c
-    src/phx_dct.c
-    src/phx_quant.c
-    src/phx_cavlc.c
-    src/phx_mbencode.c
-    src/phx_analysis.c
-    src/phx_lookahead.c
-    src/phx_sei.c
-    src/phx_chroma.c
-    src/phx_rdo.c
-    src/phx_me.c
-    src/phx_lowres.c
-    src/phx_cavlc_syntax.c
-    src/phx_mc.c
-    src/phx_ratecontrol.c
-    src/phx_deblock.c
-    src/phx_cabac_dec.c
-    src/phx_cavlc_dec.c
-    src/phx_decode.c
-    src/phx_mvdirect.c
-    src/phx_dpb.c
-)
-target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+include(CTest)
+add_subdirectory(x264-vulkan/vulkan)
+target_link_libraries(wx264 PRIVATE x264_vulkan_backend)
 
-enable_testing()
+if(BUILD_TESTING)
+    find_package(Python3 COMPONENTS Interpreter)
+    find_program(FFMPEG ffmpeg)
+    find_program(FFPROBE ffprobe)
+    if(Python3_FOUND AND FFMPEG AND FFPROBE)
+        add_test(NAME shader_reconstruction
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/harness/check.py"
+                    --encoder $<TARGET_FILE:wx264> --ffmpeg "${FFMPEG}" --ffprobe "${FFPROBE}")
+        add_test(NAME vulkan_encoder_reconstruction
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/harness/check.py"
+                    --encoder $<TARGET_FILE:wx264> --ffmpeg "${FFMPEG}" --ffprobe "${FFPROBE}" --vulkan)
+        add_test(NAME vulkan_cavlc_reconstruction
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/harness/check.py"
+                    --encoder $<TARGET_FILE:wx264> --ffmpeg "${FFMPEG}" --ffprobe "${FFPROBE}" --vulkan --entropy cavlc)
+    endif()
+endif()
 
-add_executable(phx_test_param tests/test_param.c)
-target_link_libraries(phx_test_param PRIVATE phx)
-add_test(NAME phx_param_presets COMMAND phx_test_param)
-
-add_executable(phx_test_cost tests/test_cost.c)
-target_link_libraries(phx_test_cost PRIVATE phx)
-add_test(NAME phx_cost_tables COMMAND phx_test_cost)
-
-add_executable(phx_test_frame tests/test_frame.c)
-target_link_libraries(phx_test_frame PRIVATE phx)
-add_test(NAME phx_frame_lowres COMMAND phx_test_frame)
-
-add_executable(phx_test_mbcache tests/test_mbcache.c)
-target_link_libraries(phx_test_mbcache PRIVATE phx)
-add_test(NAME phx_macroblock_cache COMMAND phx_test_mbcache)
-
-add_executable(phx_test_bitstream tests/test_bitstream.c)
-target_link_libraries(phx_test_bitstream PRIVATE phx)
-add_test(NAME phx_bitstream COMMAND phx_test_bitstream)
-
-add_executable(phx_test_cabac tests/test_cabac.c)
-target_link_libraries(phx_test_cabac PRIVATE phx)
-add_test(NAME phx_cabac COMMAND phx_test_cabac)
-
-add_executable(phx_header_dump tools/header_dump.c)
-target_link_libraries(phx_header_dump PRIVATE phx)
-
-add_executable(phx_cli tools/phx_cli.c)
-target_link_libraries(phx_cli PRIVATE phx)
-
-add_executable(phx_test_encoder tests/test_phx_encoder.c)
-target_link_libraries(phx_test_encoder PRIVATE phx)
-add_test(NAME phx_encoder COMMAND phx_test_encoder)
-
-add_executable(phx_test_slice tests/test_phx_slice.c)
-target_link_libraries(phx_test_slice PRIVATE phx)
-add_test(NAME phx_slice_header COMMAND phx_test_slice)
-
-add_executable(phx_test_cabac_syntax tests/test_phx_cabac_syntax.c)
-target_link_libraries(phx_test_cabac_syntax PRIVATE phx)
-add_test(NAME phx_cabac_syntax COMMAND phx_test_cabac_syntax)
-
-add_executable(phx_test_predict tests/test_phx_predict.c)
-target_link_libraries(phx_test_predict PRIVATE phx)
-add_test(NAME phx_predict COMMAND phx_test_predict)
-
-add_executable(phx_test_quant tests/test_phx_quant.c)
-target_link_libraries(phx_test_quant PRIVATE phx)
-add_test(NAME phx_quant_dequant COMMAND phx_test_quant)
-
-add_executable(phx_test_dct tests/test_phx_dct.c)
-target_link_libraries(phx_test_dct PRIVATE phx)
-add_test(NAME phx_dct_i16_dc_recon COMMAND phx_test_dct)
-
-add_executable(phx_test_cavlc tests/test_phx_cavlc.c)
-target_link_libraries(phx_test_cavlc PRIVATE phx)
-add_test(NAME phx_cavlc COMMAND phx_test_cavlc)
-
-add_executable(phx_test_mbencode tests/test_phx_mbencode.c)
-target_link_libraries(phx_test_mbencode PRIVATE phx)
-add_test(NAME phx_mbencode COMMAND phx_test_mbencode)
-
-add_executable(phx_test_analysis tests/test_phx_analysis.c)
-target_link_libraries(phx_test_analysis PRIVATE phx)
-add_test(NAME phx_analysis COMMAND phx_test_analysis)
-
-add_executable(phx_test_lookahead tests/test_phx_lookahead.c tests/test_phx_lowres.c)
-target_link_libraries(phx_test_lookahead PRIVATE phx)
-add_test(NAME phx_lookahead COMMAND phx_test_lookahead)
-
-add_executable(phx_test_sei tests/test_phx_sei.c)
-target_link_libraries(phx_test_sei PRIVATE phx)
-add_test(NAME phx_sei COMMAND phx_test_sei)
-
-add_executable(phx_test_chroma tests/test_phx_chroma.c)
-target_link_libraries(phx_test_chroma PRIVATE phx)
-add_test(NAME phx_chroma COMMAND phx_test_chroma)
-
-add_executable(phx_test_rdo tests/test_phx_rdo.c)
-target_link_libraries(phx_test_rdo PRIVATE phx)
-add_test(NAME phx_rdo COMMAND phx_test_rdo)
-
-add_executable(phx_test_me tests/test_phx_me.c)
-target_link_libraries(phx_test_me PRIVATE phx)
-add_test(NAME phx_me COMMAND phx_test_me)
-
-add_executable(phx_test_lowres tests/test_phx_lowres.c)
-target_compile_definitions(phx_test_lowres PRIVATE PHX_LOWRES_STANDALONE)
-target_link_libraries(phx_test_lowres PRIVATE phx)
-add_test(NAME phx_lowres COMMAND phx_test_lowres)
-
-add_executable(phx_test_cavlc_syntax tests/test_phx_cavlc_syntax.c)
-target_link_libraries(phx_test_cavlc_syntax PRIVATE phx)
-add_test(NAME phx_cavlc_syntax COMMAND phx_test_cavlc_syntax)
-
-add_executable(phx_test_mc tests/test_phx_mc.c)
-target_link_libraries(phx_test_mc PRIVATE phx)
-add_test(NAME phx_mc COMMAND phx_test_mc)
-
-add_executable(phx_test_ratecontrol tests/test_phx_ratecontrol.c)
-target_link_libraries(phx_test_ratecontrol PRIVATE phx)
-add_test(NAME phx_ratecontrol COMMAND phx_test_ratecontrol)
-
-add_executable(phx_test_deblock tests/test_phx_deblock.c)
-target_link_libraries(phx_test_deblock PRIVATE phx)
-add_test(NAME phx_deblock COMMAND phx_test_deblock)
-
-add_executable(phx_test_cabac_dec tests/test_phx_cabac_dec.c)
-target_link_libraries(phx_test_cabac_dec PRIVATE phx)
-add_test(NAME phx_cabac_dec COMMAND phx_test_cabac_dec)
-
-add_executable(phx_test_cavlc_dec tests/test_phx_cavlc_dec.c)
-target_link_libraries(phx_test_cavlc_dec PRIVATE phx)
-add_test(NAME phx_cavlc_dec COMMAND phx_test_cavlc_dec)
-
-add_executable(phx_test_decode tests/test_phx_decode.c)
-target_link_libraries(phx_test_decode PRIVATE phx)
-add_test(NAME phx_decode COMMAND phx_test_decode)
-
-add_executable(phx_test_mvdirect tests/test_phx_mvdirect.c)
-target_link_libraries(phx_test_mvdirect PRIVATE phx)
-add_test(NAME phx_mvdirect COMMAND phx_test_mvdirect)
-
-add_executable(phx_test_dpb tests/test_phx_dpb.c)
-target_link_libraries(phx_test_dpb PRIVATE phx)
-add_test(NAME phx_dpb COMMAND phx_test_dpb)
+option(WX_BUILD_OBS "Build the Windows x64 OBS encoder plugin" OFF)
+if(WX_BUILD_OBS)
+    enable_language(C)
+    if(NOT WIN32 OR NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+        message(FATAL_ERROR "The OBS preview target requires a Windows x64 MSVC build")
+    endif()
+    add_subdirectory(obs)
+endif()
