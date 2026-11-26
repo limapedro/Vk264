@@ -159,4 +159,16 @@ All four now byte-identical; FAST slice types `I P P P BREF B B P`, frame_num an
 
 M8 reported that `phx_cabac_context_init_PB` in `src/phx_tables.c` differed from x264 `common/tables.c:768` (e.g. ctx 40: 125 vs 127). Direct comparison after stripping comments shows **all 6,144 int8 values are identical**, and `phx_cabac_context_init()` uses the same formula and table index as x264 `cabac.c:37-43` (`PB[model+1]`, `clip3((m*qp)>>4 + b, 1, 126)`, `(min(state,127-state)<<1)|(state>>6)`). For qp=26/model=0, ctx 40/43/46 all encode to the same states on both sides. No source change was made — this is a reported-and-disproven finding, not a bug to chase.
 
+## F16 — the ME refine API is correct; its inputs are not
+
+M4 instrumented the **real** x264 encode (10,063 refine calls) and the real Phoenix encode of `build/oracle_full/diag.yuv`, then replayed x264's exact `fenc`/`fref`/arguments through `phx_me_refine_subpel_mv`. Post-refine MV/cost/cost_mv were byte-identical (`medium 0,0/599/12`; `veryfast 1,20/485/114`). The API is therefore not the cause of the remaining P-frame mismatch.
+
+Three upstream input differences remain:
+
+1. **AQ/λ**: x264's `--qp 28` keeps AQ enabled, so per-MB QP becomes 30 and λ=8 (`ratecontrol.c:1754-1767`, `tables.c:97-104`). Phoenix's CLI disables AQ for CQP (`tools/phx_cli.c:142`) and uses λ=6.
+2. **References**: x264's ME reads reconstructed/deblocked pictures (`macroblock.c:1438-1622`); Phoenix passes the raw source frame (`phx_encoder.c:1335-1339`).
+3. **Frame pairing**: x264 codes B frames at display frames 1–3, so its first analysed P frame is display frame 4; Phoenix's first P frame is display frame 1.
+
+Delegated to M15 (CQP AQ), DPB1 (reconstructed/deblocked reference DPB) and B1 (B-direct/B_SKIP). Fixing the inputs is a prerequisite for real-clip MB-level parity, independent of any further ME work.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
