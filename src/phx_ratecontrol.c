@@ -114,6 +114,7 @@ struct phx_ratecontrol_t {
     int bframe;                     /* param.i_bframe (ratecontrol.c:642) */
     int lowres;                     /* h->frames.b_have_lowres */
     int keyint_max;                 /* param.i_keyint_max (ratecontrol.c:2602) */
+    int b_kept_as_ref;              /* h->fdec->b_kept_as_ref (:1508) */
     int weighted_pred;              /* param.analyse.i_weighted_pred */
     int i_aq_mode;                  /* param.rc.i_aq_mode */
 
@@ -318,6 +319,13 @@ int phx_ratecontrol_configure(phx_ratecontrol_t *rc, const phx_ratecontrol_confi
     return 0;
 }
 
+/* ratecontrol.c:1508 — fdec->b_kept_as_ref drives the CQP BREF midpoint.
+ * SHADER: C — one scalar uniform set before ratecontrol_start(). */
+void phx_ratecontrol_set_kept_as_ref(phx_ratecontrol_t *rc, int b_kept_as_ref)
+{
+    if (rc) rc->b_kept_as_ref = !!b_kept_as_ref;
+}
+
 int phx_ratecontrol_set_complexity(phx_ratecontrol_t *rc, int satd)
 {
     if (!rc || satd < 0) return -1;
@@ -363,8 +371,13 @@ int phx_ratecontrol_start(phx_ratecontrol_t *rc, int slice_type, int frame_bits,
     if (rc->method == PHX_RC_CQP) {
         /* phx_encoder.c:466-486 — CQP bypasses rate_estimate_qscale (:1506);
          * keep byte-identical to the encoder's mapping including its clip. */
-        int qp = rc_clip3i(rc->qp_constant[slice_type],
-                           rc->cfg.qp_min, rc->cfg.qp_max); /* :1524 */
+        int qp = rc->qp_constant[slice_type];
+        /* :1508-1511 — a B slice kept as a reference uses the midpoint of
+         * qp_constant[B] and qp_constant[P] (30 and 28 -> 29 at --qp 28). */
+        if (slice_type == PHX_RC_SLICE_B && rc->b_kept_as_ref)
+            qp = (rc->qp_constant[PHX_RC_SLICE_B] +
+                  rc->qp_constant[PHX_RC_SLICE_P]) / 2;
+        qp = rc_clip3i(qp, rc->cfg.qp_min, rc->cfg.qp_max); /* :1524 */
         rc->qpm = (float)qp;                      /* :1530 */
         *qp_out = (int)rc_clip3f(rc->qpm + 0.5f,
                                  rc->cfg.qp_min, rc->cfg.qp_max); /* :1751 */
@@ -477,6 +490,14 @@ int phx_ratecontrol_start(phx_ratecontrol_t *rc, int slice_type, int frame_bits,
     if (slice_type != PHX_RC_SLICE_B)
         rc->last_non_b_pict_type = slice_type;    /* :1536-1537 */
     return 0;
+}
+
+/* analyse.c:255-259 / tables.c:97-109 — exact lambda lookup used by every
+ * mb_analyse_* cost.  SHADER: C — immutable table. */
+int phx_ratecontrol_lambda(int qp)
+{
+    if (qp < 0 || qp > PHX_QP_MAX_MAX) return -1;
+    return (int)phx_lambda_tab[qp];
 }
 
 /* ratecontrol.c:1754-1768 — shared core.  qp is h->rc->qpm (a float), not
