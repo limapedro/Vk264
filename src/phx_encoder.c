@@ -647,29 +647,12 @@ static void phx_encoder_predict_mv16(const phx_mb_cache_t *c, int idx,
     }
 }
 
-/* x264 encoder/macroblock.c:654-667 (P_SKIP MC) / :769-775 (inter MC),
- * restricted to the full-pel P_L0 16x16 no-residual decision produced by
- * phx_analysis.c.  x264 writes motion-compensated samples into p_fdec; here
- * that is the caller-owned cache->p_fdec (h->recon).  No source pixel is
- * fabricated: every byte comes from the real list-0 frame at the ME MV.
- * TODO: chroma reconstruction (macroblock.c:669-681) and the residual path
- * (:777-922), both owned by N1's phx_mbencode.c.
- * SHADER: C — serial 16x16 copy into the reconstruction plane. */
-static void phx_encoder_inter_copy(const phx_t *h, const phx_frame_t *fref,
-                                   phx_mb_cache_t *c,
-                                   const phx_mb_decision_t *d,
-                                   int mb_x, int mb_y)
-{
-    (void)h;
-    if (!fref || !fref->plane || !c->p_fdec) return;
-    int mx = (d->mv[0][0][0] + 2) >> 2;                 /* encoder/me.c:178 */
-    int my = (d->mv[0][0][1] + 2) >> 2;
-    const uint8_t *src = fref->plane
-        + (size_t)(mb_y*16 + my) * fref->i_stride + mb_x*16 + mx;
-    uint8_t *dst = c->p_fdec;                           /* macroblock.c:665 */
-    for (int y = 0; y < 16; y++)                        /* mc_luma 16x16 */
-        memcpy(dst + y*c->fdec_stride, src + y*fref->i_stride, 16);
-}
+/* The no-residual P_L0/D_16x16 motion compensation now lives in the B stage
+ * (phx_mbencode.c: phx_mb_mc_l0_16x16), following x264 encoder/macroblock.c:
+ * 654-667/:769-775 and common/mc.c:162-171.  The C stage only publishes the
+ * analysis MV/ref into the neighbour cache (phx_encoder_apply_decision) and
+ * writes the P_L0 header; it no longer fabricates MC samples itself.
+ * SHADER: C — serial host pipeline, no local reconstruction copy. */
 
 /* cavlc.c:305-335 (cavlc_mb_header_i).  x264 passes i_mb_i_offset = 0 for
   * I slices, 5 for P and 23 for B (cavlc.c:408/481/543); intra MBs in a P/B
@@ -973,9 +956,10 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
 
     /* encoder.c:3454/3542-3570 — list-0 reference 0 for this slice.  x264
      * reads h->fref[0][0] from the DPB (reconstructed); Phoenix keeps the
-     * last coded reference picture in input_frames[] and supplies its padded
-     * source plane to phx_me16().  TODO: feed reconstructed DPB frames once
-     * multi-frame reconstruction is owned by N1. */
+     * last coded reference picture in input_frames[] and passes this frame
+     * into the B stage as p_fref[0][0] (encoder/macroblock.c:666) for the
+     * real P_L0 motion compensation.  TODO: feed reconstructed DPB frames
+     * once multi-frame reconstruction is owned elsewhere. */
     const phx_frame_t *fref = NULL;
     if (fc.i_type != PHX_SLICE_I && h->i_last_ref_frame >= 0 &&
         h->i_last_ref_frame < h->n_input_frames &&
@@ -1040,9 +1024,11 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                                                   mb_x, mb_y, sh.i_qp,
                                                   fc.i_type, &d); /* :2861 */
             /* P_L0/D_16x16 with cbp=0 is a real inter decision: its MV comes
-             * from phx_me16() and its ref from list 0.  I_8x8 is still
-             * rejected by phx_mbencode.c (no 64-coefficient slot), as are
-             * all residual-carrying inter modes; those fall back to I16. */
+             * from phx_me16() and its ref from list 0.  The B stage now
+             * reconstructs it from fref (encoder/macroblock.c:654-667/
+             * :769-775); I_8x8 is still rejected by phx_mbencode.c (no
+             * 64-coefficient slot), as are all residual-carrying inter
+             * modes; those fall back to I16. */
             int inter = (rc == 0 && fc.i_type == PHX_SLICE_P &&
                          d.mb_type == PHX_P_L0 &&
                          d.cbp_luma == 0 && d.cbp_chroma == 0);
@@ -1066,42 +1052,28 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
              * mode indices (analyse.c:3739-3751); the FIX4/FIX16 mapping is
              * applied only by the CABAC/CAVLC syntax writers. */
             d.b_transform_8x8 = 0;                     /* pps transform flag is 0 below */
-            rc = phx_macroblock_encode_ex(&h->param, h->fenc, c,
+            rc = phx_macroblock_encode_ex(&h->param, h->fenc, fref, c,
                                           mb_x, mb_y, &d,
                                           h->param.b_cabac ? &h->cabac : NULL); /* :2865 */
             if (rc < 0) {
-                if (inter && fref) {
-                    /* phx_mbencode.c:380-382 rejects P_L0 (N1 owns that file).
-                     * With cbp=0 the B-stage has no residual to produce; the
-                     * integer-MV motion compensation of macroblock.c:654-667
-                     * and :769-775 is performed here from the real reference.
-                     * Report the required N1 change in the handoff notes. */
-                    phx_encoder_inter_copy(h, fref, c, &d, mb_x, mb_y);
-                    memset(d.dct, 0, sizeof(d.dct));
-                    memset(d.nnz, 0, sizeof(d.nnz));
-                    d.cbp_luma = d.cbp_chroma = d.i_cbp = 0;
-                    d.b_transform_8x8 = 0;
-                    for (int i = 0; i < 16; i++)
-                        c->non_zero_count[phx_scan8[i]] = 0;
-                    c->i_cbp_luma = c->i_cbp_chroma = 0;
-                } else {
-                    /* Last resort: an empty I_16x16 MB keeps the slice
-                     * parseable if the B-stage still refuses the decision. */
-                    memset(d.dct, 0, sizeof(d.dct));
-                    memset(d.nnz, 0, sizeof(d.nnz));
-                    d.mb_type = PHX_I_16x16;
-                    d.i_partition = PHX_D_16x16;
-                    d.intra16_pred_mode = 2;
-                    d.cbp_luma = d.cbp_chroma = d.i_cbp = 0;
-                    d.b_transform_8x8 = 0;
-                    d.skip = 0;
-                    for (int i = 0; i < 16; i++) {
-                        c->non_zero_count[phx_scan8[i]] = 0;
-                        c->intra4x4_pred_mode[phx_scan8[i]] = PHX_I_PRED_4x4_DC;
-                    }
-                    c->i_cbp_luma = c->i_cbp_chroma = 0;
-                    inter = 0;
+                /* Last resort: an empty I_16x16 MB keeps the slice parseable
+                 * if the B-stage refuses the decision (unsupported inter
+                 * mode, missing reference, etc.).  No MC copy is attempted
+                 * here: phx_mbencode.c owns the inter reconstruction. */
+                memset(d.dct, 0, sizeof(d.dct));
+                memset(d.nnz, 0, sizeof(d.nnz));
+                d.mb_type = PHX_I_16x16;
+                d.i_partition = PHX_D_16x16;
+                d.intra16_pred_mode = 2;
+                d.cbp_luma = d.cbp_chroma = d.i_cbp = 0;
+                d.b_transform_8x8 = 0;
+                d.skip = 0;
+                for (int i = 0; i < 16; i++) {
+                    c->non_zero_count[phx_scan8[i]] = 0;
+                    c->intra4x4_pred_mode[phx_scan8[i]] = PHX_I_PRED_4x4_DC;
                 }
+                c->i_cbp_luma = c->i_cbp_chroma = 0;
+                inter = 0;
             }
             if (!inter) {
                 /* encoder/macroblock.c:925-941/259-498 — intra chroma DC+AC. */
@@ -1109,8 +1081,8 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                                                        mb_x, mb_y, &d);
                 if (crc < 0) { d.cbp_chroma = 0; d.i_cbp &= ~0x30; }
             } else {
-                /* macroblock.c:940-943 — inter chroma MC belongs to the
-                 * B-stage (N1); no intra chroma residual is fabricated here. */
+                /* macroblock.c:940-943 — inter chroma has no intra residual;
+                 * no chroma coefficients are fabricated for this decision. */
                 d.chroma_pred_mode = 0;
                 d.cbp_chroma = 0;
                 memset(d.chroma_dct, 0, sizeof(d.chroma_dct));

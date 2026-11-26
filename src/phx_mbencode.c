@@ -18,6 +18,10 @@
 
 #include <string.h>
 
+/* common/base.h:206 — x264_clip3(); defined with the chroma helpers below and
+ * needed earlier by the inter MV clip.  SHADER: B — scalar clamp. */
+static int phx_mb_clip3i(int v, int lo, int hi);
+
 /* phx_mbencode.h routes external callers of the phase-B chroma entry point
  * through phx_mb_encode_chroma_trellis().  Keep the plain phx_chroma.c symbol
  * addressable here without recursion.  SHADER: B — no global state. */
@@ -348,13 +352,83 @@ static void phx_mb_encode_pcm(const phx_param_t *p, const uint8_t *fenc,
     d->cbp_chroma = 0xf;                                     /* macroblock.c:1740 */
 }
 
+/* No-residual inter decision: clear every coefficient/nnz slot the C stage
+ * would otherwise read as a residual.  macroblock_encode_internal starts with
+ * i_cbp_luma = 0 and clears the LUMA_DC nnz flags (encoder/macroblock.c:624-
+ * 626); with cbp_luma == cbp_chroma == 0 no residual is written and
+ * macroblock_cache_save (common/macroblock.c:1761-1779) stores zeros.
+ * SHADER: B — one serial clear of the B->C handoff arrays. */
+static void phx_mb_clear_inter_residual(phx_mb_decision_t *d,
+                                        phx_mb_cache_t *c)
+{
+    for (int i = 0; i < 48; i++) {
+        d->nnz[i] = 0;
+        memset(d->dct[i], 0, 16 * sizeof(phx_dctcoef));
+        c->non_zero_count[phx_scan8[i]] = 0;
+    }
+    d->nnz[phx_scan8[PHX_LUMA_DC]] = 0;
+    memset(d->dct[phx_scan8[PHX_LUMA_DC]], 0, 16 * sizeof(phx_dctcoef));
+    c->non_zero_count[phx_scan8[PHX_LUMA_DC]] = 0;
+    for (int ch = 0; ch < 2; ch++) {
+        memset(d->chroma_dct[ch], 0, sizeof(d->chroma_dct[ch]));
+        memset(d->chroma_nnz[ch], 0, sizeof(d->chroma_nnz[ch]));
+        c->non_zero_count[phx_scan8[PHX_CHROMA_DC + ch]] = 0;
+    }
+}
+
+/* Motion-compensated 16x16 luma copy for P_L0/D_16x16 with cbp == 0.
+ * Follows encoder/macroblock.c:654-667 (p_fdec[p] <- mc_luma(..., p_fref[0][0],
+ * i_stride[p], mvx, mvy, 16, 16)) and the inter branch at :769-775
+ * (x264_mb_mc when MC was not already done in analysis).  The MV is clipped
+ * to the frame-edge limits of analyse.c:336-337/:391-392, converted from
+ * qpel with FPEL() (encoder/me.c:178), and the 16 rows are copied by
+ * mc_copy (common/mc.c:162-171).  d->ref[0][0] selects list-0 reference 0 —
+ * the only list entry Phoenix passes in (macroblock.c:666 p_fref[0][0]).
+ * No interpolation/filtering is fabricated: a non-fullpel MV uses its
+ * rounded fullpel sample, exactly the FPEL() convention above.
+ * SHADER: B — one serial 16x16 row copy into the B-stage FDEC window. */
+static int phx_mb_mc_l0_16x16(const phx_frame_t *fref, uint8_t *p_dst,
+                              int mb_x, int mb_y, const phx_mb_decision_t *d)
+{
+    if (!fref || !fref->plane || fref->i_stride <= 0 ||
+        fref->i_width <= 0 || fref->i_height <= 0)
+        return -1;
+    if (d->ref[0][0] != 0) /* only L0 ref 0 is supplied (macroblock.c:666) */
+        return -1;
+
+    const int mb_w = fref->i_width / 16, mb_h = fref->i_height / 16;
+    /* analyse.c:336-337 / :391-392 — allow 24 pixels beyond each frame edge,
+     * matching the replicated padding of common/frame.c:535-553. */
+    const int mv_min_x = 4 * (-16 * mb_x - 24);
+    const int mv_max_x = 4 * (16 * (mb_w - mb_x - 1) + 24);
+    const int mv_min_y = 4 * (-16 * mb_y - 24);
+    const int mv_max_y = 4 * (16 * (mb_h - mb_y - 1) + 24);
+    const int mvx = phx_mb_clip3i(d->mv[0][0][0], mv_min_x, mv_max_x);
+                                                             /* macroblock.c:659 */
+    const int mvy = phx_mb_clip3i(d->mv[0][0][1], mv_min_y, mv_max_y);
+                                                             /* macroblock.c:661 */
+    const int mx = (mvx + 2) >> 2;                           /* me.c:178 FPEL */
+    const int my = (mvy + 2) >> 2;
+
+    /* p_fdec pointer for this MB is p_dst (common/common.h:571); the source
+     * pointer is the ref frame plane offset by the MB origin plus the MV
+     * (common/macroblock.c:625-635 builds p_fref with ref_pix_offset). */
+    const uint8_t *src = fref->plane
+        + (size_t)(mb_y * 16 + my) * fref->i_stride + mb_x * 16 + mx;
+    for (int y = 0; y < 16; y++)                        /* mc.c:164-170 */
+        memcpy(p_dst + y * PHX_FDEC_STRIDE, src + y * fref->i_stride, 16);
+    return 0;
+}
+
 /* x264_macroblock_encode — reference/x264/encoder/macroblock.c:974-982,
  * dispatching macroblock_encode_internal (:618-972).  Cache-nnz and cbp
  * stores mirror common/macroblock.c:1680/1761-1779; reconstructed pixels are
- * written into f->plane because phx_frame_t has no separate fdec plane
- * (common/frame.h:37-140).
+ * written into f->plane (or the caller's cache->p_fdec) because phx_frame_t
+ * has no separate fdec plane (common/frame.h:37-140).  The inter branch is
+ * macroblock.c:654-667/:769-775 with mc_copy (common/mc.c:162-171).
  * SHADER: B — the single B-stage entry point for one macroblock. */
 int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
+                             const phx_frame_t *fref,
                              phx_mb_cache_t *cache, int mb_x, int mb_y,
                              phx_mb_decision_t *d, phx_cabac_t *cb)
 {
@@ -374,12 +448,24 @@ int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
      * phx_mb_decision_t::dct[] has only 16 per slot.
      * TODO (B): chroma prediction/DCT/quant/IDCT (encoder/macroblock.c:259)
      * needs chroma planes that phx_frame_t does not expose.
-     * TODO (B): P_L0/P_8x8/B_* and *_SKIP need reference frames and the MC
-     * path of encoder/macroblock.c:654-704/769-922.
-     * Do not approximate any of these: reject them explicitly. */
+     * TODO (B): P_8x8/B_*, *_SKIP and residual-carrying inter modes need the
+     * full MC + residual path of encoder/macroblock.c:654-704/769-922.
+     * Do not approximate any of these: reject them explicitly.
+     * The supported inter mode is analysis's no-residual P_L0/D_16x16
+     * (phx_analysis.c:1075-1126): ref[0][0] == 0, qpel MV in mv[0][0], cbp 0. */
+    const int inter_l0 = (d->mb_type == PHX_P_L0 &&
+                          d->i_partition == PHX_D_16x16 &&
+                          d->cbp_luma == 0 && d->cbp_chroma == 0);
     if (d->mb_type != PHX_I_16x16 && d->mb_type != PHX_I_4x4
-        && d->mb_type != PHX_I_PCM)
+        && d->mb_type != PHX_I_PCM && !inter_l0)
         return -1;
+    if (inter_l0) {
+        /* macroblock.c:666 reads p_fref[0][0]; the caller must supply that
+         * frame with the same geometry as the current picture. */
+        if (!fref || !fref->plane || fref->i_width != f->i_width ||
+            fref->i_height != f->i_height || d->ref[0][0] != 0)
+            return -1;
+    }
     if (d->mb_type == PHX_I_16x16 && (d->intra16_pred_mode < 0 || d->intra16_pred_mode > 6))
         return -1;
     if (d->mb_type == PHX_I_4x4)
@@ -417,7 +503,13 @@ int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
     d->skip = 0;
     d->b_transform_8x8 = 0;
 
-    if (d->mb_type == PHX_I_16x16) {
+    if (inter_l0) {
+        /* macroblock.c:654-667/:769-775 + mc.c:162-171 — MC into p_fdec from
+         * the caller's L0 reference 0, then no residual (cbp == 0). */
+        if (phx_mb_mc_l0_16x16(fref, p_dst, mb_x, mb_y, d) < 0)
+            return -1;
+        phx_mb_clear_inter_residual(d, cache);  /* macroblock.c:624-626 */
+    } else if (d->mb_type == PHX_I_16x16) {
         phx_mb_encode_i16x16(&qt, fenc, p_dst, d->i_qp,
                              d->intra16_pred_mode, d, cache);
     } else if (d->mb_type == PHX_I_4x4) {
@@ -445,7 +537,7 @@ int phx_macroblock_encode(const phx_param_t *p, phx_frame_t *f,
                           phx_mb_cache_t *cache, int mb_x, int mb_y,
                           phx_mb_decision_t *d)
 {
-    return phx_macroblock_encode_ex(p, f, cache, mb_x, mb_y, d, NULL);
+    return phx_macroblock_encode_ex(p, f, NULL, cache, mb_x, mb_y, d, NULL);
 }
 
 /* -------------------------------------------------------------------------

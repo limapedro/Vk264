@@ -14,9 +14,11 @@
   *         reference/x264/encoder/set.c:305/:505 (SPS/PPS write),
   *         reference/x264/common/bitstream.c:55 (Annex-B assembly).
   *
-  * No byte-exact x264 parity is claimed: the MB stage still falls back to
-  * I_16x16 for P/B frames (inter ME is not ported).  This test checks the
-  * frame-type wiring, slice NAL count/types and monotonic frame_num/POC.
+  * No byte-exact x264 parity is claimed: P_L0/D_16x16 no-residual MBs are
+  * now reconstructed by the B stage from the real list-0 reference, but B
+  * slices and residual inter modes still fall back to intra.  This test
+  * checks the frame-type wiring, slice NAL count/types, monotonic
+  * frame_num/POC and the P_L0 MV syntax handoff.
   *
   * SHADER: C — serial host-side smoke test; no rendering or pixel shaders.
   */
@@ -751,6 +753,7 @@ static int tc_mvd_prefix(phx_test_cabac_t *d, int ctxbase)
 static int check_p_slice_mb(void)
 {
     static uint8_t raw[2 * (64*64 + 2*32*32)];
+    int fails = 0;
     phx_param_t p;
     phx_param_default(&p);                              /* base.c:344 */
     p.i_width = p.i_height = 64;
@@ -809,6 +812,10 @@ static int check_p_slice_mb(void)
                         types, offs, lens, &nn);
         if (rc == 0) break;
     }
+    /* The B-stage reconstruction is verified deterministically in
+     * tests/test_phx_mbencode.c; the shared h->recon plane is also analysis
+     * scratch, so sampling it here would not isolate the MC output.  This
+     * test checks that the emitted syntax is P_L0/D_16x16 with the real MV. */
     phx_encoder_close(h);                               /* api.c:130 */
 
     phx_sps_t sps;
@@ -834,7 +841,6 @@ static int check_p_slice_mb(void)
     phx_test_cabac_t d;
     tc_init(&d, rbsp, cabac_start, 28, PHX_SLICE_P);     /* P slice QP = 28 */
 
-    int fails = 0;
     if (tc_dec(&d, 14) != 0) {                          /* cabac.c:439 P_L0 */
         printf("FAIL p-mb: mb_type is not P_L0\n"); fails++;
     }

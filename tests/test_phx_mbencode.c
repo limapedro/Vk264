@@ -15,6 +15,8 @@
 #include "phx_analysis.h"
 #include "phx_chroma.h"
 #include "phx_param.h"
+#include "phx_dct.h"
+#include "phx_cabac_syntax.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -369,7 +371,7 @@ static void phx_test_first_mb_chroma_trellis(void)
     phx_cabac_t cb;
     memset(&cb, 0, sizeof(cb));
     phx_cabac_context_init(&cb, PHX_SLICE_I, d.i_qp, 0);
-    CHECK(phx_macroblock_encode_ex(&p, f, &c, 0, 0, &d, &cb) == 0,
+    CHECK(phx_macroblock_encode_ex(&p, f, NULL, &c, 0, 0, &d, &cb) == 0,
           "trellis handoff luma encode");
     CHECK(phx_macroblock_encode_chroma(&p, f, &c, 0, 0, &d) == 0,
           "trellis handoff chroma encode");
@@ -410,12 +412,120 @@ static void phx_test_first_mb_chroma_trellis(void)
     phx_frame_delete(f);
 }
 
+/* P_L0/D_16x16 no-residual reconstruction from a caller-supplied reference.
+ * The MV is fixed at (8,4) qpel, i.e. (2,1) fullpel via me.c:178 FPEL(); the
+ * reconstructed MB must equal the reference at (x+2,y+1) for all 256 samples.
+ * The decision's coefficient/nnz arrays are poisoned first so the B stage
+ * must explicitly clear them (encoder/macroblock.c:624-626, :946-951).
+ * A missing reference must be rejected, not replaced with fabricated pixels.
+ * SHADER: B — verifies the B->C inter handoff and the MC reconstruction. */
+static void phx_test_p_l0_mc(void)
+{
+    phx_param_t p;
+    phx_param_default(&p);
+    p.b_cabac = 1;
+
+    phx_frame_t *f = phx_frame_new(32, 32, 0);
+    phx_frame_t *ref = phx_frame_new(32, 32, 0);
+    CHECK(f && ref, "P_L0 frame allocation");
+    if (!f || !ref) {
+        if (f) phx_frame_delete(f);
+        if (ref) phx_frame_delete(ref);
+        return;
+    }
+    for (int y = 0; y < 32; y++) {
+        for (int x = 0; x < 32; x++) {
+            f->plane[y*f->i_stride + x] = (uint8_t)(phx_test_pixel(x, y) ^ 0x5a);
+            ref->plane[y*ref->i_stride + x] = phx_test_pixel(x, y);
+        }
+    }
+    phx_plane_expand_border(f->plane, f->i_stride, 32, 32,
+                            PHX_PADH, PHX_PADV, 1, 1, 0);
+    phx_plane_expand_border(ref->plane, ref->i_stride, 32, 32,
+                            PHX_PADH, PHX_PADV, 1, 1, 0);
+
+    phx_mb_state_t *s = phx_mb_state_new(2, 2);
+    CHECK(s != NULL, "P_L0 MB state");
+    if (!s) { phx_frame_delete(f); phx_frame_delete(ref); return; }
+    s->slice_type = 0; /* SLICE_TYPE_P, common/base.h */
+    s->first_mb = 0;
+
+    phx_mb_decision_t d1, d2;
+    phx_mb_cache_t c1, c2;
+    uint8_t r1[PHX_FDEC_STRIDE*18 + PHX_FDEC_STRIDE];
+    uint8_t r2[PHX_FDEC_STRIDE*18 + PHX_FDEC_STRIDE];
+    for (int rep = 0; rep < 2; rep++) {
+        phx_mb_decision_t *d = rep ? &d2 : &d1;
+        phx_mb_cache_t *c = rep ? &c2 : &c1;
+        uint8_t *recon = rep ? r2 : r1;
+        memset(c, 0, sizeof(*c));
+        phx_macroblock_cache_load(s, c, 0, 0, 0);
+        c->p_fdec = recon + PHX_FDEC_STRIDE + 1;   /* common/common.h:571 */
+        c->fdec_stride = PHX_FDEC_STRIDE;
+        memset(recon, 0, sizeof(r1));
+
+        memset(d, 0, sizeof(*d));
+        d->mb_type = PHX_P_L0;
+        d->i_partition = PHX_D_16x16;
+        d->i_qp = TEST_QP;
+        d->ref[0][0] = 0;                          /* p_fref[0][0], macroblock.c:666 */
+        d->mv[0][0][0] = 8;                        /* qpel, me.h:55 */
+        d->mv[0][0][1] = 4;
+        for (int i = 0; i < 48; i++) {
+            d->nnz[i] = 1;                         /* poison trial coefficients */
+            for (int k = 0; k < 16; k++) d->dct[i][k] = 1234;
+        }
+
+        CHECK(phx_macroblock_encode_ex(&p, f, ref, c, 0, 0, d, NULL) == 0,
+              "P_L0 encode accepts no-residual inter decision");
+        CHECK(d->cbp_luma == 0 && d->cbp_chroma == 0 && d->i_cbp == 0,
+              "P_L0 cbp stays zero");
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                const uint8_t got = c->p_fdec[y*PHX_FDEC_STRIDE + x];
+                const uint8_t want = ref->plane[(y+1)*ref->i_stride + (x+2)];
+                if (got != want) {
+                    printf("FAIL P_L0 MC (%d,%d): got %d want %d\n",
+                           x, y, got, want);
+                    ++fails;
+                }
+            }
+        }
+        for (int i = 0; i < 48; i++) {
+            CHECK(d->nnz[i] == 0, "P_L0 nnz cleared");
+            CHECK(c->non_zero_count[phx_scan8[i]] == 0,
+                  "P_L0 cache nnz cleared");
+            for (int k = 0; k < 16; k++)
+                CHECK(d->dct[i][k] == 0, "P_L0 coefficients cleared");
+        }
+    }
+    CHECK(memcmp(&d1, &d2, sizeof(d1)) == 0, "P_L0 decision reproducible");
+    CHECK(memcmp(r1, r2, sizeof(r1)) == 0, "P_L0 reconstruction reproducible");
+    CHECK(memcmp(c1.non_zero_count, c2.non_zero_count,
+                 sizeof(c1.non_zero_count)) == 0, "P_L0 cache reproducible");
+
+    /* No fabricated pixels: without a list-0 reference the mode is rejected. */
+    memset(&d1, 0, sizeof(d1));
+    d1.mb_type = PHX_P_L0;
+    d1.i_partition = PHX_D_16x16;
+    d1.i_qp = TEST_QP;
+    d1.ref[0][0] = 0;
+    CHECK(phx_macroblock_encode_ex(&p, f, NULL, &c1, 0, 0, &d1, NULL) == -1,
+          "P_L0 without reference is rejected");
+
+    printf("P_L0 MC: MV=(8,4) qpel -> fullpel (2,1), 256/256 samples from ref, cbp=0\n");
+    phx_mb_state_delete(s);
+    phx_frame_delete(f);
+    phx_frame_delete(ref);
+}
+
 int main(void)
 {
     phx_test_case(PHX_I_16x16, "I16");
     phx_test_case(PHX_I_4x4, "I4");
     phx_test_first_mb_handoff();
     phx_test_first_mb_chroma_trellis();
+    phx_test_p_l0_mc();
 
     if (fails) {
         printf("FAIL %d check(s)\n", fails);
