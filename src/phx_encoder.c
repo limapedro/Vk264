@@ -118,6 +118,7 @@ static void phx_encoder_release(phx_t *h)
     phx_mb_state_delete(h->mb_state);                      /* encoder.c:4527 */
     /* h->fenc borrows from input_frames[] and is freed in the loop above. */
     free(h->rbsp);                                         /* encoder.c:4518 */
+    phx_dpb_free(h->recon_dpb);                                  /* encoder.c:4527 */
     free(h->recon);                                        /* encoder.c:4527 */
     free(h->bitstream);                                    /* encoder.c:4518 */
     free(h);                                               /* api.c:135 */
@@ -189,8 +190,11 @@ phx_t *phx_encoder_open(const phx_param_t *p)
         int rows = h->i_mb_height * 16 + 40;
         h->recon = (uint8_t *)calloc((size_t)rows * PHX_FDEC_STRIDE + 128, 1);
     }
+    /* encoder.c:3454/3882 — reconstructed reference pictures. */
+    h->recon_dpb = phx_dpb_create(h->i_width, h->i_height, h->param.i_bframe);
 
     if (!h->lookahead || !h->mb_state || !h->rbsp || !h->bitstream || !h->recon ||
+        !h->recon_dpb ||
         phx_analyse_init_costs(&h->cost, h->param.i_me_range,
                                (int)h->param.i_me_method, 0, PHX_QP_MAX)) {
         phx_encoder_release(h);                        /* encoder.c:goto fail */
@@ -687,6 +691,7 @@ void phx_encoder_frame_context(phx_t *h, int decided_type, int display_frame,
         h->i_frame_num = 0;                            /* encoder.c:3504 */
         h->i_last_idr = display_frame;                 /* encoder.c:3505 */
         h->n_dpb = 0;                                  /* reference_reset():2563 */
+        phx_dpb_reset(h->recon_dpb);                         /* decoded picture reset */
     }
     /* x264 keeps i_frame_num unbounded (encoder.c:3882/136); the mask is
      * applied only when writing the syntax element (set.c/encoder.c:227).
@@ -1330,17 +1335,19 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     }
     h->i_last_frame_qp = fc.i_qp;                        /* read-only view */
 
-    /* encoder.c:3454/3542-3570 — list-0 reference 0 for this slice.  x264
-     * reads h->fref[0][0] from the DPB (reconstructed); Phoenix keeps the
-     * last coded reference picture in input_frames[] and passes this frame
-     * into the B stage as p_fref[0][0] (encoder/macroblock.c:666) for the
-     * real P_L0 motion compensation.  TODO: feed reconstructed DPB frames
-     * once multi-frame reconstruction is owned elsewhere. */
+    /* encoder.c:3454/3542-3570 — list-0 reference 0 from the reconstructed,
+     * in-loop-deblocked DPB (x264's h->fref[0][0]).  The old path passed the
+     * raw source frame, which made every inter trial use the wrong samples. */
     const phx_frame_t *fref = NULL;
-    if (fc.i_type != PHX_SLICE_I && h->i_last_ref_frame >= 0 &&
-        h->i_last_ref_frame < h->n_input_frames &&
-        h->input_frames[h->i_last_ref_frame] != h->fenc)
-        fref = h->input_frames[h->i_last_ref_frame];
+    if (fc.i_type != PHX_SLICE_I) {
+        fref = fc.i_ref[0] > 0
+             ? phx_dpb_get_ref(h->recon_dpb, fc.ref_frame_num[0][0])
+             : phx_dpb_get_ref_l0(h->recon_dpb, 0);
+        if (!fref && h->i_last_ref_frame >= 0 &&
+            h->i_last_ref_frame < h->n_input_frames &&
+            h->input_frames[h->i_last_ref_frame] != h->fenc)
+            fref = h->input_frames[h->i_last_ref_frame]; /* pre-first-ref fallback */
+    }
 
     phx_slice_header_t sh;
     /* encoder.c:2639-2645 derives the override and active list sizes from
@@ -1553,6 +1560,27 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 c->p_fdec = saved_p_fdec;
             }
         }
+    }
+
+    /* encoder.c:3057/2456-2470 — store the completed reconstructed picture
+     * (deblocked by phx_dpb_store_frame) as list-0 reference.  Disposable B
+     * frames never enter x264's DPB.  SHADER: C — one serial store per frame. */
+    if (fc.i_nal_ref_idc != 0) {
+        phx_dpb_store_params_t sp;
+        memset(&sp, 0, sizeof(sp));
+        sp.fdec_y = h->recon + 64;                       /* macroblock.c:533 */
+        sp.fdec_y_stride = PHX_FDEC_STRIDE;
+        sp.fdec_uv = h->fenc->plane_chroma;              /* NV12 interleaved */
+        sp.fdec_uv_stride = h->fenc->i_stride_planes[1];
+        sp.mb_state = h->mb_state;
+        sp.qp = fc.i_qp;                                 /* CQP: no AQ offsets */
+        sp.b_cabac = h->param.b_cabac;
+        sp.frame_num = fc.i_frame_num;
+        sp.poc = fc.i_poc;
+        sp.display_frame = frame_index;
+        sp.i_type = fc.i_type;
+        sp.b_kept_as_ref = 1;
+        phx_dpb_store_frame(h->recon_dpb, &sp);               /* encoder.c:3882 */
     }
 
     phx_nal_t nal;

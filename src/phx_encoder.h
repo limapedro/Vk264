@@ -36,6 +36,7 @@
 #include "phx_lookahead.h"
 #include "phx_slice.h"
 #include "phx_ratecontrol.h"
+#include "phx_dpb.h"
 
 /* Legacy sentinel kept only so old callers still compile: phx_encode() no
  * longer returns it once the per-MB pipeline is wired.  Source: the old
@@ -113,6 +114,7 @@ typedef struct phx_t {
     phx_cabac_t cabac;              /* encoder.c:1669 / cabac.c:32 */
     uint8_t *rbsp;                  /* slice-header + MB scratch RBSP (encoder.c:1724) */
     uint8_t *recon;                 /* reconstructed plane, FDEC_STRIDE layout */
+    phx_dpb_t *recon_dpb;           /* reconstructed/deblocked reference pictures */
     int i_frame;                    /* encoder.c:1563 */
     int b_first_slice_nal;          /* first slice shares the header NAL array */
     int i_frame_num;                /* encoder.c:1564 */
