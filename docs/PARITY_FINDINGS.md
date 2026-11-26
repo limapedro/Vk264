@@ -355,4 +355,14 @@ via :2940-2941 at mbrd>=1) while Phoenix picks I_4x4. Whole-MB RD needs an
 8x8-capable size-only CABAC writer; phx_encoder's I_8x8 rejection was removed
 and the intra_rd port (analysis + RDO) is delegated. ctest 30/30 PASS.
 
+## F33 — intra_rd winner exact; per-mode costs still short
+
+intra_rd() is now ported (analyse.c:982-1014) with ssd_mb, size-only RD bit
+cost and RD-based MB-type selection; phx_rdo gained 8x8/64-coefficient
+size-only CABAC cost (cabac.c:775-875/1048-1049). On clip2229_320x180.yuv MB0
+the winner I_8x8 matches x264 and I4/I8 SSDs are exact. Real-clip first
+divergent bin moved 1 -> 3 (I8 predictor bit). Per-mode gaps remain: Phoenix
+I4/I8 bit totals 5866/5386 vs x264 8806/9143, and I16 raw 29955 vs 1405.
+Both are delegated with byte-exact cost goldens. ctest 30/30 PASS.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
