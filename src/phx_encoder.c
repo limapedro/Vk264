@@ -17,6 +17,7 @@
 #include "phx_slice.h"
 #include "phx_cabac_syntax.h"
 #include "phx_cavlc.h"
+#include "phx_cavlc_syntax.h"
 #include "phx_tables.h"
 #include "phx_mb_decision.h"
 #include "phx_analysis.h"
@@ -69,16 +70,14 @@ static int phx_encoder_header_pair(phx_t *h, uint8_t *dst, int capacity)
     phx_sps_init(&sps, &h->param, h->i_width, h->i_height); /* encoder.c:1579 */
     sps.i_level_idc = phx_encoder_auto_level(sps.i_mb_width, sps.i_mb_height);
     sps.vui_log2_max_mv_length = phx_sps_auto_mv_length(sps.i_level_idc); /* set.c:240-241 */
-    /* set.c:251-255/:363-371 — frame_crop_* signals the padding.  x264's
-     * writer shifts right/left by h_shift=1 and top/bottom by v_shift=1 for
-     * 4:2:0 frame_mbs_only; the local phx_sps_write() shifts left/right
-     * itself but writes top/bottom verbatim, so store the shifted values
-     * here to match x264's on-wire crop units. */
+    /* set.c:251-255/:363-371 — store the RAW padding; phx_sps_write() applies
+     * h_shift=1 / v_shift=1 exactly like x264.  Pre-shifting here would shift
+     * twice (806 -> 5 -> 2 instead of x264's 5). */
     sps.b_crop = 1;
     sps.crop_left = 0;
-    sps.crop_right = (h->i_width - h->i_width_display) >> 1;
+    sps.crop_right = h->i_width - h->i_width_display;
     sps.crop_top = 0;
-    sps.crop_bottom = (h->i_height - h->i_height_display) >> 1;
+    sps.crop_bottom = h->i_height - h->i_height_display;
     phx_pps_init(&pps, &sps, &h->param);                 /* encoder.c:1581 */
 
     uint8_t rbsp[128];
@@ -151,8 +150,8 @@ phx_t *phx_encoder_open(const phx_param_t *p)
     if (h->i_height != h->i_height_display || h->i_width != h->i_width_display) {
         /* Keep the handle's SPS identical to the one header_pair() emits. */
         h->sps.b_crop = 1;
-        h->sps.crop_right = (h->i_width - h->i_width_display) >> 1;
-        h->sps.crop_bottom = (h->i_height - h->i_height_display) >> 1;
+        h->sps.crop_right = h->i_width - h->i_width_display;
+        h->sps.crop_bottom = h->i_height - h->i_height_display;
         h->sps.i_level_idc = phx_encoder_auto_level(h->i_mb_width, h->i_mb_height);
     }
     phx_pps_init(&h->pps, &h->sps, &h->param);                 /* encoder.c:1581 */
@@ -1360,6 +1359,8 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     cav.profile_idc = h->sps.i_profile_idc;            /* cavlc.c:92 */
     cav.b_overflow = 0;                                /* cavlc.c:107 */
     cav.chroma_2x4_dc = 0;                             /* cavlc.c:184 */
+    /* encoder.c:2883-2890 / :3087-3088 — CAVLC mb_skip_run spans the slice. */
+    int cavlc_skip_run = 0;
 
     phx_mb_decision_t d;
     memset(&d, 0, sizeof(d));
@@ -1399,8 +1400,20 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
              * :769-775); I_8x8 is still rejected by phx_mbencode.c (no
              * 64-coefficient slot), as are all residual-carrying inter
              * modes; those fall back to I16. */
+            /* x264 macroblock.c:654-681 performs the same MC for P_SKIP as for
+             * a zero-residual P_L0; only the entropy stage differs.  Analysis
+             * publishes d.skip with mb_type == PHX_P_SKIP, so present it to the
+             * encode stage as P_L0/D_16x16 (cbp == 0) and restore the skip type
+             * afterwards for the cache and the entropy writers.  SHADER: B/C. */
+            int is_skip = (rc == 0 && fc.i_type == PHX_SLICE_P && d.skip &&
+                           (d.mb_type == PHX_P_SKIP || d.mb_type == PHX_P_L0));
+            if (is_skip) {
+                d.mb_type = PHX_P_L0;
+                d.i_partition = PHX_D_16x16;
+                d.cbp_luma = d.cbp_chroma = 0;
+            }
             int inter = (rc == 0 && fc.i_type == PHX_SLICE_P &&
-                         d.mb_type == PHX_P_L0 &&
+                         (is_skip || d.mb_type == PHX_P_L0) &&
                          d.cbp_luma == 0 && d.cbp_chroma == 0);
             if (rc < 0 || (!inter && d.mb_type != PHX_I_16x16 &&
                            d.mb_type != PHX_I_4x4 && d.mb_type != PHX_I_PCM)) {
@@ -1444,6 +1457,12 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 }
                 c->i_cbp_luma = c->i_cbp_chroma = 0;
                 inter = 0;
+                is_skip = 0;
+            }
+            if (is_skip) {
+                /* Restore x264's published type for the neighbour cache and
+                 * the entropy stage (macroblock.c:1303-1305 skip neighbour). */
+                d.mb_type = PHX_P_SKIP;
             }
             if (!inter) {
                 /* encoder/macroblock.c:925-941/259-498 — intra chroma DC+AC. */
@@ -1487,13 +1506,25 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 if (d.skip) {
                     phx_cabac_mb_skip(&h->cabac, &mb, 1); /* :2873 */
                 } else {
+                    /* encoder.c:2876-2877 — coded P/B MBs write mb_skip_flag=0
+                     * before their header; I slices suppress it entirely. */
+                    if (fc.i_type == PHX_SLICE_P || fc.i_type == PHX_SLICE_B)
+                        phx_cabac_mb_skip(&h->cabac, &mb, 0); /* :2877 */
                     phx_encoder_write_cabac_mb(h, &mb, &d, mb_xy); /* :2878 */
                     last_dqp = mb.i_qp - last_qp;      /* macroblock.c:1756 */
                     last_qp = mb.i_qp;                 /* macroblock.c:1757 */
                 }
             } else {
-                phx_encoder_write_cavlc_mb(h, &d, &cav, &last_qp,
-                                           fc.i_type);     /* :2892 */
+                /* encoder.c:2876-2890 — I slices have no skip run; P/B call
+                 * phx_cavlc_mb_skip at every MB (ue(0) for a coded MB) and
+                 * flush the trailing run once at slice end. */
+                if (fc.i_type == PHX_SLICE_P || fc.i_type == PHX_SLICE_B)
+                    phx_cavlc_mb_skip(cav.bs, &cavlc_skip_run, d.skip, 0);
+                if (!d.skip)
+                    phx_encoder_write_cavlc_mb(h, &d, &cav, &last_qp,
+                                               fc.i_type); /* :2892 */
+                /* encoder.c:2883-2884 — a skipped MB only increments the run;
+                 * it does not touch last_qp or write any syntax. */
             }
 
             h->mb_state->type[mb_xy] = (uint8_t)d.mb_type; /* cache_save contract */
@@ -1521,6 +1552,9 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
         phx_cabac_encode_flush(&h->cabac, h->i_frame); /* encoder.c:3082 */
         bs.p = h->cabac.p;                             /* encoder.c:3083 */
     } else {
+        /* encoder.c:3087-3088 — flush the trailing CAVLC skip run. */
+        if (fc.i_type == PHX_SLICE_P || fc.i_type == PHX_SLICE_B)
+            phx_cavlc_mb_skip(cav.bs, &cavlc_skip_run, 0, 1);
         phx_bs_rbsp_trailing(&bs);                     /* encoder.c:3090 */
     }
     nal.p_payload = h->rbsp;                           /* encoder.c:2124 */
