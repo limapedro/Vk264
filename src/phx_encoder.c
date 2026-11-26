@@ -1237,7 +1237,7 @@ static void phx_encoder_write_cabac_mb(phx_t *h, phx_cabac_mb_t *mb,
                 int n;
                 const int16_t *l = phx_encoder_block(d, PHX_BLK_CHROMA_DC, ch, &n);
                 phx_encoder_cabac_block(h, mb, PHX_DCT_CHROMA_DC,
-                                        48+ch, l, n, b_intra, 1); /* :1069-1070 */
+                                        49+ch, l, n, b_intra, 1); /* CHROMA_DC+ch, cabac.c:1069-1070 */
             }
             if (d->cbp_chroma == 2) {                   /* :1073 */
                 for (int j = 16; j < 48; j += 16)     /* :1075, 4:2:0 step */
