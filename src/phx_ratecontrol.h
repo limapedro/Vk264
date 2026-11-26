@@ -42,6 +42,10 @@
  *     worker.  qpa_aq (:1596) sums f_qp_offset for all MBs; x264 uses
  *     f_qp_offset_aq for non-reference frames.  Neither value feeds the QP
  *     sequence in 1-pass.
+ *   - CQP AQ: x264's encoder.c:951-966 disables i_aq_mode and b_mb_tree for
+ *     every CQP encode (not only qp=0).  The per-MB QP increment seen with
+ *     "--qp 28" on B frames is the CQP pb_factor offset (ratecontrol.c:825,
+ *     :1508-1511), not AQ.  phx_cli.c must keep i_aq_mode=0 for CQP.
  *   - With MB-tree, CQP intentionally keeps phx_encoder.c:473-475's double
  *     log2 mapping and the caller's f_pb_factor, as required by the contract;
  *     CRF/ABR apply x264's :762-766 f_pb_factor=1 override.
@@ -140,13 +144,27 @@ int phx_ratecontrol_end(phx_ratecontrol_t *rc, int slice_type, int bits);
  * SHADER: C — one reduction + one independent offset write per MB. */
 int phx_ratecontrol_aq_frame(phx_ratecontrol_t *rc, phx_frame_t *f, const phx_param_t *p);
 
+/* ratecontrol.c:1506-1511 — CQP BREF midpoint.  x264 averaged qp_constant[B]
+ * and qp_constant[P] when the B frame is kept as a reference.  Set this before
+ * phx_ratecontrol_start() for a CQP B slice; 0 for a normal B/P/I slice.
+ * SHADER: C — one scalar uniform. */
+void phx_ratecontrol_set_kept_as_ref(phx_ratecontrol_t *rc, int b_kept_as_ref);
+
 /* ratecontrol.c:1754-1768 — frame QP plus the MB's AQ offset (emergency-mode
  * scaling included).  frame_qp is h->rc->qpm (the float frame QP), so pass
  * the value reported by x264_ratecontrol_start's qp_out only when the frame
  * QP is integral; the golden harness passes the exact float.
- * b_kept_as_ref selects f_qp_offset vs f_qp_offset_aq.
+ * b_kept_as_ref selects f_qp_offset vs f_qp_offset_aq; with AQ disabled by
+ * CQP (encoder.c:964) the returned QP is exactly the clipped frame QP.
  * Returns a clipped QP, or -1 on bad arguments. */
 int phx_ratecontrol_mb_qp(const phx_ratecontrol_t *rc, int mb_xy, float frame_qp, int b_kept_as_ref);
+
+/* analyse.c:255-259 — the lambda actually used by mb_analyse_* is a direct
+ * x264_lambda_tab[qp] lookup (tables.c:97-109).  Exposed so a caller holding
+ * phx_ratecontrol_mb_qp()'s result can derive the exact ME/RD lambda without
+ * reimplementing the table.  Returns -1 for an out-of-range QP.
+ * SHADER: C — pure table lookup. */
+int phx_ratecontrol_lambda(int qp);
 
 /* Read-only views of the AQ outputs (ratecontrol.c:399-402). */
 const float *phx_ratecontrol_qp_offsets(const phx_ratecontrol_t *rc);

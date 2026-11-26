@@ -135,12 +135,16 @@ int main(int argc, char **argv)
     p.i_scenecut_threshold = 0;                        /* x264.c --scenecut 0 */
     p.rc_method = bitrate_mode ? PHX_RC_ABR : PHX_RC_CQP; /* x264 RC_ABR/RC_CQP */
     if (!bitrate_mode) {
-        /* CQP disables AQ/MB-tree (x264 --qp).  ABR keeps the x264 defaults
-         * from base.c:415/427: variance AQ (strength 1.0) and MB-tree, with
-         * qcompress forced to 1.0 by the port when MB-tree is on
-         * (ratecontrol.c:762-768).  Presets that disable them stay disabled. */
-        p.i_aq_mode = 0;                               /* CQP disables AQ */
-        p.b_mb_tree = 0;                               /* CQP disables MB-tree */
+        /* encoder.c:951-966 — x264 disables AQ and MB-tree for EVERY CQP
+         * encode, not only qp=0: i_aq_mode=0 at :964, b_mb_tree=0 at :965.
+         * Instrumented x264 --qp 28 (ultrafast/veryfast/medium) confirms
+         * aq_mode=0, f_qp_offset=0; the qp=30/lambda=8 on B frames is the
+         * CQP pb_factor constant (ratecontrol.c:825/:1508-1511), not AQ.
+         * Keep these at 0 -- enabling AQ here would break CQP parity.
+         * ABR keeps base.c:415/427 defaults (variance AQ strength 1.0 and
+         * MB-tree). */
+        p.i_aq_mode = 0;                               /* encoder.c:964 */
+        p.b_mb_tree = 0;                               /* encoder.c:965 */
     }
     phx_param_finalize(&p);                            /* encoder.c:1218-1231 */
 

@@ -604,6 +604,99 @@ static void check_instrumented_golden(void)
     }
 }
 
+/* =========================================================================
+ * CQP native-preset golden (follow-up M15).
+ *
+ * Instrumented x264 with the exact parity_harness.py:227-230 flags
+ * (--qp 28 --keyint 30 --min-keyint 30 --scenecut 0, no AQ/MB-tree overrides)
+ * for ultrafast, veryfast and medium.  Every dumped `param` line reports
+ * aq_mode=0 / b_mb_tree=0: encoder.c:951-966 disables both for CQP.
+ * The qp=30 / lambda=8 MBs are B frames (ratecontrol.c:825, :1508-1511);
+ * BREF frames take the 29 midpoint.  No AQ offset exists on this path.
+ * SHADER: C — exercises the serial CQP QP/lambda boundary.
+ * ========================================================================= */
+typedef struct { int frame, type, qp, kept; } cqp_frame_golden_t;
+typedef struct { int frame, mb, qp, lambda; } cqp_mb_golden_t;
+
+static const cqp_frame_golden_t g_cqp_uf_frame[] = {
+    { 0, 2, 25, 0 }, { 1, 0, 28, 0 }, { 2, 0, 28, 0 }, { 3, 0, 28, 0 },
+    { 4, 0, 28, 0 }, { 5, 0, 28, 0 }, { 6, 0, 28, 0 }, { 7, 0, 28, 0 },
+};
+static const cqp_mb_golden_t g_cqp_uf_mb[] = {
+    { 0, 0, 25, 4 }, { 0, 1, 25, 4 }, { 0, 2, 25, 4 }, { 0, 3, 25, 4 },
+    { 1, 0, 28, 6 }, { 1, 1, 28, 6 }, { 1, 2, 28, 6 }, { 1, 3, 28, 6 },
+    { 2, 0, 28, 6 }, { 2, 1, 28, 6 }, { 2, 2, 28, 6 }, { 2, 3, 28, 6 },
+    { 3, 0, 28, 6 }, { 3, 1, 28, 6 }, { 3, 2, 28, 6 }, { 3, 3, 28, 6 },
+};
+static const cqp_frame_golden_t g_cqp_vf_frame[] = {
+    { 0, 2, 25, 0 }, { 4, 0, 28, 0 }, { 2, 1, 29, 1 }, { 1, 1, 30, 0 },
+    { 3, 1, 30, 0 }, { 6, 0, 28, 0 }, { 5, 1, 30, 0 }, { 7, 0, 28, 0 },
+};
+static const cqp_mb_golden_t g_cqp_vf_mb[] = {
+    { 0, 0, 25, 4 }, { 0, 1, 25, 4 }, { 0, 2, 25, 4 }, { 0, 3, 25, 4 },
+    { 2, 0, 29, 7 }, { 2, 1, 29, 7 }, { 2, 2, 29, 7 }, { 2, 3, 29, 7 },
+    { 1, 0, 30, 8 }, { 1, 1, 30, 8 }, { 1, 2, 30, 8 }, { 1, 3, 30, 8 },
+    { 3, 0, 30, 8 }, { 3, 1, 30, 8 }, { 3, 2, 30, 8 }, { 3, 3, 30, 8 },
+};
+static const cqp_frame_golden_t g_cqp_md_frame[] = {
+    { 0, 2, 25, 0 }, { 4, 0, 28, 0 }, { 2, 1, 29, 1 }, { 1, 1, 30, 0 },
+    { 3, 1, 30, 0 }, { 6, 0, 28, 0 }, { 5, 1, 30, 0 }, { 7, 0, 28, 0 },
+};
+static const cqp_mb_golden_t g_cqp_md_mb[] = {
+    { 0, 0, 25, 4 }, { 0, 1, 25, 4 }, { 0, 2, 25, 4 }, { 0, 3, 25, 4 },
+    { 2, 0, 29, 7 }, { 2, 1, 29, 7 }, { 2, 2, 29, 7 }, { 2, 3, 29, 7 },
+    { 1, 0, 30, 8 }, { 1, 1, 30, 8 }, { 1, 2, 30, 8 }, { 1, 3, 30, 8 },
+    { 3, 0, 30, 8 }, { 3, 1, 30, 8 }, { 3, 2, 30, 8 }, { 3, 3, 30, 8 },
+};
+
+static void check_cqp_native(const char *preset,
+                             const cqp_frame_golden_t *gf, int nf,
+                             const cqp_mb_golden_t *gm, int nm)
+{
+    phx_param_t p;
+    phx_ratecontrol_t *rc = NULL;
+    phx_param_default(&p);
+    CHECK(phx_param_apply_preset(&p, preset) == 0, "CQP golden preset");
+    p.i_width = 64; p.i_height = 64;
+    p.i_qp_constant = 28; p.rc_method = PHX_RC_CQP;
+    p.i_keyint_max = 30; p.i_keyint_min = 30;
+    p.i_scenecut_threshold = 0;
+    p.i_aq_mode = PHX_RC_AQ_NONE;                     /* encoder.c:964 */
+    p.b_mb_tree = 0;                                  /* encoder.c:965 */
+    phx_param_finalize(&p);
+    CHECK(phx_ratecontrol_init(&rc, &p, 16) == 0 && rc != NULL, "CQP golden init");
+    if (!rc) return;
+
+    for (int i = 0; i < nf; i++) {
+        int qp = -1;
+        phx_ratecontrol_set_kept_as_ref(rc, gf[i].kept);   /* :1508 */
+        CHECK(phx_ratecontrol_start(rc, gf[i].type, 0, &qp) == 0,
+              "CQP golden start");
+        CHECK(qp == gf[i].qp, "CQP golden frame QP (pb/BREF offset)");
+    }
+    for (int i = 0; i < nm; i++) {
+        int frame_qp = -1, kept = 0, got, lam;
+        for (int j = 0; j < nf; j++)
+            if (gf[j].frame == gm[i].frame) {
+                frame_qp = gf[j].qp; kept = gf[j].kept; break;
+            }
+        CHECK(frame_qp >= 0, "CQP golden MB frame lookup");
+        if (frame_qp < 0) continue;
+        got = phx_ratecontrol_mb_qp(rc, gm[i].mb, (float)frame_qp, kept);
+        CHECK(got == gm[i].qp, "CQP golden per-MB QP");
+        lam = phx_ratecontrol_lambda(got);
+        CHECK(lam == gm[i].lambda, "CQP golden lambda (tables.c:97-104)");
+    }
+    phx_ratecontrol_delete(rc);
+}
+
+static void check_cqp_native_golden(void)
+{
+    check_cqp_native("ultrafast", g_cqp_uf_frame, 8, g_cqp_uf_mb, 16);
+    check_cqp_native("veryfast",  g_cqp_vf_frame, 8, g_cqp_vf_mb, 16);
+    check_cqp_native("medium",    g_cqp_md_frame, 8, g_cqp_md_mb, 16);
+}
+
 int main(void)
 {
     check_cqp_mapping();
@@ -613,6 +706,7 @@ int main(void)
     check_aq_offsets();
     check_chroma_qp();
     check_instrumented_golden();
+    check_cqp_native_golden();
     if (!fails) printf("phx_ratecontrol: all checks passed\n");
     else printf("phx_ratecontrol: %d check(s) failed\n", fails);
     return fails ? 1 : 0;
