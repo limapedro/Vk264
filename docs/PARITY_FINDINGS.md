@@ -231,4 +231,12 @@ Real 64×64/30f medium/CABAC: stream **5931 → 4729 B** (x264 1380), B slices 2
 
 M4 and T4 reconciled the P-MB MVD golden: T4's first instrumentation read `h->mb.mv/mvd` **before** `macroblock_cache_save()` (`encoder.c:2987`) and saw stale IDR zeros. Authoritative after-save value is `(7,0)` qpel (M4's independent ME trace: fullpel `(8,0)`/cost 308 → refined `(7,0)`/cost 298 at subme 7 on x264's deblocked REF). The strict test golden is now `(7,0)`; Phoenix emits `(8,0)` because its ME REF content diverges (raw vs deblocked reconstruction) — source-side, not a golden issue.
 
+## F22 — bin 379 was the wrong chroma-DC nnz slot
+
+After F20's CBP fix, the real-clip first divergent CABAC bin became 379: x264 ctx 100, Phoenix ctx 99, identical state. M8 traced it to MB1's V-DC CBF (`cat=3`, `idx=50`, array `{3,-1,0,0}`) — the coefficient array and following residual bins already matched.
+
+x264 `encoder/macroblock.c:948-950` sets the CBP high bits from `nnz[LUMA_DC=48]`, `nnz[CHROMA_DC+0=49]`, `nnz[CHROMA_DC+1=50]`. Phoenix used `phx_scan8[16]`/`[32]` (luma 4x4 slots) for the chroma bits, so `cbp_left` was 287 instead of x264's 1823 and `cabac_cbf_ctxidxinc()` derived 99 instead of 100. Fixed in `phx_mbcache.c` to slots 49/50. Also corrected `phx_encoder.c`'s CABAC chroma-DC index `48+ch` → `49+ch` (x264 `cabac.c:1069-1070`); CAVLC keeps `48+ch` per `cavlc.c:581-582`.
+
+No `phx_rdo` defect; `ctest -R phx_rdo` 1/1 PASS.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
