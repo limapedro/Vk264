@@ -903,3 +903,62 @@ void phx_cabac_block_residual_cbf(phx_cabac_t *cb, phx_cabac_mb_t *mb,
     else
         DEC(cb, ctxidxinc, 0);                                     /* :902 */
 }
+
+/* cabac.c:769 + :664-748 — 8x8 residual.  With RDO_SKIP_BS=0 (cabac.c:31-32)
+ * `#define cabac_block_residual_8x8(...) cabac_block_residual(...)` (:769), so
+ * the 64-coefficient sigmap/last map is the count_m1==63 branch of
+ * phx_cabac_block_residual() (:709-713): sig ctx base 402/436 and last ctx
+ * base 417/451 for field=0, with sig_offset_8x8[]/last_offset_8x8[] per
+ * coefficient (tables.c:1757-1792).  No approximation: every bin still goes
+ * through the one coder.  SHADER: C. */
+void phx_cabac_block_residual_8x8(phx_cabac_t *cb, phx_cabac_mb_t *mb,
+                                  int ctx_block_cat, const phx_dctcoef_t *l)
+{
+    phx_cabac_block_residual(cb, mb, ctx_block_cat, l, 0);         /* :769 */
+}
+
+/* cabac.c:911-912 + :892-903 — `cabac_block_residual_8x8_cbf` is the same
+ * cbft macro with b_dc=0 and the `_8x8` writer suffix, which at RDO_SKIP_BS=0
+ * is the plain writer (:769).  The CBF bin reads
+ * cache.non_zero_count[phx_scan8[i_idx]] exactly as :896 does.  The existing
+ * PHX_CABAC_BIN_TRACE hook logs 64 coefficients for the 8x8 categories.
+ * SHADER: C — strictly serial bin order. */
+void phx_cabac_block_residual_8x8_cbf(phx_cabac_t *cb, phx_cabac_mb_t *mb,
+                                      int ctx_block_cat, int i_idx,
+                                      const phx_dctcoef_t *l, int b_intra)
+{
+    phx_cabac_block_residual_cbf(cb, mb, ctx_block_cat, i_idx, l,
+                                 b_intra, 0, 0);                  /* :911-912 */
+}
+
+/* cabac.c:1003-1044 — MUNGE_8x8_NNZ(BACKUP/RESTORE), 4:2:0 luma plane p=0.
+ * Six 1-byte left reads (:1015-1016/:1024-1025) at scan8 addresses 11,19,27,35
+ * and one M32 top read (:1033) at scan8[0]-8 == 4.  BACKUP does
+ * `dst = src; src = 0` (x264 macroblock.h:1005-1007); RESTORE only does
+ * `src = dst` (:1009-1010).  The caller supplies the three literal conditions
+ * from :1013/:1022/:1031 (neighbour exists, no 8x8 transform, no CABAC luma
+ * DC flag).  SHADER: C — explicit cache boundary, no hidden state. */
+void phx_cabac_munge_8x8_nnz(phx_cabac_mb_t *mb, uint8_t backup[8],
+                             int left0, int left1, int top, int restore)
+{
+    uint8_t *nnz = mb->cache->non_zero_count;
+    static const int left_pos[4] = { 11, 19, 27, 35 };  /* scan8[0,2,8,10]-1 */
+    int enabled[3] = { !!left0, !!left1, !!top };
+
+    if (!restore) {
+        for (int k = 0; k < 4; k++) backup[k] = nnz[left_pos[k]];
+        for (int k = 0; k < 4; k++) backup[4+k] = nnz[4+k];
+    }
+    if (enabled[0]) {
+        for (int k = 0; k < 2; k++)
+            nnz[left_pos[k]] = restore ? backup[k] : 0;         /* :1015-1016 */
+    }
+    if (enabled[1]) {
+        for (int k = 2; k < 4; k++)
+            nnz[left_pos[k]] = restore ? backup[k] : 0;         /* :1024-1025 */
+    }
+    if (enabled[2]) {
+        for (int k = 0; k < 4; k++)
+            nnz[4+k] = restore ? backup[4+k] : 0;               /* :1033 */
+    }
+}

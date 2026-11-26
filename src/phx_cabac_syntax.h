@@ -158,4 +158,29 @@ void phx_cabac_block_residual_cbf(phx_cabac_t *cb, phx_cabac_mb_t *mb,
                                   const phx_dctcoef_t *l,
                                   int b_intra, int b_dc, int chroma422dc);
 
+/* cabac.c:769 + :664-748 — 8x8 block-residual writer.  With RDO_SKIP_BS=0
+ * (encoder/cabac.c:31-32) `cabac_block_residual_8x8()` is a literal alias of
+ * `cabac_block_residual()`; the count_m1==63 branch at :709-713 selects
+ * x264_significant_coeff_flag_offset_8x8/last_coeff_flag_offset_8x8.  This
+ * entry point makes the 8x8 choice explicit at the call site, and takes the
+ * 64 zigzag-scanned coefficients published by phx_macroblock_encode_ex2()
+ * (phx_mbencode.h:58-69).  SHADER: C — strictly serial bin order. */
+void phx_cabac_block_residual_8x8(phx_cabac_t *cb, phx_cabac_mb_t *mb,
+                                  int ctx_block_cat, const phx_dctcoef_t *l);
+
+/* cabac.c:911-912 + :892-903 — 8x8 CBF + residual (b_dc=0, the `_8x8` name
+ * suffix resolves to the same internal writer at :769).  SHADER: C. */
+void phx_cabac_block_residual_8x8_cbf(phx_cabac_t *cb, phx_cabac_mb_t *mb,
+                                      int ctx_block_cat, int i_idx,
+                                      const phx_dctcoef_t *l, int b_intra);
+
+/* cabac.c:1003-1044 — MUNGE_8x8_NNZ for the 4:2:0 luma plane (p=0).  The six
+ * left neighbours (two per 8x8 row) and the four top nnz bytes are zeroed
+ * while the four 8x8 luma residuals are written when a neighbour MB uses 4x4
+ * transforms; the backup is restored afterwards (cabac.c:1038/:1044).  The three booleans are the literal truth
+ * values of :1013, :1022 and :1031.  SHADER: C — read/modify/restore of the
+ * explicit cache boundary, no hidden state. */
+void phx_cabac_munge_8x8_nnz(phx_cabac_mb_t *mb, uint8_t backup[8],
+                             int left0, int left1, int top, int restore);
+
 #endif
