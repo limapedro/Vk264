@@ -2026,6 +2026,79 @@ static void phx_test_b_skip_uni(void)
     printf("B_SKIP unidir: L0-only and L1-only matched x264 mc_luma/mc_chroma\n");
 }
 
+/* Coded B 16x16 residual path (encoder/macroblock.c:801-914 layered on the
+ * bidirectional MC of :697-703).  Fenc differs from both references by a
+ * deterministic ramp, so the quantizer must emit some nonzero coefficient;
+ * the old entry point rejected every non-skip/direct B type.  SHADER: B —
+ * one serial per-MB encode, no hidden state. */
+static void phx_test_b_residual(void)
+{
+    phx_param_t p;
+    phx_param_default(&p);
+    p.b_cabac = 1;
+    phx_frame_t *f = phx_frame_new(64, 64, 0);
+    phx_frame_t *r0 = phx_frame_new(64, 64, 0);
+    phx_frame_t *r1 = phx_frame_new(64, 64, 0);
+    CHECK(f && r0 && r1, "B residual frame allocation");
+    if (!f || !r0 || !r1) {
+        if (f) phx_frame_delete(f);
+        if (r0) phx_frame_delete(r0);
+        if (r1) phx_frame_delete(r1);
+        return;
+    }
+    for (int y = 0; y < 16; y++)
+        for (int x = 0; x < 16; x++) {
+            f->plane[y*f->i_stride+x]   = (uint8_t)(80 + 3*x + 5*y);
+            r0->plane[y*r0->i_stride+x] = (uint8_t)(60 + x + y);
+            r1->plane[y*r1->i_stride+x] = (uint8_t)(100 + x + 2*y);
+        }
+    const int cs = f->i_stride_planes[1];
+    for (int ch = 0; ch < 2; ch++)
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 8; x++) {
+                f->plane_chroma[y*cs+2*x+ch]  = (uint8_t)(96 + 4*x + 2*y);
+                r0->plane_chroma[y*cs+2*x+ch] = (uint8_t)(90 + 2*x + y);
+                r1->plane_chroma[y*cs+2*x+ch] = (uint8_t)(102 + 3*x + y);
+            }
+    phx_mb_state_t *st = phx_mb_state_new(4, 4);
+    phx_mb_cache_t c;
+    phx_mb_decision_t d;
+    memset(&c, 0, sizeof(c));
+    memset(&d, 0, sizeof(d));
+    phx_macroblock_cache_load(st, &c, 0, 0, 0);
+    uint8_t *scratch = (uint8_t *)calloc((size_t)PHX_FDEC_STRIDE*48+64, 1);
+    CHECK(scratch && st, "B residual scratch allocation");
+    if (scratch && st) {
+        c.p_fdec = scratch + 2*PHX_FDEC_STRIDE + 1;
+        c.fdec_stride = PHX_FDEC_STRIDE;
+        d.mb_type = PHX_B_L0_L0;
+        d.i_partition = PHX_D_16x16;
+        d.i_qp = 26;
+        for (int i = 0; i < 16; i++) {
+            d.ref[0][i] = 0; d.ref[1][i] = -1;
+            d.mv[0][i][0] = 8; d.mv[0][i][1] = -4;
+        }
+        /* Nonzero residual decided by analysis (row-18 path). */
+        d.cbp_luma = 0x0f; d.cbp_chroma = 2;
+        CHECK(phx_macroblock_encode_b_residual(&p, f, r0, r1, &c, 0, 0,
+                                               &d, NULL, 32) == 0,
+              "B residual encode accepted");
+        CHECK(d.skip == 0, "B residual decision is coded (not skip)");
+        CHECK(d.mb_type == PHX_B_L0_L0, "B residual keeps mb_type");
+        int nz = 0;
+        for (int i = 0; i < 48; i++) nz += d.nnz[i] ? 1 : 0;
+        CHECK(nz > 0, "B residual emitted at least one nonzero block");
+        CHECK((d.i_cbp & 0x0f) == (unsigned)d.cbp_luma,
+              "B residual publishes recomputed luma cbp");
+        /* The old no-residual entry point must still reject this decision. */
+        CHECK(phx_macroblock_encode_b(&p, f, r0, r1, &c, 0, 0, &d, 32) == -1,
+              "B_SKIP-only entry point rejects coded B residual");
+    }
+    free(scratch);
+    phx_mb_state_delete(st);
+    phx_frame_delete(f); phx_frame_delete(r0); phx_frame_delete(r1);
+}
+
 int main(void)
 {
     phx_test_case(PHX_I_16x16, "I16");
@@ -2039,6 +2112,7 @@ int main(void)
     phx_test_gold_p_l0_residual();
     phx_test_gold_b_skip();
     phx_test_b_skip_uni();
+    phx_test_b_residual();
 
     if (fails) {
         printf("FAIL %d check(s)\n", fails);

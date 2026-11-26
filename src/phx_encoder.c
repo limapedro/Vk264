@@ -28,6 +28,13 @@
 #include <string.h>
 #include <math.h>
 
+/* Byte-exact per-MB decision capture (phx_analysis.h).  Opt-in via the
+ * `phx_g_mbdiag_enable` flag; no entropy state is touched.  SHADER: C —
+ * read-only observation of the A/B decision boundary. */
+phx_mbdiag_rec_t phx_g_mbdiag[4096];
+int phx_g_mbdiag_count = 0;
+int phx_g_mbdiag_enable = 0;
+
 /* common/common.h:571 / macroblock.c:533 — x264's FDEC scratch is ONE MB:
  * pixel fdec_buf[54*FDEC_STRIDE], p_fdec[0] = fdec_buf + 2*FDEC_STRIDE.
  * Phoenix keeps the full FDEC-layout picture at the front of h->recon (so
@@ -1129,8 +1136,25 @@ static void phx_encoder_write_cavlc_mb(phx_t *h, const phx_mb_decision_t *d,
         phx_encoder_predict_mv16(&h->mb_cache, 0, 4, mvp); /* cavlc.c:245 */
         phx_bs_write_se(bs, d->mv[0][phx_scan8[0]][0] - mvp[0]); /* :246 */
         phx_bs_write_se(bs, d->mv[0][phx_scan8[0]][1] - mvp[1]); /* :247 */
+    } else if (slice_type == PHX_SLICE_B && mt >= PHX_B_DIRECT &&
+               mt <= PHX_B_BI_BI) {
+        /* cavlc.c:411-482 — the byte-exact B header (mb_type, optional ref
+         * indices and the list-0/list-1 MVDs).  The decision's ref/mv arrays
+         * were published into the cache by phx_encoder_apply_decision(); no
+         * motion data is invented here.  SHADER: C — serial bin order. */
+        phx_cavlc_mb_t cmb;
+        phx_cavlc_mb_init(&cmb, bs, &h->mb_cache);
+        cmb.i_type = mt;
+        cmb.i_partition = d->i_partition;
+        for (int i = 0; i < 4; i++) cmb.i_sub_partition[i] = PHX_D_L0_8x8;
+        cmb.i_intra16x16_pred_mode = d->intra16_pred_mode;
+        cmb.i_chroma_pred_mode = d->chroma_pred_mode;
+        cmb.i_fref[0] = cmb.i_fref[1] = 1;   /* one active ref per list */
+        cmb.slice_type = PHX_SLICE_TYPE_B;
+        cmb.chroma = 1;
+        phx_cavlc_mb_header(&cmb);                          /* cavlc.c:540-541 */
     } else {
-        /* P_8x8/B_* remain TODO; keep an explicit intra header instead of
+        /* P_8x8 remains TODO; keep an explicit intra header instead of
          * claiming an inter decision that was never analysed. */
         phx_encoder_cavlc_header_i(h, bs, d, i_mb_i_offset); /* cavlc.c:408/481 */
     }
@@ -1505,11 +1529,18 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 d.i_partition = PHX_D_16x16;
                 d.cbp_luma = d.cbp_chroma = 0;
             }
+            /* B_SKIP is the only B type with d.skip; B_DIRECT is a *coded* MB
+             * that carries the direct MVs/refs (analyse.c:3377).  The old code
+             * funnelled B_DIRECT into b_skip, which made every non-skip B
+             * decision fall back to intra.  SHADER: B/C. */
             int b_skip = (b_slice && rc == 0 && d.skip &&
-                          (d.mb_type == PHX_B_SKIP || d.mb_type == PHX_B_DIRECT));
-            int inter = (rc == 0 && fc.i_type == PHX_SLICE_P &&
-                         (is_skip || d.mb_type == PHX_P_L0) &&
-                         d.cbp_luma == 0 && d.cbp_chroma == 0);
+                          d.mb_type == PHX_B_SKIP);
+            int b_inter = (b_slice && rc == 0 && !d.skip &&
+                           d.mb_type >= PHX_B_DIRECT &&
+                           d.mb_type <= PHX_B_BI_BI);
+            int inter = ((rc == 0 && fc.i_type == PHX_SLICE_P &&
+                          (is_skip || d.mb_type == PHX_P_L0) &&
+                          d.cbp_luma == 0 && d.cbp_chroma == 0) || b_inter);
             if (b_skip) inter = 0;                       /* B_SKIP has its own MC path */
             if (rc < 0 || (!inter && d.mb_type != PHX_I_16x16 &&
                            d.mb_type != PHX_I_4x4 && d.mb_type != PHX_I_PCM)) {
@@ -1531,11 +1562,17 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
              * mode indices (analyse.c:3739-3751); the FIX4/FIX16 mapping is
              * applied only by the CABAC/CAVLC syntax writers. */
             d.b_transform_8x8 = 0;                     /* pps transform flag is 0 below */
-            if (b_skip) {
-                /* encoder/macroblock.c:697-703 — B_SKIP MC from both lists
-                 * with the direct MVs published by analysis. */
-                rc = phx_macroblock_encode_b(&h->param, h->fenc, fref, fref1, c,
-                                             mb_x, mb_y, &d, 32);
+            if (b_skip || b_inter) {
+                /* encoder/macroblock.c:697-703 (B_SKIP) and :801-914 (bidir
+                 * residual) — MC from both lists with the MVs published by
+                 * analysis.  B_SKIP keeps the byte-exact no-residual golden
+                 * path; coded B modes take the row-18 residual encoder. */
+                rc = b_skip
+                   ? phx_macroblock_encode_b(&h->param, h->fenc, fref, fref1, c,
+                                             mb_x, mb_y, &d, 32)
+                   : phx_macroblock_encode_b_residual(
+                         &h->param, h->fenc, fref, fref1, c, mb_x, mb_y, &d,
+                         h->param.b_cabac ? &h->cabac : NULL, 32);
             } else {
                 rc = phx_macroblock_encode_ex(&h->param, h->fenc, fref, c,
                                               mb_x, mb_y, &d,
@@ -1571,7 +1608,7 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 d.mb_type = b_skip ? PHX_B_SKIP : PHX_P_SKIP;
                 d.skip = 1;
             }
-            if (!inter && !b_skip) {
+            if (!inter && !b_skip && !b_inter) {
                 /* encoder/macroblock.c:925-941/259-498 — intra chroma DC+AC. */
                 int crc = phx_macroblock_encode_chroma(&h->param, h->fenc, c,
                                                        mb_x, mb_y, &d);
@@ -1612,6 +1649,16 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
             }
 
             phx_encoder_apply_decision(h, &d);         /* docs/SHADER_NOTES.md:126 */
+            if (phx_g_mbdiag_enable && phx_g_mbdiag_count < 4096) {
+                phx_mbdiag_rec_t *r = &phx_g_mbdiag[phx_g_mbdiag_count++];
+                memset(r, 0, sizeof(*r));
+                r->frame_index = h->i_frame;
+                r->mb_x = mb_x; r->mb_y = mb_y;
+                r->mb_type = d.mb_type; r->skip = d.skip;
+                r->partition = d.i_partition;
+                memcpy(r->ref, d.ref, sizeof(r->ref));
+                memcpy(r->mv, d.mv, sizeof(r->mv));
+            }
 
             if (h->param.b_cabac) {
                 phx_cabac_mb_t mb;

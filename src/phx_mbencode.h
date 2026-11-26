@@ -136,6 +136,19 @@ int phx_macroblock_encode_b(const phx_param_t *p, phx_frame_t *f,
                             phx_mb_cache_t *cache, int mb_x, int mb_y,
                             phx_mb_decision_t *d, int bipred_weight);
 
+/* Additive coded-B entry point (encoder/macroblock.c:801-914/:259-498): the
+ * SAME bidirectional MC as phx_macroblock_encode_b, plus the row-18 residual
+ * path layered on it for a nonzero-CBP B_L0_L0/L1_L1/BI_BI/DIRECT decision.
+ * The no-residual B_SKIP golden entry point above is untouched.  D_16x16 only;
+ * the MVs/refs/CBP are read from the decision, never fabricated.  Returns 0 /
+ * -1.  SHADER: B — one serial per-MB encode, no hidden state. */
+int phx_macroblock_encode_b_residual(const phx_param_t *p, phx_frame_t *f,
+                                     const phx_frame_t *fref0,
+                                     const phx_frame_t *fref1,
+                                     phx_mb_cache_t *cache, int mb_x, int mb_y,
+                                     phx_mb_decision_t *d, phx_cabac_t *cb,
+                                     int bipred_weight);
+
 /* x264's chroma DC path uses x264_quant_chroma_dc_trellis() (macroblock.c:420,
  * rdo.c:1114-1140) whenever trellis is enabled, and zigzag_scan_2x2_dc()
  * (macroblock.c:35-41) before handing the 2x2 block to CABAC.  Route the

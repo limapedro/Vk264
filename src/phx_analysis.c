@@ -126,6 +126,32 @@ static const uint8_t phx_i8x8_thresh_lut[11] = {
     4, 4, 4, 5, 5, 5, 6, 6, 6, 6, 6
 };
 
+/* x264 encoder/analyse.c:124-135 — B-slice MB-type bit-cost tables.  These are
+ * the literal C tables used by mb_analyse_inter_b16x16 (:1852/:2071-2073), the
+ * mode selection of :3397-3402 and the early-terminate estimate of :3463/:3466.
+ * SHADER: A — immutable table lookup, no state. */
+static const uint8_t phx_mb_b_cost_table[19] = {
+     9, 9, 9, 9, 0, 0, 0, 1, 3, 7, 7, 7, 3, 7, 7, 7, 5, 9, 0
+};
+static const uint8_t phx_mb_b16x8_cost_table[17] = {
+     0, 0, 0, 0, 0, 0, 0, 0, 5, 7, 7, 7, 5, 7, 9, 9, 9
+};
+static const uint8_t phx_sub_mb_b_cost_table[13] = {
+     7, 5, 5, 3, 7, 5, 7, 3, 7, 7, 7, 5, 1
+};
+/* x264 common/macroblock.h:97-109 — which list(s) a B mb_type uses per 8x8
+ * partition half ([list][0]=first 8x8, [list][1]=second).  Index is the raw
+ * mb_type 7..18 (B_DIRECT..B_SKIP); only 8..16 are read here.  SHADER: A. */
+static const uint8_t phx_mb_type_list_table[19][2][2] = {
+    {{0,0},{0,0}}, {{0,0},{0,0}}, {{0,0},{0,0}}, {{0,0},{0,0}}, /* I0..I3 */
+    {{1,1},{0,0}}, {{0,0},{0,0}}, {{1,1},{0,0}},               /* P_L0..P_SKIP */
+    {{0,0},{0,0}},                                              /* B_DIRECT */
+    {{1,1},{0,0}}, {{1,0},{0,1}}, {{1,1},{0,1}},                /* B_L0_* */
+    {{0,1},{1,0}}, {{0,0},{1,1}}, {{0,1},{1,1}},                /* B_L1_* */
+    {{1,1},{1,0}}, {{1,0},{1,1}}, {{1,1},{1,1}},                /* B_BI_* */
+    {{0,0},{0,0}}, {{0,0},{0,0}}                               /* B_8x8, B_SKIP */
+};
+
 /* x264 encoder/analyse.c:673-683 — intra_analysis_shortcut[avoid_topright]
  * [predict_mode[8]>=0][favor_vertical].  At mbrd==0 (and no fast-intra) x264
  * prunes the post-x3 candidate list to this short list, so modes such as DDL
@@ -176,6 +202,8 @@ typedef struct {
     const phx_param_t *p;
     const phx_frame_t *f;
     const phx_frame_t *fref;          /* list-0 reference 0 (analyse.c:1274) */
+    const phx_frame_t *fref1;         /* list-1 reference 0 (B slices only) */
+    const phx_analysis_b_input_t *b;  /* list-1/colocated bundle (B slices) */
     int slice_type;                   /* PHX_SLICE_* (encoder.c:3522/3530/3539) */
     phx_mb_cache_t *cache;
     phx_cabac_t *cb;                  /* live CABAC state, read-only for trellis */
@@ -213,6 +241,15 @@ typedef struct {
     int found, cost, sad, skip;
     int b_skip;                       /* x264 B_SKIP from analyse.c:3338-3358 */
     int mv[2];                        /* qpel, x264_me_t.mv (encoder/me.h:55) */
+    /* B-slice 16x16 decision (analyse.c:3397-3415).  `b_type` is the winning
+     * x264 mb_class_e (B_DIRECT=7 .. B_BI_BI=16), `b_mv`/`b_ref` are the MV/ref
+     * of that mode, and `cost_*` are the four SATD+bit costs compared at
+     * :3399-3402.  `i_bskip_cost` is the mbrd SSD of the direct prediction
+     * (:3348) used by the B_SKIP gate.  SHADER: B — one record per MB. */
+    int b_type;
+    int16_t b_mv[2][2];               /* [list][x,y], qpel */
+    int b_ref[2];                     /* [list] reference index */
+    int cost_l0, cost_l1, cost_bi, cost_direct, i_bskip_cost;
 } phx_inter_result_t;
 
 /* ---- SATD / SA8D (pure A-class kernels from common/pixel.c) -------------- */
@@ -419,19 +456,19 @@ static int phx_median3(int a, int b, int c)
  * (common/base.h:180): left = scan8[0]-1, top = scan8[0]-8, top-right =
  * scan8[0]-8+4, top-left = scan8[0]-8-1.  SHADER: B — reads the neighbour
  * ref/mv cache only. */
-static void phx_predict_mv16(const phx_mb_cache_t *cache, int i_ref,
-                             int16_t mvp[2])
+static void phx_predict_mv16_l(const phx_mb_cache_t *cache, int l, int i_ref,
+                               int16_t mvp[2])
 {
     const int i8 = phx_scan8[0];
-    const int i_refa = cache->ref[0][i8 - 1];            /* mvpred.c:131 */
-    const int16_t *mv_a = cache->mv[0][i8 - 1];          /* :132 */
-    const int i_refb = cache->ref[0][i8 - 8];            /* :133 */
-    const int16_t *mv_b = cache->mv[0][i8 - 8];          /* :134 */
-    int i_refc = cache->ref[0][i8 - 8 + 4];              /* :135 */
-    const int16_t *mv_c = cache->mv[0][i8 - 8 + 4];      /* :136 */
+    const int i_refa = cache->ref[l][i8 - 1];            /* mvpred.c:131 */
+    const int16_t *mv_a = cache->mv[l][i8 - 1];          /* :132 */
+    const int i_refb = cache->ref[l][i8 - 8];            /* :133 */
+    const int16_t *mv_b = cache->mv[l][i8 - 8];          /* :134 */
+    int i_refc = cache->ref[l][i8 - 8 + 4];              /* :135 */
+    const int16_t *mv_c = cache->mv[l][i8 - 8 + 4];      /* :136 */
     if (i_refc == -2) {                                  /* :137 */
-        i_refc = cache->ref[0][i8 - 8 - 1];              /* :139 */
-        mv_c   = cache->mv[0][i8 - 8 - 1];               /* :140 */
+        i_refc = cache->ref[l][i8 - 8 - 1];              /* :139 */
+        mv_c   = cache->mv[l][i8 - 8 - 1];               /* :140 */
     }
     int count = (i_refa == i_ref) + (i_refb == i_ref) + (i_refc == i_ref);
                                                          /* :143 */
@@ -448,6 +485,13 @@ static void phx_predict_mv16(const phx_mb_cache_t *cache, int i_ref,
         for (int k = 0; k < 2; k++)
             mvp[k] = (int16_t)phx_median3(mv_a[k], mv_b[k], mv_c[k]);
     }
+}
+
+/* x264 common/mvpred.c:129-163 — list-0 wrapper (unchanged ABI for callers). */
+static void phx_predict_mv16(const phx_mb_cache_t *cache, int i_ref,
+                             int16_t mvp[2])
+{
+    phx_predict_mv16_l(cache, 0, i_ref, mvp);
 }
 
 /* x264 common/mvpred.c:166-181 — x264_mb_predict_mv_pskip().  The P_SKIP MV
@@ -1582,6 +1626,269 @@ static int phx_analysis_inter_p16x16(phx_analysis_ctx_t *c,
     return 0;
 }
 
+/* ---- B-slice inter analysis (encoder/analyse.c:1844-2074, :3305-3415) ----
+ *
+ * The B path used to stop after the direct B_SKIP probe: every non-skip MB
+ * fell back to intra in phx_encoder.c.  This block ports the two x264 routines
+ * that select a real B MB type.  All costs are the literal x264 SATD+bit-cost
+ * values; no mode is invented and no B frame is forced (SHADER: B).
+ */
+
+/* x264 mb_analyse_inter_direct (:1852/:1880) and the BI cost of
+ * mb_analyse_inter_b16x16 (:1979-1988) both need one 16x16 prediction from
+ * list 0 ref 0 + list 1 ref 0 with the implicit equal-weight bipred average
+ * (common/mc.c:49-75).  `bipred_weight` is h->mb.bipred_weight[r0][r1] (32
+ * without weighted bipred).  SHADER: B — two read-only MC windows. */
+static void phx_b_pred16(const phx_analysis_ctx_t *c,
+                         const phx_analysis_b_input_t *b,
+                         const int ref[2],
+                         const int16_t mv0[2], const int16_t mv1[2],
+                         uint8_t out[16*16])
+{
+    uint8_t p0[16*16], p1[16*16];
+    /* common/macroblock.c:37-153 — a B prediction may be unidirectional when
+     * the direct predictor (or the chosen mode) leaves one list unused. */
+    if (ref[0] < 0 && ref[1] < 0) { memset(out, 0, 256); return; }
+    if (ref[0] < 0) {
+        phx_mc_luma_mb(b->fref1, out, 16, c->mb_x, c->mb_y,
+                       mv1[0], mv1[1], 16, 16);
+        return;
+    }
+    if (ref[1] < 0) {
+        phx_mc_luma_mb(c->fref, out, 16, c->mb_x, c->mb_y,
+                       mv0[0], mv0[1], 16, 16);
+        return;
+    }
+    phx_mc_luma_mb(c->fref, p0, 16, c->mb_x, c->mb_y, mv0[0], mv0[1], 16, 16);
+    phx_mc_luma_mb(b->fref1, p1, 16, c->mb_x, c->mb_y, mv1[0], mv1[1], 16, 16);
+    int w = b->bipred_weight ? b->bipred_weight : 32;   /* mc.c:79-91 */
+    for (int i = 0; i < 256; i++)
+        out[i] = (uint8_t)((p0[i]*w + p1[i]*(64 - w) + 32) >> 6);
+}
+
+/* x264 encoder/rdo.c:123-160 — ssd_mb() of an already-MC'd prediction.  The
+ * luma psy-RD complexity term (:128-146) is reproduced from encoder.c:1218
+ * (i_psy_rd = FIX8(f_psy_rd) at subme>=6) and analyse.c:269 (i_psy_rd_lambda).
+ * SHADER: B — pure reduction, no state. */
+static int phx_b_ssd_pred(const phx_analysis_ctx_t *c,
+                          const uint8_t pred[16*16],
+                          const uint8_t u[8*16], const uint8_t v[8*16])
+{
+    static const uint8_t zero[16] = { 0 };
+    int ssd = 0;
+    for (int i = 0; i < 256; i++) {                       /* PIXEL_16x16 SSD */
+        int d = (int)c->fenc[i] - (int)pred[i];
+        ssd += d * d;
+    }
+    int psy_rd = c->p->b_psy && c->p->i_subpel_refine >= 6 ? 256 : 0;
+    if (psy_rd && c->a.i_psy_rd_lambda) {
+        int dc_pred = phx_sad_16x16(pred, 16, zero, 0) >> 1;       /* :141 */
+        int dc_fenc = phx_sad_16x16(c->fenc, c->fenc_stride, zero, 0) >> 1;
+        int satd = abs(phx_satd_16x16(pred, 16, zero, 0) - dc_pred
+                       - (phx_satd_16x16(c->fenc, c->fenc_stride, zero, 0)
+                          - dc_fenc));                            /* :142-143 */
+        int64_t tmp = ((int64_t)satd * psy_rd * c->a.i_psy_rd_lambda + 128) >> 8;
+        ssd += (int)(tmp > PHX_COST_MAX ? PHX_COST_MAX : tmp);     /* :144-145 */
+    }
+    /* 4:2:0 chroma SSD with the chroma lambda2 offset (rdo.c:153-158). */
+    int cs = c->f->i_stride_planes[1];
+    int x0 = c->mb_x*8, y0 = c->mb_y*8;
+    int chroma_ssd = 0;
+    for (int chpl = 0; chpl < 2; chpl++) {
+        const uint8_t *cf = c->f->plane_chroma + (size_t)y0*cs + 2*x0 + chpl;
+        const uint8_t *cp = chpl ? v : u;
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 8; x++) {
+                int d = cf[(size_t)y*cs + 2*x] - cp[y*16 + x];
+                chroma_ssd += d * d;
+            }
+    }
+    ssd += (int)(((uint64_t)chroma_ssd * c->a.i_chroma_lambda2_offset + 128) >> 8);
+    return ssd;
+}
+
+/* Build the 4:2:0 chroma prediction for one B MC candidate from the explicit
+ * MV/ref pair (macroblock.c:96-100 / mc.c:252-283).  A list with ref < 0 is
+ * not read.  SHADER: B — pure MC from read-only reference planes. */
+static void phx_b_chroma_pred(const phx_analysis_ctx_t *c,
+                              const phx_analysis_b_input_t *b,
+                              const int ref[2], const int16_t mv[2][2],
+                              uint8_t u[8*16], uint8_t v[8*16])
+{
+    int cs = c->f->i_stride_planes[1];
+    int x0 = c->mb_x*8, y0 = c->mb_y*8;
+    uint8_t u0[8*16], v0[8*16], u1[8*16], v1[8*16];
+    if (ref[0] >= 0 && ref[1] >= 0) {
+        phx_mc_chroma(u0,16,v0,16, c->fref->plane_chroma+(size_t)y0*cs+2*x0,
+                      cs, mv[0][0], mv[0][1], 8, 8);
+        phx_mc_chroma(u1,16,v1,16, b->fref1->plane_chroma+(size_t)y0*cs+2*x0,
+                      cs, mv[1][0], mv[1][1], 8, 8);
+        phx_mc_pixel_avg(u,16,u0,16,u1,16,8,8);
+        phx_mc_pixel_avg(v,16,v0,16,v1,16,8,8);
+    } else if (ref[0] >= 0) {
+        phx_mc_chroma(u,16,v,16, c->fref->plane_chroma+(size_t)y0*cs+2*x0,
+                      cs, mv[0][0], mv[0][1], 8, 8);
+    } else if (ref[1] >= 0) {
+        phx_mc_chroma(u,16,v,16, b->fref1->plane_chroma+(size_t)y0*cs+2*x0,
+                      cs, mv[1][0], mv[1][1], 8, 8);
+    } else { memset(u, 0, 8*16); memset(v, 0, 8*16); }
+}
+
+/* x264 analyse.c:3348 ssd_mb() of the direct prediction used by the mbrd
+ * B_SKIP gate.  SHADER: B — deterministic workgroup reduction. */
+static int phx_b_ssd_mb(const phx_analysis_ctx_t *c,
+                        const phx_analysis_b_input_t *b,
+                        const phx_mvdirect_result_t *dir)
+{
+    uint8_t pred[16*16], u[8*16], v[8*16];
+    const int dr[2] = { dir->ref[0][0], dir->ref[1][0] };
+    phx_b_pred16(c, b, dr, dir->mv[0][0], dir->mv[1][0], pred);
+    phx_b_chroma_pred(c, b, dr, dir->mv, u, v);
+    return phx_b_ssd_pred(c, pred, u, v);
+}
+
+/* x264 encoder/analyse.c:1890-2074 — mb_analyse_inter_b16x16(), reduced to
+ * one reference in each list (the only refs Phoenix's DPB supplies).  The
+ * list-1-then-list-0 order of :1912-1973 is preserved for MV-predictor
+ * consistency; with a single ref in each list the fast-skip branch (:1926/
+ * :1951) never triggers unless b_try_skip is armed by a non-mbrd probe.
+ * Direct is searched first by the caller (:3383-3384).  SHADER: B — one ME
+ * workgroup per list plus one bidirectional cost reduction. */
+static void phx_analysis_inter_b16x16(phx_analysis_ctx_t *c,
+                                      const phx_analysis_b_input_t *b,
+                                      phx_inter_result_t *out)
+{
+    int mv_range = c->p->i_me_range > 0 ? c->p->i_me_range : 16;
+    int subme = c->p->i_subpel_refine;
+    /* analyse.c:3493-3513: with mbrd the in-search refine (me.c:792-797,
+     * b_refine_qpel == 0) is the only one; mbrd == 0 adds the post-search
+     * x264_me_refine_qpel() call (b_refine_qpel == 1) of :3119-3126.  Same
+     * rule as the already-ported P16 path (phx_analysis_inter_p16x16). */
+    int b_refine_qpel = (c->mbrd == 0 && subme > 0) ? 1 : 0;
+    int16_t mv[2][2] = { { 0, 0 }, { 0, 0 } };
+    int cost[2] = { PHX_COST_MAX, PHX_COST_MAX };
+    int cost_mv[2] = { 0, 0 };
+
+    phx_mb_analyse_load_costs(c->costs, &c->a, 1, 1);    /* :3379 */
+    for (int l = 1; l >= 0; l--) {
+        const phx_frame_t *fr = l ? b->fref1 : c->fref;
+        int16_t mvp[2];
+        phx_predict_mv16_l(c->cache, l, 0, mvp);         /* :1936 */
+        int fullpel[2] = { 0, 0 };
+        int cst = phx_me16(c->mb_x*16, c->mb_y*16, c->f, fr, c->costs,
+                           mv_range, c->a.i_lambda, (int)c->p->i_me_method,
+                           mvp, fullpel);                /* :1938 */
+        if (cst >= 0 && cst < PHX_COST_MAX) {
+            int16_t rmv[2] = { (int16_t)fullpel[0], (int16_t)fullpel[1] };
+            int rc = cst, rc_mv = 0;
+            if (phx_me_refine_subpel_mv(c->f, fr, c->mb_x, c->mb_y, c->costs,
+                                        c->a.i_lambda, mv_range, subme,
+                                        b_refine_qpel, mvp, rmv,
+                                        &rc, &rc_mv, NULL) == 0) {
+                mv[l][0] = rmv[0]; mv[l][1] = rmv[1];    /* me.h:55 */
+                cost[l] = rc;                             /* me.h:54 */
+                cost_mv[l] = rc_mv;                       /* me.h:53 */
+            } else {
+                mv[l][0] = rmv[0]; mv[l][1] = rmv[1];
+                cost[l] = cst + phx_me_mv_bits(c->costs,
+                              c->qp < PHX_QP_MAX_SPEC ? c->qp : PHX_QP_MAX_SPEC,
+                              fullpel, mvp);
+                cost_mv[l] = cost_mv[l] ? cost_mv[l]
+                           : phx_me_mv_bits(c->costs,
+                              c->qp < PHX_QP_MAX_SPEC ? c->qp : PHX_QP_MAX_SPEC,
+                              fullpel, mvp);
+            }
+        }
+        /* REF_COST(l, 0) is zero with one active reference (:1932/:1941). */
+    }
+
+    /* :1976-1991 — BI uses the two best 16x16 MVs. */
+    uint8_t bi_pred[16*16];
+    { const int br[2] = { 0, 0 };
+      phx_b_pred16(c, b, br, mv[0], mv[1], bi_pred); }   /* :1979-1986 */
+    int cost_bi = phx_mbcmp16(c->b_satd, c->fenc, c->fenc_stride,
+                              bi_pred, 16)               /* :1988 */
+                + cost_mv[0] + cost_mv[1];               /* :1990-1991 */
+    /* :1996-2068 — always try the (0,0,0,0) vector; it avoids errant MVs in
+     * fades.  p_cost_mv[-mvp] is the QP table centred on each list's MVP. */
+    if (mv[0][0] | mv[0][1] | mv[1][0] | mv[1][1]) {
+        int q = c->qp < PHX_QP_MAX_SPEC ? c->qp : PHX_QP_MAX_SPEC;
+        const uint16_t *tab0 = c->costs->cost_mv[q];
+        int16_t mvp0[2], mvp1[2];
+        phx_predict_mv16_l(c->cache, 0, 0, mvp0);
+        phx_predict_mv16_l(c->cache, 1, 0, mvp1);
+        int l0_0 = (tab0 && -mvp0[0] >= -64 && -mvp0[0] <= 64)
+                 ? tab0[-mvp0[0]] : 0;
+        int l0_1 = (tab0 && -mvp0[1] >= -64 && -mvp0[1] <= 64)
+                 ? tab0[-mvp0[1]] : 0;
+        int l1_0 = (tab0 && -mvp1[0] >= -64 && -mvp1[0] <= 64)
+                 ? tab0[-mvp1[0]] : 0;
+        int l1_1 = (tab0 && -mvp1[1] >= -64 && -mvp1[1] <= 64)
+                 ? tab0[-mvp1[1]] : 0;
+        static const int16_t zero[2] = { 0, 0 };
+        { const int br[2] = { 0, 0 };
+          phx_b_pred16(c, b, br, zero, zero, bi_pred); }
+        int cost00 = phx_mbcmp16(c->b_satd, c->fenc, c->fenc_stride,
+                                 bi_pred, 16) + l0_0 + l0_1 + l1_0 + l1_1;
+        if (cost00 < cost_bi) {
+            cost_bi = cost00;
+            cost_mv[0] = l0_0 + l0_1;                    /* :2064 */
+            cost_mv[1] = l1_0 + l1_1;                    /* :2065 */
+            mv[0][0] = mv[0][1] = mv[1][0] = mv[1][1] = 0;
+        }
+    }
+
+    /* Direct cost: analyse.c:1852/1880 (no chroma ME at subme < 9). */
+    uint8_t d_pred[16*16];
+    out->cost_direct = (int)c->a.i_lambda * phx_mb_b_cost_table[PHX_B_DIRECT];
+    { const int dr[2] = { c->b_direct.ref[0][0], c->b_direct.ref[1][0] };
+      phx_b_pred16(c, b, dr, out->b_mv[0], out->b_mv[1], d_pred); }
+    out->cost_direct += phx_mbcmp16(c->b_satd, c->fenc, c->fenc_stride,
+                                    d_pred, 16);
+
+    /* :3397-3402 — the four-way mode selection.  COPY2_IF_LT tie order makes
+     * L0 win ties, then L1, then BI, then DIRECT (exactly x264's order). */
+    int type = PHX_B_L0_L0, best = cost[0];              /* :3397-3399 */
+    PHX_COPY2_IF_LT(best, cost[1],    type, PHX_B_L1_L1); /* :3400 */
+    PHX_COPY2_IF_LT(best, cost_bi,    type, PHX_B_BI_BI); /* :3401 */
+    PHX_COPY2_IF_LT(best, out->cost_direct, type, PHX_B_DIRECT); /* :3402 */
+
+    /* :2071-2073 — add the mb_type bit cost to every candidate. */
+    cost[0] += (int)c->a.i_lambda * phx_mb_b_cost_table[PHX_B_L0_L0];
+    cost[1] += (int)c->a.i_lambda * phx_mb_b_cost_table[PHX_B_L1_L1];
+    cost_bi += (int)c->a.i_lambda * phx_mb_b_cost_table[PHX_B_BI_BI];
+
+    /* NOTE (explicit limitation): x264's mbrd path runs mb_analyse_b_rd()
+     * (:3573-3589) and chooses the final mode by RD, not by these SATD costs.
+     * phx_rdo.h does not expose B-slice macroblock_size_cabac (:261), so we
+     * keep the exact SATD mode selection of :3397-3402 here; the mbrd-gated
+     * B_SKIP decision uses the exact ssd_mb threshold of :3346-3350 instead.
+     * No MB type is ever forced by this stage. */
+
+    out->found = 1;
+    out->b_type = type;
+    out->cost = best;
+    out->cost_l0 = cost[0];
+    out->cost_l1 = cost[1];
+    out->cost_bi = cost_bi;
+    if (type == PHX_B_L0_L0) {
+        out->b_mv[0][0] = mv[0][0]; out->b_mv[0][1] = mv[0][1];
+        out->b_mv[1][0] = out->b_mv[1][1] = 0;
+        out->b_ref[0] = 0; out->b_ref[1] = -1;
+    } else if (type == PHX_B_L1_L1) {
+        out->b_mv[0][0] = out->b_mv[0][1] = 0;
+        out->b_mv[1][0] = mv[1][0]; out->b_mv[1][1] = mv[1][1];
+        out->b_ref[0] = -1; out->b_ref[1] = 0;
+    } else if (type == PHX_B_BI_BI) {
+        out->b_mv[0][0] = mv[0][0]; out->b_mv[0][1] = mv[0][1];
+        out->b_mv[1][0] = mv[1][0]; out->b_mv[1][1] = mv[1][1];
+        out->b_ref[0] = 0; out->b_ref[1] = 0;
+    } else { /* B_DIRECT — the caller already published the direct arrays. */
+        out->b_ref[0] = c->b_direct.ref[0][0];
+        out->b_ref[1] = c->b_direct.ref[1][0];
+    }
+}
+
 /* ---- driver (encoder/analyse.c:2918-2952, :3734-3753) ------------------- */
 
 /* x264 encoder/analyse.c:294-305 — mb_analyse_init() (I-slice/progressive
@@ -1638,7 +1945,11 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d,
         /* analyse.c:3021/:3040 — P_SKIP is a distinct MB type, not a
          * zero-residual P_L0; the entropy writer keys off d.skip.
          * B_SKIP (analyse.c:3338-3358) is the B-slice equivalent. */
+        /* B_SKIP and the four B16x16 modes (:3397-3402) are distinct MB
+         * types; the intra comparison of :3616-3619 can still override them. */
         type = inter->b_skip ? PHX_B_SKIP
+             : (inter->b_type >= PHX_B_DIRECT &&
+                inter->b_type <= PHX_B_BI_BI) ? inter->b_type
              : inter->skip ? PHX_P_SKIP : PHX_P_L0;    /* :3021/:3056 */
         PHX_COPY2_IF_LT(cost, c->satd_i16x16, type, PHX_I_16x16); /* :3221 */
         PHX_COPY2_IF_LT(cost, c->satd_i8x8,   type, PHX_I_8x8);   /* :3222 */
@@ -1673,6 +1984,34 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d,
                 c->cache->mv[l][phx_scan8[i]][1] = d->mv[l][i][1];
             }
         c->cbp_luma = c->cbp_chroma = 0;
+    } else if (type >= PHX_B_DIRECT && type <= PHX_B_BI_BI) {
+        /* analyse.c:3718/3735-3753 (analyse_update_cache) — a coded B 16x16
+         * mode carries one MV/ref pair per list on all 16 4x4 blocks, plus the
+         * MB-type bit cost already added in phx_analysis_inter_b16x16.  B_SKIP
+         * is the only B type with d.skip set; B_DIRECT is a coded MB with the
+         * direct predictor's MVs/refs.  No residual is fabricated here: the
+         * row-18 encoder in phx_mbencode.c recomputes it from fenc/FDEC. */
+        d->skip = 0;
+        d->i_partition = PHX_D_16x16;                    /* :3398 */
+        for (int i = 0; i < 16; i++) {
+            int k = phx_scan8[i];
+            for (int l = 0; l < 2; l++) {
+                if (type == PHX_B_DIRECT) {
+                    d->ref[l][i] = c->b_direct.ref[l][i];
+                    d->mv[l][i][0] = c->b_direct.mv[l][i][0];
+                    d->mv[l][i][1] = c->b_direct.mv[l][i][1];
+                } else {
+                    d->ref[l][i] = inter->b_ref[l];
+                    d->mv[l][i][0] = inter->b_mv[l][0];
+                    d->mv[l][i][1] = inter->b_mv[l][1];
+                }
+                c->cache->ref[l][k] = d->ref[l][i];
+                c->cache->mv[l][k][0] = d->mv[l][i][0];
+                c->cache->mv[l][k][1] = d->mv[l][i][1];
+            }
+            c->cache->intra4x4_pred_mode[k] = PHX_I_PRED_4x4_DC;
+        }
+        c->cbp_luma = c->cbp_chroma = 0;                 /* macroblock.c:624 */
     } else if (type == PHX_P_L0 || type == PHX_P_SKIP) {
         /* analyse.c:1316/1326 — ref/mv cached for all 16 4x4 blocks of the
          * 16x16 partition; single list-0 reference, no residual (cbp=0).
@@ -1769,7 +2108,10 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d,
         d->intra16_pred_mode = (int8_t)c->pred16;
     }
 
-    if (type == PHX_P_L0 || type == PHX_P_SKIP || type == PHX_B_SKIP) {
+    int is_inter_mb = (type == PHX_P_L0 || type == PHX_P_SKIP ||
+                       type == PHX_B_SKIP ||
+                       (type >= PHX_B_DIRECT && type <= PHX_B_BI_BI));
+    if (is_inter_mb) {
         /* macroblock.c:940-943 — inter chroma has its own MC path; analysis
          * does not fabricate chroma coefficients.  phx_encoder.c performs the
          * integer-MV chroma copy for this no-residual decision. */
@@ -1786,8 +2128,7 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d,
     d->cbp_luma = c->cbp_luma;
     d->cbp_chroma = c->cbp_chroma;
     d->i_cbp = (c->cbp_chroma << 4) | c->cbp_luma
-             | ((type == PHX_P_L0 || type == PHX_P_SKIP ||
-                 type == PHX_B_SKIP) ? 0 : 0x1700);
+             | (is_inter_mb ? 0 : 0x1700);
                                                      /* macroblock.c:946-951 */
                                                     /* inter cbp has no DC flags; intra cbp keeps 0x1700 (macroblock.c:946-951) */
 }
@@ -1848,10 +2189,12 @@ static int phx_macroblock_analyse_impl(const phx_param_t *p,
     if (c.mbrd) phx_analysis_mb_init_fenc_cache(&c);
     phx_init_neighbours(&c);
 
-    /* B-slice direct/B_SKIP path (analyse.c:3334-3359).  B1's predictor and
-     * probe are byte-exact; all list-1/colocated state arrives in `b` from
-     * the caller's DPB (DPB1 accessors).  No B frame is forced when `b` is
-     * absent — the existing intra-only fallback stays in place. */
+    /* B-slice direct/B_SKIP + B16x16 path (analyse.c:3305-3415).  B1's
+     * predictor and probe are byte-exact; all list-1/colocated state arrives
+     * in `b` from the caller's DPB.  No B frame is forced when `b` is absent
+     * — the existing intra-only fallback stays in place.  SHADER: B. */
+    c.fref1 = b ? b->fref1 : NULL;
+    c.b = b;
     if (slice_type == PHX_SLICE_B && b && b->fref1 && b->col && fref) {
         phx_mvdirect_input_t din;
         memset(&din, 0, sizeof(din));
@@ -1869,17 +2212,60 @@ static int phx_macroblock_analyse_impl(const phx_param_t *p,
         din.cur_poc = b->cur_poc;
         if (phx_mvdirect_predict(&din, &c.b_direct) == 0 &&
             c.b_direct.available) {
-            /* analyse.c:3338-3359 — the direct prediction is usable; with
-             * mbrd == 0 the probe decides B_SKIP directly (:3356-3358). */
-            int bskip = phx_mvdirect_probe_bskip(
-                fenc, fref, b->fref1, &c.b_direct,
-                mb_x, mb_y, qp, phx_chroma_qp_of(p, qp),
-                b->bipred_weight ? b->bipred_weight : 32);
-            if (bskip > 0) {
+            int bskip = 0;
+            if (c.mbrd) {
+                /* analyse.c:3346-3350 — with RD active x264 does NOT use the
+                 * probe: it MCs the direct prediction and compares its SSD
+                 * (including the chroma-lambda and psy-RD terms, rdo.c:150)
+                 * against the 6-bit CAVLC header cost. */
+                inter.i_bskip_cost = phx_b_ssd_mb(&c, b, &c.b_direct);
+                bskip = inter.i_bskip_cost
+                      <= ((6 * c.a.i_lambda2 + 128) >> 8);   /* :3350 */
+            } else {
+                /* analyse.c:3352-3358 — the probe arms b_try_skip; at subme<3
+                 * the probe result also decides B_SKIP immediately. */
+                c.b_try_skip = phx_mvdirect_probe_bskip(
+                    fenc, fref, b->fref1, &c.b_direct, mb_x, mb_y, qp,
+                    phx_chroma_qp_of(p, qp),
+                    b->bipred_weight ? b->bipred_weight : 32);
+                if (p->i_subpel_refine < 3) bskip = c.b_try_skip;
+            }
+            if (bskip) {
                 inter.found = 1;
                 inter.b_skip = 1;
-                inter.cost = 0;                    /* B_SKIP wins the compare */
+                inter.b_type = PHX_B_SKIP;
+                inter.cost = 0;
                 c.i_satd_inter = 0;
+            } else {
+                /* analyse.c:3383-3386 — direct is evaluated first, then the
+                 * 16x16 L0/L1/BI search, then the four-way mode choice. */
+                inter.b_mv[0][0] = c.b_direct.mv[0][0][0];
+                inter.b_mv[0][1] = c.b_direct.mv[0][0][1];
+                inter.b_mv[1][0] = c.b_direct.mv[1][0][0];
+                inter.b_mv[1][1] = c.b_direct.mv[1][0][1];
+                phx_analysis_inter_b16x16(&c, b, &inter);
+                /* analyse.c:3404-3415 — mbrd early-terminate: when direct is
+                 * already within 33/32 of the best mode, an RD pass may still
+                 * promote B_SKIP.  The full mb_analyse_b_rd() estimator is not
+                 * exposed for B slices (phx_rdo.h:261), so the comparison uses
+                 * the same SATD costs as :3397-3402 here; the final mode choice
+                 * is still published from the four candidates, never forced. */
+                /* analyse.c:3404-3415 — mbrd early-terminate B_SKIP compare.
+                 * The full mb_analyse_b_rd() estimator is not exposed for B
+                 * slices (phx_rdo.h:261); compare the exact ssd_mb cost of
+                 * the direct prediction against the SATD costs of :3397-3402.
+                 * This is a gate only — it never forces a B type. */
+                if (c.mbrd && c.b_early_terminate &&
+                    inter.cost_direct <= inter.cost * 33 / 32 &&
+                    inter.i_bskip_cost < inter.cost_l0 &&
+                    inter.i_bskip_cost < inter.cost_l1 &&
+                    inter.i_bskip_cost < inter.cost_bi &&
+                    inter.i_bskip_cost < inter.cost_direct) {
+                    inter.b_type = PHX_B_SKIP;
+                    inter.b_skip = 1;
+                    inter.cost = 0;
+                }
+                if (inter.found) c.i_satd_inter = inter.cost;
             }
         }
     }
