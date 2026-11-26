@@ -113,9 +113,13 @@ struct phx_ratecontrol_t {
     int mb_tree;
     int bframe;                     /* param.i_bframe (ratecontrol.c:642) */
     int lowres;                     /* h->frames.b_have_lowres */
+    int keyint_max;                 /* param.i_keyint_max (ratecontrol.c:2602) */
     int weighted_pred;              /* param.analyse.i_weighted_pred */
     int i_aq_mode;                  /* param.rc.i_aq_mode */
 
+    /* ratecontrol.c:821-822.  x264 rounds these through log2f (float);
+     * the CQP constants must instead keep phx_encoder.c:473-475's double
+     * log2 so that --qp remains byte-identical. */
     double ip_offset, pb_offset;    /* ratecontrol.c:821-822 */
     int ip_offset_int;              /* h->mb.ip_offset, :826 */
     double f_ip_factor, f_pb_factor;
@@ -166,11 +170,21 @@ int phx_ratecontrol_init(phx_ratecontrol_t **rc_out, const phx_param_t *p, int m
     rc->mb_count = mb_count;
     rc->mb_tree = p->b_mb_tree;
     rc->bframe = p->i_bframe;
+    rc->keyint_max = p->i_keyint_max;
     rc->weighted_pred = p->i_weighted_pred;
     rc->i_aq_mode = p->i_aq_mode;
-    rc->lowres = (p->i_lookahead > 0 || p->b_mb_tree);
+    /* encoder.c:1618-1624 — b_have_lowres.  One-pass CRF/ABR always have
+     * lowres; CQP needs b-adapt/scenecut/weightp/MB-tree. */
+    rc->lowres = (rc->method == PHX_RC_CRF || rc->method == PHX_RC_ABR ||
+                  p->i_bframe_adaptive != PHX_B_ADAPT_NONE ||
+                  p->i_scenecut_threshold > 0 || p->b_mb_tree ||
+                  p->i_weighted_pred > 0);
     rc->f_ip_factor = p->f_ip_factor > 0 ? p->f_ip_factor : 1.0;
     rc->f_pb_factor = p->f_pb_factor > 0 ? p->f_pb_factor : 1.0;
+    /* ratecontrol.c:762-766 — MB-tree forces the param pb factor to 1 before
+     * :822 computes pb_offset.  The CQP constants intentionally keep the
+     * phx_encoder.c:475 double-log2 mapping (orchestrator integration). */
+    if (p->b_mb_tree && p->rc_method != PHX_RC_CQP) rc->f_pb_factor = 1.0;
     rc->f_rf_constant = p->f_rf_constant;
     rc->satd_override = -1;
 
@@ -199,16 +213,19 @@ int phx_ratecontrol_init(phx_ratecontrol_t **rc_out, const phx_param_t *p, int m
         return -1;
     }
 
-    /* ratecontrol.c:821-825.  I and B offsets are added in QP space by the
-     * log2(factor)*6 identity; the encoder's CQP path uses the same formula. */
-    rc->ip_offset = 6.0 * log2(rc->f_ip_factor);   /* :821 */
-    rc->pb_offset = 6.0 * log2(rc->f_pb_factor);   /* :822 */
-    rc->ip_offset_int = (int)(rc->ip_offset + 0.5); /* :826 */
+    /* ratecontrol.c:821-826.  x264 uses log2f (float) for the RC offsets;
+     * the CQP constants below keep phx_encoder.c:473-475's double log2 so
+     * that the --qp mapping stays byte-identical to the encoder's. */
+    rc->ip_offset = 6.0 * log2f((float)rc->f_ip_factor);   /* :821 */
+    rc->pb_offset = 6.0 * log2f((float)rc->f_pb_factor);   /* :822 */
+    rc->ip_offset_int = (int)(rc->ip_offset + 0.5);        /* :826 */
 
-    base_qp = p->i_qp_constant >= 0 ? p->i_qp_constant : 26; /* phx_encoder.c:331-332, set.c:494 */
-    rc->qp_constant[PHX_RC_SLICE_P] = rc_clip3i(base_qp, 0, PHX_RC_QP_MAX); /* :823 + phx_encoder.c:340 */
-    rc->qp_constant[PHX_RC_SLICE_I] = rc_clip3i((int)(base_qp - rc->ip_offset + 0.5), 0, PHX_RC_QP_MAX); /* :824 */
-    rc->qp_constant[PHX_RC_SLICE_B] = rc_clip3i((int)(base_qp + rc->pb_offset + 0.5), 0, PHX_RC_QP_MAX); /* :825 */
+    base_qp = p->i_qp_constant >= 0 ? p->i_qp_constant : 26; /* phx_encoder.c:469-470, set.c:494 */
+    rc->qp_constant[PHX_RC_SLICE_P] = rc_clip3i(base_qp, 0, PHX_RC_QP_MAX); /* :823 + phx_encoder.c:484 */
+    rc->qp_constant[PHX_RC_SLICE_I] =
+        rc_clip3i((int)(base_qp - 6.0 * log2(rc->f_ip_factor) + 0.5), 0, PHX_RC_QP_MAX); /* :824 + phx_encoder.c:473 */
+    rc->qp_constant[PHX_RC_SLICE_B] =
+        rc_clip3i((int)(base_qp + 6.0 * log2(rc->f_pb_factor) + 0.5), 0, PHX_RC_QP_MAX); /* :825 + phx_encoder.c:475 */
 
     rc->cfg.bitrate = 0.0;                        /* base.c:403 */
     rc->cfg.fps = 25.0;                           /* ratecontrol.c:760 */
@@ -224,7 +241,10 @@ int phx_ratecontrol_init(phx_ratecontrol_t **rc_out, const phx_param_t *p, int m
 
     if (rc->method == PHX_RC_CRF) {
         double base_cplx = (double)mb_count * (rc->bframe ? 120.0 : 80.0); /* :642 */
-        double mbtree_offset = rc->mb_tree ? (1.0 - rc->qcompress) * 13.5 : 0.0; /* :643 */
+        /* :643 uses the PARAM f_qcompress (0.6), not the forced rc->qcompress
+         * (1.0 that :765 writes).  Using rc->qcompress here loses the 5.4 QP
+         * MB-tree offset at rf=23. */
+        double mbtree_offset = rc->mb_tree ? (1.0 - rc->cfg.qcompress) * 13.5 : 0.0; /* :643 */
         rc->rate_factor_constant =
             pow(base_cplx, 1.0 - rc->qcompress) /
             rc_qp2qscale((float)(rc->f_rf_constant + mbtree_offset)); /* :644-645 */
@@ -283,7 +303,10 @@ int phx_ratecontrol_configure(phx_ratecontrol_t *rc, const phx_ratecontrol_confi
     }
     if (rc->method == PHX_RC_CRF) {
         double base_cplx = (double)rc->mb_count * (rc->bframe ? 120.0 : 80.0); /* :642 */
-        double mbtree_offset = rc->mb_tree ? (1.0 - rc->qcompress) * 13.5 : 0.0; /* :643 */
+        /* :643 uses the PARAM f_qcompress (0.6), not the forced rc->qcompress
+         * (1.0 that :765 writes).  Using rc->qcompress here loses the 5.4 QP
+         * MB-tree offset at rf=23. */
+        double mbtree_offset = rc->mb_tree ? (1.0 - rc->cfg.qcompress) * 13.5 : 0.0; /* :643 */
         rc->rate_factor_constant =
             pow(base_cplx, 1.0 - rc->qcompress) /
             rc_qp2qscale((float)(rc->f_rf_constant + mbtree_offset)); /* :644-645 */
@@ -312,50 +335,60 @@ int phx_ratecontrol_set_quant_offsets(phx_ratecontrol_t *rc, const float *quant_
     return 0;
 }
 
-/* ratecontrol.c:1410-1420. */
-static void rc_accum_p_qp_update(phx_ratecontrol_t *rc, double qp, int slice_type)
+/* ratecontrol.c:1410-1420 — h->rc->qpm is a float; no extra 0.5 here
+ * (that rounding belongs only to x264_ratecontrol_qp at :1751). */
+static void rc_accum_p_qp_update(phx_ratecontrol_t *rc, float qp, int slice_type)
 {
     rc->accum_p_qp *= .95;                        /* :1413 */
     rc->accum_p_norm *= .95;                      /* :1414 */
     rc->accum_p_norm += 1;                        /* :1415 */
     rc->accum_p_qp += (slice_type == PHX_RC_SLICE_I)
-                    ? qp + rc->ip_offset + 0.5 : qp; /* :1416-1419 */
+                    ? qp + rc->ip_offset : qp;    /* :1416-1419 */
 }
 
 /* ratecontrol.c:1431-1538.
  * SHADER: C — one scalar pass per decided frame. */
 int phx_ratecontrol_start(phx_ratecontrol_t *rc, int slice_type, int frame_bits, int *qp_out)
 {
-    double qscale, qp_f, rate_factor, duration;
+    /* ratecontrol.c:2402 — rate_estimate_qscale returns float; every
+     * assignment to q below therefore rounds to float before x264 stores
+     * that value into its double RC fields (:2634-2638). */
+    float q;
+    double qp_f;
 
     if (!rc || !qp_out || slice_type < 0 || slice_type > 2) return -1;
     if (frame_bits < 0) frame_bits = 0;
 
     rc->qpa_rc = rc->qpa_aq = 0.0f;               /* :1526-1527 */
     if (rc->method == PHX_RC_CQP) {
-        /* phx_encoder.c:329-342 — no BREF averaging here: phx_encoder's CQP
-         * path (which the parity harness uses) does not apply :1508-1511. */
-        int qp = rc->qp_constant[slice_type];
+        /* phx_encoder.c:466-486 — CQP bypasses rate_estimate_qscale (:1506);
+         * keep byte-identical to the encoder's mapping including its clip. */
+        int qp = rc_clip3i(rc->qp_constant[slice_type],
+                           rc->cfg.qp_min, rc->cfg.qp_max); /* :1524 */
         rc->qpm = (float)qp;                      /* :1530 */
-        *qp_out = qp;
+        *qp_out = (int)rc_clip3f(rc->qpm + 0.5f,
+                                 rc->cfg.qp_min, rc->cfg.qp_max); /* :1751 */
+        rc_accum_p_qp_update(rc, rc->qpm, slice_type);   /* :1534 */
+        if (slice_type != PHX_RC_SLICE_B)
+            rc->last_non_b_pict_type = slice_type;      /* :1536-1537 */
         return 0;
     }
 
-    duration = rc->cfg.duration > 0 ? rc->cfg.duration : 1.0 / rc->cfg.fps;
     if (slice_type == PHX_RC_SLICE_B) {
         /* ratecontrol.c:2421-2455.  Without POC/ref-QP history the two
          * adjacent P frames collapse to the most recent P QP (:2445); BREF
          * is treated as a plain B frame (:2450). */
         double qp_p = rc_qscale2qp((float)rc->last_qscale_for[PHX_RC_SLICE_P]); /* :2430/:2445 */
-        qp_f = qp_p + rc->pb_offset;              /* :2450 */
-        rc->qp_novbv = qp_f;                      /* :2452 */
-        qscale = rc_qp2qscale((float)qp_f);       /* :2453 */
-        rc->last_qscale = rc->last_qscale_for[slice_type] = qscale; /* :2634-2635 */
+        q = (float)(qp_p + rc->pb_offset);        /* :2450, float q */
+        rc->qp_novbv = q;                         /* :2452 */
+        q = rc_qp2qscale(q);                      /* :2453 */
+        rc->last_qscale = rc->last_qscale_for[slice_type] = q; /* :2634-2635 */
     } else {
+        double duration = rc->cfg.duration > 0 ? rc->cfg.duration : 1.0 / rc->cfg.fps;
         int satd = rc->satd_override >= 0 ? rc->satd_override : frame_bits;
-        double blurred;
+        double qd, rate_factor, blurred;
 
-        if (satd > 0) {                           /* :2585 last_satd */
+        if (satd > 0) {                           /* :2559 last_satd */
             rc->last_satd = satd;
             rc->short_term_cplxsum *= .5;         /* :2560 */
             rc->short_term_cplxcount *= .5;       /* :2561 */
@@ -367,29 +400,27 @@ int phx_ratecontrol_start(phx_ratecontrol_t *rc, int slice_type, int frame_bits,
                 ? rc->short_term_cplxsum / rc->short_term_cplxcount : 0.0; /* :2566 */
 
         if (rc->mb_tree)
-            qscale = pow(PHX_RC_BASE_FRAME_DURATION / rc_clip_duration(duration),
-                         1.0 - rc->qcompress);   /* :2011 (mbtree path) */
+            qd = pow(PHX_RC_BASE_FRAME_DURATION / rc_clip_duration(duration),
+                     1.0 - rc->qcompress);       /* :2011 (mbtree path) */
         else
-            qscale = pow(blurred > 0 ? blurred : 1.0, 1.0 - rc->qcompress); /* :2014 */
+            qd = pow(blurred > 0 ? blurred : 1.0, 1.0 - rc->qcompress); /* :2014 */
 
-        if (!isfinite(qscale) || satd == 0)       /* :2016-2018 */
-            qscale = rc->last_qscale_for[slice_type];
-        else
-            rc->last_rceq = qscale;               /* :2021 */
-
-        if (rc->method == PHX_RC_CRF) {
-            rate_factor = rc->rate_factor_constant; /* :2577 */
-        } else {
-            rate_factor = rc->cplxr_sum > 0
-                        ? rc->wanted_bits_window / rc->cplxr_sum : 0.0; /* :2581 */
+        if (!isfinite(qd) || satd == 0)           /* :2016-2018 */
+            q = (float)rc->last_qscale_for[slice_type];
+        else {
+            rc->last_rceq = qd;                   /* :2021 (double, before rate factor) */
+            rate_factor = (rc->method == PHX_RC_CRF)
+                        ? rc->rate_factor_constant /* :2577 */
+                        : (rc->cplxr_sum > 0
+                           ? rc->wanted_bits_window / rc->cplxr_sum : 0.0); /* :2581 */
+            if (!(rate_factor > 0.0) || !isfinite(rate_factor))
+                /* x264 requires a positive target bitrate for ABR; phx_param_t
+                 * has no bitrate field, so the documented fallback is ABR_INIT_QP. */
+                rate_factor = 1.0 / rc_qp2qscale((float)rc->abr_init_qp);
+            qd /= rate_factor;                    /* :2022 */
+            rc->last_qscale = qd;                 /* :2023 */
+            q = (float)qd;                        /* :2402 float q = get_qscale(...) */
         }
-        if (!(rate_factor > 0.0) || !isfinite(rate_factor)) {
-            /* x264 requires a positive target bitrate for ABR; phx_param_t has
-             * no bitrate field, so the documented fallback is ABR_INIT_QP. */
-            rate_factor = 1.0 / rc_qp2qscale((float)rc->abr_init_qp);
-        }
-        qscale /= rate_factor;                    /* :2022 (CRF/ABR rate factor) */
-        rc->last_qscale = qscale;                 /* :2023 */
 
         rc->overflow = 1.0;                       /* :2557 */
         if (rc->method == PHX_RC_ABR && rc->cfg.bitrate > 0.0 && rc->last_satd > 0) {
@@ -397,19 +428,22 @@ int phx_ratecontrol_start(phx_ratecontrol_t *rc, int slice_type, int frame_bits,
             double wanted_bits = time_done * rc->cfg.bitrate; /* :2592 */
             if (wanted_bits > 0.0) {
                 double abr_buffer = 2.0 * rc->cfg.rate_tolerance * rc->cfg.bitrate; /* :2479 */
-                double predicted_bits = (double)rc->total_bits + frame_bits; /* :2480/:2487 */
+                /* :2480 — single-thread 1pass: predicted_bits is the bits of
+                 * already-encoded frames only, NOT the current frame. */
+                double predicted_bits = (double)rc->total_bits;
                 abr_buffer *= rc_max2(1.0, sqrt(time_done)); /* :2595 */
                 rc->overflow = rc_clip3f(1.0 + (predicted_bits - wanted_bits) / abr_buffer,
                                          .5, 2.0); /* :2596 */
-                qscale *= rc->overflow;           /* :2597 */
+                q = (float)(q * rc->overflow);    /* :2597 */
             }
         }
 
-        if (slice_type == PHX_RC_SLICE_I && rc->last_non_b_pict_type != PHX_RC_SLICE_I) {
+        if (slice_type == PHX_RC_SLICE_I && rc->keyint_max > 1 &&
+            rc->last_non_b_pict_type != PHX_RC_SLICE_I) {
             /* :2602-2608 — force I quantizer from the running P average. */
             if (rc->accum_p_norm > 0.0) {
-                qscale = rc_qp2qscale((float)(rc->accum_p_qp / rc->accum_p_norm)); /* :2606 */
-                qscale /= rc->f_ip_factor;        /* :2607 */
+                q = rc_qp2qscale((float)(rc->accum_p_qp / rc->accum_p_norm)); /* :2606 */
+                q = (float)(q / rc->f_ip_factor); /* :2607 */
             }
         } else if (rc->frame_count > 0) {
             if (rc->method == PHX_RC_ABR) {       /* :2611 ABR-only clipping */
@@ -417,57 +451,79 @@ int phx_ratecontrol_start(phx_ratecontrol_t *rc, int slice_type, int frame_bits,
                 double lmax = rc->last_qscale_for[slice_type] * rc->lstep; /* :2616 */
                 if (rc->overflow > 1.1 && rc->frame_count > 3) lmax *= rc->lstep; /* :2617-2618 */
                 else if (rc->overflow < 0.9) lmin /= rc->lstep; /* :2619-2620 */
-                qscale = rc_clip3f(qscale, lmin, lmax); /* :2622 */
+                q = (float)rc_clip3f(q, lmin, lmax); /* :2622 */
             }
         } else if (rc->method == PHX_RC_CRF && rc->qcompress != 1.0) {
-            qscale = rc_qp2qscale((float)rc->abr_init_qp) / rc->f_ip_factor; /* :2625-2627 */
+            q = (float)(rc_qp2qscale((float)rc->abr_init_qp) / rc->f_ip_factor); /* :2625-2627 */
         }
 
-        if (!(qscale > 0.0) || !isfinite(qscale))
-            qscale = rc->last_qscale_for[slice_type];
-        rc->qp_novbv = rc_qscale2qp((float)qscale); /* :2629 */
-        rc->last_qscale_for[slice_type] = rc->last_qscale = qscale; /* :2634-2635 */
+        if (!(q > 0.0f) || !isfinite(q))
+            q = (float)rc->last_qscale_for[slice_type];
+        rc->qp_novbv = rc_qscale2qp(q);           /* :2629 */
+        rc->last_qscale_for[slice_type] = rc->last_qscale = q; /* :2634-2635 */
 
         if (rc->frame_count == 0 && slice_type != PHX_RC_SLICE_P)
-            rc->last_qscale_for[PHX_RC_SLICE_P] = qscale * rc->f_ip_factor; /* :2637-2638 */
+            /* :2637-2638 — q is float, the stored field is double. */
+            rc->last_qscale_for[PHX_RC_SLICE_P] = (double)q * rc->f_ip_factor;
     }
 
-    qp_f = rc_qscale2qp((float)qscale);           /* :1499 */
-    if (!isfinite(qp_f)) qp_f = (double)rc->qp_constant[PHX_RC_SLICE_P];
+    qp_f = rc_qscale2qp(q);                       /* :1499 */
+    if (!isfinite(qp_f)) qp_f = rc->qp_constant[PHX_RC_SLICE_P];
+    qp_f = rc_clip3f(qp_f, rc->cfg.qp_min, rc->cfg.qp_max); /* :1524 */
     rc->qpm = (float)qp_f;                        /* :1530 */
     *qp_out = (int)rc_clip3f(rc->qpm + 0.5f,
                              rc->cfg.qp_min, rc->cfg.qp_max); /* :1751 */
-    rc_accum_p_qp_update(rc, qp_f, slice_type);   /* :1534 */
+    rc_accum_p_qp_update(rc, rc->qpm, slice_type); /* :1534 */
     if (slice_type != PHX_RC_SLICE_B)
         rc->last_non_b_pict_type = slice_type;    /* :1536-1537 */
     return 0;
+}
+
+/* ratecontrol.c:1754-1768 — shared core.  qp is h->rc->qpm (a float), not
+ * the int returned by x264_ratecontrol_qp(); feeding the int would lose the
+ * fractional part that AQ is added to. */
+static int rc_mb_qp(const phx_ratecontrol_t *rc, int mb_xy, float qp, int b_kept_as_ref)
+{
+    float offset;
+    if (rc->method != PHX_RC_CQP && rc->i_aq_mode) {
+        /* :1761 — MB-tree's f_qp_offset applies only to kept references. */
+        offset = b_kept_as_ref ? rc->f_qp_offset[mb_xy] : rc->f_qp_offset_aq[mb_xy];
+        if (qp > PHX_RC_QP_MAX)                   /* :1763-1764 */
+            offset *= (float)(PHX_RC_QP_INTERNAL_MAX - qp) /
+                      (PHX_RC_QP_INTERNAL_MAX - PHX_RC_QP_MAX);
+        qp += offset;                             /* :1765 */
+    }
+    return (int)rc_clip3f(qp + 0.5f, rc->cfg.qp_min, rc->cfg.qp_max); /* :1767 */
 }
 
 /* ratecontrol.c:1828-1928.
  * SHADER: C — one scalar pass per finished frame. */
 int phx_ratecontrol_end(phx_ratecontrol_t *rc, int slice_type, int bits)
 {
-    double qp_rc, denom;
+    double denom;
 
     if (!rc || slice_type < 0 || slice_type > 2 || bits < 0) return -1;
 
-    /* ratecontrol.c:1596 adds each MB's QP into qpa_rc.  Phoenix has no
-     * per-MB QP callback on this path, so the documented input substitution
-     * is the frame QP repeated over all MBs (plus the mean AQ offset). */
-    if (rc->qpa_rc == 0.0f) {
-        double aq_sum = 0.0;
-        for (int i = 0; i < rc->mb_count; i++) aq_sum += rc->f_qp_offset_aq[i];
-        rc->qpa_rc = rc->qpm * (float)rc->mb_count;
-        rc->qpa_aq = (float)(aq_sum + rc->qpm * rc->mb_count);
+    /* ratecontrol.c:1602 adds qpm * mb_width once per MB row, in float.
+     * :1596 adds each MB's integer QP (AQ included) into qpa_aq.  For a
+     * non-reference frame x264 uses f_qp_offset_aq instead of f_qp_offset;
+     * with MB-tree disabled the two arrays are identical. */
+    {
+        float qpa_rc = 0.0f, qpa_aq = 0.0f;
+        for (int row = 0; row < rc->mb_height; row++)
+            qpa_rc += rc->qpm * (float)rc->mb_width; /* :1602 */
+        for (int mb = 0; mb < rc->mb_count; mb++)
+            qpa_aq += (float)rc_mb_qp(rc, mb, rc->qpm, 1); /* :1596 */
+        rc->qpa_rc = qpa_rc;
+        rc->qpa_aq = qpa_aq;
     }
     rc->qpa_rc /= (float)rc->mb_count;            /* :1842 */
     rc->qpa_aq /= (float)rc->mb_count;            /* :1843 */
 
     if (rc->method != PHX_RC_CQP) {
-        qp_rc = rc->qpa_rc;
         denom = rc->last_rceq * (slice_type == PHX_RC_SLICE_B ? rc->f_pb_factor : 1.0);
         if (denom > 0.0 && isfinite(denom)) {
-            rc->cplxr_sum += bits * rc_qp2qscale((float)qp_rc) / denom; /* :1918 / :1923 */
+            rc->cplxr_sum += bits * rc_qp2qscale(rc->qpa_rc) / denom; /* :1918 / :1923 */
         }
         rc->cplxr_sum *= 1.0;                     /* cbr_decay, :1925 */
         rc->wanted_bits_window += rc->cfg.duration * rc->cfg.bitrate; /* :1926 */
@@ -622,21 +678,12 @@ int phx_ratecontrol_aq_frame(phx_ratecontrol_t *rc, phx_frame_t *f, const phx_pa
     return 0;
 }
 
-/* ratecontrol.c:1754-1768. */
-int phx_ratecontrol_mb_qp(const phx_ratecontrol_t *rc, int mb_xy, int frame_qp, int b_kept_as_ref)
+/* ratecontrol.c:1754-1768 — frame_qp is x264's h->rc->qpm (float), so the
+ * caller must pass the exact frame QP, not x264_ratecontrol_qp()'s int. */
+int phx_ratecontrol_mb_qp(const phx_ratecontrol_t *rc, int mb_xy, float frame_qp, int b_kept_as_ref)
 {
-    float qp, offset;
-
     if (!rc || mb_xy < 0 || mb_xy >= rc->mb_count) return -1;
-    qp = (float)frame_qp;
-    if (rc->method != PHX_RC_CQP && rc->i_aq_mode) {
-        offset = b_kept_as_ref ? rc->f_qp_offset[mb_xy] : rc->f_qp_offset_aq[mb_xy]; /* :1761 */
-        if (qp > PHX_RC_QP_MAX) /* :1763-1764 */
-            offset *= (float)(PHX_RC_QP_INTERNAL_MAX - qp) /
-                      (PHX_RC_QP_INTERNAL_MAX - PHX_RC_QP_MAX);
-        qp += offset;                                                    /* :1765 */
-    }
-    return (int)rc_clip3f(qp + 0.5f, rc->cfg.qp_min, rc->cfg.qp_max); /* :1767 */
+    return rc_mb_qp(rc, mb_xy, frame_qp, b_kept_as_ref);
 }
 
 const float *phx_ratecontrol_qp_offsets(const phx_ratecontrol_t *rc)

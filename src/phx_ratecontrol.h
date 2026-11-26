@@ -22,6 +22,29 @@
  * SHADER: C — serial, per-frame scalar derivation.  The AQ pass is a
  * deterministic read-only reduction over the fenc planes; every MB offset is
  * an independent output element, so it maps to one workgroup element each.
+ *
+ * Golden scope and limitations (worker M15):
+ *   Golden: instrumented x264 (hooks at ratecontrol.c:1431/:1829/:304/:1754,
+ *   slicetype.c:1029) on a fixed 64x64/8-frame fixture drives
+ *   CQP / CRF / ABR (all --no-mbtree) and CRF with dumped MB-tree offsets.
+ *   Tests assert the frame QP sequence, per-MB QP, AQ offsets (float bits +
+ *   inv qscale) and the chroma QP table bit-for-bit.
+ *   - CRF/ABR B frames use the last P QP (ratecontrol.c:2445) rather than the
+ *     two adjacent references' f_qp_avg_rc (:2426-2450): no POC/ref-QP history
+ *     is exposed by this API.  CQP BREF midpoint (:1508-1511) stays in
+ *     phx_encoder.c, which owns that path.
+ *   - Frame duration is cfg.duration (default 1/fps); VFR f_duration is not
+ *     available from phx_param_t.
+ *   - VBV / row RC / 2-pass are not ported: cbr_decay is 1 (:1925/:1927) and
+ *     vbv_pass1 (:2631) is a no-op.
+ *   - MB-tree quant offsets are an explicit input (set_quant_offsets); the
+ *     lookahead propagation in slicetype.c:1029-1183 is owned by another
+ *     worker.  qpa_aq (:1596) sums f_qp_offset for all MBs; x264 uses
+ *     f_qp_offset_aq for non-reference frames.  Neither value feeds the QP
+ *     sequence in 1-pass.
+ *   - With MB-tree, CQP intentionally keeps phx_encoder.c:473-475's double
+ *     log2 mapping and the caller's f_pb_factor, as required by the contract;
+ *     CRF/ABR apply x264's :762-766 f_pb_factor=1 override.
  */
 #ifndef PHX_RATECONTROL_H
 #define PHX_RATECONTROL_H
@@ -118,9 +141,12 @@ int phx_ratecontrol_end(phx_ratecontrol_t *rc, int slice_type, int bits);
 int phx_ratecontrol_aq_frame(phx_ratecontrol_t *rc, phx_frame_t *f, const phx_param_t *p);
 
 /* ratecontrol.c:1754-1768 — frame QP plus the MB's AQ offset (emergency-mode
- * scaling included).  b_kept_as_ref selects f_qp_offset vs f_qp_offset_aq.
+ * scaling included).  frame_qp is h->rc->qpm (the float frame QP), so pass
+ * the value reported by x264_ratecontrol_start's qp_out only when the frame
+ * QP is integral; the golden harness passes the exact float.
+ * b_kept_as_ref selects f_qp_offset vs f_qp_offset_aq.
  * Returns a clipped QP, or -1 on bad arguments. */
-int phx_ratecontrol_mb_qp(const phx_ratecontrol_t *rc, int mb_xy, int frame_qp, int b_kept_as_ref);
+int phx_ratecontrol_mb_qp(const phx_ratecontrol_t *rc, int mb_xy, float frame_qp, int b_kept_as_ref);
 
 /* Read-only views of the AQ outputs (ratecontrol.c:399-402). */
 const float *phx_ratecontrol_qp_offsets(const phx_ratecontrol_t *rc);
