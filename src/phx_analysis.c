@@ -2200,6 +2200,7 @@ static void phx_analysis_intra_rd(phx_analysis_ctx_t *c,
     int i_ssd, i_bits, best = PHX_COST_MAX;
     int ssd[19] = { 0 }, bits[19] = { 0 }, cbp[19] = { 0 }, nnz0[19] = { 0 };
     int raw[19] = { 0 }, psy[19] = { 0 }, chr[19] = { 0 }, fdec_sum[19] = { 0 };
+    int cbp_chroma[19] = { 0 };
     int satd[19] = { 0 };
     satd[PHX_I_4x4] = c->satd_i4x4;
     satd[PHX_I_8x8] = c->satd_i8x8;
@@ -2314,6 +2315,7 @@ static void phx_analysis_intra_rd(phx_analysis_ctx_t *c,
           c->rd_cost[type] = rd < PHX_COST_MAX ? rd : PHX_COST_MAX; }
         ssd[type] = i_ssd; bits[type] = i_bits;
         cbp[type] = cand.cbp_luma; nnz0[type] = cand.nnz[0];
+        cbp_chroma[type] = cand.cbp_chroma;
         raw[type] = c->dbg_raw; psy[type] = c->dbg_psy; chr[type] = c->dbg_chr;
         { int sum = 0;
           for (int k = 0; k < 256; k++)
@@ -2342,6 +2344,7 @@ static void phx_analysis_intra_rd(phx_analysis_ctx_t *c,
             rec->cbp[t] = cbp[t]; rec->nnz0[t] = nnz0[t];
             rec->raw[t] = raw[t]; rec->psy[t] = psy[t]; rec->chr[t] = chr[t];
             rec->fdec_sum[t] = fdec_sum[t];
+            rec->cbp_chroma[t] = cbp_chroma[t];
             rec->pred16 = c->pred16;
         }
         rec->winner = c->b_rd_winner ? winner.mb_type : -1;

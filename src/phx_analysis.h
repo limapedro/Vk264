@@ -206,6 +206,7 @@ typedef struct {
     int cbp[19], nnz0[19], pred16;  /* candidate diagnostics */
     int raw[19], psy[19], chr[19];  /* ssd_mb components */
     int fdec_sum[19];               /* diagnostic: sum of reconstructed luma */
+    int cbp_chroma[19];             /* diagnostic: candidate chroma CBP */
     int winner;                     /* mb_class_e selected by :2943-2946 */
 } phx_intra_rd_diag_rec_t;
 extern phx_intra_rd_diag_rec_t phx_g_intra_rd_diag[4096];
