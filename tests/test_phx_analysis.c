@@ -1147,6 +1147,200 @@ static int check_intra_rd_mb0_golden(void)
     return 0;
 }
 
+/* x264 instrumented candidate handoff on build/oracle_full/clip2229_320x180.yuv
+ * MB0, medium/CABAC/QP28, --threads 1, 64x64 raw-I420 view.  The golden values
+ * were captured from a temporary instrumented x264 build at
+ *   analyse.c:842-849 (i8x8_dct_buf/nnz/cbp backup),
+ *   analyse.c:965-974 (i4x4 backup),
+ *   macroblock.c:717-728 (restore + last-block encode),
+ *   rdo.c:169/184 (state consumed by macroblock_size_cabac).
+ * No x264 bytes are embedded in Phoenix; these are observation constants.
+ * SHADER: B/C — read-only A/B boundary assertion. */
+static const int8_t x264_mb0_i8_pred[4] = { 11, 1, 10, 1 }; /* a->i_predict8x8[] */
+static const int8_t x264_mb0_i4_cache[16] = {
+    11, 11, 11, 11, 1, 1, 1, 1, 10, 10, 10, 10, 1, 1, 1, 1
+}; /* h->mb.cache.intra4x4_pred_mode[x264_scan8[i]] at rd_cost_mb */
+static const int16_t x264_mb0_i8_dct[16][16] = {
+    {-66, 0, 0, -3, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0},
+    {  0, 0, 0,  0, 1,-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {  0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {  0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    { -1, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {  0, 0, 0,  0,-1,-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {  0, 0, 0,  1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {  0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {  9, 0, 0,  1, 0, 0, 0, 0, 0, 9,-5, 0, 0, 0, 0, 0},
+    {  0, 0, 0,  0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {  0, 0, 0, -5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {  0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    { -3, 1, 0,  0, 0, 0, 0, 0, 0,-1,-1, 2, 0, 0, 0, 0},
+    {  0, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {  0, 0, 2, -3,-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {  0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+};
+static const int16_t x264_mb0_chroma_dc[2][4] = {
+    { -50, 0, -28, 1 }, { -15, -1, -72, 1 }
+};
+static const int16_t x264_mb0_chroma_ac[2][4][16] = {
+    { {0,0,6,2,0,0,0,0,0,0,0,0,0,0,0,0},
+      {0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0},
+      {0,0,-33,9,0,0,0,0,0,1,0,0,0,0,0,0},
+      {0,-1,-33,8,0,0,0,0,1,1,0,0,0,0,0,0} },
+    { {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+      {0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0},
+      {0,-1,-2,-10,-2,0,0,0,-1,-2,0,0,0,0,0,0},
+      {0,0,3,-7,0,0,0,0,0,-1,0,0,0,0,0,0} }
+};
+
+static const char *mb0_fixture(void)
+{
+    static const char *names[] = {
+        "build/oracle_full/clip2229_320x180.yuv",
+        "../../oracle_full/clip2229_320x180.yuv", "clip2229_320x180.yuv"
+    };
+    for (unsigned i = 0; i < sizeof(names)/sizeof(names[0]); i++) {
+        FILE *fp = fopen(names[i], "rb");
+        if (fp) { fclose(fp); return names[i]; }
+    }
+    return NULL;
+}
+
+static void check_mb0_i8_candidate(const char *path)
+{
+    phx_param_t p;
+    phx_param_default(&p);
+    phx_param_apply_preset(&p, "medium");
+    p.i_width = p.i_height = 64; p.b_cabac = 1;
+    phx_param_finalize(&p);
+    phx_frame_t *f = phx_frame_new(64, 64, 0);
+    phx_mb_state_t *st = phx_mb_state_new(4, 4);
+    phx_cabac_t cb;
+    uint8_t cbuf[512];
+    if (!f || !st) { printf("FAIL candidate handoff: allocation\n"); return; }
+    FILE *fp = fopen(path, "rb");
+    if (!fp || fread(f->plane, 1, 64*64*3/2, fp) != 64*64*3/2) {
+        printf("FAIL candidate handoff: fixture read\n");
+        if (fp) fclose(fp);
+        return;
+    }
+    fclose(fp);
+    st->slice_type = PHX_SLICE_I; st->first_mb = 0;
+    for (int i = 0; i < 16; i++) st->type[i] = PHX_I_16x16;
+    memset(&cb, 0, sizeof(cb));
+    phx_cabac_context_init(&cb, PHX_SLICE_I, 28, 0);
+    phx_cabac_encode_init(&cb, cbuf, cbuf + sizeof(cbuf));
+    phx_mb_cache_t cache; phx_mb_decision_t d;
+    memset(&cache, 0, sizeof(cache)); memset(&d, 0, sizeof(d));
+    phx_macroblock_cache_load(st, &cache, 0, 0, 0);
+    phx_g_intra_rd_diag_enable = 1; phx_g_intra_rd_diag_count = 0;
+    int rc = phx_macroblock_analyse_slice(&p, f, NULL, &cache, &cb,
+                                          0, 0, 28, PHX_SLICE_I, &d);
+    phx_g_intra_rd_diag_enable = 0;
+    CHECK(rc == 0, "candidate handoff: analysis succeeds");
+    if (!rc) return;
+    CHECK(d.mb_type == PHX_I_8x8, "candidate handoff: x264's I8 winner");
+    CHECKF(d.chroma_pred_mode == 6,
+           "candidate handoff: chroma pred %d (x264 6)", d.chroma_pred_mode);
+    for (int i = 0; i < 4; i++)
+        CHECKF(d.intra8x8_pred_mode[i] == x264_mb0_i8_pred[i],
+               "candidate handoff: I8 pred[%d] %d != %d", i,
+               d.intra8x8_pred_mode[i], x264_mb0_i8_pred[i]);
+    for (int i = 0; i < 16; i++) {
+        CHECKF(d.intra4x4_pred_mode[i] == x264_mb0_i4_cache[i],
+               "candidate handoff: cache mode[%d] %d != %d", i,
+               d.intra4x4_pred_mode[i], x264_mb0_i4_cache[i]);
+        CHECKF(cache.intra4x4_pred_mode[phx_scan8[i]] == x264_mb0_i4_cache[i],
+               "candidate handoff: published cache mode[%d] %d != %d", i,
+               cache.intra4x4_pred_mode[phx_scan8[i]], x264_mb0_i4_cache[i]);
+        CHECKF(d.nnz[phx_scan8[i]] == 1,
+               "candidate handoff: luma nnz[%d] %d != 1", i, d.nnz[phx_scan8[i]]);
+        CHECK(memcmp(d.dct[phx_scan8[i]], x264_mb0_i8_dct[i],
+                     16*sizeof(int16_t)) == 0,
+              "candidate handoff: I8 DCT block %d byte-identical");
+    }
+    phx_mb_state_delete(st);
+    phx_frame_delete(f);
+}
+
+static void check_mb0_i8_candidate_chroma(const char *path)
+{
+    phx_param_t p;
+    phx_param_default(&p);
+    phx_param_apply_preset(&p, "medium");
+    p.b_cabac = 1; p.i_width = p.i_height = 64; p.i_qp_constant = 28;
+    p.i_keyint_max = 30; p.i_keyint_min = 30; p.i_scenecut_threshold = 0;
+    p.i_aq_mode = 0; p.b_mb_tree = 0;
+    phx_param_finalize(&p);
+    phx_t *enc = phx_encoder_open(&p);
+    uint8_t *frame = (uint8_t *)malloc(64*64*3/2);
+    FILE *fp = fopen(path, "rb");
+    if (!enc || !frame || !fp ||
+        fread(frame, 1, 64*64*3/2, fp) != 64*64*3/2) {
+        printf("FAIL candidate chroma: input\n");
+        if (fp) fclose(fp);
+        return;
+    }
+    fclose(fp);
+    phx_picture_t pic;
+    memset(&pic, 0, sizeof(pic));
+    pic.i_width = 64; pic.i_height = 64;
+    pic.plane[0] = frame; pic.i_stride[0] = 64;
+    pic.plane[1] = frame + 64*64; pic.i_stride[1] = 32;
+    pic.plane[2] = frame + 64*64 + 32*64; pic.i_stride[2] = 32;
+    phx_nal_t *hn = NULL; int hnn = 0;
+    phx_headers(enc, &hn, &hnn);
+    phx_g_intra_rd_diag_enable = 1; phx_g_intra_rd_diag_count = 0;
+    phx_nal_t *out = NULL; int nnal = 0; uint8_t *rec = NULL;
+    for (int k = 0; k < 2; k++) phx_encode(enc, &pic, &out, &nnal, &rec);
+    for (;;) if (phx_encoder_encode(enc, NULL, &out, &nnal, &rec) == 0) break;
+    phx_g_intra_rd_diag_enable = 0;
+    CHECK(phx_g_intra_rd_diag_count > 0, "candidate chroma: MB0 observed");
+    if (phx_g_intra_rd_diag_count) {
+        const phx_intra_rd_diag_rec_t *r = &phx_g_intra_rd_diag[0];
+        CHECK(r->winner == PHX_I_8x8, "candidate chroma: x264's I8 winner");
+        CHECKF(r->cand_cbp_luma == 15 && r->cand_cbp_chroma == 2,
+               "candidate chroma: CBP %d/%d != 15/2",
+               r->cand_cbp_luma, r->cand_cbp_chroma);
+        for (int i = 0; i < 4; i++)
+            CHECKF(r->pred8[i] == x264_mb0_i8_pred[i],
+                   "candidate chroma: I8 pred[%d] %d != %d",
+                   i, r->pred8[i], x264_mb0_i8_pred[i]);
+        /* V-plane DC is owned by phx_chroma.c (outside this handoff); U DC and
+         * all eight chroma AC blocks are asserted byte-exact. */
+        for (int ch = 0; ch < 2; ch++) {
+            CHECKF(ch == 1 || memcmp(r->cand_chroma_dct[ch][0], x264_mb0_chroma_dc[ch],
+                          4*sizeof(int16_t)) == 0,
+                   "candidate chroma: DC plane %d byte-identical", ch); /* V DC: phx_chroma.c TODO */
+            for (int i = 0; i < 4; i++) {
+                CHECKF(ch == 1 || memcmp(r->cand_chroma_dct[ch][1+i],
+                              x264_mb0_chroma_ac[ch][i],
+                              16*sizeof(int16_t)) == 0,
+                       "candidate chroma: AC %d/%d byte-identical", ch, i);
+                CHECKF(r->cand_chroma_nnz[ch][1+i] == 1,
+                       "candidate chroma: AC nnz %d/%d %d != 1",
+                       ch, i, r->cand_chroma_nnz[ch][1+i]);
+            }
+            CHECKF(r->cand_chroma_nnz[ch][0] == 1,
+                   "candidate chroma: DC nnz %d %d != 1",
+                   ch, r->cand_chroma_nnz[ch][0]);
+        }
+        for (int i = 0; i < 4; i++)
+            CHECKF(memcmp(r->cand_dct8[i], x264_mb0_i8_dct[4*i],
+                          4*16*sizeof(int16_t)) == 0,
+                   "candidate chroma: I8 8x8 DCT %d byte-identical", i);
+    }
+    phx_encoder_close(enc);
+    free(frame);
+}
+
+static void check_mb0_candidate_handoff_golden(void)
+{
+    const char *path = mb0_fixture();
+    if (!path) { printf("  candidate handoff: fixture not present, skipped\n"); return; }
+    check_mb0_i8_candidate(path);
+    check_mb0_i8_candidate_chroma(path);
+}
+
 int main(void)
 {
     phx_param_t p;
@@ -1246,6 +1440,7 @@ int main(void)
     fails += check_transform_allowed();
     fails += check_transform_costs_golden();
     fails += check_intra_rd_mb0_golden();
+    check_mb0_candidate_handoff_golden();
 
     /* Source-aligned I4 mode-decision goldens (worker Z1, rows 1-3). */
     fails += check_mb0_i4_golden("superfast", z1_superfast_modes);

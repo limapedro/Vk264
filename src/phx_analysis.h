@@ -208,6 +208,17 @@ typedef struct {
     int fdec_sum[19];               /* diagnostic: sum of reconstructed luma */
     int cbp_chroma[19];             /* diagnostic: candidate chroma CBP */
     int winner;                     /* mb_class_e selected by :2943-2946 */
+
+    /* mbrd>=1 i_skip_intra==2 candidate handoff (analyse.c:840-850/:965-974,
+     * macroblock.c:717-728/:742-752).  These are the exact arrays the winning
+     * candidate published to rd_cost_mb (rdo.c:169/184), captured before any
+     * serial transform writes MB0.  SHADER: B/C — read-only observation. */
+    int pred8[4];                   /* a->i_predict8x8[] (:3744-3746) */
+    int cand_cbp_luma, cand_cbp_chroma;
+    int16_t cand_dct8[4][64];       /* h->dct.luma8x8, 4 zigzag 64-coeff blocks */
+    int16_t cand_chroma_dct[2][5][16];   /* h->dct.chroma_dc/luma4x4[16..47] */
+    uint8_t cand_chroma_nnz[2][5];       /* chroma DC + 4 AC nnz flags */
+    uint8_t cand_luma_nnz[16];           /* nnz at phx_scan8[0..15] */
 } phx_intra_rd_diag_rec_t;
 extern phx_intra_rd_diag_rec_t phx_g_intra_rd_diag[4096];
 extern int phx_g_intra_rd_diag_count, phx_g_intra_rd_diag_enable;
