@@ -329,4 +329,18 @@ Remaining: full mbrd B-RD estimator (analyse.c:3404-3415, phx_rdo.h:261) —
 
 On a near-parity case (320x180, medium/CABAC), SPS/PPS/SEI and slice headers are exact but the IDR slice payload diverges at byte 5. Instrumented bin trace: bin 0 ctx3 b=0 matches; bin 1 ctx=399 (	ransform_size_8x8_flag, tables.c) is x264 b=1 vs Phoenix b=0. phx_encoder.c unconditionally zeroed d.b_transform_8x8 before the encode stage, discarding analysis's published 8x8dct decision (analyse.c:307/:564, macroblock.c:713-737). Removed that override; verification pending because an in-flight phx_rdo.c edit currently breaks the build.
 
+## F31 — B RD APIs land; transform-size decision is the next bin
+
+M8 exposed byte-exact B-slice RD helpers: phx_rdo_macroblock_bits() with the
+size-only B mb_type writer (cabac.c:499-610), phx_rdo_b_rd_threshold()
+(analyse.c:2624) and phx_rdo_b_early_skip() (:3404-3415). Goldens: B_L0_L0
+qp26 f8=11646/bits=1953 with all context deltas exact; threshold 537->605.
+Full ctest 30/30 PASS; build break from a nested C comment repaired.
+
+After B-inter landed, near-parity medium/CABAC streams still diverged at IDR
+payload byte 5: bin 1 ctx399 (transform_size_8x8_flag) x264 b=1 vs Phoenix b=0.
+Removing phx_encoder's unconditional transform override did not change it, so
+the analysis-side mb_analyse_transform() decision (analyse.c:2735-2770) is
+delegated; ctest remains 30/30 with the override removed.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
