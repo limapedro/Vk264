@@ -65,15 +65,27 @@ first stream diffs: 586-825
 `tools/oracle_sweep.py` drives `tools/oracle_video.py` for Phoenix and x264 with identical parameters on a real `D:/Videos` clip (64x64 crop, 30 frames, QP28, `--fps 25`), verifies every stream decodes with `ffmpeg -f null -`, and records sizes/NAL counts/first differing byte.
 
 ```
-10 presets x 2 entropies: 20/20 Phoenix decode OK, 20/20 x264 decode OK
+10 presets x 2 entropies: 20/20 pairs generated, 0 byte-exact
 first stream diffs: 627 (ultrafast/cabac) ... 696 (placebo/cavlc)
 Phoenix sizes: 6694-10812 B   x264 sizes: 2299-2621 B
+ffmpeg decode errors: Phoenix 10-66 per stream (20/20 streams affected);
+                      x264 0 per stream (0/20 affected)
 SPS/PPS/SEI: byte-exact (21 / 4 / 542 B)
 all 30 slice headers: byte-exact (IDR 24 bits, P 19 bits)
 IDR entropy: first diff payload byte 46
 P entropy: first diff payload byte 4 (first MB); first P frame 292 B vs x264 6 B
 ```
 
-Because all slice headers match, the stream-level failure is entirely in MB decisions and coefficients. The dominant gap is row 17 of `docs/BYTE_EXACT_FUNCTIONS.md`: `phx_encoder.c:1438` hard-codes `d.skip = 0`, so Phoenix never emits P_SKIP; x264's first P frame is all-skip (6 bytes). Rows 18-19 (residual inter and I_8x8) are required as soon as x264 codes a non-skip inter MB.
+**Correction to an earlier claim:** `ffmpeg -f null -` exits 0 even when the
+H.264 decoder logs errors (it conceals them), so `oracle_video.py`'s
+`verify: OK` is not a decodability guarantee. `tools/oracle_sweep.py` now runs
+ffmpeg with `-v error` and counts stderr lines. Typical Phoenix errors:
+`mb_skip_run N is invalid`, `mb_type 45 in P slice too large`, `left/top block
+unavailable for requested intra4x4 mode -1`, `Reference 8 >= 4`. These are real
+syntax/state defects in the emitted streams, not just file-format issues. The
+`.h264` files are raw Annex-B elementary streams; MPC-BE needs an MP4/MKV remux
+(`ffmpeg -framerate 25 -i x.h264 -c copy x.mp4`), which does not fix the errors.
+
+Because all slice headers match, the remaining stream-level failure is entirely in MB decisions and coefficients. The dominant gap is row 17 of `docs/BYTE_EXACT_FUNCTIONS.md`: `phx_encoder.c:1438` hard-codes `d.skip = 0`, so Phoenix never emits P_SKIP; x264's first P frame is all-skip (6 bytes). Rows 18-19 (residual inter and I_8x8) are required as soon as x264 codes a non-skip inter MB.
 
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
