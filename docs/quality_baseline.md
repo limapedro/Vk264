@@ -75,3 +75,15 @@ has almost no effect on speed because the entropy stage dominates
 (`gpu_stages_mean_ms.entropy = 10.57 ms`, motion 1.94, residual 2.68,
 deblock 1.78; encode loop ~47.5 fps). Reaching 100 fps requires an
 entropy-stage optimization, not a cheaper motion preset.
+
+Single-frame profiling (`build/perf_1`, `build/perf_2`) isolates it further:
+
+| Frames | Entropy ms | Residual ms | Motion ms | Encode-loop fps |
+|---:|---:|---:|---:|---:|
+| 1 (IDR) | 289.8 | 65.7 | 0.0 | 2.8 |
+| 2 (IDR+P) | 136.3 | 26.1 | 1.0 | 6.0 |
+
+The IDR is a single whole-frame slice (`src/gpu.cpp` / `shaders/layout.glsl`)
+so one workgroup invocation emits all 8160 MB bodies serially. CAVLC I slices
+have no skip-run dependency between MBs, so the bodies could be emitted in
+parallel and concatenated — the next performance work item.
