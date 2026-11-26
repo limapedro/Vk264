@@ -1322,6 +1322,8 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
         int satd = h->fenc && h->fenc->i_cost_est[0][0] > 0
                  ? h->fenc->i_cost_est[0][0] : h->i_target_frame_bits;
         phx_ratecontrol_set_complexity(h->rc, satd);      /* ratecontrol.c:2559 */
+        /* ratecontrol.c:1508-1511 — CQP BREF uses the (qpB+qpP)/2 midpoint. */
+        phx_ratecontrol_set_kept_as_ref(h->rc, fc.i_nal_ref_idc != 0);
         phx_ratecontrol_start(h->rc, fc.i_type,
                               h->i_target_frame_bits, &rc_qp); /* :1431 */
         fc.i_qp = rc_qp;                                 /* :3863 */
