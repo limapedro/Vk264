@@ -28,6 +28,17 @@
  * counters* is the contract here.  Whole-stream parity additionally depends on
  * callers (MB analysis, psy-RD inputs, CABAC context history) and is not
  * claimed by this module.
+ *
+ * ROW 9 EVIDENCE: with fixed, identical inputs the chroma-DC trellis here is
+ * byte-exact to instrumented x264 (tests/test_phx_rdo.c gold_mb0_u_q23 /
+ * gold_mb1_u_q23 assert coefficients, node score, level path, copied CABAC
+ * states and cost_siglast[]).  The remaining stream-level `ue val=14` (raw
+ * record 1623) is an *input* defect outside this module: phx_chroma.c:309-310
+ * reconstructs 4:2:0 chroma DC with `chroma_qp+3`, while x264
+ * encoder/macroblock.c:420/425 uses `i_qp+3*chroma422` with chroma422==0.
+ * That makes MB1 U's raw DC 2080 instead of x264's 1568, so the (correct)
+ * trellis emits 29 instead of 22.  SHADER: C — no approximation is made here
+ * to mask the caller's QP error.
  */
 #ifndef PHX_RDO_H
 #define PHX_RDO_H
@@ -129,6 +140,29 @@ const int      *phx_rdo_unquant8_mf(int list, int qp);
 
 /* common/bitstream.h:283-289, used by rdo.c:615/630/484. */
 int phx_rdo_bs_size_ue_big(unsigned int val);
+
+/* -------------------------------------------------------------------------
+ * Diagnostic trace of the last phx_rdo_quant_trellis_cabac() call.
+ *
+ * x264's golden harness prints exactly these values from an instrumented
+ * rdo.c: last_nnz (rdo.c:695), the best node's score and level path
+ * (rdo.c:862-891), the copied level CABAC states (rdo.c:747-752) and the
+ * cost_siglast[] triple of the last-processed coefficient (rdo.c:789-808).
+ * The struct is written by the entropy-stage C state machine and is safe to
+ * read after the call returns; it is diagnostic only and never read by the
+ * encoder.  SHADER: C — strictly serial, one writer per MB.
+ * ------------------------------------------------------------------------- */
+typedef struct {
+    int last_nnz;
+    uint64_t best_score;             /* rdo.c:863-866 */
+    int16_t best_levels[64];         /* rdo.c:888-891, b_ac..last_nnz */
+    int best_count;
+    uint8_t level_state[16];         /* rdo.c:747-752 */
+    int cost_siglast[3];             /* rdo.c:789-808, i == last_nnz */
+    int levels_used;                 /* rdo.c:735+ */
+} phx_rdo_trellis_trace_t;
+
+void phx_rdo_get_trellis_trace(phx_rdo_trellis_trace_t *out);
 
 /* common/macroblock.h:432-442 + cavlc.c:198.  `idx` is the scan8 block index. */
 int phx_rdo_cavlc_predict_nc(const phx_mb_cache_t *cache, int idx);
