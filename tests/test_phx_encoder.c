@@ -34,7 +34,10 @@
 #define TH 16
 #define NFRAMES 4
 #define STREAM_CAP 65536
-#define BIG_STREAM_CAP (256 * 1024)  /* one 640x360 all-intra slice can be ~83 KB */
+/* Four 640x360 high-detail frames can exceed 256 KB now that I8 RD/intra_rd
+ * publishes the x264 MB types and residual sizes.  Keep the golden strict;
+ * only enlarge the capture buffer so append_nals() can hold the full stream. */
+#define BIG_STREAM_CAP (1024 * 1024)
 #define MAX_NALS 64
 
 /* Tiny deterministic I420 fixture (input/raw.c:113-124).  A different value
