@@ -142,4 +142,17 @@ Z1 instrumented x264 at `encoder.c:2865` on a real clip: `analyse.c:2959-3014` (
 
 Delegated to M4 (public subpel API), M8 (size-only CABAC cost), and a new B1 worker (`x264_mb_predict_mv_direct16x16` + `probe_bskip`).
 
+## F14 — slice-type costs made byte-exact; strict lookahead gate enabled
+
+The lowres per-frame cost path had six source-level defects: packed SATD halves were decomposed as `d[i]±d[i+4]` instead of low `d[0..3]` / high `d[4..7]` (`common/pixel.c:297-308`); `lr_try_bidir` and the fast-skip probe used SAD where x264 selects SATD (`slicetype.c:600/686`, `encoder.c:1411`); `cost_mv[0]` and `+5λ` were applied before subpel refinement and with a `-mvp` offset instead of after (`slicetype.c:695-697`, `me.c:925`); the HEX search was six full candidates instead of x264's half-hexagon with 3-bit direction tie-breaks (`me.c:344-419`); and subpel used `{0,2}` iterations instead of `subpel_iterations[4]={0,2,1,1}` (`me.c:38-50/794-796`).
+
+Instrumented-x264 goldens (synth fixture, medium/QP28):
+
+```
+cost(0,1,1) 3387 -> 1993   cost(0,2,1) 510 -> 1324
+cost(1,2,2) 3643 -> 2102   cost(0,2,2) 5008 -> 3008
+```
+
+All four now byte-identical; FAST slice types `I P P P BREF B B P`, frame_num and POC match the oracle, so `PHX_LOOKAHEAD_STRICT_GOLDEN` is now 1. The previously reported `cost(1,3,3)=3246` was not reproducible and the real third gap was the ME/HEX+subpel defects above. The encoder test's frame_num assertion was corrected for x264's legal non-reference-B reuse (`encoder.c:3882`).
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
