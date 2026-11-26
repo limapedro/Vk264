@@ -21,7 +21,27 @@ Source of truth: `reference/x264/`, `docs/X264_INTERNALS.md`, `docs/PARITY_GAP_M
 | 13 | `x264_slicetype_decide`, scenecut, B-adapt FAST/TRELLIS (`encoder/slicetype.c:1384-1985`) | `src/phx_lookahead.c` | Exact frame-type sequence and coded-order frame_num/POC for each preset | all-P/BREF gap, TRELLIS B-adapt TODO |
 | 14 | `x264_weights_analyse` (`encoder/slicetype.c:284`, `encoder/encoder.c:2163-2284`) | `src/phx_lookahead.c` | Exact pred_weight_table fields and offsets | not ported |
 | 15 | `x264_ratecontrol_start`/`end`, AQ and chroma QP (`encoder/ratecontrol.c:1431-1538,1829-1928,304-415`) | `src/phx_ratecontrol.c` | Exact per-frame/per-MB QP sequence for CQP/CRF/ABR | CQP aligned; AQ/MB-tree incomplete |
-| 16 | `x264_frame_deblock_row` (`common/deblock.c:378-606`, `common/macroblock.c:1438-1622`) | `src/phx_deblock.c` | Exact filtered luma/chroma sample arrays; recon equality with x264 | ported, not wired into encoder |
+| 16 | `x264_frame_deblock_row` (`common/deblock.c:378-606`, `common/macroblock.c:1438-1622`) | `src/phx_deblock.c` | Exact filtered luma/chroma sample arrays; recon equality with x264 | ported, byte-exact vs x264 objects; not wired into encoder |
+| 17 | `x264_macroblock_probe_pskip` + fast P_SKIP detection (`encoder/analyse.c:2953-3024`, `:1294-1307`; `x264_mb_predict_mv_pskip` `common/mvpred.c:166-181`; `macroblock.c:639-670`) | `src/phx_analysis.c` (decision) + `src/phx_cabac_syntax.c`/`phx_cavlc_syntax.c` (writer) | For fixed fenc/fref, exact P_SKIP flag per MB and exact `mb_skip_flag`/`mb_skip_run` bins | **phx_encoder.c:1438 hard-codes `d.skip=0`; Phoenix never emits P_SKIP** — dominant cause of real-video stream blowup (P slices 292 B vs x264 6 B) |
+| 18 | inter MB encode with residual: `x264_macroblock_encode` P paths (`encoder/macroblock.c:654-775`), motion compensation (`common/mc.c:251-283`) | `src/phx_mbencode.c` | For fixed fref/MV/ref/cbp, exact reconstructed samples + coefficient arrays vs x264 objects | phx_encoder.c only accepts `P_L0/D_16x16` with `cbp==0`; all residual-carrying inter modes fall back to intra |
+| 19 | `I_8x8` transform/quant path (`encoder/macroblock.c:379-417`, `encoder/rdo.c:890`, `common/quant.c:4x8`) | `src/phx_mbencode.c` | Exact 64-coefficient array and reconstruction for a fixed 8x8 block | rejected in phx_mbencode.c (no 64-coefficient slot) |
+
+## Real-video encode findings (baseline for rows 17-19)
+
+`tools/oracle_video.py` on `D:/Videos/ssstwitter.com_1748999992229.mp4`, 64x64 crop, 30 frames, `--fps 25 --preset ultrafast --qp 28 --entropy cabac` (identical encode parameters, both streams decode OK):
+
+```
+SPS / PPS / SEI                 byte-exact (21 / 4 / 542 bytes)
+IDR slice header                byte-exact (24 bits)
+IDR slice entropy               first diff payload byte 46
+P slice headers (#2..#30)       byte-exact (19 bits)
+P slice entropy                 first diff payload byte 4 (first MB)
+P slice sizes                   Phoenix 270-303 B vs x264 25-109 B
+  first P frame                 Phoenix 292 B vs x264 6 B  (x264: all P_SKIP)
+stream sizes                    Phoenix 9469 B vs x264 2475 B
+```
+
+Because all slice headers match, the remaining stream-level failure is **entirely in MB decisions/coefficients**, not in header writing. Row 17 (P_SKIP) is the highest-leverage gap for real content; rows 18-19 are required as soon as x264 codes a residual inter MB.
 
 ## Rules for each owner
 
