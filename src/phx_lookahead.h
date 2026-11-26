@@ -108,6 +108,52 @@ int phx_lookahead_get_frames_full(phx_lookahead_t *l, int *frame_types,
  * SHADER: C -- serial lookahead teardown. */
 void phx_lookahead_delete(phx_lookahead_t *l);
 
+/* x264 common/mc.h:235-245 -- the subset of x264_weight_t that
+ * pred_weight_table() (encoder.c:295-321) writes.  i_scale/i_offset are the
+ * se(v) values; i_denom is luma_log2_weight_denom (or chroma for planes 1/2).
+ * b_weighted == (weightfn != NULL), i.e. whether the corresponding
+ * luma/chroma_weight_l0_flag is written as 1. */
+typedef struct {
+    int b_weighted;
+    int i_scale;
+    int i_denom;
+    int i_offset;
+} phx_weight_t;
+
+typedef struct {
+    phx_weight_t plane[3];       /* [0]=Y, [1]=U, [2]=V */
+} phx_weights_t;
+
+/* x264 encoder/slicetype.c:284-501 -- x264_weights_analyse().  `fenc_frame`
+ * and `ref_frame` are the display-order i_frame numbers (frame.h:56) used for
+ * ref0_distance = fenc - ref - 1 (:79) and f_weighted_cost_delta (:463).
+ * b_lookahead=1 is the lowres-only single-candidate path called from
+ * slicetype_frame_cost() (:859-864); b_lookahead=0 is the encoder path called
+ * from x264_slicetype_decide() (:1937-1943) and feeds weighted_pred_init()
+ * (encoder.c:2202-2284) -> pred_weight_table (encoder.c:295-321).
+ *
+ * Only the luma plane is analysed: phx_frame_t has no per-MB i_intra_cost or
+ * chroma MC state, so chroma is left unweighted (encoder.c:2281-2283 writes
+ * chroma_log2_weight_denom=0), and the chroma search of slicetype.c:373-389,
+ * :467-485 is an explicit TODO.  No weights are invented to force a decision.
+ * Returns 0 on success, -1 on invalid arguments.
+ * SHADER: C -- serial host-side analysis of one fixed frame pair. */
+int phx_lookahead_weights_analyse(const phx_lookahead_t *l,
+                                  phx_frame_t *fenc, int fenc_frame,
+                                  phx_frame_t *ref, int ref_frame,
+                                  int b_lookahead, phx_weights_t *out);
+
+/* x264 lookahead.c:223-254 + slicetype.c:1950-1964 + encoder.c:3881-3882:
+ * the decided types in *coded* order together with the exact slice-header
+ * frame_num and pic_order_cnt_lsb of each frame.  frame_num starts at 0 on an
+ * IDR and increments only after a reference (I/P/BREF) frame (:3882);
+ * POC = 2*(i_frame - last IDR i_frame) (encoder.c:3513).  All three arrays may
+ * be NULL; frame_types is required when n > 0.  Returns the number of frames
+ * written, 0 when none are available.
+ * SHADER: C -- serial coded-order output, one minigop at a time. */
+int phx_lookahead_get_frames_coded(phx_lookahead_t *l, int *frame_types,
+                                   int *frame_nums, int *pocs, int n);
+
 #ifdef __cplusplus
 }
 #endif

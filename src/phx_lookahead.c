@@ -12,7 +12,10 @@
  */
 #include "phx_lookahead.h"
 #include "phx_lowres.h"
+#include "phx_cost.h"
+#include "phx_predict.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -76,6 +79,12 @@ struct phx_lookahead {
      * never leave a dangling last_nonb. */
     phx_lf_frame_t last_nonb;
     int have_last_nonb;
+
+    /* encoder.c:3882 / :3513 -- coded-order header state exposed by
+     * phx_lookahead_get_frames_coded().  frame_num resets on IDR and only
+     * advances after a reference frame; POC is relative to the last IDR. */
+    int i_coded_frame_num;
+    int i_last_idr_frame;
 };
 
 #define PHX_MIN(a,b) ((a) < (b) ? (a) : (b))
@@ -185,11 +194,63 @@ static int phx_lh_scenecut(phx_lookahead_t *l, phx_lf_frame_t **frames,
     return phx_lh_scenecut_internal(l, frames, p0, p1, real_scenecut);
 }
 
+/* ---- trellis B-adapt (SHADER C) ---------------------------------------- */
+
+/* x264 encoder/slicetype.c:1333-1382 -- slicetype_path().  Viterbi over the
+ * B/P paths of length `length`; best_paths is indexed modulo
+ * X264_BFRAME_MAX+1 (base.h:136) exactly as in x264.  The only cost source is
+ * phx_lh_path_cost() -> slicetype.c:1288-1327; no heuristic B insertion.
+ * SHADER: C -- serial dynamic programming over one minigop. */
+static void phx_lh_slicetype_path(phx_lookahead_t *l, phx_lf_frame_t **frames,
+                                   int length,
+                                   char best_paths[][PHX_LOOKAHEAD_MAX+1])
+{
+    char paths[2][PHX_LOOKAHEAD_MAX+1];
+    int num_paths = PHX_MIN(l->p.i_bframe + 1, length); /* slicetype.c:1336 */
+    uint64_t best_cost = PHX_COST_MAX64;              /* :1337 */
+    int best_possible = 0, idx = 0;                   /* :1338-1339 */
+
+    for (int path = 0; path < num_paths; path++) {    /* :1342 */
+        int len = length - (path + 1);                /* :1345 */
+        memcpy(paths[idx], best_paths[len % (PHX_BFRAME_MAX+1)],
+               (size_t)len);                         /* :1346 */
+        memset(paths[idx] + len, 'B', (size_t)path);  /* :1347 */
+        paths[idx][len + path] = 'P';                /* :1348 */
+        paths[idx][len + path + 1] = '\0';
+
+        int possible = 1;                            /* :1350 */
+        for (int i = 1; i <= length; i++) {          /* :1351 */
+            int i_type = frames[i]->i_type;          /* :1353 */
+            if (i_type == PHX_TYPE_AUTO) continue;
+            if (PHX_IS_B(i_type))
+                possible = possible && (i < len || i == length ||
+                                        paths[idx][i-1] == 'B'); /* :1357 */
+            else {
+                possible = possible && (i < len || paths[idx][i-1] != 'B');
+                paths[idx][i-1] = PHX_IS_I(i_type) ? 'I' : 'P';  /* :1361 */
+            }
+        }
+
+        if (possible || !best_possible) {            /* :1365 */
+            if (possible && !best_possible) best_cost = PHX_COST_MAX64;
+            uint64_t cost = phx_lh_path_cost(l, frames, paths[idx], best_cost);
+                                                     /* :1370 */
+            if (cost < best_cost) {                  /* :1371-1376 */
+                best_cost = cost;
+                best_possible = possible;
+                idx ^= 1;
+            }
+        }
+    }
+    memcpy(best_paths[length % (PHX_BFRAME_MAX+1)],
+           paths[idx^1], (size_t)length);             /* :1381 */
+}
+
 /* ---- slicetype analyse (SHADER C) -------------------------------------- */
 
-/* x264 encoder/slicetype.c:1473-1742.  Only the B-adapt FAST branch
- * (slicetype.c:1599-1631) is implemented.  Trellis B-adapt, MB-tree and VBV
- * are left as explicit TODOs rather than being approximated.
+/* x264 encoder/slicetype.c:1473-1742.  Both B-adapt FAST (:1580-1622) and
+ * TRELLIS (:1553-1579) are ported.  MB-tree and VBV remain explicit TODOs
+ * rather than being approximated.
  * SHADER: C -- serial analysis over the next[] window. */
 static void phx_lh_slicetype_analyse(phx_lookahead_t *l, int intra_minigop)
 {
@@ -249,8 +310,24 @@ static void phx_lh_slicetype_analyse(phx_lookahead_t *l, int intra_minigop)
 
     if (l->p.i_bframe) {
         if (l->p.i_bframe_adaptive == PHX_B_ADAPT_TRELLIS) {
-            /* TODO: slicetype_path()/Viterbi (slicetype.c:1333-1382,
-             * :1542-1565).  Deliberately not approximated. */
+            /* x264 encoder/slicetype.c:1553-1579 -- Viterbi B-adapt.
+             * best_paths starts as {"", "P"} (:1557); frame j keeps the
+             * decision stored for its length (:1567-1576). */
+            if (num_frames > 1) {                    /* slicetype.c:1555 */
+                char best_paths[PHX_BFRAME_MAX+1][PHX_LOOKAHEAD_MAX+1];
+                memset(best_paths, 0, sizeof(best_paths));
+                best_paths[1][0] = 'P';              /* :1557 */
+                int best_path_index = num_frames % (PHX_BFRAME_MAX+1);
+                for (int j = 2; j <= num_frames; j++)/* :1561-1562 */
+                    phx_lh_slicetype_path(l, frames, j, best_paths);
+                for (int j = 1; j < num_frames; j++) { /* :1565-1577 */
+                    if (best_paths[best_path_index][j-1] != 'B') {
+                        if (PHX_IS_AUTO_OR_B(frames[j]->i_type))
+                            frames[j]->i_type = PHX_TYPE_P;
+                    } else if (frames[j]->i_type == PHX_TYPE_AUTO)
+                        frames[j]->i_type = PHX_TYPE_B;
+                }
+            }
         } else if (l->p.i_bframe_adaptive == PHX_B_ADAPT_FAST) {
             /* slicetype.c:1567-1619 -- sequential last_nonb handling. */
             int last_nonb = 0;                   /* slicetype.c:1568 */
@@ -497,6 +574,282 @@ static void phx_lh_slicetype_decide(phx_lookahead_t *l)
     }
 }
 
+/* ---- weighted prediction analysis (SHADER C) ---------------------------- */
+
+/* x264 common/pixel.c:290-330 -- x264_pixel_satd_8x8() for BIT_DEPTH=8.
+ * The packed sum2_t halves are kept as two plain int planes; with 8-bit
+ * samples neither half can overflow. */
+static int phx_w_satd8(const uint8_t *a, int sa, const uint8_t *b, int sb)
+{
+    int total = 0;
+    for (int half = 0; half < 2; half++) {
+        int lo[4][4], hi[4][4];
+        for (int i = 0; i < 4; i++, a += sa, b += sb) {
+            int d[8];
+            for (int x = 0; x < 8; x++) d[x] = (int)a[x] - (int)b[x];
+            /* pixel.c:297-301 + HADAMARD4 (:242-251): a0..a3 pack
+             * (d0,d4), (d1,d5), (d2,d6), (d3,d7) in the low/high halves. */
+            int s0 = d[0] + d[1], s1 = d[2] + d[3];
+            int s2 = d[4] + d[5], s3 = d[6] + d[7];
+            int t0 = s0 + s1, t1 = s0 - s1, t2 = s2 + s3, t3 = s2 - s3;
+            lo[i][0] = t0 + t2; lo[i][2] = t0 - t2;
+            lo[i][1] = t1 + t3; lo[i][3] = t1 - t3;
+            s0 = d[4]; s1 = d[5]; s2 = d[6]; s3 = d[7];
+            t0 = s0 + s1; t1 = s0 - s1; t2 = s2 + s3; t3 = s2 - s3;
+            hi[i][0] = t0 + t2; hi[i][2] = t0 - t2;
+            hi[i][1] = t1 + t3; hi[i][3] = t1 - t3;
+        }
+        for (int c = 0; c < 4; c++) {              /* pixel.c:303-307 */
+            int a0 = lo[0][c], a1 = lo[1][c], a2 = lo[2][c], a3 = lo[3][c];
+            int t0 = a0 + a1, t1 = a0 - a1, t2 = a2 + a3, t3 = a2 - a3;
+            int v[4] = { t0+t2, t0-t2, t1+t3, t1-t3 };
+            a0 = hi[0][c]; a1 = hi[1][c]; a2 = hi[2][c]; a3 = hi[3][c];
+            t0 = a0 + a1; t1 = a0 - a1; t2 = a2 + a3; t3 = a2 - a3;
+            int w[4] = { t0+t2, t0-t2, t1+t3, t1-t3 };
+            for (int k = 0; k < 4; k++)
+                total += (v[k] < 0 ? -v[k] : v[k]) + (w[k] < 0 ? -w[k] : w[k]);
+        }
+        /* pixel.c:308: ((sum_t)sum) + (sum>>16), then >>1.
+         * The row walk above has advanced a/b by 4 rows, so the second
+         * iteration covers rows 4..7 (pixel.c:315). */
+    }
+    return total >> 1;
+}
+
+/* x264 ratecontrol.c:225-235 + :406-414 -- i_pixel_sum / i_pixel_ssd for one
+ * plane.  ac_energy_mb() sums var_16x16 over all MBs; the mean is removed at
+ * the end of x264_adaptive_quant_frame(). */
+static void phx_w_pixel_stats(const phx_frame_t *f, uint64_t *sum_out,
+                              uint64_t *ssd_out)
+{
+    uint64_t sum = 0, sqr = 0;
+    for (int y = 0; y < f->i_height; y++)
+        for (int x = 0; x < f->i_width; x++) {
+            unsigned v = f->plane[x + y*f->i_stride];
+            sum += v;
+            sqr += (uint64_t)v*v;
+        }
+    uint64_t wh = (uint64_t)f->i_width * (uint64_t)f->i_height;
+    *sum_out = sum;
+    *ssd_out = sqr - (sum*sum + wh/2) / wh;       /* ratecontrol.c:413 */
+}
+
+/* x264 slicetype.c:714-759 -- per-8x8-block intra SATD used by
+ * weight_cost_luma()'s X264_MIN(cmp, i_intra_cost[i_mb]). */
+static void phx_w_intra_costs(const phx_frame_t *f, int *costs)
+{
+    const int stride = f->i_stride_lowres;
+    for (int mb_y = 0; mb_y < f->i_lines_lowres/8; mb_y++)
+        for (int mb_x = 0; mb_x < f->i_width_lowres/8; mb_x++) {
+            uint8_t pix[9*32 + 16];
+            uint8_t *p = pix + 8 + 32;
+            const uint8_t *src = f->lowres[0] + 8*mb_x + 8*mb_y*stride;
+            memset(pix, 0, sizeof(pix));
+            memcpy(pix + 8, src - stride, 16);
+            for (int i = -1; i < 8; i++)
+                memcpy(p + i*32 - 4, src + i*stride - 4, 4);
+            int best = PHX_COST_MAX32;
+            phx_predict_8x8c_dc(p, 32);
+            best = PHX_MIN(best, phx_w_satd8(p, 32, src, stride));
+            phx_predict_8x8c_h(p, 32);
+            best = PHX_MIN(best, phx_w_satd8(p, 32, src, stride));
+            phx_predict_8x8c_v(p, 32);
+            best = PHX_MIN(best, phx_w_satd8(p, 32, src, stride));
+            phx_predict_8x8c_p(p, 32);
+            best = PHX_MIN(best, phx_w_satd8(p, 32, src, stride));
+            uint8_t edge[36];
+            phx_predict_8x8_filter(p, edge, 32, PHX_MB_ALL, PHX_MB_ALL);
+            typedef void (*pred8_t)(uint8_t *, const uint8_t *, int);
+            static const pred8_t pred8[6] = {
+                phx_predict_8x8_ddl, phx_predict_8x8_ddr, phx_predict_8x8_vr,
+                phx_predict_8x8_hd,  phx_predict_8x8_vl,  phx_predict_8x8_hu
+            };
+            for (int i = 0; i < 6; i++) {
+                pred8[i](p, edge, 32);
+                best = PHX_MIN(best, phx_w_satd8(p, 32, src, stride));
+            }
+            costs[mb_x + mb_y*(f->i_width_lowres/8)] = best + 5*phx_lambda_tab[PHX_LOOKAHEAD_QP] + PHX_LOWRES_PENALTY; /* slicetype.c:720,746 */
+        }
+}
+
+/* x264 slicetype.c:170-189 -- weight_slice_header_cost(). */
+static int phx_w_header_cost(const phx_weight_t *w, int b_chroma)
+{
+    int lambda = phx_lambda_tab[PHX_LOOKAHEAD_QP];  /* :173 */
+    if (b_chroma) lambda *= 4;                     /* :176 */
+    int denom_cost = phx_bs_size_te(0, w->i_denom) * (2 - b_chroma); /* :187 */
+    int x = w->i_scale < 0 ? -2*w->i_scale - 1 : 2*w->i_scale;
+    int ox = w->i_offset < 0 ? -2*w->i_offset - 1 : 2*w->i_offset;
+    return lambda * (10 + denom_cost
+                     + 2*(phx_bs_size_te(x, w->i_scale)
+                          + phx_bs_size_te(ox, w->i_offset)));  /* :188 */
+}
+
+/* x264 slicetype.c:191-222 -- weight_cost_luma() on the lowres planes.
+ * w == NULL is the unweighted origscore pass (:217-219).  The per-MB intra
+ * costs come from phx_w_intra_costs(); no new MC state is invented. */
+static unsigned int phx_w_cost_luma(const phx_frame_t *fenc,
+                                    const phx_frame_t *ref,
+                                    const phx_weight_t *w, const int *intra)
+{
+    const int stride = fenc->i_stride_lowres;
+    unsigned int cost = 0;
+    int mb = 0;
+    for (int y = 0; y < fenc->i_lines_lowres; y += 8)
+        for (int x = 0; x < fenc->i_width_lowres; x += 8, mb++) {
+            const uint8_t *src = ref->lowres[0] + y*stride + x;
+            uint8_t buf[64];
+            const uint8_t *cmp_src = src;
+            if (w) {                              /* mc.c:117-136 opscale */
+                if (w->i_denom >= 1)
+                    for (int j = 0; j < 8; j++)
+                        for (int i = 0; i < 8; i++) {
+                            int v = (src[j*stride+i]*w->i_scale
+                                     + (1 << (w->i_denom-1))) >> w->i_denom;
+                            v += w->i_offset;
+                            buf[j*8+i] = (uint8_t)PHX_MIN(255, PHX_MAX(0, v));
+                        }
+                else
+                    for (int j = 0; j < 8; j++)
+                        for (int i = 0; i < 8; i++) {
+                            int v = src[j*stride+i]*w->i_scale + w->i_offset;
+                            buf[j*8+i] = (uint8_t)PHX_MIN(255, PHX_MAX(0, v));
+                        }
+                cmp_src = buf;
+            }
+            int satd = phx_w_satd8(fenc->lowres[0] + y*stride + x, stride,
+                                   cmp_src, 8);  /* :208 / :217 */
+            cost += (unsigned int)PHX_MIN(satd, intra[mb]); /* :209 / :218 */
+        }
+    if (w) cost += (unsigned int)phx_w_header_cost(w, 0); /* :211 */
+    return cost;
+}
+
+int phx_lookahead_weights_analyse(const phx_lookahead_t *l,
+                                  phx_frame_t *fenc, int fenc_frame,
+                                  phx_frame_t *ref, int ref_frame,
+                                  int b_lookahead, phx_weights_t *out)
+{
+    if (!l || !fenc || !ref || !out || fenc->i_width_lowres != ref->i_width_lowres)
+        return -1;
+    (void)fenc_frame;                            /* :286 f_weighted_cost_delta */
+    (void)ref_frame;                             /* :79 ref0_distance */
+    memset(out, 0, sizeof(*out));
+    for (int i = 0; i < 3; i++) out->plane[i].i_scale = 1; /* :290-292 */
+
+    uint64_t fs = 0, fsq = 0, rs = 0, rsq = 0;
+    phx_w_pixel_stats(fenc, &fs, &fsq);          /* slicetype.c:305 */
+    phx_w_pixel_stats(ref, &rs, &rsq);           /* :306 */
+    int zero_bias = !rsq;                        /* :301 */
+    float fenc_var = (float)(fsq + zero_bias);   /* :302 */
+    float ref_var = (float)(rsq + zero_bias);    /* :303 */
+    float guess_scale = sqrtf(fenc_var / ref_var); /* :304 */
+    float denom_f = (float)fenc->i_width * (float)fenc->i_height;
+    float fenc_mean = (float)(fs + zero_bias) / denom_f; /* :305 (8-bit) */
+    float ref_mean = (float)(rs + zero_bias) / denom_f;  /* :306 */
+
+    /* slicetype.c:316-327 -- chroma_denom search.  guess_scale[1]==1 for the
+     * un-analysed chroma planes, so the loop exits immediately; luma-only
+     * analysis therefore uses the default denom 7 here. */
+    int chroma_denom = 7;
+    if (!b_lookahead) {
+        while (chroma_denom > 0) {
+            float thresh = 127.f / (float)(1 << chroma_denom);
+            if (guess_scale < thresh) break;      /* :323 */
+            chroma_denom--;                        /* :325 */
+        }
+    }
+    (void)chroma_denom;
+
+    /* slicetype.c:337-341 -- early termination. */
+    if (fabsf(ref_mean - fenc_mean) < 0.5f &&
+        fabsf(1.f - guess_scale) < 1.f/128.f)
+        return 0;
+
+    /* slicetype.c:354 / :63-75 -- weight_get_h264(). */
+    phx_weight_t w;
+    w.i_offset = 0;
+    w.i_denom = 7;
+    w.i_scale = (int)floorf(guess_scale*128.f + 0.5f); /* round() :354 */
+    while (w.i_denom > 0 && w.i_scale > 127) { w.i_denom--; w.i_scale >>= 1; }
+    w.i_scale = PHX_MIN(w.i_scale, 127);
+    w.b_weighted = 0;
+
+    static const uint8_t weight_check_distance[][2] = {
+        {0,0},{0,0},{0,1},{0,1},{0,1},{0,1},{0,1},{1,1},
+        {1,1},{2,1},{2,1},{4,2}
+    };                                            /* slicetype.c:395-400 */
+    int sr = PHX_MIN(PHX_MAX(l->p.i_subpel_refine, 0), 11);
+    int scale_dist  = b_lookahead ? 0 : weight_check_distance[sr][0]; /* :401 */
+    int offset_dist = b_lookahead ? 0 : weight_check_distance[sr][1]; /* :402 */
+
+    /* slicetype.c:364-371 -- per-MB intra costs and the unweighted score.
+     * weight_cost_init_luma() (:77-103) would apply cached lowres MVs;
+     * phx_frame_t exposes only one MV per pair, so the unweighted copy of
+     * ref->lowres[0] (:102) is used.  No cost is faked. */
+    int mb_count = (fenc->i_width_lowres/8) * (fenc->i_lines_lowres/8);
+    int *intra = (int*)malloc((size_t)mb_count * sizeof(int));
+    if (!intra) return -1;
+    phx_w_intra_costs(fenc, intra);
+    unsigned int origscore = phx_w_cost_luma(fenc, ref, NULL, intra); /* :371 */
+    unsigned int minscore = origscore;
+    int mindenom = w.i_denom, minscale = w.i_scale, minoff = 0, found = 0;
+                                                       /* :356-359 */
+
+    int start_scale = PHX_MIN(PHX_MAX(minscale - scale_dist, 0), 127); /* :404 */
+    int end_scale   = PHX_MIN(PHX_MAX(minscale + scale_dist, 0), 127); /* :405 */
+    for (int i_scale = start_scale; i_scale <= end_scale; i_scale++) { /* :406 */
+        int cur_scale = i_scale;                       /* :408 */
+        int cur_offset = (int)(fenc_mean
+                               - ref_mean*cur_scale/(float)(1 << mindenom)
+                               + 0.5f*b_lookahead);    /* :409 */
+        if (cur_offset < -128 || cur_offset > 127) {  /* :410 */
+            cur_offset = PHX_MIN(PHX_MAX(cur_offset, -128), 127); /* :415 */
+            float cs = (float)(1 << mindenom) * (fenc_mean - cur_offset)
+                       / (ref_mean ? ref_mean : 1.f) + 0.5f;      /* :416 */
+            cur_scale = PHX_MIN(PHX_MAX((int)cs, 0), 127);
+        }
+        int start_offset = PHX_MIN(PHX_MAX(cur_offset - offset_dist, -128), 127); /* :418 */
+        int end_offset   = PHX_MIN(PHX_MAX(cur_offset + offset_dist, -128), 127); /* :419 */
+        for (int i_off = start_offset; i_off <= end_offset; i_off++) { /* :420 */
+            w.b_weighted = 1;                         /* SET_WEIGHT :422 */
+            w.i_scale = cur_scale;
+            w.i_denom = mindenom;
+            w.i_offset = i_off;
+            unsigned int s = phx_w_cost_luma(fenc, ref, &w, intra); /* :427/432 */
+            if (s < minscore) {                        /* COPY4_IF_LT :433 */
+                minscore = s;
+                minscale = cur_scale;
+                minoff = i_off;
+                found = 1;
+            }
+            if (minoff == start_offset && i_off != start_offset) break; /* :436 */
+        }
+    }
+    free(intra);
+    while (mindenom > 0 && !(minscale & 1)) {          /* :445-448 */
+        mindenom--;
+        minscale >>= 1;
+    }
+    /* slicetype.c:454-460 -- no weight when the search did not improve or
+     * the weight is the identity or saves less than 0.2%. */
+    if (!found || (minscale == (1 << mindenom) && minoff == 0) ||
+        origscore && (float)minscore / (float)origscore > 0.998f) {
+        for (int i = 0; i < 3; i++) {              /* SET_WEIGHT :456 */
+            out->plane[i].b_weighted = 0;
+            out->plane[i].i_scale = 1;
+            out->plane[i].i_denom = 0;
+            out->plane[i].i_offset = 0;
+        }
+        return 0;
+    }
+    out->plane[0].b_weighted = 1;                     /* :460 */
+    out->plane[0].i_scale = minscale;
+    out->plane[0].i_denom = mindenom;
+    out->plane[0].i_offset = minoff;
+    return 0;
+}
+
 /* ---- public API (SHADER C) --------------------------------------------- */
 
 /* x264 encoder/lookahead.c:110-150 (x264_lookahead_init), serial subset.
@@ -531,6 +884,8 @@ phx_lookahead_t *phx_lookahead_new(const phx_param_t *p, int mb_width,
     l->mb_width = mb_width;
     l->mb_height = mb_height;
     l->i_last_keyframe = -p->i_keyint_max;       /* lookahead.c:116 */
+    l->i_coded_frame_num = 0;                    /* encoder.c:3882 */
+    l->i_last_idr_frame = -1;                    /* encoder.c:3513 */
     l->i_slicetype_length = PHX_MAX(1, PHX_MIN(p->i_lookahead,
                                               PHX_LOOKAHEAD_MAX)); /* :118 */
 
@@ -640,6 +995,41 @@ int phx_lookahead_get_frames(phx_lookahead_t *l, int *frame_types, int n)
     for (int i = 0; i < got; i++)
         if (frame_types && frame_types[i] == PHX_TYPE_BREF)
             frame_types[i] = PHX_TYPE_B;           /* x264.h:276/280 */
+    return got;
+}
+
+/* Coded-order view used for golden slice-header comparisons.
+ * SHADER: C -- serial post-processing of one lookahead drain. */
+int phx_lookahead_get_frames_coded(phx_lookahead_t *l, int *frame_types,
+                                   int *frame_nums, int *pocs, int n)
+{
+    if (!l || n < 0 || (!frame_types && n > 0)) return 0;
+    if (!n) return 0;
+
+    int *raw = (int*)malloc((size_t)n * sizeof(int));
+    int *disp = (int*)malloc((size_t)n * sizeof(int));
+    if (!raw || !disp) { free(raw); free(disp); return 0; }
+    int got = phx_lookahead_get_frames_full(l, raw, disp, n);
+    for (int i = 0; i < got; i++) {
+        int t = raw[i];                          /* raw BREF tag preserved */
+        if (t == PHX_TYPE_IDR) {                 /* encoder.c:3513 */
+            l->i_last_idr_frame = disp[i];
+            l->i_coded_frame_num = 0;            /* IDR slice header frame_num */
+        }
+        int is_ref = (t == PHX_TYPE_IDR || t == PHX_TYPE_I ||
+                      t == PHX_TYPE_P || t == PHX_TYPE_BREF);
+        if (frame_nums) frame_nums[i] = l->i_coded_frame_num;
+        if (pocs) {
+            int idr = l->i_last_idr_frame >= 0 ? l->i_last_idr_frame : 0;
+            pocs[i] = 2 * (disp[i] - idr);       /* encoder.c:3513 */
+        }
+        if (frame_types)
+            frame_types[i] = (t == PHX_TYPE_BREF) ? PHX_TYPE_B : t;
+                                                 /* x264.h:276/280 */
+        if (is_ref) l->i_coded_frame_num++;      /* encoder.c:3881-3882 */
+    }
+    free(raw);
+    free(disp);
     return got;
 }
 
