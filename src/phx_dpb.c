@@ -10,8 +10,47 @@
 #include "phx_dpb.h"
 #include "phx_tables.h"          /* PHX_QP_MAX (deblock.c:615) */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* SHADER: C — opt-in diagnostic for the B-slice list-build root cause.  Like
+ * phx_analysis.c's PHX_ME_TRACE gate this is a cached getenv() that produces
+ * no output and changes no state on a normal encode.  It dumps the exact
+ * contents of the DPB and the two lists built by phx_dpb_init_ref_lists() so a
+ * full-pipeline run can be compared with x264's h->fref[1][0] (encoder.c:
+ * 2295-2411) at the same B slice. */
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996)   /* getenv: diagnostic only, never stream state */
+#endif
+static int phx_dpb_trace_enabled(void)
+{
+    static int cached = -1;
+    if (cached < 0) cached = getenv("PHX_DPB_TRACE") ? 1 : 0;
+    return cached;
+}
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+
+static void phx_dpb_trace_row(const phx_frame_t *f)
+{
+    if (!f || !f->plane) { fprintf(stderr, " (no-plane)"); return; }
+    fprintf(stderr, " row0=");
+    for (int x = 0; x < 16; x++)
+        fprintf(stderr, "%s%u", x ? " " : "", f->plane[x]);
+}
+
+static void phx_dpb_trace_entry(const char *tag, int i,
+                                const phx_dpb_entry_t *e)
+{
+    fprintf(stderr, "PHX_DPB_TRACE %s i=%d fn=%d poc=%d disp=%d type=%d kept=%d",
+            tag, i, e->i_frame_num, e->i_poc, e->i_frame, e->i_type,
+            e->b_kept_as_ref);
+    phx_dpb_trace_row(e->frame);
+    fprintf(stderr, "\n");
+}
 
 /* base.h:180 x264_scan8 block starts whose four nnz bytes are stored in
  * h->mb.non_zero_count[mb] at macroblock.c:1761-1768 (nz_idx/nz_dst). */
@@ -269,6 +308,19 @@ int phx_dpb_store_frame(phx_dpb_t *dpb, const phx_dpb_store_params_t *p)
                 (size_t)(PHX_DPB_MAX_PICTURES - 1) * sizeof(dpb->pictures[0]));
         dpb->n_pictures--;
     }
+    if (phx_dpb_trace_enabled()) {
+        fprintf(stderr, "PHX_DPB_TRACE STORE fn=%d poc=%d disp=%d type=%d "
+                "stride=%d mb_major=%d src_row0=",
+                p->frame_num, p->poc, p->display_frame, p->i_type,
+                p->fdec_y_stride, p->fdec_y_mb_major);
+        for (int x = 0; x < 16; x++)
+            fprintf(stderr, "%s%u", x ? " " : "", p->fdec_y[x]);
+        fprintf(stderr, " stored_row0=");
+        for (int x = 0; x < 16; x++)
+            fprintf(stderr, "%s%u", x ? " " : "", f->plane[x]);
+        fprintf(stderr, "\n");
+    }
+
     int slot = dpb->n_pictures++;
     dpb->pictures[slot].i_frame_num = p->frame_num;
     dpb->pictures[slot].i_poc = p->poc;
@@ -420,6 +472,23 @@ int phx_dpb_init_ref_lists(const phx_dpb_t *dpb, phx_dpb_ref_lists_t *out,
     for (int list = 0; list < 2; list++)
         out->fref_nearest[list] = out->i_ref[list] > 0
             ? &out->frame_entry[list][out->nearest_index[list]] : NULL;
+
+    if (phx_dpb_trace_enabled() && slice_type == PHX_SLICE_B) {
+        fprintf(stderr, "PHX_DPB_TRACE build current_poc=%d current_frame=%d "
+                "slice=B stored=%d ref0=%d ref1=%d reorder=%d/%d\n",
+                current_poc, current_frame, dpb->n_pictures,
+                out->i_ref[0], out->i_ref[1],
+                out->b_ref_reorder[0], out->b_ref_reorder[1]);
+        for (int i = 0; i < dpb->n_pictures; i++)
+            phx_dpb_trace_entry("STORED", i, &dpb->pictures[i]);
+        for (int list = 0; list < 2; list++) {
+            fprintf(stderr, "PHX_DPB_TRACE LIST l=%d n=%d nearest_idx=%d\n",
+                    list, out->i_ref[list], out->nearest_index[list]);
+            for (int i = 0; i < out->i_ref[list]; i++) {
+                phx_dpb_trace_entry("ENT", i, &out->frame_entry[list][i]);
+            }
+        }
+    }
     return 0;
 }
 

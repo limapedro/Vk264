@@ -466,4 +466,8 @@ slower 1.18, veryslow 1.26, placebo 2.64. Ultrafast first diff 3673; all other
 presets 668-682. Bin 395 chroma-AC divergence diagnosis delegated in parallel
 with the full-pipeline mvc ME trace.
 
+## F44 — archive/Wx264 study (interim)
+
+Exploration of `E:\__PROJECTS__\Wx264-Vulkan-Opencode` found its best byte-parity came from direct scalar transcription of x264 and a single serial whole-frame CABAC lane: byte-exact flat-frame streams, but 9.7 fps vs x264-fast 171 fps (82.8% GPU time in one CABAC lane). A staged CABAC replay path produced corrupt streams; replacing it with a direct whole-frame dispatch fixed validity. The "CABAC flush byte" theory was disproven with evidence — divergence is multi-MB neighbour contexts. No local patches exist in the vendored x264 copies. `E:\__PROJECTS__\x264\fastenc` (from-scratch, no x264 copy) shows byte-exact decoder agreement is NOT a quality gate: a transposed FDCT passed all md5 gates at ~21 dB PSNR. Full synthesis pending the other explorers.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
