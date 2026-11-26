@@ -223,6 +223,31 @@ typedef struct {
 extern phx_intra_rd_diag_rec_t phx_g_intra_rd_diag[4096];
 extern int phx_g_intra_rd_diag_count, phx_g_intra_rd_diag_enable;
 
+/* mbrd>=1 inter RD observation: the per-candidate rd_cost_mb() results of
+ * mb_analyse_p_rd() (analyse.c:2547-2617) / mb_analyse_b_rd()
+ * (:2622-2690) and the winning mb_class_e of :3205-3223 / :3576-3589.
+ * Index `cost[]`/`ssd[]`/`bits[]` by the raw PHX_* mb_type (0..18);
+ * `cost[PHX_P_8x8]` (:2616) and `cost[PHX_B_8x8]` (:2669) are the D_8x8
+ * candidates.  `bskip` is analyse.c:3348's i_bskip_cost (ssd_mb of the direct
+ * prediction), `thresh` is :2624's early-termination threshold, and
+ * rd_direct/rd_l0/rd_l1/rd_bi are the four 16x16 B candidates of :2633/:2644/
+ * :2652/:2660.  No entropy state is touched; the record is written once per
+ * analysed MB when the capture flag is enabled.
+ * SHADER: B/C — read-only observation of the mbrd inter decision boundary. */
+typedef struct {
+    int mb_x, mb_y, qp, slice_type;
+    int cost[19], ssd[19], bits[19];
+    int bskip, thresh;
+    int rd_direct, rd_l0, rd_l1, rd_bi;
+    int winner;                         /* selected mb_class_e, or -1 */
+} phx_inter_rd_diag_rec_t;
+extern phx_inter_rd_diag_rec_t phx_g_inter_rd_diag[4096];
+extern int phx_g_inter_rd_diag_count, phx_g_inter_rd_diag_enable;
+/* Set to 1 to let the mbrd inter RD costs drive the final mode decision and
+ * publish the winner (analyse.c:3576-3589/:3734-3751).  Off by default until
+ * the ssd_mb inputs are byte-identical — see phx_analysis.c.  SHADER: B. */
+extern int phx_g_inter_rd_decision_enable;
+
 /* Additive B-frame entry point: same ABI as phx_macroblock_analyse_slice()
  * plus the list-1/colocated bundle above.  For B slices it calls B1's
  * phx_mvdirect_predict() and the analyse.c:3334-3359 B_SKIP gate/probe, and

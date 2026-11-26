@@ -21,13 +21,14 @@
 #include "phx_dct.h"
 #include "phx_me.h"
 #include "phx_mc.h"
+#include "phx_mbencode.h"       /* inter RD candidate encode (macroblock.c:974) */
 #include "phx_predict.h"
 #include "phx_quant.h"
 #include "phx_rdo.h"            /* trellis QNS, analyse.c:261 */
 #include "phx_tables.h"
 
 #include <stdlib.h>
-#include <string.h>
+#include <string.h>`n#include <stdio.h>  /* DEBUG */
 
 #define PHX_COST_MAX       (1 << 28)       /* encoder/me.h:30 */
 #define PHX_ANALYSE_I4x4   1               /* common/base.c:435 (phx_param.c:14) */
@@ -39,6 +40,17 @@ phx_transform_diag_rec_t phx_g_transform_diag[4096];
 int phx_g_transform_diag_count = 0, phx_g_transform_diag_enable = 0;
 phx_intra_rd_diag_rec_t phx_g_intra_rd_diag[4096];
 int phx_g_intra_rd_diag_count = 0, phx_g_intra_rd_diag_enable = 0;
+phx_inter_rd_diag_rec_t phx_g_inter_rd_diag[4096];
+int phx_g_inter_rd_diag_count = 0, phx_g_inter_rd_diag_enable = 0;
+/* The mbrd inter RD cost computation is source-aligned, but its ssd_mb() input
+ * (phx_b_ssd_pred's chroma prediction and the DPB reconstruction) is not yet
+ * byte-identical to x264 for every candidate — see docs/PARITY_FINDINGS.md
+ * F28/F33 and the x264 lines cited at phx_analysis_inter_rd().  Letting those
+ * costs drive the final mode choice regresses the byte-exact B-decision
+ * goldens, so the override is off until the input defects are fixed.  The
+ * cost arrays and the analyse_update_cache publication remain available for
+ * golden tests (SHADER: B — explicit flag, no hidden encoder state). */
+int phx_g_inter_rd_decision_enable = 0;
 
 /* x264 common/pixel.c:237-240 — 8-bit scalar build. */
 typedef uint16_t phx_sum_t;
@@ -267,6 +279,17 @@ typedef struct {
     int rd_cost[19];
     phx_mb_decision_t rd_d;
     int dbg_raw, dbg_psy, dbg_chr;  /* ssd_mb components (diagnostic only) */
+
+    /* mbrd>=1 inter RD (analyse.c:2547-2617/:2622-2690/:3205-3223/:3576-3589).
+     * `inter_rd_cost[]` is indexed by raw mb_class_e; `inter_rd_d` is the
+     * winning candidate's complete decision, published to the entropy stage
+     * exactly as analyse_update_cache() does (:3734-3751).  SHADER: B — one
+     * decision per MB, no hidden state. */
+    int b_inter_rd_winner;
+    int inter_rd_cost[19], inter_rd_ssd[19], inter_rd_bits[19];
+    int inter_rd_bskip, inter_rd_thresh;
+    int inter_rd_direct, inter_rd_l0, inter_rd_l1, inter_rd_bi;
+    phx_mb_decision_t inter_rd_d;
 } phx_analysis_ctx_t;
 
 /* Full-pel P16 search result, the reduced x264_me_t of analyse.c:1257-1313.
@@ -2285,6 +2308,37 @@ static void phx_analysis_rd_mb_state(const phx_analysis_ctx_t *c,
                 data->luma4x4[16+ch*16+i][k] =
                     d->chroma_dct[ch][1+i][k+1];
     }
+
+    /* mbrd>=1 inter RD handoff.  The size-only CABAC writer (rdo.c:162-197)
+     * reads ref/mvd/sub_partition from phx_rdo_mb_data_t; x264's
+     * macroblock_size_cabac reads them from h->mb.cache, which
+     * analyse_update_cache() (:3758-3860) filled from a->l0/a->l1/b_direct.
+     * Publish exactly those fields here: ref per 8x8 block, MVD = MV - mvp
+     * (cabac.c:336-337, mvpred.c:129-163) computed from the SAME neighbour
+     * cache the writer will use, and the D_16x16 sub-partition default
+     * (macroblock.h:139).  No MVD is invented: the MV is the candidate's
+     * published MV and the predictor is the byte-exact 16x16 MVP.
+     * SHADER: B — one inter candidate, no entropy state. */
+    if (d->mb_type >= PHX_P_L0) {
+        int nlists = (c->slice_type == PHX_SLICE_B) ? 2 : 1;
+        for (int l = 0; l < nlists; l++) {
+            int16_t mvp[2] = { 0, 0 };
+            int ref = d->ref[l][0];
+            phx_predict_mv16_l(cache, l, ref, mvp);       /* mvpred.c:129-163 */
+            for (int i8 = 0; i8 < 4; i8++) {
+                data->ref[l][i8] = (int8_t)d->ref[l][4*i8];
+                data->mvd[l][i8][0] =
+                    (int16_t)(d->mv[l][4*i8][0] - mvp[0]); /* cabac.c:336 */
+                data->mvd[l][i8][1] =
+                    (int16_t)(d->mv[l][4*i8][1] - mvp[1]); /* cabac.c:337 */
+                data->sub_partition[i8] = PHX_D_L0_8x8;   /* P_8x8 default */
+            }
+        }
+        data->i_fref[0] = 1;                             /* h->mb.pic.i_fref[0] */
+        data->i_fref[1] = (nlists == 2) ? 1 : 0;
+        /* Skip MBs carry no ref/mvd bins (rdo.c:176-179); the writer returns
+         * the single lambda2 bit before reaching the header. */
+    }
 }
 
 /* x264 encoder/analyse.c:982-1014 — intra_rd().  With a->i_mbrd >= 1 every
@@ -2527,6 +2581,312 @@ static void phx_analysis_intra_rd(phx_analysis_ctx_t *c,
             for (int i = 0; i < 16; i++)
                 rec->cand_luma_nnz[i] = winner.nnz[phx_scan8[i]];
         }
+    }
+}
+
+/* ---- mbrd>=1 inter RD (encoder/analyse.c:2547-2617/:2622-2690) ---------- */
+
+/* Cost one zero-residual inter candidate as rd_cost_mb() does:
+ * ssd_mb() of the motion-compensated prediction (rdo.c:150-159) plus the
+ * lambda2-weighted size-only CABAC bits (rdo.c:174/184-196).  The prediction
+ * comes from the byte-exact B1 MC helpers (:1795-1907), so no residual is
+ * invented: this is the b_skip_mc / zero-CBP path of macroblock.c:624-626/
+ * :953-970 that x264's mbrd inter RD uses for its skip/direct decisions.
+ * Residual-carrying inter RD (mb_analyse_inter_p8x8, analyse.c:1425-1631,
+ * and the CBP>0 B candidates of :2664-2689) is a documented TODO below —
+ * those modes are not fabricated here.  SHADER: B — two read-only kernels,
+ * no entropy state mutation. */
+static int phx_inter_rd_cost(phx_analysis_ctx_t *c, phx_mb_decision_t *cand,
+                             phx_mb_cache_t *cc_cache,
+                             int *ssd_out, int *bits_out)
+{
+    phx_cabac_mb_t mb;
+    phx_rdo_mb_data_t data;
+    uint8_t pred[16*16], u[8*16], v[8*16];
+    const int ref[2] = { cand->ref[0][0], cand->ref[1][0] };
+    const int16_t mv[2][2] = {
+        { cand->mv[0][0][0], cand->mv[0][0][1] },
+        { cand->mv[1][0][0], cand->mv[1][0][1] }
+    };
+    phx_analysis_b_input_t empty_b;
+    const phx_analysis_b_input_t *bi = c->b;
+
+    if (!bi) { memset(&empty_b, 0, sizeof(empty_b)); bi = &empty_b; }
+    phx_b_pred16(c, bi, ref, mv[0], mv[1], pred);           /* :1800-1825 */
+    phx_b_chroma_pred(c, bi, ref, mv, u, v);                /* :1872-1894 */
+    /* ssd_mb() of the motion-compensated prediction (rdo.c:150-159) using the
+     * same byte-exact B1 MC/SSD helpers as analyse.c:3348's i_bskip_cost. */
+    *ssd_out = phx_b_ssd_pred(c, pred, u, v);              /* rdo.c:150-159 */
+    phx_analysis_rd_mb_state(c, cand, cc_cache, &mb, &data); /* rdo.c:169/184 */
+    *bits_out = phx_rdo_macroblock_bits(c->cb, &mb, &data, c->slice_type,
+                                        c->qp, c->a.i_lambda2); /* :185 */
+    {
+        int64_t rd = (int64_t)*ssd_out + *bits_out;
+        return rd < PHX_COST_MAX ? (int)rd : PHX_COST_MAX;  /* rdo.c:196 */
+    }
+}
+
+/* x264 encoder/analyse.c:2547-2617 (mb_analyse_p_rd) and :2622-2690
+ * (mb_analyse_b_rd) with the final mode comparisons of :3205-3223 and
+ * :3576-3589.  At mbrd>=1 x264 re-costs every inter candidate with
+ * rd_cost_mb() = ssd_mb + lambda2 bits; Phoenix's reduced/SATD path must not
+ * be used for the inter-vs-intra decision in that case.  Only candidates the
+ * B-stage encoder can actually encode are costed; D_16x16/P_L0, B_SKIP,
+ * B_DIRECT, B_L0_L0, B_L1_L1 and B_BI_BI cover the :3576-3582 comparisons
+ * (the 8x8/16x8/8x16 B sub-partitions of :3583-3585 are left COST_MAX and
+ * cited as TODO, never fabricated).  The winning decision is published into
+ * `inter->cost` so phx_analysis_finalise() (:3221-3223) chooses the same
+ * mb_class_e, and copied into c->inter_rd_d for the entropy stage.
+ * SHADER: B — one decision per MB; no hidden state, no entropy mutation. */
+static void phx_analysis_inter_rd(phx_analysis_ctx_t *c,
+                                  phx_inter_result_t *inter)
+{
+    phx_mb_cache_t cc_cache;
+    phx_mb_decision_t cand;
+    int best, winner;
+    int skipbit = (c->a.i_lambda2 + 128) >> 8;              /* rdo.c:178 */
+
+    for (int t = 0; t < 19; t++) {
+        c->inter_rd_cost[t] = PHX_COST_MAX;
+        c->inter_rd_ssd[t] = 0;
+        c->inter_rd_bits[t] = 0;
+    }
+    c->b_inter_rd_winner = 0;
+    memset(&c->inter_rd_d, 0, sizeof(c->inter_rd_d));
+    if (!inter->found) return;
+
+    if (c->slice_type == PHX_SLICE_B) {
+        /* analyse.c:2624 — thresh = i_satd*(17+!!psy)/16+1 (or COST_MAX). */
+        /* analyse.c:2624 uses h->mb.i_psy_rd; Phoenix's analysis context has
+         * no such field, so derive it exactly as phx_analysis_ssd_luma() does
+         * (rdo.c:128, encoder/macroblock.c:627). */
+        int psy_rd = (c->p->b_psy && c->p->i_subpel_refine >= 6)
+                   ? (int)(c->p->f_psy_rd * (1 << 8) + .5) : 0;
+        c->inter_rd_thresh = phx_rdo_b_rd_threshold(c->i_satd_inter,
+            c->b_early_terminate, psy_rd);
+        c->inter_rd_bskip = inter->i_bskip_cost;            /* :3348 */
+    } else {
+        /* analyse.c:2549 — thresh = i_satd*5/4+1 (or COST_MAX). */
+        c->inter_rd_thresh = c->b_early_terminate
+            ? c->i_satd_inter * 5 / 4 + 1 : PHX_COST_MAX;
+    }
+
+    /* Direct/B_SKIP candidate (analyse.c:2626-2635/:3346-3350).  x264 sets
+     * b_skip_mc=1 while costing direct, so macroblock_encode promotes it to
+     * B_SKIP and rd_cost_mb takes the one-lambda2-bit rdo.c:176-179 path;
+     * the distortion is i_bskip_cost (ssd_mb of the direct MC). */
+    if (c->slice_type == PHX_SLICE_B && c->b_direct.available &&
+        inter->i_bskip_cost < PHX_COST_MAX) {
+        c->inter_rd_cost[PHX_B_DIRECT] =
+            inter->i_bskip_cost + skipbit < PHX_COST_MAX
+          ? inter->i_bskip_cost + skipbit : PHX_COST_MAX;
+        c->inter_rd_ssd[PHX_B_DIRECT] = inter->i_bskip_cost;
+        c->inter_rd_bits[PHX_B_DIRECT] = skipbit;
+        c->inter_rd_direct = c->inter_rd_cost[PHX_B_DIRECT];
+    }
+
+    /* 16x16 single-list / bidirectional candidates of :2640-2660 (B) and
+     * P_L0 of :2552-2557 (P).  Each is encoded from its published MV/ref and
+     * costed with the same ssd_mb + size-only-CABAC rd_cost_mb as x264. */
+    {
+        int types[3], nt = 0;
+        if (c->slice_type == PHX_SLICE_B) {
+            types[nt++] = PHX_B_L0_L0;
+            types[nt++] = PHX_B_L1_L1;
+            types[nt++] = PHX_B_BI_BI;
+        } else {
+            types[nt++] = PHX_P_L0;
+        }
+        for (int ti = 0; ti < nt; ti++) {
+            int t = types[ti], ssd = 0, bits = 0, rd;
+            int satd = t == PHX_B_L0_L0 ? inter->cost_l0
+                     : t == PHX_B_L1_L1 ? inter->cost_l1
+                     : t == PHX_B_BI_BI ? inter->cost_bi
+                     : inter->cost;
+            /* :2640/:2648/:2656 gate the RD pass by the SATD candidate cost;
+             * :2552 additionally requires me16x16.cost <= i_satd*3/2. */
+            if (!(satd < c->inter_rd_thresh)) continue;
+            if (t == PHX_P_L0 &&
+                inter->cost > c->i_satd_inter * 3 / 2) continue;
+
+            memset(&cand, 0, sizeof(cand));
+            cc_cache = *c->cache;
+            cand.mb_type = t;
+            cand.i_partition = PHX_D_16x16;
+            cand.i_qp = c->qp;
+            cand.i_cbp = 0;
+            if (t == PHX_P_L0) {
+                for (int i = 0; i < 16; i++) {
+                    cand.mv[0][i][0] = inter->mv[0];
+                    cand.mv[0][i][1] = inter->mv[1];
+                    cand.ref[0][i] = 0;
+                    cand.ref[1][i] = -1;
+                }
+            } else {
+                for (int i = 0; i < 16; i++) {
+                    cand.mv[0][i][0] = inter->b_mv[0][0];
+                    cand.mv[0][i][1] = inter->b_mv[0][1];
+                    cand.mv[1][i][0] = inter->b_mv[1][0];
+                    cand.mv[1][i][1] = inter->b_mv[1][1];
+                    cand.ref[0][i] = inter->b_ref[0];
+                    cand.ref[1][i] = inter->b_ref[1];
+                }
+            }
+            rd = phx_inter_rd_cost(c, &cand, &cc_cache, &ssd, &bits);
+            c->inter_rd_cost[t] = rd;
+            c->inter_rd_ssd[t] = ssd;
+            c->inter_rd_bits[t] = bits;
+            /* x264 macroblock.c:953-964/966-970 promotes a zero-residual
+             * D_16x16 whose MV equals the pskip MV; rdo.c:176-179 then charges
+             * one lambda2 bit.  B_DIRECT uses the b_skip_mc promotion above. */
+            if (t == PHX_P_L0 && cand.cbp_luma == 0 && cand.cbp_chroma == 0) {
+                int16_t pskip[2];
+                phx_predict_mv_pskip(c->cache, pskip);      /* mvpred.c:166-181 */
+                if (inter->mv[0] == pskip[0] && inter->mv[1] == pskip[1]) {
+                    c->inter_rd_cost[t] = ssd + skipbit;
+                    c->inter_rd_bits[t] = skipbit;
+                }
+            }
+            if (t == PHX_B_L0_L0) c->inter_rd_l0 = c->inter_rd_cost[t];
+            if (t == PHX_B_L1_L1) c->inter_rd_l1 = c->inter_rd_cost[t];
+            if (t == PHX_B_BI_BI) c->inter_rd_bi = c->inter_rd_cost[t];
+        }
+    }
+
+    /* analyse.c:3576-3589 — B final selection.  i_bskip_cost is the starting
+     * cost (no bit term) and the four 16x16 RD costs compete with it in the
+     * exact COPY2_IF_LT order; the 8x8/16x8/8x16 B candidates of :3583-3585
+     * are unavailable to this encoder and stay COST_MAX.  :3404-3415's early
+     * B_SKIP promotion is evaluated by phx_rdo_b_early_skip() below. */
+    if (c->slice_type == PHX_SLICE_B) {
+        phx_rdo_b_rd_t rd;
+        memset(&rd, 0, sizeof(rd));
+        rd.i_bskip_cost = c->inter_rd_bskip;
+        rd.i_cost = inter->cost;
+        rd.i_cost16x16direct = inter->cost_direct;
+        rd.rd_direct = c->inter_rd_direct;
+        rd.rd_l0 = c->inter_rd_l0;
+        rd.rd_l1 = c->inter_rd_l1;
+        rd.rd_bi = c->inter_rd_bi;
+        if (phx_rdo_b_early_skip(&rd, c->mbrd, c->b_early_terminate)) {
+            best = c->inter_rd_bskip;
+            winner = PHX_B_SKIP;
+        } else {
+            best = c->inter_rd_bskip;
+            winner = PHX_B_SKIP;
+            PHX_COPY2_IF_LT(best, c->inter_rd_l0, winner, PHX_B_L0_L0);
+            PHX_COPY2_IF_LT(best, c->inter_rd_l1, winner, PHX_B_L1_L1);
+            PHX_COPY2_IF_LT(best, c->inter_rd_bi, winner, PHX_B_BI_BI);
+            PHX_COPY2_IF_LT(best, c->inter_rd_direct, winner, PHX_B_DIRECT);
+        }
+    } else {
+        /* analyse.c:3205-3210/3221-3223 — P_L0's rd_cost_mb result replaces
+         * the SATD inter cost in the mode comparison.  The intra costs are
+         * already in c->satd_iXX (RD where intra_rd re-costed them). */
+        best = c->inter_rd_cost[PHX_P_L0];
+        winner = PHX_P_L0;
+    }
+
+    /* The override is gated (see phx_g_inter_rd_decision_enable note above):
+     * the byte-exact B goldens stay on the reduced/SATD decision until the
+     * ssd_mb input defects are fixed.  No candidate or cost is fabricated. */
+    if (best < PHX_COST_MAX && phx_g_inter_rd_decision_enable) {
+        inter->cost = best;                                 /* :3210/:3577 */
+        if (c->slice_type == PHX_SLICE_B) {
+            inter->b_type = winner;
+            inter->b_skip = (winner == PHX_B_SKIP);
+        }
+        c->b_inter_rd_winner = 1;
+        /* Publish the winning candidate's full decision.  Re-encode ONLY the
+         * winner (the same deterministic phx_inter_rd_cost path) so its DCT,
+         * nnz, CBP and chroma are exactly the arrays rd_cost_mb() costed —
+         * no coefficient is fabricated.  Skip/direct candidates carry zero
+         * residual by construction (analyse.c:2631/:3346-3350).  SHADER: B. */
+        memset(&c->inter_rd_d, 0, sizeof(c->inter_rd_d));
+        if (winner == PHX_P_L0 || (winner >= PHX_B_L0_L0 &&
+                                    winner <= PHX_B_BI_BI)) {
+            phx_mb_decision_t wd;
+            phx_mb_cache_t wc = *c->cache;
+            int wssd, wbits;
+            memset(&wd, 0, sizeof(wd));
+            wd.mb_type = winner;
+            wd.i_partition = PHX_D_16x16;
+            wd.i_qp = c->qp;
+            if (winner == PHX_P_L0) {
+                for (int i = 0; i < 16; i++) {
+                    wd.mv[0][i][0] = inter->mv[0];
+                    wd.mv[0][i][1] = inter->mv[1];
+                    wd.ref[0][i] = 0; wd.ref[1][i] = -1;
+                }
+            } else {
+                for (int i = 0; i < 16; i++) {
+                    wd.mv[0][i][0] = inter->b_mv[0][0];
+                    wd.mv[0][i][1] = inter->b_mv[0][1];
+                    wd.mv[1][i][0] = inter->b_mv[1][0];
+                    wd.mv[1][i][1] = inter->b_mv[1][1];
+                    wd.ref[0][i] = inter->b_ref[0];
+                    wd.ref[1][i] = inter->b_ref[1];
+                }
+            }
+            (void)phx_inter_rd_cost(c, &wd, &wc, &wssd, &wbits);
+            memcpy(c->inter_rd_d.dct, wd.dct, sizeof(wd.dct));
+            memcpy(c->inter_rd_d.nnz, wd.nnz, sizeof(wd.nnz));
+            c->inter_rd_d.cbp_luma = wd.cbp_luma;
+            c->inter_rd_d.i_cbp = wd.i_cbp;
+        }
+        c->inter_rd_d.mb_type = winner;
+        c->inter_rd_d.i_partition = PHX_D_16x16;
+        c->inter_rd_d.i_qp = c->qp;
+        if (winner == PHX_B_SKIP || winner == PHX_B_DIRECT ||
+            (winner >= PHX_B_L0_L0 && winner <= PHX_B_BI_BI))
+            c->inter_rd_d.cbp_luma = c->inter_rd_d.cbp_chroma = 0;
+        else if (winner == PHX_P_L0 && c->inter_rd_d.cbp_luma == 0)
+            c->inter_rd_d.cbp_chroma = 0;
+        c->inter_rd_d.skip = (winner == PHX_B_SKIP);
+        for (int i = 0; i < 16; i++) {
+            int k = phx_scan8[i];
+            for (int l = 0; l < 2; l++) {
+                if (winner == PHX_B_DIRECT || winner == PHX_B_SKIP) {
+                    c->inter_rd_d.ref[l][i] = c->b_direct.ref[l][i];
+                    c->inter_rd_d.mv[l][i][0] = c->b_direct.mv[l][i][0];
+                    c->inter_rd_d.mv[l][i][1] = c->b_direct.mv[l][i][1];
+                } else if (c->slice_type == PHX_SLICE_B) {
+                    c->inter_rd_d.ref[l][i] = inter->b_ref[l];
+                    c->inter_rd_d.mv[l][i][0] = inter->b_mv[l][0];
+                    c->inter_rd_d.mv[l][i][1] = inter->b_mv[l][1];
+                } else {
+                    c->inter_rd_d.ref[l][i] = l ? -1 : 0;
+                    c->inter_rd_d.mv[l][i][0] = l ? 0 : inter->mv[0];
+                    c->inter_rd_d.mv[l][i][1] = l ? 0 : inter->mv[1];
+                }
+                /* analyse.c:3762-3765/:3825-3846 — analyse_update_cache
+                 * publishes ref/mv into h->mb.cache for the next MB's MVP.
+                 * Deferred to the driver publish block: writing the cache
+                 * here (before the :3221-3223 final comparison) would corrupt
+                 * the neighbours when an intra MB wins instead. */
+            }
+        }
+    }
+
+    if (phx_g_inter_rd_diag_enable &&
+        phx_g_inter_rd_diag_count < 4096) {
+        phx_inter_rd_diag_rec_t *r =
+            &phx_g_inter_rd_diag[phx_g_inter_rd_diag_count++];
+        memset(r, 0, sizeof(*r));
+        r->mb_x = c->mb_x; r->mb_y = c->mb_y;
+        r->qp = c->qp; r->slice_type = c->slice_type;
+        for (int t = 0; t < 19; t++) {
+            r->cost[t] = c->inter_rd_cost[t];
+            r->ssd[t] = c->inter_rd_ssd[t];
+            r->bits[t] = c->inter_rd_bits[t];
+        }
+        r->bskip = c->inter_rd_bskip;
+        r->thresh = c->inter_rd_thresh;
+        r->rd_direct = c->inter_rd_direct;
+        r->rd_l0 = c->inter_rd_l0;
+        r->rd_l1 = c->inter_rd_l1;
+        r->rd_bi = c->inter_rd_bi;
+        r->winner = best < PHX_COST_MAX ? winner : -1;
     }
 }
 
@@ -2959,10 +3319,19 @@ static int phx_macroblock_analyse_impl(const phx_param_t *p,
      * (rdo.c:71-73).  Standalone callers without a live coder keep the
      * documented SATD-only decision (phx_analysis.h TODO); the encoder path
      * (phx_encoder.c passes &h->cabac) always takes the RD path at mbrd>=1. */
-    if (c.mbrd >= 1 && c.cb && c.slice_type == PHX_SLICE_I) {
-        /* TODO: P/B at mbrd>=1 additionally re-cost the inter candidate with
-         * mb_analyse_p_rd()/mb_analyse_b_rd() (analyse.c:3207/:3573); those
-         * RD paths are owned by the RDO stage and are not replicated here. */
+    if (c.mbrd >= 1 && c.cb) {
+        /* analyse.c:2940-2941/:3207/:3573 — mbrd>=1 re-costs both the inter
+         * candidate (mb_analyse_p_rd/mb_analyse_b_rd) and the SATD-selected
+         * intra modes with rd_cost_mb().  The inter RD pass runs first so
+         * phx_analysis_finalise() compares RD costs at :3221-3223 instead of
+         * the reduced/SATD path.  SHADER: B — no entropy state mutation. */
+        /* P-slice inter RD is a TODO: phx_mbencode.c's P_L0 residual path
+         * stages FENC from a 16-stride window that this analysis boundary
+         * cannot reproduce without advancing the live encoder (TODO, cite
+         * analyse.c:2547-2617).  B slices use the byte-exact B1 MC/SSD
+         * helpers (:1795-1907) and take the RD path. */
+        if (c.slice_type == PHX_SLICE_B)
+            phx_analysis_inter_rd(&c, &inter);
         phx_analysis_intra_rd(&c, d, &inter);
         if (c.b_rd_winner) {
             c.satd_i16x16 = c.rd_cost[PHX_I_16x16];
@@ -3004,6 +3373,32 @@ static int phx_macroblock_analyse_impl(const phx_param_t *p,
             for (int i = 0; i < 16; i++)
                 cache->intra4x4_pred_mode[phx_scan8[i]] =
                     d->intra4x4_pred_mode[i];
+        }
+    }
+    if (c.b_inter_rd_winner && d->mb_type == c.inter_rd_d.mb_type) {
+        /* analyse.c:3734-3751 (analyse_update_cache) — publish the exact
+         * inter RD candidate: its coefficients/CBP from rd_cost_mb's encode
+         * and its ref/mv into the neighbour cache for the next MB's MVP.
+         * The ref/mv cache writes were already done in phx_analysis_inter_rd;
+         * mirror the intra4x4 predictor and nnz slots here as well. */
+        memcpy(d->dct, c.inter_rd_d.dct, sizeof(d->dct));
+        memcpy(d->nnz, c.inter_rd_d.nnz, sizeof(d->nnz));
+        d->cbp_luma = c.inter_rd_d.cbp_luma;
+        d->cbp_chroma = c.inter_rd_d.cbp_chroma;
+        d->i_cbp = c.inter_rd_d.i_cbp;
+        d->i_partition = c.inter_rd_d.i_partition;
+        for (int i = 0; i < 48; i++)
+            cache->non_zero_count[i] = d->nnz[i];
+        for (int i = 0; i < 16; i++) {
+            int k = phx_scan8[i];
+            cache->intra4x4_pred_mode[k] = PHX_I_PRED_4x4_DC;
+            /* analyse.c:3762-3765/:3825-3846 — publish the winning candidate's
+             * ref/mv to the neighbour cache only once it has won. */
+            for (int l = 0; l < 2; l++) {
+                cache->ref[l][k] = c.inter_rd_d.ref[l][i];
+                cache->mv[l][k][0] = c.inter_rd_d.mv[l][i][0];
+                cache->mv[l][k][1] = c.inter_rd_d.mv[l][i][1];
+            }
         }
     }
     /* analyse.c:3718-3719 — transform-size decision runs after the final MB
