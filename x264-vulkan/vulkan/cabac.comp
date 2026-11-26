@@ -22,6 +22,11 @@ const int intraType = 5, intra4x4Mode = 6, intraChromaMode = 7;
 const int intra16Macroblock = 8;
 const int codedBlockPattern = 9, qpDelta = 10, transformSize = 11;
 const int macroblockSkip = 12, mvdComponent = 13, inter16Macroblock = 14;
+// Whole-frame direct mode: one operation encodes every macroblock straight
+// from the residual bank. The resident pipeline already leaves the bank in
+// the layout the per-macroblock operations read, so no host-built operation
+// list is needed. Ported from the later tree's cabac.comp (op 15).
+const int wholeFrame = 15;
 const int chromaOffset = 4+16+16*15;
 const int chromaPlaneWords = 2+4+4*15;
 const int macroblockWords = chromaOffset+2+2*chromaPlaneWords;
@@ -477,6 +482,17 @@ void encodeOperations(uint fixture) {
                                                                     op.first, op.second >> 1);
                 break;
             case inter16Macroblock: encodeInter16Macroblock(fixture, coder, op.first, op.second); break;
+            case wholeFrame: {
+                // SHADER: whole-frame resident CABAC. `first` selects inter (1)
+                // or intra (0); `second` packs (width << 16) | macroblock count.
+                int width = (op.second >> 16) & 65535, count = op.second & 65535;
+                for (int mb = 0; mb < count; ++mb) {
+                    int position = (width << 16) | mb;
+                    if (op.first != 0) encodeInter16Macroblock(fixture, coder, 0, position);
+                    else encodeIntra16Macroblock(fixture, coder, 0, position, fixtures[fixture].frame);
+                }
+                break;
+            }
         }
     }
     if (fixtures[fixture].finish != 0) encodeFlush(fixture, coder, fixtures[fixture].frame);
