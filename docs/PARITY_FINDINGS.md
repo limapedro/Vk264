@@ -223,4 +223,12 @@ Instrumenting the B path then found that **every** `phx_dpb_store_frame()` retur
 
 Phoenix's FDEC scratch physically holds only two 16x16 MBs per 16-row band, so it cannot represent a 64-wide reconstructed frame. `phx_encoder` now assembles a full `phx_frame_t` from each MB's luma/chroma (x264's `h->fdec->plane`) and feeds that to the DPB; reference counts are now non-zero and B list0/list1 can be built. B_SKIP still does not fire on real clips (Z1 investigating), and the strict encoder test still expects x264's MVD (0,0) where Phoenix emits (8,0) (M4 investigating).
 
+## F21 — B_SKIP gate fixed; MVD golden authoritative
+
+Z1 instrumented the real-clip B path: direct prediction, fref1 and colocated state were valid, but `phx_mvdirect_probe_bskip()` always returned 0. Cause: `phx_chroma_qp_of()` omitted x264's `+12` table offset (`encoder.c:1585`: `chroma_qp_table = i_chroma_qp_table + 12 + offset`); at luma QP30/offset −2 Phoenix used chroma QP 16 instead of 28, making the B_SKIP decimate threshold far too small. Fixed with exact citation.
+
+Real 64×64/30f medium/CABAC: stream **5931 → 4729 B** (x264 1380), B slices 230–260 → 117–218 B, P slices 28–35 → 13–21 B. Remaining B-slice gap is traced to uninitialised DPB reference samples (value 128), not the analysis gate.
+
+M4 and T4 reconciled the P-MB MVD golden: T4's first instrumentation read `h->mb.mv/mvd` **before** `macroblock_cache_save()` (`encoder.c:2987`) and saw stale IDR zeros. Authoritative after-save value is `(7,0)` qpel (M4's independent ME trace: fullpel `(8,0)`/cost 308 → refined `(7,0)`/cost 298 at subme 7 on x264's deblocked REF). The strict test golden is now `(7,0)`; Phoenix emits `(8,0)` because its ME REF content diverges (raw vs deblocked reconstruction) — source-side, not a golden issue.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
