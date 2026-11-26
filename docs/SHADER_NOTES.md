@@ -12,9 +12,11 @@ here adds a function that is not in the inventory.
 
 | Class | Rule derived from `SHADER_MAPPING.md` | Backend consequence |
 |---|---|---|
-| **A** (104 function definitions + 11 tables) | "one invocation per work item, no cross-item state … inputs passed explicitly, outputs written explicitly, no hidden state" (`:9–25`) | Pure compute shaders. All inputs are UBO/SSBO reads; all outputs are explicit SSBO writes. No atomics needed, no barriers between work items. |
-| **B** (10 functions) | "ordered but local … need neighbour information within a frame/MB but not across frames … workgroup with shared memory or a two-pass reduce" (`:27–38`) | One workgroup per MB (or per MB row), populated from the per-frame MB-state SSBO. Wavefront ordering with a workgroup barrier between diagonals. State dies at frame end. |
-| **C** (94 functions) | "cannot be naively parallelized because they mutate a single evolving state … dedicated serial stage" (`:40–56`) | One logical thread owns the coder cursor, CABAC `state[]`, lookahead `last_nonb` and the NAL byte stream. Dispatch is a single invocation per slice/frame, never per MB. |
+| **A** (185 function definitions + 11 tables) | "one invocation per work item, no cross-item state … inputs passed explicitly, outputs written explicitly, no hidden state" (`:9–25`) | Pure compute shaders. All inputs are UBO/SSBO reads; all outputs are explicit SSBO writes. No atomics needed, no barriers between work items. Now includes the full-pel ME candidate kernels (`phx_me.c`) and the lowres SAD/SATD/hpel kernels (`phx_lowres.c`). |
+| **B** (109 functions) | "ordered but local … need neighbour information within a frame/MB but not across frames … workgroup with shared memory or a two-pass reduce" (`:27–38`) | One workgroup per MB (or per MB row), populated from the per-frame MB-state SSBO. Wavefront ordering with a workgroup barrier between diagonals. State dies at frame end. Now includes analysis, MB reconstruction, chroma, deblock, MC and the size-only RDO accumulator. |
+| **C** (211 functions) | "cannot be naively parallelized because they mutate a single evolving state … dedicated serial stage" (`:40–56`) | One logical thread owns the coder cursor, CABAC `state[]`, lookahead `last_nonb`, rate-control state and the NAL byte stream. Dispatch is a single invocation per slice/frame, never per MB. |
+
+Counts are the full working-tree scan recorded in `docs/FUNCTION_PORTS.md` (505 definitions across all 27 `src/*.c` files at the time of that scan; re-scan before using them as a gate).
 
 Host lifecycle functions (allocation/free, preset/profile application,
 SPS/PPS init) are C because they have no work item; their *data* is read by A
@@ -25,31 +27,44 @@ produces — e.g. `phx_frame_init_lowres` is A while `phx_frame_new` is C.
 
 ```
 [C serial]  param_default / apply_preset / apply_profile / finalize   (4 × C)
-[C serial]  sps_init / pps_init                                       (2 × C)
+[C serial]  sps_init / pps_init / sei_version_write                   (3 × C)
+[C serial]  ratecontrol configure/start/end (WP8, ported)              (C)
 [A]         analyse_init_costs, init_costs, mb_analyse_init_qp,
             mb_analyse_load_costs, bs_size_*                          (6 × A)
-[A]         frame_init_lowres: core filter + 4-plane border expansion (4 × A)
+[A]         frame_init_lowres: core filter + 4-plane border expansion (5 × A)
 [A]         align_stride / align_plane_size (folded into host setup)   (2 × A)
 [B]         predictor dispatch tables (5 × *_init, filled once)        (5 × B)
 --- frame loop ---------------------------------------------------------
-[C]         lookahead / slicetype (NOT YET PORTED — WP3)
+[C]         lookahead queue: put_frame -> get_frames -> B/BREF decide   (13 × C)
+[A]         lowres SATD/SAD kernels: lr_sad8, lr_satd_8x4/8,
+            lr_get_ref, lr_bidir_avg, lr_copy_fenc, lr_eval_*          (~15 × A)
+[A]         full-pel ME: phx_me16 + COST_MV[_X3/_X4_DIR], BITS_MVD      (9 × A)
+[B]         frame/path cost accumulation (lr_mb_cost, lowres_frame_cost,
+            lowres_path_cost)                                          (3 × C/B)
 [B]         cache_load_neighbours -> cache_load  (per-MB wavefront)
 [A]         intra predictors (49), DCT/IDCT/Hadamard (21), quant (19)  (89 × A)
-[B]         quant flat-CQM table init                                  (1 × B)
-[A/B]       intra/inter analysis, transform RD         (NOT YET PORTED — WP4–6)
+[A]         MC sample kernels (phx_mc_pixel_avg/copy/luma/chroma)      (A)
+[B]         quant flat-CQM table init, RDO size-only accumulator       (B)
+[A/B/C]     analysis -> mbencode -> chroma decision producers          (B, A helper)
+[B]         deblock strength + edge filters (8 edges / MB)             (B)
 [B]         backup_intra -> cache_save           (per-MB wavefront)
 [boundary]  phx_mb_decision_t[] written here; read only by the stage below
-[C]         CABAC syntax (30), CAVLC tokens (15), slice header (2)      (47 × C)
-[C]         RBSP/NAL assembly + headers                                 (C)
-[C]         encoder envelope: open/headers/encode/close                 (10 × C)
+[C]         trellis QNS: phx_rdo_*_trellis + size-only bit-cost API     (C, B)
+[C]         CABAC syntax (30), CAVLC tokens (15), CAVLC MB syntax (12),
+            slice header (2)                                           (59 × C)
+[C]         RBSP/NAL assembly + headers + version SEI                  (C)
+[C]         encoder envelope: open/headers/encode/close + frame loop   (32 × C)
 ------------------------------------------------------------------------
 ```
 
-This mirrors `SHADER_MAPPING.md:58–65`, with one addition: the B stages and
-the A mode-decision stages both sit between the lowres pass and the entropy
-pass, and both use the same per-frame MB-state buffer. The predictor and DCT
-stages were added by parallel workers while this design was written; the
-encoder envelope is the serial host driver that wires UBO 0 and SSBO 0–2.
+This mirrors `SHADER_MAPPING.md:58–65`, with three additions since the first
+draft: (1) the lookahead/slicetype owner is now ported and emits B/BREF, so it
+is a real C stage rather than a placeholder; (2) the lowres SATD/hpel and
+full-pel ME kernels are Class A producers feeding a Class C cost accumulator;
+(3) the trellis QNS module exposes a **size-only** RDO API whose accumulator is
+Class B (per-MB local `state[460]` + `f8_bits_encoded`) while the coefficient
+state machine stays Class C. The encoder envelope is the serial host driver
+that wires UBO 0–2 and SSBO 0–7.
 
 ## 3. Buffers and SSBO layout
 
@@ -169,6 +184,53 @@ byte buffer. Exactly one owner thread. The output RBSP and NAL descriptors
 - `edge[36]` for `phx_predict_8x8_filter` and its consumers is invocation-local
   (`phx_predict.c:541`, `:536–540`), produced before the 8x8 prediction modes.
 
+### 3.10 SSBO 5 — lowres per-MB cost/MV mirrors (`phx_lowres.h:23–28`)
+x264 keeps one MV and cost per 8x8 block (`reference/x264/common/frame.h:103–127`);
+`phx_frame_t` exposes only `lowres_mvs[2][bframes+1][2]`. The port therefore owns
+a per-frame mirror in `struct phx_lowres` (`phx_lowres.c:53–72`): `mvs[2][ndist]`,
+`mv_costs[2][ndist]`, `lowres_costs[(bframes+2)^2]` and the aliased
+`intra_cost[]`, plus `b_intra_calculated` (`frame.h:126`). These are linear
+`mb_count`-indexed arrays allocated by `lr_get_frame()` (`common/frame.c:211–220,
+285–288`) and cleared by `lr_frame_clear()`. In the shader they are a per-frame
+SSBO: A-stage lowres kernels write one block's slot, the C-stage frame/path
+cost scan reads them in frame order. `phx_lowres_frame_reset()` is the explicit
+invalidation entry point (`mc.c:473–481`).
+
+### 3.11 SSBO 6 — ME / lowres search context (`phx_me.h`, `phx_lowres.h`)
+`phx_me16()` reads two luma planes plus `p_cost_mv` from SSBO 0 and writes one
+`x264_me_t`-shaped result (`mv`, `i_sad`, `i_cost`, `i_ref`) into a per-MB slot.
+`phx_lr_me_t` (`phx_lowres.c:43–62`) is the lowres analogue: hpel reference
+planes, `bmx/bmy`, `cost`, `bits` and the `mvp[2]` predictor list. In a shader
+both are invocation-local scratch for the A-stage search; only the winning
+MV/cost is published to SSBO 5. `phx_mc_hpel_cache`
+(`phx_mc.c:193–195`, invalidated by `phx_mc_hpel_invalidate()`) is host-owned
+scratch, not shader state — hpel planes must be uploaded as SSBO 1 views.
+
+### 3.12 SSBO 7 / UBO 2 — RDO size-only API and trellis state
+`phx_cabac_size_t` (`phx_rdo.h:153–156`) is exactly the two fields x264's
+`COPY_CABAC` copies (`encoder/rdo.c:71–73`): `state[0..459]` and
+`f8_bits_encoded`. It is **not** a second arithmetic coder — no `i_low`,
+`i_range`, queue or output bytes are touched. `phx_rdo_size_init` seeds it from
+the live coder or rebuilds contexts; `phx_rdo_size_decision[_noup]`,
+`_terminal`, `_bypass`, `_ue_bypass`, `_intra4x4_pred_mode` and
+`_block_residual_cbf` advance it with the RDO_SKIP_BS==1 bit costs
+(`common/cabac.h:99–124`, `encoder/rdo.c:31–69,315–347`). Allocate one
+`phx_cabac_size_t` per MB workgroup (Class B), never one per bin. The trellis
+node arrays (`phx_trellis_node_t`, `phx_rdo.c:586–834`) stay invocation-local
+for the Class C `phx_rdo_quant_trellis_cabac/cavlc` state machine.
+UBO 2 is `phx_rdo_config_t` (`phx_rdo.h:80–87`): chroma QP offset, psy-trellis
+(FIX8), interlaced flag, block index and the two `fenc_dct` pointers; it is
+written once by the host via `phx_rdo_set_config()` and is immutable during a
+dispatch.
+
+### 3.13 SSBO 8 — deblock strength and rate-control scalars
+`phx_macroblock_deblock_strength()` (`common/deblock.c:277–304`) fills one
+`bs[4][4]` edge array per 4x4 edge; the eight edges of an MB are independent
+(Class B within one workgroup). `phx_ratecontrol_*` keeps only scalar per-frame
+QP / QP-offset state (`phx_ratecontrol.h:22`), uploaded as UBO scalars; the AQ
+pass writes one independent offset per MB. Neither introduces a cross-frame
+hidden global.
+
 ## 4. Class A — concrete stages
 
 1. **Configuration stage** (host or one tiny compute dispatch):
@@ -201,10 +263,29 @@ byte buffer. Exactly one owner thread. The output RBSP and NAL descriptors
    function (`phx_quant_tables_init`, flat-CQM table construction matching
    `common/set.c:73–205`). They are per-coefficient/per-block and seek-safe;
    `phx_shift`/`phx_div` are pure integer helpers (`common/set.c:28–29`).
-6. **Future A work (WP3–WP6):** `slicetype_mb_cost`/`macroblock_tree`
-   propagation and the still-missing per-MB analysis functions. Each is one
-   invocation per block/MB over UBO 0/1 and SSBO 1, writing only its own slot
-   in SSBO 3 or SSBO 2.
+6. **Full-pel ME stage (WP5, ported):** `phx_me16` and its helpers
+   (`phx_pixel_sad_16x16`, `phx_bits_mvd`, `phx_cost_mv`,
+   `phx_cost_mv_x4_dir`/`_x3_dir`, `phx_check_mv_range`,
+   `phx_mv_cost_formula`, `phx_resolve_cost_mv`) implement x264
+   `encoder/me.c:60–107,182–419`. One invocation per MB: read fenc/fref from
+   SSBO 1 and `p_cost_mv` from SSBO 0, run DIA/HEX over full-pel candidates,
+   write one MV/cost result to SSBO 6. No sub-pel, no global search state, no
+   frame history — `SHADER: A` (`phx_me.h:33`).
+7. **Lowres SATD/hpel stage (WP3, ported):** `lr_sad8`, `lr_satd_8x4`,
+   `lr_satd8`, `lr_get_ref`, `lr_bidir_avg`, `lr_copy_fenc`, `lr_eval_full`,
+   `lr_eval_spel_sad`/`lr_eval_spel_satd`, `lr_check_predictors`,
+   `lr_fullpel_search`, `lr_refine_subpel`, `lr_motion_search`, `lr_try_bidir`
+   (`common/pixel.c:49–71,265–332`, `common/mc.c:63–99,221–249`,
+   `encoder/me.c:63–107,218–275,320–419,826–963`,
+   `encoder/slicetype.c:579–709`). One work item per lowres 8x8 block:
+   pure SAD/SATD reductions, hpel plane selection and MV evaluation; results
+   go to SSBO 5/6. Cost accumulation (`lr_mb_cost`,
+   `phx_lowres_frame_cost`, `phx_lowres_path_cost`) remains the serial Class C
+   consumer (`phx_lowres.h:30–33`).
+8. **Future A work:** `slicetype_mb_cost`/`macroblock_tree` propagation and the
+   still-missing per-MB analysis functions. Each is one invocation per
+   block/MB over UBO 0/1 and SSBO 1, writing only its own slot in SSBO 3 or
+   SSBO 2.
 
 ## 5. Class B — workgroup stages and neighbour state
 
@@ -232,12 +313,17 @@ Two independent serial owners, never merged (the entropy owner now has three
 ported modules: `cabac`, `cabac_syntax`, `cavlc`, plus `slice` for the slice
 header):
 
-- **Lookahead / slice-type (frame module, WP3, not yet ported).**
-  `x264_slicetype_analyse` (`slicetype.c:1473`) walks `lookahead->last_nonb`
-  in order; `scenecut` (`:1430`) accumulates per-frame flags;
-  `x264_slicetype_decide` (`:1745`) assigns types and frame_num/POC;
-  `x264_lookahead_put_frame`/`_get_frames` (`lookahead.c:192/223`) queue and
-  release frames. `SHADER_MAPPING.md:49–50` is explicit that these are serial.
+- **Lookahead / slice-type (WP3, now ported).**
+  `phx_lh_frame_cost`/`phx_lh_path_cost` (`slicetype.c:836–995/1288–1327`),
+  `phx_lh_scenecut_internal`/`phx_lh_scenecut` (`:1384–1471`),
+  `phx_lh_slicetype_analyse` (`:1473–1742`) and
+  `phx_lh_slicetype_decide` (`:1745–1985`) walk `last_nonb`, accumulate
+  scenecut flags and assign types plus frame_num/POC in order.
+  `phx_lookahead_put_frame`/`phx_lookahead_get_frames_full`
+  (`lookahead.c:192/223–254`) queue and release frames; the A-stage lowres
+  kernels are called underneath but the queue and decision are serial.
+  `phx_lookahead_get_frames_ex` preserves the BREF tag on the reference B
+  frame. `SHADER_MAPPING.md:49–50` is explicit that these are serial.
   Their state is the lookahead window only — no CABAC state.
 - **Entropy / NAL (bitstream, cabac, cabac_syntax, cavlc, slice, headers
   modules).** `phx_cabac_context_init`
@@ -254,6 +340,23 @@ header):
   `phx_cabac_encode_flush`
   uses `frame & 31` (`phx_cabac.c:146`), so the frame number must be supplied to
   the serial stage — a shader cannot infer it from the decision array.
+- **CAVLC MB syntax (cavlc_syntax module, WP7, ported).**
+  `phx_cavlc_mb_init`, `phx_cavlc_predict_mv`, `phx_cavlc_mvd`,
+  `phx_cavlc_8x8_mvd`, `phx_cavlc_mb_header_i/p_l0/p_8x8/b_8x8/b_inter` and
+  `phx_cavlc_mb_header` (`encoder/cavlc.c:241–477,487–595`) write MB headers
+  and MVDs into the same ordered RBSP. `SHADER: C — all writers are strictly
+  serial; no parallel stage may reorder the bit stream` (`phx_cavlc_syntax.c:4`).
+  The borrowed `phx_mb_cache_t` is the neighbour boundary, not a second stream.
+- **Trellis QNS and rate control (rdo / ratecontrol modules).**
+  `phx_rdo_quant_trellis_cabac/cavlc` and the four `phx_quant_*_trellis`
+  wrappers (`encoder/rdo.c:641–1184`) run the coefficient state machine in scan
+  order; the RDO_SKIP_BS bit counters come from the Class **B** size-only
+  accumulator in §3.12, never from a copied live coder. `phx_rdo_init` builds
+  the flat-CQM tables once (B); the table accessors
+  (`phx_rdo_quant4/8_mf`, `*_bias0`, `*_unquant*`) are immutable A lookups.
+  `phx_ratecontrol_configure/start/end/mb_qp` (`encoder/ratecontrol.c`) are
+  serial per-frame scalar passes; their outputs are UBO scalars consumed by
+  the MB stages.
 
 ## 7. Seek-safety rules
 
@@ -267,6 +370,10 @@ header):
 | CABAC syntax / CAVLC / slice header (C) | MB in scan order from slice start | consume `phx_mb_decision_t[]` in scan order; CAVLC token tables (`common/vlc.c:33/35/74`) built once; never resume mid-MB |
 | RBSP / NAL (C) | NAL start | `phx_bs_init` zeros the buffer; `nal_escape` needs the two preceding bytes, so never begin mid-RBSP |
 | `phx_mb_decision_t[]` | same frame as the entropy stage | fully regenerated by A/B before the serial stage reads it; never cached across frames |
+| ME / lowres kernels (A) | any frame with valid fenc/fref | pure per-block search; re-run `lr_frame_clear` / `phx_lowres_frame_reset` on the SSBO 5 mirrors before reuse |
+| Lowres frame/path cost (C) | lookahead-window boundary | re-prime the lowres cost/MV mirrors; the B-discount and path prefix sum start from frame 0 of the window |
+| RDO size-only accumulator (B) | one MB workgroup | `phx_rdo_size_init` reseeds `state[460]` + `f8_bits_encoded`; never carry it across MBs |
+| Trellis QNS / rate control (C) | MB in scan order / frame boundary | set UBO 2 config before dispatch; `phx_ratecontrol_*` is invoked once per decided/finished frame |
 
 The rule behind the table: **A and B stages are seek-safe because their inputs
 are explicit and frame-local; C stages are seek-safe only at their documented
@@ -274,10 +381,32 @@ reset boundary.** That is precisely why `DATA_STRUCTURES.md:4–6` forbids the
 old `vk_cur_*` globals — a global hidden state would make the reset boundary
 unrepresentable.
 
-## 8. Function → stage routing (all 208 ported function definitions — working-tree snapshot)
+## 8. Function → stage routing (full working-tree snapshot)
+
+The authoritative per-function index, with exact x264 `file:line`, inputs,
+outputs, mutated state, seek-safety and class for **every** definition in
+`src/*.c`, is `docs/FUNCTION_PORTS.md` (505 definitions at this scan). The
+table below is the compact stage map; new modules added since the first draft
+are listed first so the A-stage ME/lowres kernels and the B/C RDO API are
+explicit.
 
 | Function (module) | Class | Stage / buffer |
 |---|---|---|
+| `phx_me16`, `phx_cost_mv`, `phx_cost_mv_x3_dir`/`_x4_dir`, `phx_bits_mvd`, `phx_check_mv_range`, `phx_pixel_sad_16x16` (me) | A | full-pel DIA/HEX search → SSBO 6 result slot |
+| `lr_sad8`, `lr_satd_8x4`, `lr_satd8`, `lr_get_ref`, `lr_bidir_avg`, `lr_copy_fenc`, `lr_eval_full`, `lr_eval_spel_sad`/`_satd`, `lr_check_predictors`, `lr_fullpel_search`, `lr_refine_subpel`, `lr_motion_search`, `lr_try_bidir` (lowres) | A | lowres SAD/SATD + hpel/qpel kernels → SSBO 5/6 |
+| `lr_mb_cost`, `phx_lowres_frame_cost`, `phx_lowres_path_cost`, `phx_slicetype_frame_cost`, `phx_lowres_new`/`_delete`/`_frame_reset`/`_set_mbtree` (lowres) | C | frame/path cost accumulation, B discount, prefix sum |
+| `phx_lh_frame_cost`, `phx_lh_path_cost`, `phx_lh_scenecut*`, `phx_lh_slicetype_analyse`/`_decide`, `phx_lookahead_*` (lookahead) | C | serial lookahead queue, scenecut, B/BREF decision |
+| `phx_macroblock_analyse`, `phx_macroblock_analyse_slice`, `phx_search_i16/i8/i4`, `phx_analysis_*` (analysis) | B/A | per-MB decision producers → SSBO 3 |
+| `phx_macroblock_encode_ex`, `phx_macroblock_encode`, `phx_mb_encode_*`, `phx_mb_store_block` (mbencode) | B | per-MB reconstruction → SSBO 3 |
+| `phx_macroblock_encode_chroma`, `phx_chroma_*` (chroma) | B | 4:2:0 chroma DC/AC → SSBO 3 chroma fields |
+| `phx_db_*`, `phx_deblock_*`, `phx_frame_deblock*` (deblock) | B/A | deblock strength + eight edge filters per MB |
+| `phx_mc_*` (mc) | B/A | hpel filter + MC sample kernels over SSBO 1 |
+| `phx_cavlc_mb_init`, `phx_cavlc_predict_mv`, `phx_cavlc_mvd`, `phx_cavlc_8x8_mvd`, `phx_cavlc_mb_header*` (cavlc_syntax) | C | serial CAVLC MB-header/MVD bins |
+| `phx_rdo_size_init`, `phx_rdo_size_decision[_noup]`, `phx_rdo_size_terminal`/`_bypass`/`_ue_bypass`, `phx_rdo_size_intra4x4_pred_mode`, `phx_rdo_size_block_residual_cbf`, `phx_rdo_size_partition_i4x4` (rdo) | B | size-only RDO accumulator → SSBO 7 (per-MB workgroup) |
+| `phx_rdo_quant4/8_mf`, `phx_rdo_unquant4/8_mf`, `phx_rdo_size_unary`, `phx_rdo_transition_unary`, `phx_rdo_size_5ones`, `phx_rdo_transition_5ones` (rdo) | A | immutable flat-CQM / cost tables → UBO 1 |
+| `phx_rdo_init`, `phx_rdo_set_config`, `phx_rdo_get_config`, `phx_rdo_quant_trellis_cabac/cavlc`, `phx_quant_*_trellis` (rdo) | C/B | trellis QNS state machine + config → UBO 2 |
+| `phx_ratecontrol_*`, `rc_*` (ratecontrol) | C | serial per-frame QP/CRF scalars → UBO scalars |
+| `phx_sei_*` (sei) | C | serial header stage, version SEI |
 | `phx_param_default` (param) | C | config → UBO 0 |
 | `phx_param_apply_preset` (param) | C | config → UBO 0 |
 | `phx_param_finalize` (param) | C | config → UBO 0 |
@@ -371,93 +500,210 @@ unrepresentable.
 
 ### 8.1 Full function-name index by class (name coverage check)
 
-Every function definition in `src/*.c` appears exactly once below; compound
-rows in §8 are expanded here so generated indices can verify coverage.
+Every function definition currently in `src/*.c` appears exactly once below.
+This index is copied from `docs/FUNCTION_PORTS.md`; duplicate static names are
+listed once per defining file.
 
-- **A (104 definitions):** `phx_bs_size_ue`, `phx_bs_size_se` (bitstream);
-  `phx_bs_size_te`, `phx_init_costs`, `phx_analyse_init_costs`,
-  `phx_mb_analyse_init_qp`, `phx_mb_analyse_load_costs` (cost);
-  `phx_align_stride`, `phx_align_plane_size`, `phx_plane_expand_border`,
-  `phx_frame_expand_border_lowres`, `phx_frame_init_lowres_core`,
-  `phx_frame_init_lowres` (frame); `phx_clz` (cabac);
-  `phx_clip_pixel` (dct), `phx_pixel_sub_wxh`, `phx_dct4x4dc`,
-  `phx_idct4x4dc`, `phx_dct2x4dc`, `phx_sub4x4_dct`, `phx_sub8x8_dct`,
-  `phx_sub16x16_dct`, `phx_sub4x4_dct_dc`, `phx_sub8x8_dct_dc`,
-  `phx_sub8x16_dct_dc`, `phx_add4x4_idct`, `phx_add8x8_idct`,
-  `phx_add16x16_idct`, `phx_sub8x8_dct8`, `phx_sub16x16_dct8`,
-  `phx_add8x8_idct8`, `phx_add16x16_idct8`, `phx_add4x4_idct_dc`,
-  `phx_add8x8_idct_dc`, `phx_add16x16_idct_dc` (dct);
-  `phx_clip_pixel` (predict), `phx_store4`, `phx_predict_16x16_dc`,
-  `phx_predict_16x16_dc_left`, `phx_predict_16x16_dc_top`,
-  `phx_predict_16x16_dc_128`, `phx_predict_16x16_h`, `phx_predict_16x16_v`,
-  `phx_predict_16x16_p`, `phx_predict_8x8c_dc_128`,
-  `phx_predict_8x8c_dc_left`, `phx_predict_8x8c_dc_top`,
-  `phx_predict_8x8c_dc`, `phx_predict_8x8c_h`, `phx_predict_8x8c_v`,
-  `phx_predict_8x8c_p`, `phx_predict_8x16c_dc_128`,
-  `phx_predict_8x16c_dc_left`, `phx_predict_8x16c_dc_top`,
-  `phx_predict_8x16c_dc`, `phx_predict_8x16c_h`, `phx_predict_8x16c_v`,
-  `phx_predict_8x16c_p`, `phx_predict_4x4_dc_128`,
-  `phx_predict_4x4_dc_left`, `phx_predict_4x4_dc_top`, `phx_predict_4x4_dc`,
-  `phx_predict_4x4_h`, `phx_predict_4x4_v`, `phx_predict_4x4_ddl`,
-  `phx_predict_4x4_ddr`, `phx_predict_4x4_vr`, `phx_predict_4x4_hd`,
-  `phx_predict_4x4_vl`, `phx_predict_4x4_hu`, `phx_predict_8x8_filter`,
-  `phx_predict_8x8_fill`, `phx_predict_8x8_dc_128`,
-  `phx_predict_8x8_dc_left`, `phx_predict_8x8_dc_top`, `phx_predict_8x8_dc`,
-  `phx_predict_8x8_h`, `phx_predict_8x8_v`, `phx_predict_8x8_ddl`,
-  `phx_predict_8x8_ddr`, `phx_predict_8x8_vr`, `phx_predict_8x8_hd`,
-  `phx_predict_8x8_vl`, `phx_predict_8x8_hu` (predict);
-  `phx_shift`, `phx_div`, `phx_quant_8x8`, `phx_quant_4x4`,
-  `phx_quant_4x4x4`, `phx_quant_4x4_dc`, `phx_quant_2x2_dc`,
-  `phx_dequant_4x4`, `phx_dequant_8x8`, `phx_dequant_4x4_dc`,
-  `phx_idct_dequant_2x4_dc`, `phx_idct_dequant_2x4_dconly`,
-  `phx_optimize_chroma_idct_dequant_2x4`,
-  `phx_optimize_chroma_idct_dequant_2x2`, `phx_optimize_chroma_round`,
-  `phx_optimize_chroma_dc_internal`, `phx_optimize_chroma_2x2_dc`,
-  `phx_optimize_chroma_2x4_dc`, `phx_denoise_dct` (quant);
-  `phx_slice_group_change_bits` (slice).
-- **B (10 definitions):** `phx_macroblock_cache_load_neighbours`,
-  `phx_macroblock_cache_load`, `phx_macroblock_backup_intra`,
-  `phx_macroblock_cache_save` (mbcache); `phx_predict_16x16_init`,
-  `phx_predict_8x8c_init`, `phx_predict_8x16c_init`, `phx_predict_4x4_init`,
-  `phx_predict_8x8_init` (predict); `phx_quant_tables_init` (quant).
-- **C (94 definitions):** `phx_param_default`, `phx_param_apply_preset`,
-  `phx_param_finalize`, `phx_param_apply_profile` (param);
-  `phx_analyse_free_costs` (cost); `phx_frame_new`, `phx_frame_delete` (frame);
-  `phx_mb_state_new`, `phx_mb_state_delete` (mbcache);
-  `phx_bs_init`, `phx_bs_pos`, `phx_bs_write`, `phx_bs_write1`,
-  `phx_bs_align_0`, `phx_bs_align_10`, `phx_bs_write_ue_big`,
-  `phx_bs_write_ue`, `phx_bs_write_se`, `phx_bs_write_te`,
-  `phx_bs_rbsp_trailing`, `phx_nal_escape`, `phx_nal_encode` (bitstream);
-  `phx_cabac_context_init`, `phx_cabac_encode_init_core`,
-  `phx_cabac_encode_init`, `phx_cabac_putbyte`, `phx_cabac_encode_renorm`,
-  `phx_cabac_encode_decision`, `phx_cabac_encode_bypass`,
-  `phx_cabac_encode_ue_bypass`, `phx_cabac_encode_terminal`,
-  `phx_cabac_encode_flush` (cabac);
-  `phx_sps_init`, `phx_pps_init`, `phx_sps_write`, `phx_pps_write`,
-  `phx_encoder_headers` (headers);
-  `phx_encoder_validate`, `phx_encoder_release`, `phx_encoder_open`,
-  `phx_open`, `phx_headers`, `phx_encoder_header_bytes`, `phx_encode`,
-  `phx_encoder_encode`, `phx_encoder_close`, `phx_close` (encoder);
-  `phx_coeff_last4`, `phx_coeff_last8`, `phx_coeff_last15`,
-  `phx_coeff_last16`, `phx_coeff_last64`, `phx_cabac_mb_init`,
-  `phx_predict_intra4x4_mode`, `phx_cabac_mb_type_intra`,
-  `phx_cabac_intra4x4_pred_mode`, `phx_cabac_intra_chroma_pred_mode`,
-  `phx_cabac_subpartition_p`, `phx_cabac_subpartition_b`,
-  `phx_cabac_transform_size`, `phx_cabac_cbp_luma`, `phx_cabac_cbp_chroma`,
-  `phx_cabac_qp_delta`, `phx_cabac_mb_skip`, `phx_predict_mv`,
-  `phx_cabac_mvd_sum`, `phx_cache_mvd`, `phx_cabac_mvd_cpn`, `phx_cabac_mvd`,
-  `phx_cabac_8x8_mvd`, `phx_cabac_ref`, `phx_cabac_mb_header_i`,
-  `phx_cabac_mb_header_p`, `phx_cabac_mb_header_b`,
-  `phx_cabac_cbf_ctxidxinc`, `phx_cabac_block_residual`,
-  `phx_cabac_block_residual_cbf` (cabac_syntax);
-  `phx_clz`, `phx_cavlc_coeff_last`, `phx_cavlc_coeff_level_run`,
-  `phx_cavlc_init_level_token`, `phx_cavlc_init_run_before`,
-  `phx_cavlc_init`, `phx_cavlc_write_vlc`, `phx_cavlc_write_vlc_large`,
-  `phx_cavlc_block_residual_escape`, `phx_cavlc_block_residual_internal`,
-  `phx_cavlc_block_residual`, `phx_cavlc_coeff0`,
-  `phx_cavlc_coeff_token_at`, `phx_cavlc_total_zeros_at`,
-  `phx_cavlc_total_zeros_dc_at` (cavlc);
-  `phx_slice_header_init`, `phx_slice_header_write` (slice).
+#### Class A — 185 definitions
+
+`phx_clip3` (`analysis`), `phx_zigzag_scan4` (`analysis`), `phx_abs2` (`analysis`), `phx_satd4` (`analysis`),
+`phx_satd8x4` (`analysis`), `phx_satd_4x4` (`analysis`), `phx_sa8d_8x8` (`analysis`),
+`phx_pixel_sad_16x16` (`analysis`), `phx_inter_sad` (`analysis`), `phx_i16_modes` (`analysis`),
+`phx_chroma_modes` (`analysis`), `phx_i8_modes` (`analysis`), `phx_i4_modes` (`analysis`),
+`phx_predict16` (`analysis`), `phx_predict4_v_fixed` (`analysis`), `phx_predict4` (`analysis`),
+`phx_predict8` (`analysis`), `phx_encode_i4` (`analysis`), `phx_encode_i8` (`analysis`),
+`phx_encode_i16` (`analysis`), `phx_pixel_sad_4x4` (`analysis`), `phx_rdo_satd_ac_4x4` (`analysis`),
+`phx_rdo_ssd4` (`analysis`), `phx_analysis_chroma_load` (`analysis`), `phx_bs_size_ue` (`bitstream`),
+`phx_bs_size_se` (`bitstream`), `phx_clz` (`cabac`), `phx_bs_size_te` (`cost`), `phx_init_costs` (`cost`),
+`phx_analyse_init_costs` (`cost`), `phx_mb_analyse_init_qp` (`cost`), `phx_mb_analyse_load_costs` (`cost`),
+`phx_clip_pixel` (`dct`), `phx_pixel_sub_wxh` (`dct`), `phx_dct4x4dc` (`dct`), `phx_idct4x4dc` (`dct`),
+`phx_dct2x4dc` (`dct`), `phx_sub4x4_dct` (`dct`), `phx_sub8x8_dct` (`dct`), `phx_sub16x16_dct` (`dct`),
+`phx_sub4x4_dct_dc` (`dct`), `phx_sub8x8_dct_dc` (`dct`), `phx_sub8x16_dct_dc` (`dct`),
+`phx_add4x4_idct` (`dct`), `phx_add8x8_idct` (`dct`), `phx_add16x16_idct` (`dct`), `phx_sub8x8_dct8` (`dct`),
+`phx_sub16x16_dct8` (`dct`), `phx_add8x8_idct8` (`dct`), `phx_add16x16_idct8` (`dct`),
+`phx_add4x4_idct_dc` (`dct`), `phx_add8x8_idct_dc` (`dct`), `phx_add16x16_idct_dc` (`dct`),
+`phx_db_clip3` (`deblock`), `phx_db_clip_pixel` (`deblock`), `phx_db_table_index` (`deblock`),
+`phx_deblock_alpha` (`deblock`), `phx_deblock_beta` (`deblock`), `phx_deblock_tc0` (`deblock`),
+`phx_db_is_intra` (`deblock`), `phx_db_is_16x16` (`deblock`), `phx_db_chroma_qp` (`deblock`),
+`phx_align_stride` (`frame`), `phx_align_plane_size` (`frame`), `phx_plane_expand_border` (`frame`),
+`phx_frame_expand_border_lowres` (`frame`), `phx_frame_expand_border_chroma` (`frame`),
+`phx_frame_init_lowres_core` (`frame`), `phx_frame_init_lowres` (`frame`), `lr_sad8` (`lowres`),
+`lr_satd_8x4` (`lowres`), `lr_satd8` (`lowres`), `lr_get_ref` (`lowres`), `lr_bidir_avg` (`lowres`),
+`lr_copy_fenc` (`lowres`), `lr_bits_full` (`lowres`), `lr_bits_spel` (`lowres`), `lr_eval_full` (`lowres`),
+`lr_eval_spel_sad` (`lowres`), `lr_eval_spel_satd` (`lowres`), `lr_in_fpel_range` (`lowres`),
+`lr_init_me` (`lowres`), `lr_check_predictors` (`lowres`), `lr_fullpel_search` (`lowres`),
+`lr_refine_subpel` (`lowres`), `lr_motion_search` (`lowres`), `lr_try_bidir` (`lowres`),
+`phx_predict4_v_fixed` (`mbencode`), `phx_mc_clip_pixel` (`mc`), `phx_mc_pixel_avg` (`mc`),
+`phx_mc_copy` (`mc`), `phx_pixel_sad_16x16` (`me`), `phx_mv_cost_formula` (`me`),
+`phx_resolve_cost_mv` (`me`), `phx_check_mv_range` (`me`), `phx_bits_mvd` (`me`), `phx_cost_mv` (`me`),
+`phx_cost_mv_x4_dir` (`me`), `phx_cost_mv_x3_dir` (`me`), `phx_me16` (`me`), `phx_clip_pixel` (`predict`),
+`phx_store4` (`predict`), `phx_predict_16x16_dc` (`predict`), `phx_predict_16x16_dc_left` (`predict`),
+`phx_predict_16x16_dc_top` (`predict`), `phx_predict_16x16_dc_128` (`predict`),
+`phx_predict_16x16_h` (`predict`), `phx_predict_16x16_v` (`predict`), `phx_predict_16x16_p` (`predict`),
+`phx_predict_8x8c_dc_128` (`predict`), `phx_predict_8x8c_dc_left` (`predict`),
+`phx_predict_8x8c_dc_top` (`predict`), `phx_predict_8x8c_dc` (`predict`), `phx_predict_8x8c_h` (`predict`),
+`phx_predict_8x8c_v` (`predict`), `phx_predict_8x8c_p` (`predict`), `phx_predict_8x16c_dc_128` (`predict`),
+`phx_predict_8x16c_dc_left` (`predict`), `phx_predict_8x16c_dc_top` (`predict`),
+`phx_predict_8x16c_dc` (`predict`), `phx_predict_8x16c_h` (`predict`), `phx_predict_8x16c_v` (`predict`),
+`phx_predict_8x16c_p` (`predict`), `phx_predict_4x4_dc_128` (`predict`),
+`phx_predict_4x4_dc_left` (`predict`), `phx_predict_4x4_dc_top` (`predict`),
+`phx_predict_4x4_dc` (`predict`), `phx_predict_4x4_h` (`predict`), `phx_predict_4x4_v` (`predict`),
+`phx_predict_4x4_ddl` (`predict`), `phx_predict_4x4_ddr` (`predict`), `phx_predict_4x4_vr` (`predict`),
+`phx_predict_4x4_hd` (`predict`), `phx_predict_4x4_vl` (`predict`), `phx_predict_4x4_hu` (`predict`),
+`phx_predict_8x8_filter` (`predict`), `phx_predict_8x8_fill` (`predict`),
+`phx_predict_8x8_dc_128` (`predict`), `phx_predict_8x8_dc_left` (`predict`),
+`phx_predict_8x8_dc_top` (`predict`), `phx_predict_8x8_dc` (`predict`), `phx_predict_8x8_h` (`predict`),
+`phx_predict_8x8_v` (`predict`), `phx_predict_8x8_ddl` (`predict`), `phx_predict_8x8_ddr` (`predict`),
+`phx_predict_8x8_vr` (`predict`), `phx_predict_8x8_hd` (`predict`), `phx_predict_8x8_vl` (`predict`),
+`phx_predict_8x8_hu` (`predict`), `phx_shift` (`quant`), `phx_div` (`quant`), `phx_quant_8x8` (`quant`),
+`phx_quant_4x4` (`quant`), `phx_quant_4x4x4` (`quant`), `phx_quant_4x4_dc` (`quant`),
+`phx_quant_2x2_dc` (`quant`), `phx_dequant_4x4` (`quant`), `phx_dequant_8x8` (`quant`),
+`phx_dequant_4x4_dc` (`quant`), `phx_idct_dequant_2x4_dc` (`quant`), `phx_idct_dequant_2x4_dconly` (`quant`),
+`phx_optimize_chroma_idct_dequant_2x4` (`quant`), `phx_optimize_chroma_idct_dequant_2x2` (`quant`),
+`phx_optimize_chroma_round` (`quant`), `phx_optimize_chroma_dc_internal` (`quant`),
+`phx_optimize_chroma_2x2_dc` (`quant`), `phx_optimize_chroma_2x4_dc` (`quant`), `phx_denoise_dct` (`quant`),
+`phx_rdo_quant4_mf` (`rdo`), `phx_rdo_quant4_bias0` (`rdo`), `phx_rdo_unquant4_mf` (`rdo`),
+`phx_rdo_quant8_mf` (`rdo`), `phx_rdo_quant8_bias0` (`rdo`), `phx_rdo_unquant8_mf` (`rdo`),
+`phx_rdo_bs_size_ue_big` (`rdo`), `phx_rdo_size_unary` (`rdo`), `phx_rdo_transition_unary` (`rdo`),
+`phx_rdo_size_5ones` (`rdo`), `phx_rdo_transition_5ones` (`rdo`), `phx_rdo_cavlc_predict_nc` (`rdo`),
+`phx_coeff_last` (`rdo`), `phx_rdo_chroma_qp` (`rdo`), `phx_rdo_lambda2` (`rdo`),
+`phx_cavlc_count_bits` (`rdo`), `phx_slice_group_change_bits` (`slice`).
+
+#### Class B — 109 definitions
+
+`phx_zigzag_scan8` (`analysis`), `phx_satd_8x8` (`analysis`), `phx_satd_16x16` (`analysis`),
+`phx_median3` (`analysis`), `phx_predict_mv16` (`analysis`), `phx_predict_mv_pskip` (`analysis`),
+`phx_predict4_mode` (`analysis`), `phx_init_neighbours` (`analysis`), `phx_setup_fdec` (`analysis`),
+`phx_analysis_quant4` (`analysis`), `phx_search_i16` (`analysis`), `phx_search_i8` (`analysis`),
+`phx_search_i4` (`analysis`), `phx_pixel_ssd_4x4` (`analysis`), `phx_analysis_rd_i4` (`analysis`),
+`phx_analysis_intra_rd_refine_i4` (`analysis`), `phx_analysis_intra_chroma` (`analysis`),
+`phx_analysis_inter_p16x16` (`analysis`), `phx_analysis_init` (`analysis`),
+`phx_analysis_finalise` (`analysis`), `phx_macroblock_analyse_slice` (`analysis`),
+`phx_macroblock_analyse` (`analysis`), `phx_zigzag_scan_2x2_dc` (`chroma`),
+`phx_idct_dequant_2x2_dc` (`chroma`), `phx_idct_dequant_2x2_dconly` (`chroma`), `phx_dct2x2dc` (`chroma`),
+`phx_chroma_mode_available` (`chroma`), `phx_clip3` (`chroma`), `phx_chroma_load_windows` (`chroma`),
+`phx_chroma_store` (`chroma`), `phx_macroblock_encode_chroma` (`chroma`), `phx_db_edge_luma_c` (`deblock`),
+`phx_db_luma_c` (`deblock`), `phx_deblock_h_luma_mbaff_c` (`deblock`), `phx_deblock_v_luma_c` (`deblock`),
+`phx_deblock_h_luma_c` (`deblock`), `phx_db_edge_chroma_c` (`deblock`), `phx_db_chroma_c` (`deblock`),
+`phx_deblock_h_chroma_mbaff_c` (`deblock`), `phx_deblock_v_chroma_c` (`deblock`),
+`phx_deblock_h_chroma_c` (`deblock`), `phx_db_edge_luma_intra_c` (`deblock`),
+`phx_db_luma_intra_c` (`deblock`), `phx_deblock_h_luma_intra_mbaff_c` (`deblock`),
+`phx_deblock_v_luma_intra_c` (`deblock`), `phx_deblock_h_luma_intra_c` (`deblock`),
+`phx_db_edge_chroma_intra_c` (`deblock`), `phx_db_chroma_intra_c` (`deblock`),
+`phx_deblock_h_chroma_intra_mbaff_c` (`deblock`), `phx_deblock_v_chroma_intra_c` (`deblock`),
+`phx_deblock_h_chroma_intra_c` (`deblock`), `phx_db_strength` (`deblock`),
+`phx_deblock_strength_c` (`deblock`), `phx_macroblock_deblock_strength` (`deblock`),
+`phx_deblock_edge` (`deblock`), `phx_db_neighbours` (`deblock`), `phx_db_qp_at` (`deblock`),
+`phx_db_filter_edge` (`deblock`), `phx_frame_deblock_ex` (`deblock`), `phx_frame_deblock` (`deblock`),
+`phx_macroblock_cache_load_neighbours` (`mbcache`), `phx_macroblock_cache_load` (`mbcache`),
+`phx_macroblock_backup_intra` (`mbcache`), `phx_macroblock_cache_save` (`mbcache`),
+`phx_mb_store_block` (`mbencode`), `phx_mb_load_fdec_neighbours` (`mbencode`),
+`phx_mb_neighbour4` (`mbencode`), `phx_mb_encode_i16x16` (`mbencode`), `phx_mb_b_trellis` (`mbencode`),
+`phx_mb_encode_i4x4` (`mbencode`), `phx_mb_encode_pcm` (`mbencode`),
+`phx_mb_clear_inter_residual` (`mbencode`), `phx_mb_mc_l0_16x16` (`mbencode`),
+`phx_mb_mc_chroma_l0` (`mbencode`), `phx_macroblock_encode_ex` (`mbencode`),
+`phx_macroblock_encode` (`mbencode`), `phx_mb_clip3i` (`mbencode`), `phx_mb_chroma_qp` (`mbencode`),
+`phx_mb_chroma_mode_ok` (`mbencode`), `phx_mb_zigzag2_dc` (`mbencode`), `phx_mb_dct2x2dc` (`mbencode`),
+`phx_mb_chroma_raw_dc` (`mbencode`), `phx_mb_encode_chroma_trellis` (`mbencode`),
+`phx_mc_hpel_filter` (`mc`), `phx_mc_hpel_filter_frame` (`mc`), `phx_mc_luma` (`mc`), `phx_mc_chroma` (`mc`),
+`phx_mc_deinterleave_chroma` (`mc`), `phx_mc_hpel_invalidate` (`mc`), `phx_mc_luma_mb` (`mc`),
+`phx_predict_16x16_init` (`predict`), `phx_predict_8x8c_init` (`predict`),
+`phx_predict_8x16c_init` (`predict`), `phx_predict_4x4_init` (`predict`), `phx_predict_8x8_init` (`predict`),
+`phx_quant_tables_init` (`quant`), `phx_cabac_size_decision2` (`rdo`),
+`phx_cabac_size_decision_noup2` (`rdo`), `phx_rdo_init` (`rdo`), `phx_rdo_size_init` (`rdo`),
+`phx_rdo_size_decision` (`rdo`), `phx_rdo_size_decision_noup` (`rdo`), `phx_rdo_size_terminal` (`rdo`),
+`phx_rdo_size_bypass` (`rdo`), `phx_rdo_size_ue_bypass` (`rdo`), `phx_rdo_size_intra4x4_pred_mode` (`rdo`),
+`phx_rdo_size_block_residual` (`rdo`), `phx_rdo_size_block_residual_cbf` (`rdo`),
+`phx_rdo_size_partition_i4x4` (`rdo`).
+
+#### Class C — 211 definitions
+
+`phx_bs_init` (`bitstream`), `phx_bs_pos` (`bitstream`), `phx_bs_write` (`bitstream`),
+`phx_bs_write1` (`bitstream`), `phx_bs_align_0` (`bitstream`), `phx_bs_align_10` (`bitstream`),
+`phx_bs_write_ue_big` (`bitstream`), `phx_bs_write_ue` (`bitstream`), `phx_bs_write_se` (`bitstream`),
+`phx_bs_write_te` (`bitstream`), `phx_bs_rbsp_trailing` (`bitstream`), `phx_nal_escape` (`bitstream`),
+`phx_nal_encode` (`bitstream`), `phx_trace_open` (`cabac`), `phx_trace_decision` (`cabac`),
+`phx_trace_bypass` (`cabac`), `phx_trace_ue` (`cabac`), `phx_trace_terminal` (`cabac`),
+`phx_cabac_context_init` (`cabac`), `phx_cabac_encode_init_core` (`cabac`),
+`phx_cabac_encode_init` (`cabac`), `phx_cabac_putbyte` (`cabac`), `phx_cabac_encode_renorm` (`cabac`),
+`phx_cabac_encode_decision` (`cabac`), `phx_cabac_encode_bypass` (`cabac`),
+`phx_cabac_encode_ue_bypass` (`cabac`), `phx_cabac_encode_terminal` (`cabac`),
+`phx_cabac_encode_flush` (`cabac`), `phx_coeff_last4` (`cabac_syntax`), `phx_coeff_last8` (`cabac_syntax`),
+`phx_coeff_last15` (`cabac_syntax`), `phx_coeff_last16` (`cabac_syntax`),
+`phx_coeff_last64` (`cabac_syntax`), `phx_cabac_mb_init` (`cabac_syntax`),
+`phx_predict_intra4x4_mode` (`cabac_syntax`), `phx_cabac_mb_type_intra` (`cabac_syntax`),
+`phx_cabac_intra4x4_pred_mode` (`cabac_syntax`), `phx_cabac_intra_chroma_pred_mode` (`cabac_syntax`),
+`phx_cabac_subpartition_p` (`cabac_syntax`), `phx_cabac_subpartition_b` (`cabac_syntax`),
+`phx_cabac_transform_size` (`cabac_syntax`), `phx_cabac_cbp_luma` (`cabac_syntax`),
+`phx_cabac_cbp_chroma` (`cabac_syntax`), `phx_cabac_qp_delta` (`cabac_syntax`),
+`phx_cabac_mb_skip` (`cabac_syntax`), `phx_predict_mv` (`cabac_syntax`),
+`phx_cabac_mvd_sum` (`cabac_syntax`), `phx_cache_mvd` (`cabac_syntax`), `phx_cabac_mvd_cpn` (`cabac_syntax`),
+`phx_cabac_mvd` (`cabac_syntax`), `phx_cabac_8x8_mvd` (`cabac_syntax`), `phx_cabac_ref` (`cabac_syntax`),
+`phx_cabac_mb_header_i` (`cabac_syntax`), `phx_cabac_mb_header_p` (`cabac_syntax`),
+`phx_cabac_mb_header_b` (`cabac_syntax`), `phx_cabac_cbf_ctxidxinc` (`cabac_syntax`),
+`phx_cabac_block_residual` (`cabac_syntax`), `phx_cabac_block_residual_cbf` (`cabac_syntax`),
+`phx_clz` (`cavlc`), `phx_cavlc_coeff_last` (`cavlc`), `phx_cavlc_coeff_level_run` (`cavlc`),
+`phx_cavlc_init_level_token` (`cavlc`), `phx_cavlc_init_run_before` (`cavlc`), `phx_cavlc_init` (`cavlc`),
+`phx_cavlc_write_vlc` (`cavlc`), `phx_cavlc_write_vlc_large` (`cavlc`),
+`phx_cavlc_block_residual_escape` (`cavlc`), `phx_cavlc_block_residual_internal` (`cavlc`),
+`phx_cavlc_block_residual` (`cavlc`), `phx_cavlc_coeff0` (`cavlc`), `phx_cavlc_coeff_token_at` (`cavlc`),
+`phx_cavlc_total_zeros_at` (`cavlc`), `phx_cavlc_total_zeros_dc_at` (`cavlc`),
+`phx_cavlc_mb_init` (`cavlc_syntax`), `phx_cavlc_predict_mv` (`cavlc_syntax`),
+`phx_cavlc_mvd` (`cavlc_syntax`), `phx_predict_intra4x4_mode` (`cavlc_syntax`),
+`phx_cavlc_mb_header_i` (`cavlc_syntax`), `phx_cavlc_8x8_mvd` (`cavlc_syntax`),
+`phx_cavlc_mb_header_p_l0` (`cavlc_syntax`), `phx_cavlc_mb_header_p_8x8` (`cavlc_syntax`),
+`phx_cavlc_mb_header_b_8x8` (`cavlc_syntax`), `phx_cavlc_mb_header_b_inter` (`cavlc_syntax`),
+`phx_cavlc_mb_header` (`cavlc_syntax`), `phx_cavlc_mb_skip` (`cavlc_syntax`),
+`phx_analyse_free_costs` (`cost`), `phx_encoder_validate` (`encoder`), `phx_encoder_release` (`encoder`),
+`phx_encoder_open` (`encoder`), `phx_open` (`encoder`), `phx_headers` (`encoder`),
+`phx_encoder_header_bytes` (`encoder`), `phx_encoder_copy_picture` (`encoder`),
+`phx_encoder_new_input_frame` (`encoder`), `phx_encoder_queue_coded` (`encoder`),
+`phx_encoder_drain` (`encoder`), `phx_encoder_slice_type` (`encoder`), `phx_encoder_slice_qp` (`encoder`),
+`phx_encoder_dpb_remove` (`encoder`), `phx_encoder_dpb_refresh` (`encoder`),
+`phx_encoder_dpb_lookup` (`encoder`), `phx_encoder_build_ref_lists` (`encoder`),
+`phx_encoder_frame_context` (`encoder`), `phx_encoder_bs_align_1` (`encoder`),
+`phx_encoder_reset_mb_state` (`encoder`), `phx_encoder_apply_decision` (`encoder`),
+`phx_encoder_block` (`encoder`), `phx_encoder_block_nz` (`encoder`),
+`phx_mb_transform_8x8_allowed` (`encoder`), `phx_encoder_cabac_block` (`encoder`),
+`phx_encoder_cavlc_nc` (`encoder`), `phx_encoder_cavlc_block` (`encoder`),
+`phx_encoder_predict_i4` (`encoder`), `phx_encoder_predict_mv16` (`encoder`),
+`phx_encoder_cavlc_header_i` (`encoder`), `phx_encoder_cavlc_qp_delta` (`encoder`),
+`phx_encoder_write_cavlc_mb` (`encoder`), `phx_encoder_write_cabac_mb` (`encoder`), `phx_encode` (`encoder`),
+`phx_encoder_encode` (`encoder`), `phx_encoder_close` (`encoder`), `phx_close` (`encoder`),
+`phx_frame_new` (`frame`), `phx_frame_delete` (`frame`), `phx_sps_init` (`headers`),
+`phx_pps_init` (`headers`), `phx_sps_write` (`headers`), `phx_pps_write` (`headers`),
+`phx_encoder_headers` (`headers`), `phx_lh_frame_cost` (`lookahead`), `phx_lh_path_cost` (`lookahead`),
+`phx_lh_scenecut_internal` (`lookahead`), `phx_lh_scenecut` (`lookahead`),
+`phx_lh_slicetype_analyse` (`lookahead`), `phx_lh_slicetype_decide` (`lookahead`),
+`phx_lookahead_new` (`lookahead`), `phx_lookahead_put_frame` (`lookahead`),
+`phx_lh_shift_to_ofbuf` (`lookahead`), `phx_lookahead_get_frames_full` (`lookahead`),
+`phx_lookahead_get_frames_ex` (`lookahead`), `phx_lookahead_get_frames` (`lookahead`),
+`phx_lookahead_delete` (`lookahead`), `lr_frame_clear` (`lowres`), `lr_get_frame` (`lowres`),
+`phx_lowres_set_mbtree` (`lowres`), `phx_lowres_frame_reset` (`lowres`), `phx_lowres_new` (`lowres`),
+`phx_lowres_delete` (`lowres`), `lr_mb_cost` (`lowres`), `phx_lowres_frame_cost` (`lowres`),
+`phx_lowres_path_cost` (`lowres`), `phx_slicetype_frame_cost` (`lowres`), `phx_mb_state_new` (`mbcache`),
+`phx_mb_state_delete` (`mbcache`), `phx_param_default` (`param`), `phx_param_apply_preset` (`param`),
+`phx_param_finalize` (`param`), `phx_param_apply_profile` (`param`), `rc_clip3i` (`ratecontrol`),
+`rc_clip3f` (`ratecontrol`), `rc_max2` (`ratecontrol`), `rc_qp2qscale` (`ratecontrol`),
+`rc_qscale2qp` (`ratecontrol`), `rc_exp2fix8` (`ratecontrol`), `rc_clz` (`ratecontrol`),
+`rc_log2_u32` (`ratecontrol`), `rc_clip_duration` (`ratecontrol`), `phx_ratecontrol_init` (`ratecontrol`),
+`phx_ratecontrol_delete` (`ratecontrol`), `phx_ratecontrol_configure` (`ratecontrol`),
+`phx_ratecontrol_set_complexity` (`ratecontrol`), `phx_ratecontrol_set_quant_offsets` (`ratecontrol`),
+`rc_accum_p_qp_update` (`ratecontrol`), `phx_ratecontrol_start` (`ratecontrol`),
+`phx_ratecontrol_end` (`ratecontrol`), `rc_ac_energy_mb` (`ratecontrol`),
+`phx_ratecontrol_aq_frame` (`ratecontrol`), `phx_ratecontrol_mb_qp` (`ratecontrol`),
+`phx_ratecontrol_qp_offsets` (`ratecontrol`), `phx_ratecontrol_qp_offsets_aq` (`ratecontrol`),
+`phx_ratecontrol_inv_qscale` (`ratecontrol`), `phx_ratecontrol_qp_constant` (`ratecontrol`),
+`phx_ratecontrol_chroma_qp` (`ratecontrol`), `phx_rdo_set_config` (`rdo`), `phx_rdo_get_config` (`rdo`),
+`phx_trellis_dc_shortcut` (`rdo`), `phx_trellis_coef` (`rdo`), `phx_trellis_coef0_0` (`rdo`),
+`phx_trellis_coef0_1` (`rdo`), `phx_trellis_coef1_0` (`rdo`), `phx_trellis_coef1_1` (`rdo`),
+`phx_trellis_coefn_0` (`rdo`), `phx_trellis_coefn_1` (`rdo`), `phx_rdo_quant_trellis_cabac` (`rdo`),
+`phx_rdo_quant_trellis_cavlc` (`rdo`), `phx_quant_4x4_trellis` (`rdo`), `phx_quant_8x8_trellis` (`rdo`),
+`phx_quant_luma_dc_trellis` (`rdo`), `phx_quant_chroma_dc_trellis` (`rdo`), `phx_sei_clip3` (`sei`),
+`phx_sei_cpu_num_processors` (`sei`), `phx_sei_derive_runtime` (`sei`), `phx_sei_analyse_intra` (`sei`),
+`phx_sei_analyse_inter` (`sei`), `phx_sei_me_name` (`sei`), `phx_sei_rc_name` (`sei`),
+`phx_sei_param2string` (`sei`), `phx_sei_write` (`sei`), `phx_sei_version_write` (`sei`),
+`phx_slice_header_init` (`slice`), `phx_slice_header_write` (`slice`).
 
 ## 9. Consequences for the remaining work
 

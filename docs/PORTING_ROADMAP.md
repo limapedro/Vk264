@@ -99,19 +99,37 @@ For every ported function, ensure the `SHADER: A/B/C` annotation exists and
 Gate: a generated index of all functions with their shader class; a design
 review document for the shader backend derived from it.
 
-## Current state (for reviewers, after 8-worker parallel port)
+## Current state (for reviewers, measured on this working tree)
 
-- WP0 complete; WP1 complete; WP2 progressive+MBAFF caches complete;
-  entropy/predictor/DCT/quant primitives ported by 8 parallel workers;
-  WP3–WP9 still pending (lookahead, MB analysis driver, frame loop, CRF).
-  Function inventory: 201 PORTED rows of 1386 (14.5%); `ctest` 17/17.
-- Headers are byte-exact 20/20 against the saved x264 streams; full-stream
-  parity is 0/100 because `phx_encode()` still returns
-  `PHX_ERR_UNIMPLEMENTED` — the ported primitives are not yet wired into a
-  frame loop.
+**Measured gates (no approximations):**
+
+| Gate | Measured result | Evidence |
+|---|---|---|
+| `ctest` (all registered tests) | **20/20 passing** | `python tools/run_tests.py` / CMake ctest |
+| Function inventory | **231 PORTED of 1386 (16.7%)**; 1155 MISSING | `docs/FUNCTION_INVENTORY.md` (regenerate with `tools/gen_function_inventory.py`) |
+| Header parity | **byte-exact 20/20** SPS+PPS NALs (PPS tail/stop bit 20/20) | `tests/compare_headers.py`, `docs/NIGHTLY_STATUS.md:32` |
+| MB0 CABAC bin trace | **715/715 bins exact** | instrumented x264 golden vs `-DPHX_CABAC_BIN_TRACE` Phoenix (`tools/cabac_bin_diff.py`) |
+| Lookahead decision | **emits B/BREF**, frame-type agreement retained | `src/phx_lookahead.c` (`phx_lh_slicetype_decide`, `phx_lookahead_get_frames_ex`) |
+| Full-stream parity | **byte-exact 0/100** | `tests/parity_report.md:7–10` — 100 reference streams, 100 mismatches |
+
+- WP0, WP1 and WP2 are complete (progressive + MBAFF neighbour caches,
+  SPS/PPS, CABAC/CAVLC primitives). The 8-worker parallel port added the
+  predictor, DCT, quant, entropy and slice modules; the overnight batch added
+  `phx_me` (full-pel DIA/HEX), `phx_lowres` (slicetype frame/path costs,
+  SATD/hpel search), `phx_rdo` (trellis QNS + size-only RDO API), `phx_chroma`
+  (4:2:0 DC/AC), `phx_sei` (version SEI), `phx_lookahead` (B/BREF) and the
+  `phx_encoder` frame loop. `src/*.c` now defines 505 functions across all 27
+  scanned C files; see `docs/FUNCTION_PORTS.md` for the exact per-function index.
+- **Full-stream parity is not achieved.** `0/100` means zero of the 100
+  reference streams are byte-identical; it is a divergence, not a success
+  metric. The encoder frame loop runs and emits NALs, but coefficient,
+  rate-control and remaining x264 path differences still change bytes.
+  715/715 exact MB0 bins and 20/20 exact headers are necessary but not
+  sufficient gates for WP7.
 - Historical baseline from the discarded incremental oracle: 12/120 short,
   0/240 extended, first-diff 84/30/41/42. Its harnesses are no longer in this
   repository; parity gates are rebuilt under `tests/` (`compare_headers.py`,
-  `compare_streams.py`, `parity_harness.py`).
+  `compare_streams.py`, `parity_harness.py`) and `tools/nightly_gates.py`.
 - Keep evidence-first: a work package is complete only with a golden test and
-  a byte-exact gate, never with a metric-driven approximation.
+  a byte-exact gate, never with a metric-driven approximation. `docs/NIGHTLY_STATUS.md:41–50`
+  is explicit that only the parity gate's byte-exact count is a parity claim.
