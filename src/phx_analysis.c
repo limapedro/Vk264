@@ -28,6 +28,7 @@
 #include "phx_rdo.h"            /* trellis QNS, analyse.c:261 */
 #include "phx_tables.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -52,6 +53,21 @@ int phx_g_inter_rd_diag_count = 0, phx_g_inter_rd_diag_enable = 0;
  * cost arrays and the analyse_update_cache publication remain available for
  * golden tests (SHADER: B — explicit flag, no hidden encoder state). */
 int phx_g_inter_rd_decision_enable = 0;
+/* The one-shot opt-in ME input trace flag is declared in phx_me.h (SHADER: C).
+ * Cache the environment check once so it costs nothing on normal encodes. */
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996)   /* getenv: this diagnostic never reads stream state */
+#endif
+static int phx_analysis_trace_enabled(void)
+{
+    static int cached = -1;
+    if (cached < 0) cached = getenv("PHX_ME_TRACE") ? 1 : 0;
+    return cached;
+}
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 /* x264 common/pixel.c:237-240 — 8-bit scalar build. */
 typedef uint16_t phx_sum_t;
@@ -2082,6 +2098,20 @@ static void phx_analysis_inter_b16x16(phx_analysis_ctx_t *c,
         phx_predict_mv16_l(c->cache, l, 0, mvp);         /* :1936 */
         int16_t mvc[16][2];
         int i_mvc = phx_analysis_build_mvc(c, l, 0, mvc); /* :1937 */
+        /* SHADER: C — opt-in trace of the exact analyse.c:1935-1938 call. */
+        if (phx_analysis_trace_enabled() &&
+            c->slice_type == PHX_SLICE_B && c->mb_y == 0 && c->mb_x < 2)
+            phx_me_trace_requested = 1;
+        if (phx_analysis_trace_enabled()) {
+            fprintf(stderr, "PHX_ANALYSIS_TRACE mb=%d,%d qp=%d l=%d "
+                    "fenc=%p fref=%p fref1=%p lambda=%d lambda2=%d "
+                    "p_cost_mv=%p method=%d subme=%d mbrd=%d "
+                    "i_me_range=%d i_mv_range=%d mvp=(%d,%d)\n",
+                    c->mb_x, c->mb_y, c->qp, l, (void*)c->f, (void*)c->fref,
+                    (void*)(b ? b->fref1 : NULL), c->a.i_lambda, c->a.i_lambda2,
+                    (void*)c->a.p_cost_mv, c->p->i_me_method, subme, c->mbrd,
+                    mv_range, i_mv_range, mvp[0], mvp[1]);
+        }
         int16_t me_mv[2] = { 0, 0 };
         int cst = 0;
         int rc = phx_me16_mvc(c->mb_x*16, c->mb_y*16, c->f, fr, c->costs,
@@ -2089,6 +2119,11 @@ static void phx_analysis_inter_b16x16(phx_analysis_ctx_t *c,
                               (int)c->p->i_me_method, subme, mvp,
                               (const int16_t (*)[2])mvc, i_mvc, NULL,
                               me_mv, &cst, &cost_mv[l]); /* :1938 */
+        if (phx_analysis_trace_enabled())
+            fprintf(stderr, "PHX_ANALYSIS_TRACE mb=%d,%d l=%d rc=%d "
+                    "mv=(%d,%d) cost=%d cost_mv=%d\n",
+                    c->mb_x, c->mb_y, l, rc, me_mv[0], me_mv[1], cst,
+                    cost_mv[l]);
         if (rc >= 0 && rc < PHX_COST_MAX) {
             if (b_refine_qpel) {
                 int16_t rmv[2] = { me_mv[0], me_mv[1] };
