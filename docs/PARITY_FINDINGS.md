@@ -308,4 +308,21 @@ Phoenix L1 differs by 3396/4096 active pixels with colocated mb_type[0]=0
 (I_4x4) vs x264's 8 (B_L0_L0) — a downstream consequence of the missing B-inter
 path, not a DPB defect. check_l1_golden() added; all DPB goldens pass.
 
+## F29 — B-inter path lands; stream sizes approach x264
+
+Ported x264's B cost tables (analyse.c:124-135), list-aware MVP (mvpred.c:129-163),
+mb_analyse_inter_b16x16 (:1890-2074), ssd_mb B_SKIP gate (rdo.c:123-160,
+analyse.c:3346-3350/3404-3415) and B-type publication, plus bidirectional
+residual B encode (macroblock.c:697-703/801-914/259-498). Non-skip B decisions
+are no longer forced to intra.
+
+Real 64x64/30f CABAC stream sizes after the fix (x264 in parentheses):
+superfast 2238 (2358), veryfast 2056 (2299), fast 2201 (2366),
+medium 2239 (2317) — ratios 0.89-0.97. First B frame: all 16 MBs B-coded,
+frame1 MB0 x264-exact B_L0_L0 MV (8,-11), ref0=0/ref1=-1/skip=0.
+B NAL sizes 196-284 -> 17-35 B (x264 9-98). Full ctest 30/30 PASS.
+
+Remaining: full mbrd B-RD estimator (analyse.c:3404-3415, phx_rdo.h:261) —
+4/16 first-B-frame MVs/types still differ. Byte-exact streams still 0.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
