@@ -102,6 +102,12 @@ typedef struct phx_t {
     int i_input;                    /* encoder.c:1630 */
     int i_last_idr;                 /* encoder.c:1628/3505 (frames.i_last_idr),
                                      * display-order frame number of last IDR */
+    /* Input-frame index of the last coded reference picture.  x264 keeps a
+     * DPB of reconstructed frames (encoder.c:3454/3882, common/frame.c);
+     * Phoenix exposes the last reference's source samples through this index
+     * so phx_me16() has a real list-0 picture.  SHADER: C — serial host state,
+     * advanced once per reference NAL. */
+    int i_last_ref_frame;
 } phx_t;
 
 /* x264_encoder_open (api.c:76 -> encoder.c:1507): validate params, copy them

@@ -48,6 +48,99 @@ static int any_nonzero(const int16_t *c, int n)
     return 0;
 }
 
+/* Smooth 8-bit ramp with period 32 in both axes: a pure integer translation
+ * has one zero-SAD candidate inside the search window (test_phx_me.c:23-27).
+ * SHADER: B — deterministic B-stage input fixture. */
+static uint8_t me_pat(int x, int y)
+{
+    return (uint8_t)(((x & 31) / 2) + 16*((y & 31) / 2));
+}
+
+/* Fill the padded planes of both frames; fenc is fref translated by (tx,ty). */
+static void fill_me_frames(phx_frame_t *fref, phx_frame_t *fenc, int tx, int ty)
+{
+    for (int y = -PHX_PADV; y < fref->i_height + PHX_PADV; y++)
+        for (int x = -PHX_PADH; x < fref->i_width + PHX_PADH; x++) {
+            fref->plane[y*fref->i_stride + x] = me_pat(x, y);
+            fenc->plane[y*fenc->i_stride + x] = me_pat(x + tx, y + ty);
+        }
+}
+
+/* P-slice analysis must pick P_L0/D_16x16 with the MV found by phx_me16()
+ * (analyse.c:1277/1287/3056-3058), publish it on all 16 blocks and emit no
+ * fabricated residual.  Source: reference/x264/encoder/analyse.c:1255-1332,
+ * common/mvpred.c:129-163, encoder/me.c:276-419.
+ * SHADER: B — host-side test of the inter decision boundary. */
+static int check_p_analysis(void)
+{
+    phx_param_t p;
+    phx_param_default(&p);
+    p.i_width = p.i_height = 32;
+    p.i_me_method = PHX_ME_HEX;                         /* base.c:435 */
+    p.i_me_range = 16;
+    p.analyse_inter = 1;
+    p.analyse_intra = 3;
+    phx_param_finalize(&p);                             /* encoder.c:1218 */
+
+    phx_frame_t *fref = phx_frame_new(32, 32, 0);
+    phx_frame_t *fenc = phx_frame_new(32, 32, 0);
+    phx_mb_state_t *s = phx_mb_state_new(2, 2);
+    phx_mb_cache_t cache;
+    phx_mb_decision_t d1, d2;
+    if (!fref || !fenc || !s) {
+        printf("FAIL p-analysis: allocation\n");
+        return 1;
+    }
+    fill_me_frames(fref, fenc, 2, 0);                   /* known full-pel MV */
+    s->slice_type = PHX_SLICE_P;
+    s->first_mb = 0;
+
+    memset(&d1, 0, sizeof(d1));
+    memset(&cache, 0, sizeof(cache));
+    phx_macroblock_cache_load(s, &cache, 0, 0, 0);
+    int rc1 = phx_macroblock_analyse_slice(&p, fenc, fref, &cache, NULL,
+                                           0, 0, 26, PHX_SLICE_P, &d1);
+    CHECK(rc1 == 0, "P analysis returns success");
+    if (!rc1) {
+        CHECK(d1.mb_type == PHX_P_L0, "P analysis chose P_L0");
+        CHECK(d1.i_partition == 16, "P_L0 uses D_16x16");
+        CHECK(d1.mv[0][0][0] == 8 && d1.mv[0][0][1] == 0,
+              "P analysis found the known MV (2,0) in qpel units");
+        CHECK(d1.cbp_luma == 0 && d1.cbp_chroma == 0,
+              "P_L0 no-residual decision has cbp=0");
+        CHECK(d1.skip == 0, "non-pskip MV is not a skip");
+        for (int i = 0; i < 16; i++) {
+            CHECK(d1.ref[0][i] == 0 && d1.ref[1][i] == -1,
+                  "P_L0 ref list 0 = 0 for all 4x4 blocks");
+            CHECK(d1.mv[0][i][0] == 8 && d1.mv[0][i][1] == 0,
+                  "P_L0 MV replicated over all 4x4 blocks");
+        }
+        for (int k = 0; k < 48; k++)
+            CHECK(d1.nnz[k] == 0 && !any_nonzero(d1.dct[k], 16),
+                  "P_L0 publishes no coefficients");
+    }
+
+    /* Determinism: fresh cache/state and identical inputs give the same
+     * decision (the analysis stage has no hidden state). */
+    fill_me_frames(fref, fenc, 2, 0);
+    phx_mb_state_delete(s);
+    s = phx_mb_state_new(2, 2);
+    s->slice_type = PHX_SLICE_P;
+    s->first_mb = 0;
+    memset(&d2, 0, sizeof(d2));
+    memset(&cache, 0, sizeof(cache));
+    phx_macroblock_cache_load(s, &cache, 0, 0, 0);
+    int rc2 = phx_macroblock_analyse_slice(&p, fenc, fref, &cache, NULL,
+                                           0, 0, 26, PHX_SLICE_P, &d2);
+    CHECK(rc2 == 0 && memcmp(&d1, &d2, sizeof(d1)) == 0,
+          "P analysis decision is reproducible");
+
+    phx_mb_state_delete(s);
+    phx_frame_delete(fref);
+    phx_frame_delete(fenc);
+    return 0;
+}
+
 static void check_decision(const phx_mb_decision_t *d, const char *tag)
 {
     CHECK(d->mb_type == PHX_I_4x4 || d->mb_type == PHX_I_8x8 ||
@@ -199,6 +292,8 @@ int main(void)
     rc2 = phx_macroblock_analyse(&p, f, &cache, 1, 1, 26, &d2);
     CHECK(rc2 == 0, "interior MB analysis returns success");
     if (!rc2) check_decision(&d2, "interior");
+
+    fails += check_p_analysis();
 
     /* Bad arguments must fail cleanly without touching the decision. */
     CHECK(phx_macroblock_analyse(NULL, f, &cache, 0, 0, 26, &d2) == -1,

@@ -92,6 +92,7 @@ phx_t *phx_encoder_open(const phx_param_t *p)
     h->i_frame_num = 0;                                /* encoder.c:1564 */
     h->i_poc = 0;                                      /* encoder.c:3513 */
     h->i_last_idr = -h->param.i_keyint_max;            /* encoder.c:1628 */
+    h->i_last_ref_frame = -1;                          /* no list-0 frame yet */
     h->i_idr_pic_id = 0;                               /* encoder.c:142 */
     h->i_input = 0;                                    /* encoder.c:1630 */
 
@@ -600,6 +601,76 @@ static int phx_encoder_predict_i4(const phx_mb_cache_t *c, int idx)
     return m < 0 ? 2 : m;
 }
 
+/* x264 common/mvpred.c:129-163 — x264_mb_predict_mv() for the CAVLC MVD
+ * (cavlc.c:245).  The CABAC writer has its own copy in phx_cabac_syntax.c;
+ * this one keeps the C-stage CAVLC path self-contained.  SHADER: C — serial
+ * neighbour-cache lookup, no writes. */
+static void phx_encoder_predict_mv16(const phx_mb_cache_t *c, int idx,
+                                     int width, int16_t mvp[2])
+{
+    const int i8 = phx_scan8[idx];
+    const int i_ref  = c->ref[0][i8];
+    const int i_refa = c->ref[0][i8 - 1];              /* mvpred.c:131 */
+    const int16_t *mv_a = c->mv[0][i8 - 1];            /* :132 */
+    const int i_refb = c->ref[0][i8 - 8];              /* :133 */
+    const int16_t *mv_b = c->mv[0][i8 - 8];            /* :134 */
+    int i_refc = c->ref[0][i8 - 8 + width];            /* :135 */
+    const int16_t *mv_c = c->mv[0][i8 - 8 + width];    /* :136 */
+    if (i_refc == -2) {                                /* :137 */
+        i_refc = c->ref[0][i8 - 8 - 1];                /* :139 */
+        mv_c   = c->mv[0][i8 - 8 - 1];                 /* :140 */
+    }
+    int count = (i_refa == i_ref) + (i_refb == i_ref) + (i_refc == i_ref);
+                                                        /* :143 */
+    if (count > 1) {                                   /* :145/:148 */
+        for (int k = 0; k < 2; k++) {
+            int a = mv_a[k], b = mv_b[k], d = mv_c[k];
+            int med;
+            if (a > b) med = b > d ? b : (a > d ? d : a);
+            else       med = a > d ? a : (b > d ? d : b);
+            mvp[k] = (int16_t)med;
+        }
+    } else if (count == 1) {                           /* :150-157 */
+        const int16_t *src = i_refa == i_ref ? mv_a
+                           : i_refb == i_ref ? mv_b : mv_c;
+        mvp[0] = src[0]; mvp[1] = src[1];
+    } else if (i_refb == -2 && i_refc == -2 && i_refa != -2) {
+        mvp[0] = mv_a[0]; mvp[1] = mv_a[1];            /* :159-160 */
+    } else {                                           /* :161-162 */
+        for (int k = 0; k < 2; k++) {
+            int a = mv_a[k], b = mv_b[k], d = mv_c[k];
+            int med;
+            if (a > b) med = b > d ? b : (a > d ? d : a);
+            else       med = a > d ? a : (b > d ? d : b);
+            mvp[k] = (int16_t)med;
+        }
+    }
+}
+
+/* x264 encoder/macroblock.c:654-667 (P_SKIP MC) / :769-775 (inter MC),
+ * restricted to the full-pel P_L0 16x16 no-residual decision produced by
+ * phx_analysis.c.  x264 writes motion-compensated samples into p_fdec; here
+ * that is the caller-owned cache->p_fdec (h->recon).  No source pixel is
+ * fabricated: every byte comes from the real list-0 frame at the ME MV.
+ * TODO: chroma reconstruction (macroblock.c:669-681) and the residual path
+ * (:777-922), both owned by N1's phx_mbencode.c.
+ * SHADER: C — serial 16x16 copy into the reconstruction plane. */
+static void phx_encoder_inter_copy(const phx_t *h, const phx_frame_t *fref,
+                                   phx_mb_cache_t *c,
+                                   const phx_mb_decision_t *d,
+                                   int mb_x, int mb_y)
+{
+    (void)h;
+    if (!fref || !fref->plane || !c->p_fdec) return;
+    int mx = (d->mv[0][0][0] + 2) >> 2;                 /* encoder/me.c:178 */
+    int my = (d->mv[0][0][1] + 2) >> 2;
+    const uint8_t *src = fref->plane
+        + (size_t)(mb_y*16 + my) * fref->i_stride + mb_x*16 + mx;
+    uint8_t *dst = c->p_fdec;                           /* macroblock.c:665 */
+    for (int y = 0; y < 16; y++)                        /* mc_luma 16x16 */
+        memcpy(dst + y*c->fdec_stride, src + y*fref->i_stride, 16);
+}
+
 /* cavlc.c:305-335 (cavlc_mb_header_i).  x264 passes i_mb_i_offset = 0 for
   * I slices, 5 for P and 23 for B (cavlc.c:408/481/543); intra MBs in a P/B
   * slice are exactly the per-frame fallback used by phx_encode().
@@ -687,11 +758,18 @@ static void phx_encoder_write_cavlc_mb(phx_t *h, const phx_mb_decision_t *d,
 
     if (intra) {
         phx_encoder_cavlc_header_i(h, bs, d, i_mb_i_offset); /* cavlc.c:543 */
+    } else if (mt == PHX_P_L0 && d->i_partition == PHX_D_16x16) {
+        /* cavlc.c:337-349 — P_L0 16x16 mb_type and MVD.  One active list-0
+         * reference means the `i_fref > 1` ref index write (:346-347) is
+         * absent.  MVDs come from the analysis decision, never fabricated. */
+        phx_bs_write1(bs, 1);                            /* cavlc.c:344 */
+        int16_t mvp[2];
+        phx_encoder_predict_mv16(&h->mb_cache, 0, 4, mvp); /* cavlc.c:245 */
+        phx_bs_write_se(bs, d->mv[0][phx_scan8[0]][0] - mvp[0]); /* :246 */
+        phx_bs_write_se(bs, d->mv[0][phx_scan8[0]][1] - mvp[1]); /* :247 */
     } else {
-        /* TODO(worker-mbencode): real P_L0/P_8x8/B inter headers require
-         * reference lists and MVDs from the analysis stage.  phx_encode()
-         * forces an intra decision before reaching this point; no zero MVD
-         * is written here so nothing pretends to be an inter prediction. */
+        /* P_8x8/B_* remain TODO; keep an explicit intra header instead of
+         * claiming an inter decision that was never analysed. */
         phx_encoder_cavlc_header_i(h, bs, d, i_mb_i_offset); /* cavlc.c:408/481 */
     }
 
@@ -893,6 +971,17 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     phx_slice_frame_t fc;
     phx_encoder_frame_context(h, decided_type, frame_index, &fc);
 
+    /* encoder.c:3454/3542-3570 — list-0 reference 0 for this slice.  x264
+     * reads h->fref[0][0] from the DPB (reconstructed); Phoenix keeps the
+     * last coded reference picture in input_frames[] and supplies its padded
+     * source plane to phx_me16().  TODO: feed reconstructed DPB frames once
+     * multi-frame reconstruction is owned by N1. */
+    const phx_frame_t *fref = NULL;
+    if (fc.i_type != PHX_SLICE_I && h->i_last_ref_frame >= 0 &&
+        h->i_last_ref_frame < h->n_input_frames &&
+        h->input_frames[h->i_last_ref_frame] != h->fenc)
+        fref = h->input_frames[h->i_last_ref_frame];
+
     phx_slice_header_t sh;
     phx_slice_header_init(&sh, &h->param, &h->sps, &h->pps, &fc); /* :2791 */
     /* encoder.c:173-175/254-259 — pps defaults are already one entry per
@@ -946,16 +1035,19 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
             d.i_partition = PHX_D_16x16;
             d.intra16_pred_mode = 2;
             d.chroma_pred_mode = 0;
-            int rc = phx_macroblock_analyse(&h->param, h->fenc, c,
-                                            mb_x, mb_y, sh.i_qp, &d); /* :2861 */
-            /* Explicit per-frame fallback: phx_mbencode.c rejects I_8x8
-             * (no 64-coefficient slot) and all inter P/B modes (no reference list),
-             * so a P/B frame decided by phx_lookahead still codes its MBs
-             * as I_16x16 inside a P/B slice.  No MV or coefficient is fabricated.
-             * TODO(worker-mbencode): remove this guard once inter ME and
-             * reference lists are ported. */
-            if (rc < 0 || (d.mb_type != PHX_I_16x16 && d.mb_type != PHX_I_4x4 &&
-                           d.mb_type != PHX_I_PCM)) {
+            int rc = phx_macroblock_analyse_slice(&h->param, h->fenc, fref, c,
+                                                  h->param.b_cabac ? &h->cabac : NULL,
+                                                  mb_x, mb_y, sh.i_qp,
+                                                  fc.i_type, &d); /* :2861 */
+            /* P_L0/D_16x16 with cbp=0 is a real inter decision: its MV comes
+             * from phx_me16() and its ref from list 0.  I_8x8 is still
+             * rejected by phx_mbencode.c (no 64-coefficient slot), as are
+             * all residual-carrying inter modes; those fall back to I16. */
+            int inter = (rc == 0 && fc.i_type == PHX_SLICE_P &&
+                         d.mb_type == PHX_P_L0 &&
+                         d.cbp_luma == 0 && d.cbp_chroma == 0);
+            if (rc < 0 || (!inter && d.mb_type != PHX_I_16x16 &&
+                           d.mb_type != PHX_I_4x4 && d.mb_type != PHX_I_PCM)) {
                 d.mb_type = PHX_I_16x16;
                 d.i_partition = PHX_D_16x16;
                 d.b_transform_8x8 = 0;
@@ -966,6 +1058,7 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 memset(d.ref, -1, sizeof(d.ref));
                 if (d.intra16_pred_mode < 0 || d.intra16_pred_mode > 6)
                     d.intra16_pred_mode = 2;
+                inter = 0;
             }
             /* phx_analysis now publishes trial coefficients at dct[phx_scan8[k]]
              * (the same scan8 cache layout phx_mbencode writes), so no stale
@@ -977,27 +1070,52 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                                           mb_x, mb_y, &d,
                                           h->param.b_cabac ? &h->cabac : NULL); /* :2865 */
             if (rc < 0) {
-                /* Last resort: an empty I_16x16 MB keeps the slice parseable
-                 * if the B-stage still refuses the decision. */
-                memset(d.dct, 0, sizeof(d.dct));
-                memset(d.nnz, 0, sizeof(d.nnz));
-                d.mb_type = PHX_I_16x16;
-                d.i_partition = PHX_D_16x16;
-                d.intra16_pred_mode = 2;
-                d.cbp_luma = d.cbp_chroma = d.i_cbp = 0;
-                d.b_transform_8x8 = 0;
-                d.skip = 0;
-                for (int i = 0; i < 16; i++) {
-                    c->non_zero_count[phx_scan8[i]] = 0;
-                    c->intra4x4_pred_mode[phx_scan8[i]] = PHX_I_PRED_4x4_DC;
+                if (inter && fref) {
+                    /* phx_mbencode.c:380-382 rejects P_L0 (N1 owns that file).
+                     * With cbp=0 the B-stage has no residual to produce; the
+                     * integer-MV motion compensation of macroblock.c:654-667
+                     * and :769-775 is performed here from the real reference.
+                     * Report the required N1 change in the handoff notes. */
+                    phx_encoder_inter_copy(h, fref, c, &d, mb_x, mb_y);
+                    memset(d.dct, 0, sizeof(d.dct));
+                    memset(d.nnz, 0, sizeof(d.nnz));
+                    d.cbp_luma = d.cbp_chroma = d.i_cbp = 0;
+                    d.b_transform_8x8 = 0;
+                    for (int i = 0; i < 16; i++)
+                        c->non_zero_count[phx_scan8[i]] = 0;
+                    c->i_cbp_luma = c->i_cbp_chroma = 0;
+                } else {
+                    /* Last resort: an empty I_16x16 MB keeps the slice
+                     * parseable if the B-stage still refuses the decision. */
+                    memset(d.dct, 0, sizeof(d.dct));
+                    memset(d.nnz, 0, sizeof(d.nnz));
+                    d.mb_type = PHX_I_16x16;
+                    d.i_partition = PHX_D_16x16;
+                    d.intra16_pred_mode = 2;
+                    d.cbp_luma = d.cbp_chroma = d.i_cbp = 0;
+                    d.b_transform_8x8 = 0;
+                    d.skip = 0;
+                    for (int i = 0; i < 16; i++) {
+                        c->non_zero_count[phx_scan8[i]] = 0;
+                        c->intra4x4_pred_mode[phx_scan8[i]] = PHX_I_PRED_4x4_DC;
+                    }
+                    c->i_cbp_luma = c->i_cbp_chroma = 0;
+                    inter = 0;
                 }
-                c->i_cbp_luma = c->i_cbp_chroma = 0;
             }
-            /* encoder/macroblock.c:925-941/259-498 — encode chroma DC+AC from
-             * the NV12 plane into the explicit decision fields. */
-            int crc = phx_macroblock_encode_chroma(&h->param, h->fenc, c,
-                                                   mb_x, mb_y, &d);
-            if (crc < 0) { d.cbp_chroma = 0; d.i_cbp &= ~0x30; }
+            if (!inter) {
+                /* encoder/macroblock.c:925-941/259-498 — intra chroma DC+AC. */
+                int crc = phx_macroblock_encode_chroma(&h->param, h->fenc, c,
+                                                       mb_x, mb_y, &d);
+                if (crc < 0) { d.cbp_chroma = 0; d.i_cbp &= ~0x30; }
+            } else {
+                /* macroblock.c:940-943 — inter chroma MC belongs to the
+                 * B-stage (N1); no intra chroma residual is fabricated here. */
+                d.chroma_pred_mode = 0;
+                d.cbp_chroma = 0;
+                memset(d.chroma_dct, 0, sizeof(d.chroma_dct));
+                memset(d.chroma_nnz, 0, sizeof(d.chroma_nnz));
+            }
             phx_encoder_apply_decision(h, &d);         /* docs/SHADER_NOTES.md:126 */
 
             if (h->param.b_cabac) {
@@ -1014,6 +1132,9 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 mb.prev_type = mb_xy > 0 ? (int)h->mb_state->type[mb_xy-1] : -1;
                 mb.prev_cbp = mb_xy > 0 ? (int)h->mb_state->cbp[mb_xy-1] : 0;
                 mb.curr_cbp = d.i_cbp;
+                /* phx_encoder_apply_decision() published d->ref/d->mv into
+                 * mb.cache; phx_cabac_mb_header_p() reads them for ref/mvd
+                 * (cabac.c:590-591/446) instead of inventing zero motion. */
                 mb.i_fref[0] = fc.i_ref[0]; mb.i_fref[1] = fc.i_ref[1];
                 mb.b_transform_8x8_mode = h->pps.b_transform_8x8_mode;
                 mb.slice_type = fc.i_type;                 /* encoder.c:225 */
@@ -1058,6 +1179,9 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
 
     /* frame_num / POC / i_last_idr are advanced by phx_encoder_frame_context
      * above (encoder.c:3504-3513/3882); no second counter walk here. */
+    /* encoder.c:3882 — only reference pictures enter list 0 for later ME. */
+    if (fc.i_nal_ref_idc != 0)
+        h->i_last_ref_frame = frame_index;
     return nal.i_payload;                              /* encoder.c:2133 */
 }
 

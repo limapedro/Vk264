@@ -225,6 +225,15 @@ static int br_ue(phx_test_br_t *b)
     return z ? (int)((1u << z) - 1u + br_bits(b, z)) : 0;
 }
 
+/* common/bitstream.h:246-261 — signed Exp-Golomb used by slice_qp_delta and
+ * the deblocking offsets.  SHADER: C — serial scalar decode. */
+static int br_se(phx_test_br_t *b)
+{
+    int k = br_ue(b);
+    if (k < 0) return -1;
+    return (k & 1) ? (k + 1) / 2 : -(k / 2);
+}
+
 /* Remove Annex-B emulation prevention bytes (H.264 7.3.1, bitstream.c:29-39).
   * SHADER: C — serial byte scan. */
 static int deescape(const uint8_t *src, int n, uint8_t *dst)
@@ -504,11 +513,12 @@ static int tc_dec(phx_test_cabac_t *d, int ctx)
     return b;
 }
 
-static int tc_init(phx_test_cabac_t *d, const uint8_t *rbsp, int start, int qp)
+static int tc_init(phx_test_cabac_t *d, const uint8_t *rbsp, int start, int qp,
+                   int slice_type)
 {
     phx_cabac_t cb;
     memset(&cb, 0, sizeof(cb));
-    phx_cabac_context_init(&cb, PHX_SLICE_I, qp, 0);  /* cabac.c:32-43 */
+    phx_cabac_context_init(&cb, slice_type, qp, 0);   /* cabac.c:32-43 */
     memset(d, 0, sizeof(*d));
     d->rbsp = rbsp;
     d->bit = (start + 1) * 8;   /* 9-bit offset: 8th bit is from the next byte */
@@ -602,7 +612,7 @@ static int check_mb0_sequence(void)
     if (n < 16) { printf("FAIL mb0: short RBSP\n"); return 1; }
 
     phx_test_cabac_t d;
-    tc_init(&d, rbsp, cabac_start, 25);            /* slice_qp = 25, ratecontrol.c:821 */
+    tc_init(&d, rbsp, cabac_start, 25, PHX_SLICE_I); /* slice_qp = 25, ratecontrol.c:821 */
     int fails = 0;
     int mb_type_flag = tc_dec(&d, 3);              /* cabac.c:391, ctx = 3+0 */
     if (mb_type_flag != 0) { printf("FAIL mb0: mb_type not I_4x4\n"); fails++; }
@@ -611,7 +621,7 @@ static int check_mb0_sequence(void)
         printf("FAIL mb0: header transform_size flag\n"); fails++;
     }
     phx_test_cabac_t m;
-    tc_init(&m, rbsp, cabac_start, 25);
+    tc_init(&m, rbsp, cabac_start, 25, PHX_SLICE_I);
     tc_dec(&m, 3);
     tc_dec(&m, 399);
     int cache[80];
@@ -668,6 +678,180 @@ static int check_mb0_sequence(void)
     return fails;
 }
 
+/* ---- P-slice P_L0 MB syntax golden ------------------------------------- */
+/* The reference picture is a smooth ramp; the current picture is that ramp
+ * shifted by a known integer MV (+2,0).  x264's full-pel ME (encoder/me.c:
+ * 276-419) must find that MV and analyse.c:3056-3058/3221-3223 must choose
+ * P_L0/D_16x16 over every intra candidate.  The CABAC bins decoded below are
+ * the mb_type/sub-partition/MVD bins of cabac.c:439-446 in write order.
+ * SHADER: C — serial decode of one P MB header. */
+
+/* Decode the complete slice header of a P slice so the first CABAC byte is
+ * known.  Field order: encoder.c:213-364 / phx_slice.c:90-243. */
+static int parse_p_slice_end(const uint8_t *payload, int len,
+                             const phx_sps_t *sps, int *end_bit)
+{
+    uint8_t rbsp[1024];
+    int n = deescape(payload + 5, len - 5, rbsp);
+    if (n < 3 || !sps->b_frame_mbs_only || sps->i_poc_type > 2) return -1;
+    phx_test_br_t b = { rbsp, 0 };
+    if (br_ue(&b) < 0 || br_ue(&b) < 0 || br_ue(&b) < 0) return -1;
+    (void)br_bits(&b, sps->i_log2_max_frame_num);                 /* :227 */
+    if (sps->i_poc_type == 0)                                     /* :239 */
+        (void)br_bits(&b, sps->i_log2_max_poc_lsb);
+    if (!br_bit(&b)) {                                  /* num_ref_idx override */
+        /* one active L0 reference by default; no l0_minus1 field is written */
+    } else if (br_ue(&b) < 0) return -1;
+    if (!br_bit(&b)) {                                  /* ref list mod flag */
+    } else {
+        for (int i = 0; i < 32; i++) {
+            int idc = br_ue(&b);
+            if (idc < 0) return -1;
+            if (idc == 0 || idc == 1) { if (br_ue(&b) < 0) return -1; }
+            else if (idc == 2) { if (br_ue(&b) < 0) return -1; }
+            else break;                                  /* end of list */
+        }
+    }
+    if (br_bit(&b)) {                                   /* adaptive ref marking */
+        for (int i = 0; i < 32; i++) {
+            int op = br_ue(&b);
+            if (op < 0) return -1;
+            if (op == 0) break;
+            if (op == 1 || op == 3) { if (br_ue(&b) < 0) return -1; }
+            else if (op == 2) { if (br_ue(&b) < 0) return -1; }
+            else if (op == 3 || op == 6) { if (br_ue(&b) < 0) return -1; }
+            else if (op == 4) { if (br_ue(&b) < 0) return -1; }
+        }
+    }
+    if (br_ue(&b) < 0 || br_se(&b) < 0) return -1;      /* cabac_init_idc, qp_delta */
+    /* pps.b_deblocking_filter_control is always 1 (set.c:498). */
+    int disable = br_ue(&b);
+    if (disable < 0) return -1;
+    if (disable != 1 && (br_se(&b) < 0 || br_se(&b) < 0)) return -1;
+    *end_bit = b.bit;
+    return 0;
+}
+
+/* cabac.c:270-326 — decode the unary prefix of one MVD component with the
+ * all-zero left/top amvd context.  Only |mvd| <= 8 is expected here; larger
+ * values need the ue_bypass suffix and are reported as a parse failure. */
+static int tc_mvd_prefix(phx_test_cabac_t *d, int ctxbase)
+{
+    static const int8_t ctxes[8] = { 3,4,5,6,6,6,6,6 }; /* cabac.c:308 */
+    if (!tc_dec(d, ctxbase)) return 0;                   /* :276 */
+    int abs = 1;
+    for (int i = 0; i < 8; i++) {
+        if (!tc_dec(d, ctxbase + ctxes[i])) break;       /* :313-314 */
+        if (++abs >= 9) return -1;
+    }
+    (void)tc_bit(d);                                     /* :322 sign bypass */
+    return abs;
+}
+
+static int check_p_slice_mb(void)
+{
+    static uint8_t raw[2 * (64*64 + 2*32*32)];
+    phx_param_t p;
+    phx_param_default(&p);                              /* base.c:344 */
+    p.i_width = p.i_height = 64;
+    p.i_qp_constant = 28;
+    p.b_cabac = 1;
+    p.i_bframe = 0;                                     /* no reordering */
+    p.i_keyint_max = p.i_keyint_min = 30;
+    p.i_scenecut_threshold = 0;
+    p.i_weighted_pred = 0;                              /* no pred_weight_table */
+    p.i_aq_mode = 0;
+    p.b_mb_tree = 0;
+    p.analyse_inter = 1;
+    phx_param_finalize(&p);                             /* encoder.c:1218 */
+
+    for (int f = 0; f < 2; f++) {
+        uint8_t *plane = raw + f*(64*64 + 2*32*32);
+        for (int y = 0; y < 64; y++)
+            for (int x = 0; x < 64; x++)
+                plane[y*64 + x] = (uint8_t)(((((x + (f ? 2 : 0)) & 31)/2)
+                                          + 16*((y & 31)/2)));
+        memset(plane + 64*64, 128, 2*32*32);
+    }
+
+    phx_t *h = phx_encoder_open(&p);                    /* encoder.c:1507 */
+    if (!h) { printf("FAIL p-mb: open\n"); return 1; }
+    uint8_t stream[STREAM_CAP];
+    int used = 0, nn = 0, types[MAX_NALS], offs[MAX_NALS], lens[MAX_NALS];
+    for (int f = 0; f < 2; f++) {
+        phx_picture_t pic;
+        memset(&pic, 0, sizeof(pic));
+        size_t ysz = 64*64, csz = 32*32;
+        pic.plane[0] = raw + f*(ysz + 2*csz);
+        pic.plane[1] = pic.plane[0] + ysz;
+        pic.plane[2] = pic.plane[1] + csz;
+        pic.i_stride[0] = 64; pic.i_stride[1] = pic.i_stride[2] = 32;
+        pic.i_width = pic.i_height = 64;
+        phx_nal_t *out = NULL;
+        int nnal = 0;
+        uint8_t *recon = NULL;
+        if (phx_encode(h, &pic, &out, &nnal, &recon) < 0) {
+            printf("FAIL p-mb: encode %d\n", f);
+            phx_encoder_close(h);
+            return 1;
+        }
+        for (int j = 0; j < nnal; j++)
+            append_nals(stream, STREAM_CAP, &used, &out[j],
+                        types, offs, lens, &nn);
+    }
+    for (;;) {
+        phx_nal_t *out = NULL;
+        int nnal = 0;
+        uint8_t *recon = NULL;
+        int rc = phx_encoder_encode(h, NULL, &out, &nnal, &recon);
+        for (int j = 0; j < nnal; j++)
+            append_nals(stream, STREAM_CAP, &used, &out[j],
+                        types, offs, lens, &nn);
+        if (rc == 0) break;
+    }
+    phx_encoder_close(h);                               /* api.c:130 */
+
+    phx_sps_t sps;
+    phx_sps_init(&sps, &p, 64, 64);                     /* encoder.c:1579 */
+    int pnal = -1;
+    for (int i = 0; i < nn; i++) {
+        int st = -1, fn = -1, poc = -1;
+        if (types[i] == 1 && !parse_slice(stream + offs[i], lens[i],
+                                           &sps, types[i], &st, &fn, &poc) &&
+            st == PHX_SLICE_P) { pnal = i; break; }
+    }
+    if (pnal < 0) { printf("FAIL p-mb: no P slice NAL\n"); return 1; }
+
+    uint8_t rbsp[2048];
+    int n = deescape(stream + offs[pnal] + 5, lens[pnal] - 5, rbsp);
+    int end_bit = -1;
+    if (parse_p_slice_end(stream + offs[pnal], lens[pnal], &sps, &end_bit) ||
+        end_bit < 0 || n < 8) {
+        printf("FAIL p-mb: P slice header parse\n");
+        return 1;
+    }
+    int cabac_start = (end_bit + 7) / 8;                /* encoder.c:2795 */
+    phx_test_cabac_t d;
+    tc_init(&d, rbsp, cabac_start, 28, PHX_SLICE_P);     /* P slice QP = 28 */
+
+    int fails = 0;
+    if (tc_dec(&d, 14) != 0) {                          /* cabac.c:439 P_L0 */
+        printf("FAIL p-mb: mb_type is not P_L0\n"); fails++;
+    }
+    if (tc_dec(&d, 15) != 0 || tc_dec(&d, 16) != 0) {   /* cabac.c:442-443 */
+        printf("FAIL p-mb: partition is not D_16x16\n"); fails++;
+    }
+    int mvd_x = tc_mvd_prefix(&d, 40);                  /* cabac.c:446/272 */
+    int mvd_y = tc_mvd_prefix(&d, 47);                  /* cabac.c:446/272 */
+    if (mvd_x != 8 || mvd_y != 0) {                     /* +2 full-pel = 8 qpel */
+        printf("FAIL p-mb: MVD (%d,%d), want (8,0)\n", mvd_x, mvd_y);
+        fails++;
+    }
+    if (!fails)
+        printf("  p-mb: P_L0 / D_16x16, MVD 8/0 qpel from real full-pel ME\n");
+    return fails;
+}
+
 /* Standalone main; x264_encoder_open/headers/encode/close (api.c:76/159/166/
   * 130, encoder.c:1507/2096/3323/4196).  SHADER: C — serial smoke test. */
 int main(void)
@@ -708,6 +892,8 @@ int main(void)
     fails += check_slice_context_golden();
 
     fails += check_mb0_sequence();
+
+    fails += check_p_slice_mb();
 
     /* Aliases from docs/ORACLE_DESIGN.md:40-45 and invalid-parameter path
       * (validate_parameters, encoder.c:423/1552). */
