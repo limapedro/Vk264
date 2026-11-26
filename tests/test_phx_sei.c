@@ -154,22 +154,22 @@ int main(int argc, char **argv)
     printf("medium/cabac: NAL bytes = %d\n", n);
 
     if (n >= 8) {
-        printf("  start code: %02x %02x %02x %02x\n",
-               nal[0], nal[1], nal[2], nal[3]);
-        CHECK(nal[0] == 0 && nal[1] == 0 && nal[2] == 0 && nal[3] == 1,
-              "Annex-B 4-byte start code");
-        CHECK((nal[4] & 0x1f) == PHX_SEI_NAL_TYPE, "NAL type 6 (SEI)");
-        CHECK((nal[4] >> 5) == 0, "nal_ref_idc 0 (disposable)");
-        printf("  NAL header: %02x (type %u, ref_idc %u)\n", nal[4],
-               (unsigned)(nal[4] & 0x1f), (unsigned)(nal[4] >> 5));
-        CHECK(nal[5] == 0x05, "SEI payload type 5 (user_data_unregistered)");
-        CHECK(nal[6] == 0xff && nal[7] == 0xff && nal[8] == 0x6c,
+        /* x264 uses a 3-byte start code for SEI (encoder.c:2082-2083). */
+        printf("  start code: %02x %02x %02x\n", nal[0], nal[1], nal[2]);
+        CHECK(nal[0] == 0 && nal[1] == 0 && nal[2] == 1,
+              "Annex-B 3-byte start code");
+        CHECK((nal[3] & 0x1f) == PHX_SEI_NAL_TYPE, "NAL type 6 (SEI)");
+        CHECK((nal[3] >> 5) == 0, "nal_ref_idc 0 (disposable)");
+        printf("  NAL header: %02x (type %u, ref_idc %u)\n", nal[3],
+               (unsigned)(nal[3] & 0x1f), (unsigned)(nal[3] >> 5));
+        CHECK(nal[4] == 0x05, "SEI payload type 5 (user_data_unregistered)");
+        CHECK(nal[5] == 0xff && nal[6] == 0xff && nal[7] == 0x6c,
               "SEI payload size 618 encoded as ff ff 6c");
         printf("  leading bytes after header: %02x %02x %02x %02x %02x\n",
-               nal[5], nal[6], nal[7], nal[8], nal[9]);
+               nal[4], nal[5], nal[6], nal[7], nal[8]);
         check_tokens(nal, n, "medium");
         /* payload starts at 5; type (1) + size (3) + UUID (16) = 20 bytes */
-        printf("  option string: %s\n", (const char *)nal + 5 + 1 + 3 + 16);
+        printf("  option string: %s\n", (const char *)nal + 4 + 1 + 3 + 16);
     }
 
     /* --- second case: a contrasting preset, structural checks only --- */
@@ -180,8 +180,8 @@ int main(int argc, char **argv)
     CHECK(n2 > 0, "ultrafast/cavlc SEI NAL written");
     if (n2 > 0) {
         printf("ultrafast/cavlc: NAL bytes = %d\n", n2);
-        CHECK((nal2[4] & 0x1f) == PHX_SEI_NAL_TYPE, "ultrafast NAL type 6");
-        CHECK(nal2[5] == 0x05, "ultrafast SEI payload type 5");
+        CHECK((nal2[3] & 0x1f) == PHX_SEI_NAL_TYPE, "ultrafast NAL type 6");
+        CHECK(nal2[4] == 0x05, "ultrafast SEI payload type 5");
         check_tokens(nal2, n2, "ultrafast");
     }
 
@@ -212,14 +212,14 @@ int main(int argc, char **argv)
                     fprintf(stderr, "note: no SEI NAL in reference stream; "
                                     "skipping byte-exact check.\n");
                 } else {
-                    size_t got = n > 4 ? (size_t)(n - 4) : 0; /* drop our start code */
-                    int exact = (got == rn && memcmp(nal + 4, ref_nal, rn) == 0);
+                    size_t got = n > 3 ? (size_t)(n - 3) : 0; /* drop our 3-byte start code */
+                    int exact = (got == rn && memcmp(nal + 3, ref_nal, rn) == 0);
                     if (exact) {
                         printf("BYTE-EXACT MATCH vs saved reference SEI "
                                "(%u bytes)\n", (unsigned)rn);
                     } else {
                         size_t i = 0;
-                        while (i < got && i < rn && nal[4 + i] == ref_nal[i]) i++;
+                        while (i < got && i < rn && nal[3 + i] == ref_nal[i]) i++;
                         fprintf(stderr,
                                 "MISMATCH vs saved reference SEI: got %u bytes, "
                                 "ref %u bytes, first diff at %u\n",
