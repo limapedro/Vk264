@@ -1,0 +1,123 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "layout.glsl"
+#include "parallel_entropy.glsl"
+
+// Adapted from x264-vulkan/vulkan/cavlc_packet.comp.  RBSP bytes are emitted
+// in parallel 64-byte chunks; each chunk summary carries the carry for all
+// three possible incoming zero-run states, an index pass prefix-sums the
+// inserts, and an emit pass writes the final NAL with atomic word ORs at
+// chunk boundaries.
+#ifndef WX_EPB_PASS
+#define WX_EPB_PASS 0
+#endif
+
+layout(local_size_x=64) in;
+
+uint rbspByte(uint base, uint i) {
+    return (scratchWords[base + (i >> 2u)] >> (24u - 8u * (i & 3u))) & 255u;
+}
+
+// Only the leading zeros and the first nonzero byte depend on the incoming
+// zero-run state; after that byte all three states agree.
+uvec2 leadingState(uint zeros, uint length, uint first) {
+    uint run = zeros + length;
+    uint inserts = run == 0u ? 0u : (run - 1u) / 2u;
+    uint tail = run - 2u * inserts;
+    return uvec2(inserts + uint(first != 0u && first <= 3u && tail == 2u), tail);
+}
+
+uint summarize(uint base, uint begin, uint end) {
+    uint zeros = 0u, inserts = 0u, leading = 0u, first = 0u;
+    for (uint i = begin; i < end; ++i) {
+        uint value = rbspByte(base, i);
+        if (first == 0u) {
+            if (value == 0u) ++leading;
+            else first = value;
+        }
+        if (zeros == 2u && value <= 3u) { ++inserts; zeros = 0u; }
+        zeros = value == 0u ? zeros + 1u : 0u;
+    }
+    uint rest = inserts - leadingState(0u, leading, first).x;
+    uint summary = 0u;
+    for (uint incoming = 0u; incoming < 3u; ++incoming) {
+        uvec2 state = leadingState(incoming, leading, first);
+        uint outgoing = first == 0u ? state.y : zeros;
+        summary |= ((rest + state.x) | (outgoing << 8u)) << (10u * incoming);
+    }
+    return summary;
+}
+
+void indexChunks(uint slot, uint bytes, uint chunks) {
+    uint base = parallelSummaryBase(slot);
+    uint offset = 5u, zeros = 0u; // 4-byte start code plus one NAL header byte
+    for (uint chunk = 0u; chunk < chunks; ++chunk) {
+        uint entry = (scratchWords[base + chunk] >> (10u * zeros)) & 1023u;
+        scratchWords[base + chunk] = offset | (zeros << 24u);
+        offset += min(parallelChunkBytes, bytes - chunk * parallelChunkBytes) + (entry & 255u);
+        zeros = entry >> 8u;
+    }
+    uint finalBase = slot * pc.slotWords;
+    scratchWords[finalBase] = 0x01000000u; // 00 00 00 01
+    scratchWords[finalBase + 1u] = (scratchWords[parallelMetaBase(slot) + 4u] & parallelFlagIntra) != 0u
+                                   ? 0x65u : 0x41u;
+    scratchWords[parallelMetaBase(slot) + 10u] = offset;
+    slices[slot].x = offset > pc.slotWords * 4u ? 0xffffffffu : (offset + 3u) / 4u;
+}
+
+void emitByte(uint finalBase, inout uint offset, inout uint pending, inout bool partial, uint value) {
+    pending |= value << (8u * (offset & 3u));
+    ++offset;
+    if ((offset & 3u) == 0u) {
+        uint word = finalBase + ((offset - 1u) >> 2u);
+        // Only words shared with the neighboring chunk need atomic writes.
+        if (partial) atomicOr(scratchWords[word], pending);
+        else scratchWords[word] = pending;
+        pending = 0u;
+        partial = false;
+    }
+}
+
+void emitChunk(uint base, uint begin, uint end, uint entry, uint finalBase) {
+    uint offset = entry & 0xffffffu, zeros = entry >> 24u, pending = 0u;
+    bool partial = (offset & 3u) != 0u;
+    for (uint i = begin; i < end; ++i) {
+        uint value = rbspByte(base, i);
+        if (zeros == 2u && value <= 3u) {
+            emitByte(finalBase, offset, pending, partial, 3u);
+            zeros = 0u;
+        }
+        emitByte(finalBase, offset, pending, partial, value);
+        zeros = value == 0u ? zeros + 1u : 0u;
+    }
+    if ((offset & 3u) != 0u) atomicOr(scratchWords[finalBase + (offset >> 2u)], pending);
+}
+
+void main() {
+    uint slot = gl_WorkGroupID.y;
+    if (slot == 0u || slot > pc.sliceCount) return;
+    uint meta = parallelMetaBase(slot);
+    if ((scratchWords[meta + 4u] & parallelFlagActive) == 0u) return;
+    uint rbspBase = parallelRawBase(slot);
+    uint bytes = scratchWords[meta + 6u];
+    uint chunks = scratchWords[meta + 7u];
+#if WX_EPB_PASS == 0
+    uint chunk = gl_GlobalInvocationID.x;
+    if (chunk >= chunks) return;
+    uint begin = chunk * parallelChunkBytes, end = min(begin + parallelChunkBytes, bytes);
+    scratchWords[parallelSummaryBase(slot) + chunk] = summarize(rbspBase, begin, end);
+#elif WX_EPB_PASS == 1
+    if (gl_LocalInvocationID.x != 0u) return;
+    if ((scratchWords[meta + 4u] & parallelFlagOverflow) != 0u) {
+        slices[slot].x = 0xffffffffu;
+        return;
+    }
+    indexChunks(slot, bytes, chunks);
+#else
+    if ((scratchWords[meta + 4u] & parallelFlagOverflow) != 0u) return;
+    uint chunk = gl_GlobalInvocationID.x;
+    if (chunk >= chunks) return;
+    uint begin = chunk * parallelChunkBytes, end = min(begin + parallelChunkBytes, bytes);
+    emitChunk(rbspBase, begin, end, scratchWords[parallelSummaryBase(slot) + chunk], slot * pc.slotWords);
+#endif
+}

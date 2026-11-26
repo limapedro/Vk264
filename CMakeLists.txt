@@ -4,16 +4,27 @@ project(Wx264 LANGUAGES CXX)
 find_package(Vulkan REQUIRED COMPONENTS glslc)
 
 set(shader_dir "${CMAKE_CURRENT_BINARY_DIR}/shaders")
-foreach(shader IN ITEMS pyramid halfpel motion spatial older_references residual flat_intra deblock deblock_frame mb_flags mb_entropy entropy scan assemble)
+set(shader_dependencies "shaders/layout.glsl" "shaders/parallel_entropy.glsl"
+    "shaders/transform.glsl" "shaders/bitstream.glsl" "shaders/deblock_tables.glsl"
+    "shaders/macroblock_syntax.glsl" "shaders/deblock_filter.glsl"
+    "x264-vulkan/vulkan/cavlc_residual.glsl")
+foreach(shader IN ITEMS pyramid halfpel motion spatial older_references residual flat_intra deblock deblock_frame mb_flags mb_entropy entropy slice_offsets slice_bodies scan assemble)
     set(output "${shader_dir}/${shader}.spv")
     add_custom_command(OUTPUT "${output}"
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${shader_dir}"
         COMMAND Vulkan::glslc --target-env=vulkan1.1 -O
                 "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader}.comp" -o "${output}"
-        DEPENDS "shaders/${shader}.comp" "shaders/layout.glsl"
-                "shaders/transform.glsl" "shaders/bitstream.glsl" "shaders/deblock_tables.glsl"
-                "shaders/macroblock_syntax.glsl" "shaders/deblock_filter.glsl"
-                "x264-vulkan/vulkan/cavlc_residual.glsl"
+        DEPENDS "shaders/${shader}.comp" ${shader_dependencies}
+        VERBATIM)
+    list(APPEND shaders "${output}")
+endforeach()
+foreach(pass RANGE 0 2)
+    set(output "${shader_dir}/slice_epb${pass}.spv")
+    add_custom_command(OUTPUT "${output}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${shader_dir}"
+        COMMAND Vulkan::glslc --target-env=vulkan1.1 -O -DWX_EPB_PASS=${pass}
+                "${CMAKE_CURRENT_SOURCE_DIR}/shaders/slice_epb.comp" -o "${output}"
+        DEPENDS "shaders/slice_epb.comp" ${shader_dependencies}
         VERBATIM)
     list(APPEND shaders "${output}")
 endforeach()
