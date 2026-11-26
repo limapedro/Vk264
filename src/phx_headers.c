@@ -9,31 +9,34 @@
 
 /* common/tables.c:29-49 — the fields x264's auto-level validation uses:
  * level_idc, MaxMBPS, MaxFS, MaxMVRange.  SHADER: C — pure lookup. */
+/* columns: level_idc, MaxMBPS, MaxFS, MaxDPB (mbs), MaxMVRange — tables.c:31-49. */
 static const struct {
-    int level_idc, max_mbps, max_fs, max_mv_range;
+    int level_idc, max_mbps, max_fs, max_dpb, max_mv_range;
 } phx_levels[] = {
-    { 10,    1485,    99,  64 }, {  9,    1485,    99, 128 },
-    { 11,    3000,   396, 128 }, { 12,    6000,   396, 128 },
-    { 13,   11880,   396, 128 }, { 20,   11880,   396, 128 },
-    { 21,   19800,   792, 256 }, { 22,   20250,  1620, 256 },
-    { 30,   40500,  1620, 256 }, { 31,  108000,  3600, 512 },
-    { 32,  216000,  5120, 512 }, { 40,  245760,  8192, 512 },
-    { 41,  245760,  8192, 512 }, { 42,  522240,  8704, 512 },
-    { 50,  589824, 22080, 512 }, { 51,  983040, 36864, 512 },
-    { 52, 2073600, 36864, 512 }
+    { 10,    1485,    99,   396,  64 }, {  9,    1485,    99,   396, 128 },
+    { 11,    3000,   396,   900, 128 }, { 12,    6000,   396,  2376, 128 },
+    { 13,   11880,   396,  2376, 128 }, { 20,   11880,   396,  2376, 128 },
+    { 21,   19800,   792,  4752, 256 }, { 22,   20250,  1620,  8100, 256 },
+    { 30,   40500,  1620,  8100, 256 }, { 31,  108000,  3600, 18000, 512 },
+    { 32,  216000,  5120, 20480, 512 }, { 40,  245760,  8192, 32768, 512 },
+    { 41,  245760,  8192, 32768, 512 }, { 42,  522240,  8704, 34816, 512 },
+    { 50,  589824, 22080,110400, 512 }, { 51,  983040, 36864,184320, 512 },
+    { 52, 2073600, 36864,184320, 512 }
 };
 
 /* encoder/encoder.c:1245-1252 — x264 walks x264_levels from the first entry
  * until x264_validate_levels() passes.  With no VBV, the binding constraints
  * are MaxMBPS >= mb_width*mb_height*fps and MaxFS >= frame size (25 fps in
  * this port's VUI, phx_headers.c:63-67). */
-int phx_sps_auto_level(int mb_width, int mb_height)
+int phx_sps_auto_level(int mb_width, int mb_height, int num_ref_frames)
 {
     int fs = mb_width * mb_height;                       /* tables.c:31 MaxFS */
     int mbps = fs * 25;                                  /* tables.c:30 MaxMBPS */
+    int dpb = fs * num_ref_frames;                       /* x264.h x264_level_t.dpb */
     for (size_t i = 0; i < sizeof(phx_levels)/sizeof(phx_levels[0]); i++)
         if (mbps <= phx_levels[i].max_mbps &&
-            fs <= phx_levels[i].max_fs)
+            fs <= phx_levels[i].max_fs &&
+            dpb <= phx_levels[i].max_dpb)
             return phx_levels[i].level_idc;
     return 52;
 }
@@ -79,17 +82,16 @@ void phx_sps_init(phx_sps_t *s, const phx_param_t *p, int width, int height)
         s->i_profile_idc = 66;
     s->b_constraint_set0 = s->i_profile_idc == 66;      /* :129 */
     s->b_constraint_set1 = s->i_profile_idc <= 77;      /* :132 */
-    /* encoder.c:1245-1252 + set.c:137 — auto level from the coded frame size
-     * and the fixed 25 fps timebase.  Hardcoding 10 was correct only for the
-     * 64x64 fixture; 480x480@25 selects level 30 in x264. */
-    s->i_level_idc = phx_sps_auto_level(s->i_mb_width, s->i_mb_height);
-
     /* x264's default b_pyramid is 2 (normal) whenever B-frames are enabled. */
     int pyramid = p->i_bframe ? 2 : 0;
     int reorder = pyramid ? 2 : (p->i_bframe ? 1 : 0);  /* :147 */
     int refs = PHX_MAX(PHX_MAX(p->i_frame_reference, 1+reorder),
                        pyramid ? 4 : 1);               /* :151 X264_MAX4 */
     s->i_num_ref_frames = refs;                         /* :151 */
+    /* encoder.c:1245-1252 — auto level from MBPS, frame size AND DPB size.
+     * x264's MaxDPB constraint (x264_level_t.dpb) forces level 21 for 16 refs
+     * at 320x180, while MBPS/FS alone would select level 12. */
+    s->i_level_idc = phx_sps_auto_level(s->i_mb_width, s->i_mb_height, refs);
     s->vui_num_reorder_frames = reorder;                /* :147 */
     s->vui_max_dec_frame_buffering = refs;              /* :150 */
 
@@ -177,10 +179,12 @@ void phx_sps_write(phx_bs_t *b, const phx_sps_t *s)
     phx_bs_write1(b, s->b_direct8x8_inference);         /* :361 */
     phx_bs_write1(b, s->b_crop);                        /* :363 */
     if (s->b_crop) {
+        /* set.c:366-371 — v_shift = CHROMA_420 + !frame_mbs_only == 1 here.
+         * Writing crop_top/bottom verbatim produced 12 where x264 writes 6. */
         phx_bs_write_ue(b, (unsigned)s->crop_left >> 1);
         phx_bs_write_ue(b, (unsigned)s->crop_right >> 1);
-        phx_bs_write_ue(b, (unsigned)s->crop_top);
-        phx_bs_write_ue(b, (unsigned)s->crop_bottom);
+        phx_bs_write_ue(b, (unsigned)s->crop_top >> 1);
+        phx_bs_write_ue(b, (unsigned)s->crop_bottom >> 1);
     }
     phx_bs_write1(b, s->b_vui);                         /* :374 */
     if (s->b_vui) {
