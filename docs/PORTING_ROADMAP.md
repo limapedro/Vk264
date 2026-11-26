@@ -103,7 +103,10 @@ review document for the shader backend derived from it.
 
 | Gate | Measured result | Evidence |
 |---|---|---|
-| `ctest` (all registered tests) | **24/24 passing** | `python tools/run_tests.py` / CMake ctest |
+| `ctest` (all registered tests) | 27/29 passing (2 stale encoder goldens under repair) | `python tools/run_tests.py` / CMake ctest |
+| Function contract | 19 rows in `docs/BYTE_EXACT_FUNCTIONS.md` + 3 inter/B rows | `docs/BYTE_EXACT_FUNCTIONS.md` |
+| Real-video periodic matrix | 16 clips × 10 presets × 2 entropies = 320 pairs; 0 byte-exact; headers byte-exact in all cases | `tools/video_parity_matrix.py`, `build/oracle_matrix_scaled*/matrix_report.json` |
+| Reconstructed reference DPB | byte-exact deblocked L0 frames vs instrumented x264; wired into encoder | `src/phx_dpb.*`, `docs/PARITY_FINDINGS.md` F16 |
 | Function inventory | **273 PORTED of 1386 (19.7%)**; 1113 MISSING | `docs/FUNCTION_INVENTORY.md` |
 | Header parity | **byte-exact 20/20** SPS+PPS; version SEI byte-exact | `python tests/compare_headers.py`, `tools/cabac_bin_diff.py` |
 | MB0 CABAC bin trace | **715/715 bins exact**; first divergence bin 715 (MB1 mode) | `python tools/cabac_bin_diff.py --all` |
@@ -122,11 +125,21 @@ review document for the shader backend derived from it.
   (`phx_ratecontrol`) and subpel/chroma MC (`phx_mc`). `src/*.c` defines 27
   modules; `docs/FUNCTION_PORTS.md` is the per-function register and
   `docs/SHADER_NOTES.md` the shader-stage/SSBO design.
-- **Full-stream parity is not achieved.** 0/100 means zero of the 100 saved
-  x264 streams are byte-identical; it is a divergence, not a success metric.
-  First divergences: IDR slice payload byte 76 (MB1 intra4x4 mode decisions /
-  analysis-vs-encode reconstruction), stream bytes 35?39 across the corpus.
-  715/715 exact MB0 bins and 20/20 exact headers are necessary, not sufficient.
+- **Full-stream parity is not achieved.** Byte-exact streams remain 0 across
+  both the 100-case synthetic corpus and the 320-pair real-video matrix. This
+  is a failure inventory, not a success metric. Since F19 every case has
+  byte-identical SPS/PPS/SEI/NAL framing and slice headers; all divergence is
+  inside slice entropy. Current real-clip first divergent CABAC bin is 589
+  (luma 4x4 significant_coeff_flag, ctx 99 vs 100). 715/715 exact MB0 bins and
+  exact headers are necessary, not sufficient.
+- Proven byte-exact function goldens now cover: quant tables/objects, trellis
+  QNS + size-only CABAC cost, CABAC/CAVLC residual writers and skip runs,
+  chroma DC/AC, MB neighbour caches, ME fullpel/subpel/interpolation, slice
+  headers (160 x264 NALs), rate control QP/lambda, deblocking, reconstructed
+  DPB frames, lowres slice-type costs, B-direct/B_SKIP prediction.
+  Remaining integration gaps: B-slice encoder wiring (needs list-1 DPB refs),
+  upstream coefficient differences (bin 589), CAVLC CBP desync after DPB,
+  and x264's repeated SPS/PPS at each IDR.
 - Two real `D:\Videos` MP4s were decoded to 640x360/60f and encoded by x264 at
   `--bitrate 6000` for all 10 presets x CABAC/CAVLC: **40/40 streams** in
   `build/video_encode_test/`. Phoenix currently fails to open at 640x360 and
