@@ -60,4 +60,20 @@ byte-exact streams: 0/100  <-- parity NOT achieved
 first stream diffs: 586-825
 ```
 
+## F9 — real-video oracle sweep (continuous encode/decode gate)
+
+`tools/oracle_sweep.py` drives `tools/oracle_video.py` for Phoenix and x264 with identical parameters on a real `D:/Videos` clip (64x64 crop, 30 frames, QP28, `--fps 25`), verifies every stream decodes with `ffmpeg -f null -`, and records sizes/NAL counts/first differing byte.
+
+```
+10 presets x 2 entropies: 20/20 Phoenix decode OK, 20/20 x264 decode OK
+first stream diffs: 627 (ultrafast/cabac) ... 696 (placebo/cavlc)
+Phoenix sizes: 6694-10812 B   x264 sizes: 2299-2621 B
+SPS/PPS/SEI: byte-exact (21 / 4 / 542 B)
+all 30 slice headers: byte-exact (IDR 24 bits, P 19 bits)
+IDR entropy: first diff payload byte 46
+P entropy: first diff payload byte 4 (first MB); first P frame 292 B vs x264 6 B
+```
+
+Because all slice headers match, the stream-level failure is entirely in MB decisions and coefficients. The dominant gap is row 17 of `docs/BYTE_EXACT_FUNCTIONS.md`: `phx_encoder.c:1438` hard-codes `d.skip = 0`, so Phoenix never emits P_SKIP; x264's first P frame is all-skip (6 bytes). Rows 18-19 (residual inter and I_8x8) are required as soon as x264 codes a non-skip inter MB.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
