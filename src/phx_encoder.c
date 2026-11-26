@@ -288,7 +288,9 @@ int phx_headers(phx_t *h, phx_nal_t **out, int *nnal)
         h->header_nal[2].i_payload = sei_n;
         h->header_nal[2].i_ref_idc = 0;                 /* NAL_PRIORITY_DISPOSABLE */
         h->header_nal[2].i_type = 6;                    /* NAL_SEI */
-        h->header_nal[2].b_long_startcode = 1;
+        /* SEI is index 2 of the header NAL array, so x264 uses a 3-byte
+         * start code (encoder.c:2082-2083). */
+        h->header_nal[2].b_long_startcode = 0;
         n += sei_n;
     }
 
@@ -1550,7 +1552,10 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     nal.i_payload = (int)(bs.p - h->rbsp);
     nal.i_ref_idc = fc.i_nal_ref_idc;                  /* encoder.c:328 */
     nal.i_type = fc.b_idr ? 5 : 1;                     /* encoder.c:236 */
-    nal.b_long_startcode = 1;                          /* bitstream.c:63 */
+    /* encoder.c:2082-2083: the first frame's IDR slice follows SPS/PPS/SEI
+     * in the same NAL array (index 3), so it uses a short start code; slices
+     * of later frames start their own NAL array at index 0 and use long. */
+    nal.b_long_startcode = !(fc.b_idr && h->i_frame == 0);
     phx_nal_encode(h->bitstream, &nal, 1);             /* encoder.c:2124 */
     h->nal[0] = nal;                                   /* encoder.c:2130 */
     *out = h->nal;                                     /* api.c:169 */

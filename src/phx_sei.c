@@ -376,7 +376,9 @@ int phx_sei_version_write(uint8_t *dst, int cap, const phx_param_t *p,
     nal.i_ref_idc = 0;                                           /* x264.h:103,
                                                                    * encoder.c:2118 */
     nal.i_type = (int)PHX_SEI_NAL_TYPE;                          /* x264.h:94 */
-    nal.b_long_startcode = 1;                                    /* Annex-B first NAL */
+    /* After SPS/PPS this SEI is NAL index 2, so x264 uses a 3-byte start code
+     * (encoder.c:2082-2083). */
+    nal.b_long_startcode = 0;
 
     if (nal.i_payload > cap)                                     /* set.c:607 allocation
                                                                    * guard, adapted to a
