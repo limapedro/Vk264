@@ -22,6 +22,8 @@
 static int fails = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { \
     printf("FAIL %s (line %d)\n", msg, __LINE__); ++fails; } } while (0)
+#define CHECKF(cond, fmt, ...) do { if (!(cond)) { \
+    printf("FAIL " fmt " (line %d)\n", __VA_ARGS__, __LINE__); ++fails; } } while (0)
 
 /* Deterministic 32x32 ramp: enough AC energy for all three intra modes. */
 static void fill_frame(phx_frame_t *f)
@@ -461,6 +463,288 @@ static void check_decision(const phx_mb_decision_t *d, const char *tag)
     (void)tag;
 }
 
+/* ---- source-aligned I4 mode-decision goldens (worker Z1) ---------------- */
+
+/* tools/parity_harness.py:64-77 frame 0, the fixture used by
+ * tools/cabac_bin_diff.py.  Luma (i*7+j*13)&255 and interleaved NV12
+ * U=(128+i*5)&255 / V=(128+j*5)&255.  SHADER: B — deterministic input. */
+static void fill_parity_fixture(phx_frame_t *f)
+{
+    const int s = f->i_stride;
+    for (int y = 0; y < f->i_height; y++)
+        for (int x = 0; x < f->i_width; x++)
+            f->plane[x + y*s] = (uint8_t)((x*7 + y*13) & 255);
+    const int cs = f->i_stride_planes[1];
+    for (int y = 0; y < f->i_lines_planes[1]; y++)
+        for (int x = 0; x < f->i_width_planes[1]; x++) {
+            f->plane_chroma[y*cs + 2*x]     = (uint8_t)((128 + x*5) & 255);
+            f->plane_chroma[y*cs + 2*x + 1] = (uint8_t)((128 + y*5) & 255);
+        }
+}
+
+/* Analyse MB0 of the parity fixture exactly as the golden harness does:
+ * preset parameters, I slice, MB QP 25 (x264's I-frame QP from --qp 28),
+ * freshly initialised CABAC contexts (rdo.c:71-73 COPY_CABAC source state).
+ * The expected arrays are the 16 L1BLK `mode=` values x264's own
+ * encoder/cabac.c dump emits for MB0 at each preset (verified by
+ * tools/cabac_bin_diff.py).  SHADER: B — host golden of the A/B output. */
+static int check_mb0_i4_golden(const char *preset, const int want[16])
+{
+    phx_param_t p;
+    phx_param_default(&p);
+    p.i_width = 64; p.i_height = 64;
+    if (phx_param_apply_preset(&p, preset)) {
+        printf("FAIL mb0-golden: bad preset %s\n", preset);
+        return 1;
+    }
+    phx_param_finalize(&p);
+
+    phx_frame_t *f = phx_frame_new(64, 64, 0);
+    phx_mb_state_t *s = phx_mb_state_new(4, 4);
+    if (!f || !s) { printf("FAIL mb0-golden: allocation\n"); return 1; }
+    fill_parity_fixture(f);
+    s->slice_type = PHX_SLICE_I;
+    s->first_mb = 0;
+    for (int i = 0; i < 16; i++) s->type[i] = PHX_I_16x16;
+
+    phx_mb_cache_t cache;
+    phx_mb_decision_t d;
+    phx_cabac_t cb;
+    uint8_t cbuf[512];
+    memset(&cache, 0, sizeof(cache));
+    memset(&d, 0, sizeof(d));
+    memset(&cb, 0, sizeof(cb));
+    phx_cabac_context_init(&cb, PHX_SLICE_I, 25, 0);
+    phx_cabac_encode_init(&cb, cbuf, cbuf + sizeof(cbuf));
+    phx_macroblock_cache_load(s, &cache, 0, 0, 0);
+    int rc = phx_macroblock_analyse_slice(&p, f, NULL, &cache, &cb,
+                                          0, 0, 25, PHX_SLICE_I, &d);
+    CHECK(rc == 0, "mb0-golden analysis succeeds");
+    if (!rc) {
+        CHECKF(d.mb_type == PHX_I_4x4, "MB0 chose I_4x4 at %s", preset);
+        for (int i = 0; i < 16; i++)
+            CHECKF(d.intra4x4_pred_mode[i] == want[i],
+                   "MB0 I4 block %d at %s: expected %d got %d",
+                   i, preset, want[i], d.intra4x4_pred_mode[i]);
+    }
+    phx_mb_state_delete(s);
+    phx_frame_delete(f);
+    return 0;
+}
+
+/* x264 L1BLK mode= arrays from encoder/cabac.c, one per preset.  Rows come
+ * from the authoritative golden trace (golden_stderr.txt) grouped by preset:
+ * SAD presets choose HU broadly, the mbrd==0 SATD presets apply the x3+shortcut,
+ * and the RD presets re-cost with rd_cost_i4x4() before publishing. */
+static const int z1_superfast_modes[16] = {
+    11, 8, 3, 8, 8, 8, 8, 8, 3, 8, 3, 8, 8, 8, 8, 8
+};
+static const int z1_veryfast_modes[16] = {
+    11, 1, 3, 8, 1, 1, 1, 1, 3, 1, 3, 1, 1, 1, 4, 8
+};
+static const int z1_faster_modes[16] = {
+    11, 1, 3, 8, 1, 1, 1, 1, 3, 1, 3, 1, 1, 1, 4, 8
+};
+static const int z1_medium_modes[16] = {
+    11, 1, 3, 8, 1, 1, 3, 1, 3, 3, 3, 1, 3, 1, 4, 8
+};
+static const int z1_slow_modes[16] = {
+    11, 8, 3, 1, 8, 1, 1, 1, 3, 1, 3, 1, 3, 1, 4, 8
+};
+static const int z1_placebo_modes[16] = {
+    11, 8, 3, 1, 8, 1, 1, 1, 3, 1, 3, 1, 3, 1, 4, 8
+};
+static const int z1_veryslow_modes[16] = {
+    11, 8, 3, 1, 8, 1, 1, 1, 3, 1, 3, 1, 3, 1, 4, 8
+};
+
+/* W8's caller-owned reconstructed FDEC border must survive analysis; this
+ * golden also pins MB1's exact I4 mode array after the reconstructed left
+ * neighbour has been encoded by MB0.  SHADER: B — caller FDEC boundary. */
+static int check_mb1_medium_golden(void)
+{
+    static const int want[16] = {
+        1, 8, 1, 1, 1, 9, 0, 8, 5, 8, 8, 8, 3, 1, 3, 1
+    };
+    phx_param_t p;
+    phx_param_default(&p);
+    p.i_width = 64; p.i_height = 64;                /* parity fixture geometry */
+    phx_param_apply_preset(&p, "medium");
+    phx_param_finalize(&p);
+
+    phx_frame_t *f = phx_frame_new(64, 64, 0);
+    phx_mb_state_t *s = phx_mb_state_new(4, 4);
+    if (!f || !s) { printf("FAIL mb1-golden: allocation\n"); return 1; }
+    fill_parity_fixture(f);
+    s->slice_type = PHX_SLICE_I;
+    s->first_mb = 0;
+    for (int i = 0; i < 16; i++) s->type[i] = PHX_I_16x16;
+
+    const int fs = PHX_FDEC_STRIDE;
+    uint8_t *buf = (uint8_t *)calloc((size_t)fs * 48 + 4, 1);
+    uint8_t *fdec = buf + 2*fs + 1;                 /* macroblock.c:533 */
+    if (!buf) { printf("FAIL mb1-golden: allocation\n"); return 1; }
+
+    /* x264's reconstructed right edge of MB0 at medium/cabac, read from an
+     * instrumented reference build at the entry to MB1's mb_analyse_intra
+     * (common/macroblock.c:1645-1655).  Seeding the caller-owned FDEC border
+     * with these exact samples makes the I4 predictors see byte-identical
+     * inputs; W8's fix guarantees analysis leaves this border untouched. */
+    static const uint8_t mb0_right_edge[16] = {
+        106, 115, 132, 141, 160, 170, 185, 194,
+        212, 223, 238, 247,   3,  14,  36,  48
+    };
+    /* x264's per-MB intra4x4 predictor cache at the entry to MB1's analysis,
+     * from the same instrumented golden build (macroblock.h:180 scan8 layout).
+     * Seeding it keeps this golden independent of the cache-save port. */
+    static const int8_t mb1_cache_modes[40] = {
+        0, 0, 0, 0, -1,-1,-1,-1, 0, 0, 0, 1, 1, 1, 9, 9,
+        0, 0, 0, 1, 1, 1, 9, 9, 0, 0, 0, 1, 8, 8, 3, 1,
+        0, 0, 0, 8, 8, 8, 4, 8
+    };
+
+    phx_mb_cache_t cache;
+    phx_mb_decision_t d0, d1;
+    memset(&cache, 0, sizeof(cache));
+    memset(&d0, 0, sizeof(d0));
+    memset(&d1, 0, sizeof(d1));
+    phx_macroblock_cache_load(s, &cache, 0, 0, 0);
+    cache.p_fdec = fdec;                 /* caller-owned reconstruction buffer */
+    cache.fdec_stride = fs;
+    CHECK(phx_macroblock_analyse_slice(&p, f, NULL, &cache, NULL,
+                                       0, 0, 25, PHX_SLICE_I, &d0) == 0,
+          "mb1-golden: MB0 analysis succeeds");
+    /* Publish MB0's neighbour modes/coefficients and reconstructed pixels
+     * exactly as phx_encoder.c does between MBs (x264 macroblock.c:1645-1655).
+     * W8: analysis must not overwrite the caller's reconstructed border. */
+    s->type[0] = d0.mb_type;             /* cache_save reads the MB type here */
+    phx_macroblock_cache_save(s, &cache, 0);
+    for (int y = 0; y < 16; y++) fdec[15 + y*fs] = mb0_right_edge[y];
+    phx_macroblock_cache_load(s, &cache, 1, 0, 0);
+    cache.p_fdec = fdec + 16;            /* caller advances FDEC per MB */
+    cache.fdec_stride = fs;
+    memcpy(cache.intra4x4_pred_mode, mb1_cache_modes, sizeof(mb1_cache_modes));
+    CHECK(cache.i_neighbour_intra & PHX_MB_LEFT,
+          "mb1-golden: left neighbour available at MB1");
+    CHECK(phx_macroblock_analyse_slice(&p, f, NULL, &cache, NULL,
+                                       1, 0, 25, PHX_SLICE_I, &d1) == 0,
+          "mb1-golden: MB1 analysis succeeds");
+    for (int i = 0; i < 16; i++)
+        CHECKF(d1.intra4x4_pred_mode[i] == want[i],
+               "MB1 I4 block %d (medium): expected %d got %d",
+               i, want[i], d1.intra4x4_pred_mode[i]);
+    /* W8 invariant: the caller-owned reconstructed border is untouched. */
+    for (int y = 0; y < 16; y++)
+        CHECK(fdec[15 + y*fs] == mb0_right_edge[y],
+              "MB1 analysis preserved the reconstructed left border");
+
+    free(buf);
+    phx_mb_state_delete(s);
+    phx_frame_delete(f);
+    return 0;
+}
+
+/* ---- row 17: byte-exact P_SKIP decision golden -------------------------- */
+
+/* x264 instrumented at encoder/encoder.c:2861 (after x264_macroblock_analyse)
+ * for a 64x64 two-frame static fixture (frame 1 is a byte-identical copy of
+ * frame 0), ultrafast/QP28/CABAC.  Golden: all 16 MBs P_SKIP.  MB0 is
+ * promoted from P_L0 by encoder/macroblock.c:953-964 after encode; MB1..15
+ * take the fast probe at analyse.c:3009-3013 (left/top neighbour P_SKIP).
+ * No approximation: each flag comes from x264's own h->mb.i_type sampled
+ * after x264_macroblock_encode(). */
+static const uint8_t z1_pskip_golden[16] = {
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+};
+
+/* Analyse one complete static P frame through the real per-MB driver,
+ * publishing MB types into the neighbour state exactly as the encoder does.
+ * SHADER: B — per-MB decision boundary golden (skip flag + MB type). */
+static int check_pskip_decision_golden(void)
+{
+    phx_param_t p;
+    phx_param_default(&p);
+    p.i_width = 64; p.i_height = 64;
+    if (phx_param_apply_preset(&p, "ultrafast")) {
+        printf("FAIL pskip-golden: bad preset\n");
+        return 1;
+    }
+    phx_param_finalize(&p);
+
+    phx_frame_t *fref = phx_frame_new(64, 64, 0);
+    phx_frame_t *fenc = phx_frame_new(64, 64, 0);
+    phx_mb_state_t *s = phx_mb_state_new(4, 4);
+    if (!fref || !fenc || !s) {
+        printf("FAIL pskip-golden: allocation\n");
+        return 1;
+    }
+    fill_parity_fixture(fref);                 /* frame 0 source */
+    fill_parity_fixture(fenc);                 /* frame 1: static duplicate */
+    s->slice_type = PHX_SLICE_I;
+    s->first_mb = 0;
+    for (int i = 0; i < 16; i++) s->type[i] = PHX_I_16x16;
+
+    const int fs = PHX_FDEC_STRIDE;
+    uint8_t *buf = (uint8_t *)calloc((size_t)fs * 48 + 64, 1);
+    if (!buf) { printf("FAIL pskip-golden: allocation\n"); return 1; }
+
+    /* Reconstruct frame 0 the same way x264 does before coding frame 1;
+     * the P_SKIP probe compares against this reconstructed reference. */
+    for (int mb = 0; mb < 16; mb++) {
+        int x = mb & 3, y = mb >> 2;
+        phx_mb_cache_t ic;
+        phx_mb_decision_t id;
+        memset(&ic, 0, sizeof(ic));
+        memset(&id, 0, sizeof(id));
+        phx_macroblock_cache_load(s, &ic, x, y, 0);
+        ic.p_fdec = buf + 2*fs + 1;
+        ic.fdec_stride = fs;
+        int rc = phx_macroblock_analyse_slice(&p, fref, NULL, &ic, NULL,
+                                              x, y, 25, PHX_SLICE_I, &id);
+        CHECKF(rc == 0, "pskip-golden: I MB %d analysis succeeds", mb);
+        for (int j = 0; j < 16; j++)
+            for (int i = 0; i < 16; i++)
+                fref->plane[(y*16+j)*fref->i_stride + x*16+i] =
+                    ic.p_fdec[i + j*fs];
+        s->type[mb] = id.mb_type;
+        phx_macroblock_cache_save(s, &ic, 0);
+    }
+
+    s->slice_type = PHX_SLICE_P;
+    s->first_mb = 0;
+    for (int i = 0; i < 16; i++) s->type[i] = PHX_I_16x16;
+
+    for (int mb = 0; mb < 16; mb++) {
+        int x = mb & 3, y = mb >> 2;
+        phx_mb_cache_t cache;
+        phx_mb_decision_t d;
+        memset(&cache, 0, sizeof(cache));
+        memset(&d, 0, sizeof(d));
+        phx_macroblock_cache_load(s, &cache, x, y, 0);
+        cache.p_fdec = buf + 2*fs + 1 + x*16;    /* caller advances per MB */
+        cache.fdec_stride = fs;
+        int rc = phx_macroblock_analyse_slice(&p, fenc, fref, &cache, NULL,
+                                              x, y, 28, PHX_SLICE_P, &d);
+        CHECKF(rc == 0, "pskip-golden: MB %d analysis succeeds", mb);
+        if (rc) continue;
+        CHECKF(d.skip == z1_pskip_golden[mb],
+               "pskip-golden: MB %d skip expected %d got %d",
+               mb, z1_pskip_golden[mb], d.skip);
+        CHECKF(d.mb_type == (d.skip ? PHX_P_SKIP : PHX_P_L0),
+               "pskip-golden: MB %d type expected %d got %d",
+               mb, d.skip ? PHX_P_SKIP : PHX_P_L0, d.mb_type);
+        /* publish into the neighbour state for the next MB (encoder.c:2861) */
+        s->type[mb] = d.mb_type;
+        phx_macroblock_cache_save(s, &cache, 0);
+    }
+
+    free(buf);
+    phx_mb_state_delete(s);
+    phx_frame_delete(fref);
+    phx_frame_delete(fenc);
+    return 0;
+}
+
 int main(void)
 {
     phx_param_t p;
@@ -552,6 +836,19 @@ int main(void)
     fails += check_analysis_leaves_cabac_untouched();
     fails += check_caller_fdec_border();
     fails += check_high_ref_analysis();
+
+    /* Source-aligned I4 mode-decision goldens (worker Z1, rows 1-3). */
+    fails += check_mb0_i4_golden("superfast", z1_superfast_modes);
+    fails += check_mb0_i4_golden("veryfast", z1_veryfast_modes);
+    fails += check_mb0_i4_golden("faster", z1_faster_modes);
+    fails += check_mb0_i4_golden("medium", z1_medium_modes);
+    fails += check_mb0_i4_golden("slow", z1_slow_modes);
+    fails += check_mb0_i4_golden("placebo", z1_placebo_modes);
+    fails += check_mb0_i4_golden("veryslow", z1_veryslow_modes);
+    fails += check_mb1_medium_golden();
+
+    /* Row 17 — P_SKIP decision golden vs x264's own probe/fast-skip path. */
+    fails += check_pskip_decision_golden();
 
     /* Bad arguments must fail cleanly without touching the decision. */
     CHECK(phx_macroblock_analyse(NULL, f, &cache, 0, 0, 26, &d2) == -1,

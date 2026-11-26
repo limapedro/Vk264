@@ -19,6 +19,7 @@
 #include "phx_cost.h"
 #include "phx_dct.h"
 #include "phx_me.h"
+#include "phx_mc.h"
 #include "phx_predict.h"
 #include "phx_quant.h"
 #include "phx_rdo.h"            /* trellis QNS, analyse.c:261 */
@@ -48,6 +49,9 @@ typedef uint32_t phx_sum2_t;
 #define PHX_COPY2_IF_LT(x,y,a,b) do { \
     if ((y) < (x)) { (x) = (y); (a) = (b); } \
 } while (0)
+/* x264 encoder/me.h:80-85 — keep the reference macro name for the ported
+ * analysis searches; identical semantics to PHX_COPY2_IF_LT above. */
+#define COPY2_IF_LT(x,y,a,b) PHX_COPY2_IF_LT(x,y,a,b)
 
 /* x264 common/common.h:93-108 — x264_clip3(), used to replicate the frame
  * border samples that frame.c:535-553 places outside the coded area.
@@ -113,6 +117,27 @@ static const int8_t phx_i4x4_mode_available[5][10] = {
     {  2,  1,  0,  3,  4,  5,  6,  7,  8, -1 },
 };
 
+/* x264 encoder/analyse.c:695 — i16x16_thresh_lut[11]. */
+static const uint8_t phx_i16x16_thresh_lut[11] = {
+    2, 2, 2, 3, 3, 4, 4, 4, 4, 4, 4
+};
+/* x264 encoder/analyse.c:859 — i8x8_thresh[11]. */
+static const uint8_t phx_i8x8_thresh_lut[11] = {
+    4, 4, 4, 5, 5, 5, 6, 6, 6, 6, 6
+};
+
+/* x264 encoder/analyse.c:673-683 — intra_analysis_shortcut[avoid_topright]
+ * [predict_mode[8]>=0][favor_vertical].  At mbrd==0 (and no fast-intra) x264
+ * prunes the post-x3 candidate list to this short list, so modes such as DDL
+ * are never evaluated; a full-mode loop can pick a different winner.
+ * SHADER: A — immutable table lookup. */
+static const int8_t phx_intra_analysis_shortcut[2][2][2][5] = {
+    {{{ 8, -1, -1, -1, -1 }, { 3, 7, -1, -1, -1 }},
+     {{ 4, 6,  8, -1, -1 }, { 3, 4,  5,  7, -1 }}},
+    {{{ 8, -1, -1, -1, -1 }, {-1, -1, -1, -1, -1 }},
+     {{ 4, 6,  8, -1, -1 }, { 4, 5, -1, -1, -1 }}},
+};
+
 /* x264 common/macroblock.h:225-246 expressed as (x,y) so either stride works. */
 static const uint8_t phx_block_xy[16][2] = {
     { 0,0 }, { 4,0 }, { 0,4 }, { 4,4 },
@@ -155,6 +180,13 @@ typedef struct {
     phx_mb_cache_t *cache;
     phx_cabac_t *cb;                  /* live CABAC state, read-only for trellis */
     int mbrd;                         /* analyse.c:301 (subme>=6)+(subme>=8)+... */
+    int b_satd;                       /* encoder.c:1411 mbcmp selector (SATD/SAD) */
+    int b_early_terminate;            /* analyse.c:303 — subme < 11 */
+    int b_fast_intra;                 /* analyse.c:320/:457 — P-slice fast intra */
+    int b_avoid_topright;             /* analyse.c:321/:466 — P-slice intra refresh */
+    int i_satd_inter;                 /* analyse.c:2939 COST_MAX for I slices */
+    int b_try_skip;                   /* analyse.c:2959/:3008 P_SKIP trial gate */
+    int fast_skip;                    /* analyse.c:3009-3013 fast P_SKIP result */
     phx_cost_tables_t *costs;
     phx_quant_tables_t *quant;
     phx_mb_analysis_t a;
@@ -168,6 +200,8 @@ typedef struct {
     int satd_i16x16, satd_i8x8, satd_i4x4;
     int pred16, pred8[4], pred4[16];
     int cbp_luma, cbp_chroma;
+    phx_dctcoef fenc_dct4[16][16];   /* mb_init_fenc_cache, analyse.c:566 */
+    phx_dctcoef fenc_dct8[4][64];    /* :564 (b_transform_8x8) */
 } phx_analysis_ctx_t;
 
 /* Full-pel P16 search result, the reduced x264_me_t of analyse.c:1257-1313.
@@ -252,6 +286,59 @@ static int phx_satd_16x16(const uint8_t *p1, int s1, const uint8_t *p2, int s2)
          + phx_satd_8x8(p1 + 8, s1, p2 + 8, s2)
          + phx_satd_8x8(p1 + 8*s1, s1, p2 + 8*s2, s2)
          + phx_satd_8x8(p1 + 8 + 8*s1, s1, p2 + 8 + 8*s2, s2);
+}
+
+/* x264 common/pixel.c:55-73 — PIXEL_SAD_C(w,h).  superfast has
+ * i_subpel_refine=1 (base.c:517-521), so encoder.c:1411 selects SAD, not
+ * SATD, for every mbcmp[PIXEL_*] used by mb_analyse_intra[_chroma].
+ * SHADER: A — one reduction per tile, no state. */
+static int phx_sad_generic(const uint8_t *p1, int s1,
+                           const uint8_t *p2, int s2, int w, int h)
+{
+    int sum = 0;                                        /* pixel.c:59 */
+    for (int y = 0; y < h; y++, p1 += s1, p2 += s2)     /* :60/67-68 */
+        for (int x = 0; x < w; x++)                     /* :61 */
+            sum += abs((int)p1[x] - (int)p2[x]);        /* :64 */
+    return sum;                                         /* :69 */
+}
+static int phx_sad_4x4(const uint8_t *p1, int s1, const uint8_t *p2, int s2)
+{
+    return phx_sad_generic(p1, s1, p2, s2, 4, 4);
+}
+static int phx_sad_8x4(const uint8_t *p1, int s1, const uint8_t *p2, int s2)
+{
+    return phx_sad_generic(p1, s1, p2, s2, 8, 4);
+}
+static int phx_sad_8x8(const uint8_t *p1, int s1, const uint8_t *p2, int s2)
+{
+    return phx_sad_generic(p1, s1, p2, s2, 8, 8);
+}
+static int phx_sad_16x16(const uint8_t *p1, int s1, const uint8_t *p2, int s2)
+{
+    return phx_sad_generic(p1, s1, p2, s2, 16, 16);
+}
+
+/* x264 encoder/encoder.c:1409-1422 — mbcmp_init(): for 8-bit non-lossless
+ * subme>1 the comparator is SATD, otherwise SAD.  All intra mode searches
+ * below use this exact dispatch (analyse.c:700/712/729/749/816/934/962,
+ * :622/:626/:655-656).  SHADER: A — pure metric selection, no state. */
+static int phx_mbcmp16(int b_satd,
+                       const uint8_t *p1, int s1, const uint8_t *p2, int s2)
+{
+    return b_satd ? phx_satd_16x16(p1, s1, p2, s2)
+                  : phx_sad_16x16(p1, s1, p2, s2);
+}
+static int phx_mbcmp8(int b_satd,
+                      const uint8_t *p1, int s1, const uint8_t *p2, int s2)
+{
+    return b_satd ? phx_satd_8x8(p1, s1, p2, s2)
+                  : phx_sad_8x8(p1, s1, p2, s2);
+}
+static int phx_mbcmp4(int b_satd,
+                      const uint8_t *p1, int s1, const uint8_t *p2, int s2)
+{
+    return b_satd ? phx_satd_4x4(p1, s1, p2, s2)
+                  : phx_sad_4x4(p1, s1, p2, s2);
 }
 
 /* x264 common/pixel.c:334-372 — sa8d_8x8() + x264_pixel_sa8d_8x8().
@@ -497,6 +584,50 @@ static void phx_predict8(int mode, uint8_t *dst, const uint8_t edge[36], int str
     }
 }
 
+/* x264 common/pixel.c:542-554 — INTRA_MBCMP(sad/satd,4x4,v,h,dc,,,c):
+ * predict V, H and DC into fdec in turn, measuring each with the encoder's
+ * selected comparator; fdec is left holding the DC prediction (the x3 path
+ * does not write the winner — analyse.c:953-956 does that afterwards).
+ * SHADER: A — three 4x4 predictions + comparisons, no state. */
+static void phx_i4_x3(const phx_analysis_ctx_t *c, const uint8_t *src, int ss,
+                      uint8_t *dst, int ds, int res[4])
+{
+    phx_predict4_v_fixed(dst, ds);       /* pixel.c:553 pred1=v */
+    res[0] = phx_mbcmp4(c->b_satd, dst, ds, src, ss);
+    phx_predict_4x4_h(dst, ds);          /* :553 pred2=h */
+    res[1] = phx_mbcmp4(c->b_satd, dst, ds, src, ss);
+    phx_predict_4x4_dc(dst, ds);         /* :553 pred3=dc */
+    res[2] = phx_mbcmp4(c->b_satd, dst, ds, src, ss);
+}
+
+/* x264 common/pixel.c:518-531 — INTRA_MBCMP_8x8(sa8d,,_c): V, H, DC with
+ * SA8D (the 8x8 x9 kernel is absent in the C-only reference build, so
+ * analyse.c:784-804 takes this branch).  SHADER: A — no state. */
+static void phx_i8_x3(const uint8_t *src, int ss, uint8_t *dst,
+                      const uint8_t edge[36], int ds, int res[4])
+{
+    phx_predict8(0, dst, edge, ds);      /* pixel.c:522 v */
+    res[0] = phx_sa8d_8x8(dst, ds, src, ss);
+    phx_predict8(1, dst, edge, ds);      /* :524 h */
+    res[1] = phx_sa8d_8x8(dst, ds, src, ss);
+    phx_predict8(2, dst, edge, ds);      /* :526 dc */
+    res[2] = phx_sa8d_8x8(dst, ds, src, ss);
+}
+
+/* x264 common/pixel.c:542-556 — INTRA_MBCMP(sad/satd,8x8,dc,h,v,c,,,c),
+ * used by analyse.c:622-623.  SHADER: A — no state. */
+static void phx_chroma_x3(const phx_analysis_ctx_t *c,
+                          const uint8_t *src, int ss, uint8_t *dst, int ds,
+                          int res[4])
+{
+    phx_predict_8x8c_dc(dst, ds);         /* pixel.c:555 pred1=dc */
+    res[0] = phx_mbcmp8(c->b_satd, dst, ds, src, ss);
+    phx_predict_8x8c_h(dst, ds);          /* :555 pred2=h */
+    res[1] = phx_mbcmp8(c->b_satd, dst, ds, src, ss);
+    phx_predict_8x8c_v(dst, ds);          /* :555 pred3=v */
+    res[2] = phx_mbcmp8(c->b_satd, dst, ds, src, ss);
+}
+
 /* ---- cache / reconstruction setup --------------------------------------- */
 
 /* x264 common/macroblock.c:489-498 and :1340-1351 — i_neighbour4/8 tables.
@@ -520,6 +651,24 @@ static void phx_init_neighbours(phx_analysis_ctx_t *c)
         ((in & PHX_MB_LEFT) ? (PHX_MB_LEFT|PHX_MB_TOPLEFT) : 0);
     c->n4[5] = c->n8[1] = PHX_MB_LEFT | (in & PHX_MB_TOPRIGHT) |
         ((in & PHX_MB_TOP) ? (PHX_MB_TOP|PHX_MB_TOPLEFT) : 0);
+}
+
+/* x264 encoder/analyse.c:569-584 — mb_init_fenc_cache().  The frame-level
+ * SATD/hadamard caches (:577-583) are a pure speed optimisation in the
+ * C-only reference: cached_satd (rdo.c:94-112) recomputes the same value on a
+ * miss, and ssd_plane (rdo.c:123-148) reads the same fenc/fdec windows.
+ * The observable part is psy_trellis_init (:561-567), which stores the
+ * unquantized source DCT used by trellis QNS (rdo.c:822-829).  Compute it
+ * here and hand it to phx_rdo_set_config() in phx_analysis_quant4().
+ * SHADER: B — source-pixel staging for the per-MB trellis workgroup. */
+static void phx_analysis_mb_init_fenc_cache(phx_analysis_ctx_t *c)
+{
+    static const uint8_t zero[16] = { 0 };
+    if (c->p->i_trellis == 2 && c->p->f_psy_trellis != 0.0) {
+        if (c->p->b_transform_8x8)
+            phx_sub16x16_dct8(c->fenc_dct8, c->fenc, c->fenc_stride, zero, 0);
+        phx_sub16x16_dct(c->fenc_dct4, c->fenc, c->fenc_stride, zero, 0);
+    }
 }
 
 /* x264 common/macroblock.c:501-548 (p_fdec layout, FDEC_STRIDE=32) and
@@ -577,6 +726,10 @@ static int phx_analysis_quant4(phx_analysis_ctx_t *c, phx_dctcoef d[16],
         phx_rdo_config_t cfg;
         phx_rdo_get_config(&cfg);
         cfg.idx = idx;                              /* psy-trellis block index */
+        /* analyse.c:570-573 / rdo.c:822-829 — psy-trellis source DCT from
+         * mb_init_fenc_cache(); no-op when i_psy_trellis == 0. */
+        cfg.i_psy_trellis = (int)(c->p->f_psy_trellis*(1 << 8) + .5);
+        cfg.fenc_dct4 = c->fenc_dct4[idx];
         phx_rdo_set_config(&cfg);
         /* CQM_4IY = 0 (common/set.h:32), DCT_LUMA_4x4 = 2 (macroblock.h:275). */
         return phx_quant_4x4_trellis(c->cb, d, 0, qp, PHX_DCT_LUMA_4x4, b_intra);
@@ -687,35 +840,77 @@ static void phx_encode_i16(phx_analysis_ctx_t *c, phx_mb_decision_t *d)
 
 /* ---- intra mode searches (encoder/analyse.c:668-980) -------------------- */
 
-/* x264 encoder/analyse.c:688-742 — I16x16 SATD selection.  The x3 fast path
- * is replaced by an explicit loop over the same modes (identical costs).
- * SHADER: B — uses the neighbour-mode table and the per-MB lambda. */
+/* x264 encoder/analyse.c:688-742 — I16x16 selection.  The x3 candidate
+ * pre-selection (analyse.c:700-715) is reproduced exactly, including the
+ * `i16x16_thresh` plane pruning (:696/:709) and the per-mode bit cost
+ * (:701-703/:713/:730).  The comparator is x264's mbcmp (SAD at subme<2,
+ * SATD otherwise — encoder.c:1411).  SHADER: B — neighbour modes + lambda. */
 static void phx_search_i16(phx_analysis_ctx_t *c)
 {
     const int8_t *pm = phx_i16_modes(c->cache->i_neighbour_intra);
     int lambda = c->a.i_lambda;
     int best = PHX_COST_MAX, best_mode = 0;
-    for (; *pm >= 0; ++pm) {
-        int mode = *pm;
-        int satd;
-        phx_predict16(mode, c->fdec, c->fdec_stride);
-        satd = phx_satd_16x16(c->fenc, c->fenc_stride, c->fdec, c->fdec_stride)
-             + lambda * phx_bs_size_te(0, phx_mode16_fix[mode]);
-        if (satd < best) { best = satd; best_mode = mode; }
+    int satd[4] = { 0, 0, 0, 0 };      /* analyse.c:700/:729 direction costs */
+    /* analyse.c:695-696 — COST_MAX for I slices (b_fast_intra == 0). */
+    int thresh = c->b_fast_intra
+               ? (phx_i16x16_thresh_lut[c->p->i_subpel_refine > 10 ? 10
+                  : c->p->i_subpel_refine < 0 ? 0 : c->p->i_subpel_refine]
+                  * c->i_satd_inter) >> 1
+               : PHX_COST_MAX;
+
+    if (pm[3] >= 0) {                    /* analyse.c:698 — x3 path */
+        phx_predict16(0, c->fdec, c->fdec_stride);        /* V */
+        satd[0] = phx_mbcmp16(c->b_satd, c->fdec, c->fdec_stride,
+                              c->fenc, c->fenc_stride)
+                + lambda * phx_bs_size_ue(0);             /* :701 */
+        phx_predict16(1, c->fdec, c->fdec_stride);        /* H */
+        satd[1] = phx_mbcmp16(c->b_satd, c->fdec, c->fdec_stride,
+                              c->fenc, c->fenc_stride)
+                + lambda * phx_bs_size_ue(1);             /* :702 */
+        phx_predict16(2, c->fdec, c->fdec_stride);        /* DC */
+        satd[2] = phx_mbcmp16(c->b_satd, c->fdec, c->fdec_stride,
+                              c->fenc, c->fenc_stride)
+                + lambda * phx_bs_size_ue(2);             /* :703 */
+        COPY2_IF_LT(best, satd[0], best_mode, 0);         /* :704 */
+        COPY2_IF_LT(best, satd[1], best_mode, 1);         /* :705 */
+        COPY2_IF_LT(best, satd[2], best_mode, 2);         /* :706 */
+        if (best <= thresh) {                            /* :709 */
+            phx_predict16(3, c->fdec, c->fdec_stride);    /* P */
+            satd[3] = phx_mbcmp16(c->b_satd, c->fdec, c->fdec_stride,
+                                  c->fenc, c->fenc_stride)
+                    + lambda * phx_bs_size_ue(3);         /* :713 */
+            COPY2_IF_LT(best, satd[3], best_mode, 3);     /* :714 */
+        }
+    } else {
+        for (; *pm >= 0; ++pm) {                          /* :719-733 */
+            int mode = *pm, cost;
+            phx_predict16(mode, c->fdec, c->fdec_stride);
+            cost = phx_mbcmp16(c->b_satd, c->fdec, c->fdec_stride,
+                               c->fenc, c->fenc_stride)
+                 + lambda * phx_bs_size_ue(phx_mode16_fix[mode]);
+            COPY2_IF_LT(best, cost, best_mode, mode);
+        }
     }
     c->satd_i16x16 = best;
     c->pred16 = best_mode;
 }
 
-/* x264 encoder/analyse.c:745-862 — 8x8 prediction selection.  The SSSE3 x9
- * fast path and the directional analysis shortcut are not available; all
- * modes from the availability table are evaluated (same cost formula).
- * SHADER: B — four blocks in scan order, each reconstructing before the next. */
+/* x264 encoder/analyse.c:745-862 — 8x8 prediction selection with the exact
+ * x3 pre-selection (:784-804), the mbrd==0 analysis shortcut (:800-803), the
+ * `3*lambda` predicted-mode bonus (:817-818) and the early-out (:825-826,
+ * :859-861).  The C-only reference has no intra_mbcmp_x9_8x8, so the x3
+ * branch (not the x9 branch) is authoritative here.  SHADER: B — four
+ * scan-order blocks, each reconstructed before the next. */
 static void phx_search_i8(phx_analysis_ctx_t *c)
 {
     int lambda = c->a.i_lambda;
     int i_cost = lambda * 4;                        /* analyse.c:753 */
-    for (int idx = 0; idx < 4; idx++) {
+    /* :750 — mbrd gates the SATD threshold; I slices pass COST_MAX as inter. */
+    int thresh = c->mbrd ? PHX_COST_MAX
+                         : (c->i_satd_inter < c->satd_i16x16
+                            ? c->i_satd_inter : c->satd_i16x16);
+    int idx = 0;
+    for (; idx < 4; idx++) {
         int x = 8*(idx&1), y = 8*(idx>>1);
         uint8_t *dst = c->fdec + x + y*c->fdec_stride;
         const uint8_t *src = c->fenc + x + y*c->fenc_stride;
@@ -726,32 +921,74 @@ static void phx_search_i8(phx_analysis_ctx_t *c)
         phx_predict_8x8_filter(dst, edge, c->fdec_stride,
                                c->n8[idx], PHX_MB_ALL);
         pm = phx_i8_modes(c->n8[idx]);
-        for (; *pm >= 0; ++pm) {
+        if (pm[5] >= 0) {                           /* :784 — x3 path */
+            int satd[4] = { 0, 0, 0, 0 };
+            int favor_vertical, i;
+            phx_i8_x3(src, c->fenc_stride, dst, edge, c->fdec_stride, satd);
+            favor_vertical = satd[1] > satd[0];     /* :788 */
+            if (pred_mode < 3) satd[pred_mode] -= 3*lambda; /* :789-790 */
+            for (i = 2; i >= 0; i--) {              /* :791-796 */
+                int cost = satd[i] + 4*lambda;
+                COPY2_IF_LT(best, cost, best_mode, i);
+            }
+            if (c->mbrd < 1 + c->b_fast_intra)      /* :800-803 */
+                pm = phx_intra_analysis_shortcut[c->b_avoid_topright]
+                                                [pm[8] >= 0][favor_vertical];
+            else
+                pm += 3;
+        }
+        for (; *pm >= 0 && (best >= 0 || c->mbrd >= 2); ++pm) {
             int mode = *pm, satd;
             phx_predict8(mode, dst, edge, c->fdec_stride);
-            satd = phx_sa8d_8x8(dst, c->fdec_stride, src, c->fenc_stride)
-                 + 4*lambda;                        /* analyse.c:794/821 */
+            satd = phx_sa8d_8x8(dst, c->fdec_stride, src, c->fenc_stride);
             if (pred_mode == PHX_MODE4_FIX(mode))
-                satd -= 3*lambda;                   /* analyse.c:817-818 */
-            if (satd < best) { best = satd; best_mode = mode; }
+                satd -= 3*lambda;                   /* :817-818 */
+            COPY2_IF_LT(best, satd, best_mode, mode);
         }
         c->pred8[idx] = best_mode;
-        i_cost += best + 3*lambda;                  /* analyse.c:823 */
+        i_cost += best + 3*lambda;                  /* :823 */
+        if (idx == 3 || i_cost > thresh)            /* :825-826 */
+            break;
         phx_predict8(best_mode, dst, edge, c->fdec_stride);
         { phx_dctcoef coef[64]; phx_encode_i8(c, idx, coef); (void)coef; }
         c->cache->intra4x4_pred_mode[phx_scan8[4*idx]] = (int8_t)best_mode;
     }
-    c->satd_i8x8 = i_cost;
+    if (idx == 3) {
+        c->satd_i8x8 = i_cost;
+        /* i_skip_intra buffers (:840-850) are not representable (TODO). */
+    } else {
+        static const uint16_t div_fix8[3] = { 1024, 512, 341 }; /* :854 */
+        if (idx < 3) i_cost = (i_cost * div_fix8[idx]) >> 8;    /* :856 */
+        c->satd_i8x8 = PHX_COST_MAX;                /* :855 */
+    }
+    if (c->b_early_terminate) {                     /* :859-861 */
+        int sm = c->p->i_subpel_refine > 10 ? 10
+               : c->p->i_subpel_refine < 0 ? 0 : c->p->i_subpel_refine;
+        int v = i_cost < c->satd_i16x16 ? i_cost : c->satd_i16x16;
+        if (v > (c->i_satd_inter * phx_i8x8_thresh_lut[sm]) >> 2)
+            return;                                 /* leaves satd_i8x8=COST_MAX */
+    }
 }
 
-/* x264 encoder/analyse.c:864-979 — 4x4 prediction selection.  The x3/x9
- * shortcuts are replaced by the equivalent full mode loop (analyse.c:924-947).
+/* x264 encoder/analyse.c:864-979 — 4x4 prediction selection (see below).
  * SHADER: B — 16 blocks in scan order, each reconstructing before the next. */
 static void phx_search_i4(phx_analysis_ctx_t *c)
 {
     int lambda = c->a.i_lambda;
     int i_cost = lambda * (24+16);                  /* analyse.c:867 */
-    for (int idx = 0; idx < 16; idx++) {
+    int thresh;                                     /* :868 */
+    int idx = 0;
+
+    if (c->b_early_terminate) {
+        int m = c->satd_i16x16 < c->satd_i8x8 ? c->satd_i16x16 : c->satd_i8x8;
+        thresh = c->i_satd_inter < m ? c->i_satd_inter : m; /* MIN3 */
+        /* :871-872 — absent at mbrd==0 (veryfast/faster/superfast). */
+        if (c->mbrd) thresh = thresh * (10 - c->b_fast_intra) / 8;
+    } else {
+        thresh = PHX_COST_MAX;
+    }
+
+    for (; idx < 16; idx++) {
         const uint8_t *src = c->fenc + phx_block_xy[idx][0]
                            + phx_block_xy[idx][1]*c->fenc_stride;
         uint8_t *dst = c->fdec + phx_block_xy[idx][0]
@@ -762,24 +999,52 @@ static void phx_search_i4(phx_analysis_ctx_t *c)
         if ((c->n4[idx] & (PHX_MB_TOPRIGHT|PHX_MB_TOP)) == PHX_MB_TOP)
             memcpy(&dst[4 - c->fdec_stride], &dst[3 - c->fdec_stride], 4);
                                                     /* analyse.c:886-888 */
+
         pm = phx_i4_modes(c->n4[idx]);
-        for (; *pm >= 0; ++pm) {
-            int mode = *pm, satd;
-            phx_predict4(mode, dst, c->fdec_stride);
-            satd = phx_satd_4x4(src, c->fenc_stride, dst, c->fdec_stride);
-            if (pred_mode == PHX_MODE4_FIX(mode)) {
-                satd -= 3*lambda;                   /* analyse.c:935-937 */
-                if (satd <= 0) { best = satd; best_mode = mode; break; }
+        if (pm[5] >= 0) {                           /* :903 — x3 path */
+            int satd[4] = { 0, 0, 0, 0 };
+            int favor_vertical;
+            phx_i4_x3(c, src, c->fenc_stride, dst, c->fdec_stride, satd);
+            favor_vertical = satd[1] > satd[0];      /* :907 */
+            if (pred_mode < 3) satd[pred_mode] -= 3*lambda; /* :908-909 */
+            best = satd[2]; best_mode = 2;           /* :910 */
+            COPY2_IF_LT(best, satd[1], best_mode, 1); /* :911 */
+            COPY2_IF_LT(best, satd[0], best_mode, 0); /* :912 */
+            if (c->mbrd < 1 + c->b_fast_intra)       /* :916-919 */
+                pm = phx_intra_analysis_shortcut[c->b_avoid_topright]
+                                                [pm[8] >= 0][favor_vertical];
+            else
+                pm += 3;
+        }
+        if (best > 0) {                             /* :922 */
+            for (; *pm >= 0; ++pm) {
+                int mode = *pm, satd;
+                phx_predict4(mode, dst, c->fdec_stride);
+                satd = phx_mbcmp4(c->b_satd, src, c->fenc_stride,
+                                  dst, c->fdec_stride);  /* :934 */
+                if (pred_mode == PHX_MODE4_FIX(mode)) { /* :935-937 */
+                    satd -= 3*lambda;
+                    if (satd <= 0) {
+                        best = satd; best_mode = mode; break; /* :939-943 */
+                    }
+                }
+                COPY2_IF_LT(best, satd, best_mode, mode); /* :946 */
             }
-            if (satd < best) { best = satd; best_mode = mode; }
         }
         c->pred4[idx] = best_mode;
-        i_cost += best + 3*lambda;                  /* analyse.c:950 */
-        phx_predict4(best_mode, dst, c->fdec_stride);
+        i_cost += best + 3*lambda;                  /* :950 */
+        if (i_cost > thresh || idx == 15)           /* :951 */
+            break;
+        phx_predict4(best_mode, dst, c->fdec_stride); /* :953-956 */
         { phx_dctcoef coef[16]; phx_encode_i4(c, idx, coef); (void)coef; }
-        c->cache->intra4x4_pred_mode[phx_scan8[idx]] = (int8_t)best_mode;
+        c->cache->intra4x4_pred_mode[phx_scan8[idx]] = (int8_t)best_mode; /* :957 */
     }
-    c->satd_i4x4 = i_cost;
+    if (idx == 15) {
+        c->satd_i4x4 = i_cost;                      /* :964 */
+        /* i_skip_intra buffers (:965-974) are not representable (TODO). */
+    } else {
+        c->satd_i4x4 = PHX_COST_MAX;                /* :978 */
+    }
 }
 
 /* x264 common/pixel.c:55-73 — PIXEL_SAD_C(4,4) and the sibling SSD kernel.
@@ -926,6 +1191,12 @@ static void phx_analysis_intra_rd_refine_i4(phx_analysis_ctx_t *c,
         c->pred4[idx] = best_mode;                     /* :1111 */
         c->cache->intra4x4_pred_mode[phx_scan8[idx]] = (int8_t)best_mode;
                                                         /* :1133 */
+        /* analyse.c:1111/1133 updates the MB's chosen predictor; Phoenix's
+         * decision record is the input to the entropy/encode stages, so the
+         * refined mode must be published there too.  Without this CABAC
+         * signals the SATD winner while coefficients come from the RD winner
+         * (slow/placebo first divergent bin 5). */
+        d->intra4x4_pred_mode[idx] = (int8_t)best_mode;
         memcpy(d->dct[phx_scan8[idx]], best_coef, sizeof(best_coef));
         d->nnz[phx_scan8[idx]] = (uint8_t)best_nz;
         if (best_nz) c->cbp_luma |= 1 << (idx >> 2);  /* macroblock.h:161 */
@@ -1026,22 +1297,207 @@ static void phx_analysis_intra_chroma(phx_analysis_ctx_t *c, phx_mb_decision_t *
     phx_predict_t pred8[7];
     phx_predict_8x8c_init(pred8);                    /* predict.c:936-945 */
     int best = PHX_COST_MAX, best_mode = 6;          /* DC128 fallback (:487) */
+    int pre[4] = { 0, 0, 0, 0 };                    /* :621-627 x3 cache */
+    if (raw_mode_cost) {                            /* :619-627 */
+        int su[4], sv[4];
+        phx_chroma_x3(c, fenc[0], PHX_FENC_STRIDE,
+                      p_dst[0], PHX_FDEC_STRIDE, su);
+        phx_chroma_x3(c, fenc[1], PHX_FENC_STRIDE,
+                      p_dst[1], PHX_FDEC_STRIDE, sv);
+        for (int m = 0; m < 3; m++) pre[m] = su[m] + sv[m];
+        pred8[3](p_dst[0], PHX_FDEC_STRIDE);        /* :624 P */
+        pred8[3](p_dst[1], PHX_FDEC_STRIDE);        /* :625 */
+        pre[3] = phx_mbcmp8(c->b_satd, p_dst[0], PHX_FDEC_STRIDE,
+                            fenc[0], PHX_FENC_STRIDE) /* :626 */
+               + phx_mbcmp8(c->b_satd, p_dst[1], PHX_FDEC_STRIDE,
+                            fenc[1], PHX_FENC_STRIDE); /* :627 */
+    }
     for (; *pm >= 0; ++pm) {                         /* analyse.c:629/640 */
         const int mode = *pm;
-        int satd_u, satd_v, satd;
-        pred8[mode](p_dst[0], PHX_FDEC_STRIDE);      /* analyse.c:650/:624 */
-        pred8[mode](p_dst[1], PHX_FDEC_STRIDE);      /* analyse.c:651/:625 */
-        satd_u = phx_satd_8x8(fenc[0], PHX_FENC_STRIDE,
-                              p_dst[0], PHX_FDEC_STRIDE); /* :655 */
-        satd_v = phx_satd_8x8(fenc[1], PHX_FENC_STRIDE,
-                              p_dst[1], PHX_FDEC_STRIDE); /* :656 */
-        satd = satd_u + satd_v + c->a.i_lambda *
-               phx_bs_size_ue((unsigned)(raw_mode_cost ? mode
-                                                       : phx_chroma_fix[mode]));
-        if (satd < best) { best = satd; best_mode = mode; } /* :635/:660 */
+        int satd;
+        if (raw_mode_cost) {
+            satd = pre[mode];                        /* :632 */
+        } else {
+            pred8[mode](p_dst[0], PHX_FDEC_STRIDE);  /* analyse.c:650 */
+            pred8[mode](p_dst[1], PHX_FDEC_STRIDE);  /* :651 */
+            satd = phx_mbcmp8(c->b_satd, p_dst[0], PHX_FDEC_STRIDE,
+                              fenc[0], PHX_FENC_STRIDE) /* :655 */
+                 + phx_mbcmp8(c->b_satd, p_dst[1], PHX_FDEC_STRIDE,
+                              fenc[1], PHX_FENC_STRIDE); /* :656 */
+        }
+        satd += c->a.i_lambda *
+                phx_bs_size_ue((unsigned)(raw_mode_cost ? mode
+                                                        : phx_chroma_fix[mode]));
+        COPY2_IF_LT(best, satd, best_mode, mode);    /* :635/:660 */
     }
     d->chroma_pred_mode = (int8_t)best_mode;         /* analyse.c:664 */
     c->cbp_chroma = 0;                               /* macroblock.c:265 */
+}
+
+/* x264 common/quant.c:326-364 — decimate_score16()/decimate_score15() and
+ * the x264_decimate_table4 values from common/tables.c:373-376.  The C-only
+ * reference build has no SIMD decimate kernel, so these are authoritative.
+ * SHADER: A — pure scanned-coefficient reduction, no state. */
+static const uint8_t phx_decimate_table4[16] = {
+    3, 2, 2, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+static int phx_decimate_score16(const phx_dctcoef *dct)
+{
+    int i_score = 0, idx = 15;
+    while (idx >= 0 && dct[idx] == 0) idx--;
+    while (idx >= 0) {
+        int i_run;
+        if ((unsigned)(dct[idx--] + 1) > 2) return 9;    /* quant.c:338-339 */
+        i_run = 0;
+        while (idx >= 0 && dct[idx] == 0) { idx--; i_run++; }
+        i_score += phx_decimate_table4[i_run];           /* :347 */
+    }
+    return i_score;
+}
+/* quant.c:353-355 — decimate_score15() scores dct[1..15]. */
+static int phx_decimate_score15(const phx_dctcoef *dct)
+{
+    return phx_decimate_score16(dct + 1);
+}
+
+/* x264 common/pixel.c:55-73 PIXEL_SAD_C / ssd_8x8 via ssd_4x4 tiles; 4:2:0
+ * chroma SSD for the probe's early-out (macroblock.c:1065).
+ * SHADER: A — one 8x8 reduction, no state. */
+static int phx_ssd8(const uint8_t *p1, int s1, const uint8_t *p2, int s2)
+{
+    int sum = 0;
+    for (int y = 0; y < 8; y++, p1 += s1, p2 += s2)
+        for (int x = 0; x < 8; x++) {
+            int d = (int)p1[x] - (int)p2[x];
+            sum += d*d;
+        }
+    return sum;
+}
+
+/* x264 encoder/macroblock.c:988-1139 — macroblock_probe_skip_internal() for
+ * 8-bit 4:2:0 P_SKIP (encoder/macroblock.h:38-39).  Every threshold, DCT,
+ * quant table and decimate score follows the reference exactly; the MV is
+ * the cached pskip MV clipped to analyse.c:336-337's mv_min/mv_max and the
+ * chroma MV is the qpel y shifted by CHROMA_V_SHIFT (macroblock.c:64).
+ * SHADER: B — read-only fenc/fref workgroup, no entropy state. */
+int phx_analysis_probe_pskip(const phx_param_t *p, const phx_frame_t *fenc,
+                             const phx_frame_t *fref,
+                             const phx_mb_cache_t *cache,
+                             int mb_x, int mb_y, int qp, int chroma_qp)
+{
+    phx_quant_tables_t quant;
+    uint8_t mc_luma[32*32], mc_u[8*8], mc_v[8*8];
+    phx_dctcoef dct4x4[4][16], dctscan[16], dct_dc[4];
+    int16_t mv[2];
+    int cqp = chroma_qp >= 0 ? chroma_qp : qp;
+
+    if (!p || !fenc || !fref || !cache || !fenc->plane || !fref->plane ||
+        !fref->plane_chroma || !fenc->plane_chroma) return 0;
+    phx_quant_tables_init(&quant);
+
+    /* macroblock.c:1001-1002 — pskip MV clipped to the full MB MV limits. */
+    phx_predict_mv_pskip(cache, mv);                     /* mvpred.c:166-181 */
+    int mv_min_x = 4*(-16*mb_x - 24);                    /* analyse.c:336 */
+    int mv_max_x = 4*(16*(fenc->i_width/16 - mb_x - 1) + 24); /* :337 */
+    int mv_min_y = 4*(-16*mb_y - 24);                    /* :391 */
+    int mv_max_y = 4*(16*(fenc->i_height/16 - mb_y - 1) + 24);
+    mv[0] = phx_clip3(mv[0], mv_min_x, mv_max_x);
+    mv[1] = phx_clip3(mv[1], mv_min_y, mv_max_y);
+
+    /* macroblock.c:1005-1007 — luma MC (weighting is out of scope, no
+     * weighted P in the measured presets). */
+    if (phx_mc_luma_mb(fref, mc_luma, 32, mb_x, mb_y,
+                       mv[0], mv[1], 16, 16)) return 0;
+
+    const uint8_t *src = fenc->plane + mb_y*16*fenc->i_stride + mb_x*16;
+    int q = qp < 0 ? 0 : (qp > 51 ? 51 : qp);
+    for (int i8x8 = 0; i8x8 < 4; i8x8++) {
+        int fx = (i8x8&1)*8, fy = (i8x8>>1)*8;
+        int fo = fx + fy*32;
+        phx_sub8x8_dct(dct4x4, src + fx + fy*fenc->i_stride, fenc->i_stride,
+                       mc_luma + fo, 32);
+        /* macroblock.c:1022 — CQM_4PY = 1 (set.h:31). */
+        int nz = phx_quant_4x4x4(dct4x4, quant.quant4_mf[1][q],
+                                 quant.quant4_bias[1][q]);
+        int score = 0;
+        for (int i4 = 0; i4 < 4; i4++) {
+            if (!(nz & (1 << i4))) continue;
+            phx_zigzag_scan4(dctscan, dct4x4[i4]);         /* :1025 */
+            score += phx_decimate_score16(dctscan);        /* :1026 */
+            if (score >= 6) return 0;                      /* :1027-1028 */
+        }
+    }
+
+    /* macroblock.c:1033-1123 — 4:2:0 chroma probe. */
+    if (mv[0] || mv[1])                                    /* :1044 */
+        phx_mc_chroma(mc_u, 8, mc_v, 8, fref->plane_chroma,
+                      fref->i_stride, mv[0], mv[1] >> 1, 8, 8);
+    else
+        phx_mc_deinterleave_chroma(mc_u, 8, mc_v, 8,
+                                   fref->plane_chroma, fref->i_stride, 8, 8);
+
+    int thresh = (phx_lambda2_tab[cqp < 0 ? 0 : (cqp > 51 ? 51 : cqp)] + 32) >> 6;
+                                                            /* :1037 */
+    const uint8_t *fenc_c = fenc->plane_chroma;
+    /* macroblock.c:369-370 — U even / V odd bytes of the NV12 pair. */
+    uint8_t fenc_u[8*8], fenc_v[8*8];
+    for (int y = 0; y < 8; y++)
+        for (int x = 0; x < 8; x++) {
+            const uint8_t *row = fenc_c + (mb_y*8 + y)*fenc->i_stride_planes[1]
+                                        + 2*(mb_x*8 + x);
+            fenc_u[y*8 + x] = row[0];
+            fenc_v[y*8 + x] = row[1];
+        }
+
+    const uint8_t *planar[2] = { fenc_u, fenc_v };
+    const uint8_t *mc[2] = { mc_u, mc_v };
+    int cq = cqp < 0 ? 0 : (cqp > 51 ? 51 : cqp);
+    for (int ch = 0; ch < 2; ch++) {
+        int ssd = phx_ssd8(mc[ch], 8, planar[ch], 8);      /* :1065 */
+        if (ssd < thresh) continue;                        /* :1066-1067 */
+        /* :1088 — sub8x8_dct_dc on the 8x8 chroma plane. */
+        phx_sub8x8_dct_dc(dct_dc, planar[ch], 8, mc[ch], 8);
+        /* :1092-1093 — CQM_4PC = 3 (set.h:34), mf>>1 / bias<<1. */
+        int mf = (int)quant.quant4_mf[3][cq][0] >> 1;
+        int bias = (int)quant.quant4_bias[3][cq][0] << 1;
+        if (phx_quant_2x2_dc(dct_dc, mf, bias)) return 0;
+        if (ssd < thresh*4) continue;                      /* :1097-1098 */
+        phx_sub8x8_dct(dct4x4, planar[ch], 8, mc[ch], 8);  /* :1103 */
+        for (int i = 0; i < 4; i++) dct4x4[i][0] = 0;      /* :1104-1107 */
+        int nz = phx_quant_4x4x4(dct4x4, quant.quant4_mf[3][cq],
+                                 quant.quant4_bias[3][cq]);/* :1113 */
+        int score = 0;
+        for (int i4 = 0; i4 < 4; i4++) {
+            if (!(nz & (1 << i4))) continue;
+            phx_zigzag_scan4(dctscan, dct4x4[i4]);         /* :1116 */
+            score += phx_decimate_score15(dctscan);        /* :1117 */
+            if (score >= 7) return 0;                      /* :1118-1119 */
+        }
+    }
+    return 1;                                              /* :1125-1126 */
+}
+
+/* x264 encoder.c:1585 / macroblock.c:610-618 — effective chroma QP for the
+ * probe (macroblock.c:993/:1035).  SHADER: A — table lookup, no state. */
+static int phx_chroma_qp_of(const phx_param_t *p, int qp)
+{
+    int idx = phx_clip3(qp + p->i_chroma_qp_index_offset, 0, 75);
+    return phx_chroma_qp_base[idx] + (qp > PHX_QP_MAX_SPEC
+                                     ? qp - PHX_QP_MAX_SPEC : 0);
+}
+
+/* x264 encoder/me.h:54 / analyse.c:143-156 — m.cost_mv = the lambda-scaled
+ * mv bit cost from the QP's p_cost_mv table (centred at zero).  SHADER: A —
+ * read-only cost-table lookup. */
+static int phx_me_mv_bits(const phx_cost_tables_t *costs, int qp,
+                          const int mv[2], const int16_t mvp[2])
+{
+    const uint16_t *tab = costs->cost_mv[qp];
+    int dx = mv[0] - mvp[0], dy = mv[1] - mvp[1];
+    if (!tab) return 0;
+    /* phx_cost.c:29-37 allocates 2*4*mv_range on either side. */
+    if (dx < -64 || dx > 64 || dy < -64 || dy > 64) return 0;
+    return (int)tab[dx] + (int)tab[dy];
 }
 
 /* x264 encoder/analyse.c:1255-1332 — mb_analyse_inter_p16x16(), reduced to
@@ -1057,7 +1513,11 @@ static int phx_analysis_inter_p16x16(phx_analysis_ctx_t *c,
                                      phx_inter_result_t *out)
 {
     memset(out, 0, sizeof(*out));
-    if (!c->fref || !c->fref->plane || !(c->p->analyse_inter)) return -1;
+    /* analyse.c:3038 always runs the 16x16 inter search; the preset's
+     * analyse.inter flags only gate the sub-partitions at :3047/:3068.
+     * ultrafast clears those flags (base.c:503-505) but still codes P_L0 /
+     * P_SKIP, so gating this function on p->analyse_inter was wrong. */
+    if (!c->fref || !c->fref->plane) return -1;
 
     int16_t mvp[2];
     phx_predict_mv16(c->cache, 0, mvp);                   /* analyse.c:1277 */
@@ -1075,22 +1535,36 @@ static int phx_analysis_inter_p16x16(phx_analysis_ctx_t *c,
     out->sad = sad;
     out->mv[0] = mv[0]; out->mv[1] = mv[1];
 
-    /* analyse.c:1296-1301 (i_ref == 0, b_try_skip, near pskip MV, probe).
-     * We require an exact pskip MV and an exactly zero integer residual;
-     * no coefficient or MV is fabricated to force a skip. */
-    int16_t pskip[2];
-    phx_predict_mv_pskip(c->cache, pskip);                /* mvpred.c:166-181 */
-    if (sad == 0 && mv[0] == pskip[0] && mv[1] == pskip[1] &&
-        cost < 300 * c->a.i_lambda)
-        out->skip = 1;
+    /* analyse.c:1294-1307 — the b_try_skip path of mb_analyse_inter_p16x16:
+     * residual-plus-bit cost below 300*lambda, MV within one qpel of the
+     * cached pskip MV, and x264_macroblock_probe_pskip() succeeding.  The
+     * old "exact zero SAD" shortcut is not x264's decision rule. */
+    if (c->b_try_skip) {
+        int16_t pskip[2];
+        phx_predict_mv_pskip(c->cache, pskip);            /* mvpred.c:166-181 */
+        int q = c->qp < PHX_QP_MAX_SPEC ? c->qp : PHX_QP_MAX_SPEC;
+        int mv_bits = phx_me_mv_bits(c->costs, q, mv, mvp); /* :1298 m.cost_mv */
+        if (cost - mv_bits < 300*c->a.i_lambda &&         /* :1298 */
+            abs(mv[0] - pskip[0]) + abs(mv[1] - pskip[1]) <= 1 && /* :1299-1300 */
+            phx_analysis_probe_pskip(c->p, c->f, c->fref, c->cache,
+                                     c->mb_x, c->mb_y, c->qp,
+                                     phx_chroma_qp_of(c->p, c->qp)))
+            out->skip = 1;                                /* :1303-1306 */
+    }
     return 0;
 }
 
 /* ---- driver (encoder/analyse.c:2918-2952, :3734-3753) ------------------- */
 
 /* x264 encoder/analyse.c:294-305 — mb_analyse_init() (I-slice/progressive
- * subset).  TODO: RD refinement (i_mbrd>=1) and fast-intra heuristics need
- * frame-level statistics and are not evaluated.
+ * subset).  b_early_terminate (:303) and the SAD/SATD mbcmp selection
+ * (encoder.c:1409-1411) are now explicit; b_fast_intra/b_avoid_topright are
+ * the P-slice fast-intra heuristics that need frame-level statistics (TODO,
+ * always 0 here).  mb_init_fenc_cache (:570-584) is a cache reset plus
+ * psy-trellis source-DCT init: Phoenix recomputes the SATD/SSD metrics from
+ * source on demand, so the reset has no observable cost, and psy-trellis is
+ * disabled in all measured presets (base.c:440/:621/:629/:652/:690);
+ * phx_rdo_set_config() carries fenc_dct4 into the trellis calls below.
  * SHADER: B — sets up the per-MB analysis state from the ported tables. */
 static void phx_analysis_init(phx_analysis_ctx_t *c, int qp)
 {
@@ -1099,6 +1573,11 @@ static void phx_analysis_init(phx_analysis_ctx_t *c, int qp)
      * and the RD decision (:2940-2951); keep it in the context as well as
      * passing it into init_qp. */
     c->mbrd = (subme >= 6) + (subme >= 8) + (subme >= 10);
+    c->b_early_terminate = subme < 11;              /* analyse.c:303 */
+    c->b_satd = subme > 1;                          /* encoder.c:1411 */
+    c->b_fast_intra = 0;                            /* analyse.c:320/:457 TODO */
+    c->b_avoid_topright = 0;                        /* analyse.c:321/:466 TODO */
+    c->i_satd_inter = PHX_COST_MAX;                 /* analyse.c:2939 (I) */
     phx_mb_analyse_init_qp(c->p, qp, c->p->i_chroma_qp_index_offset,
                            c->mbrd, &c->a);
     c->cache->b_transform_8x8 = 0;                   /* analyse.c:307 */
@@ -1128,7 +1607,9 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d,
     /* i_satd_pcm == COST_MAX: PCM is not implemented (TODO). */
     if (inter && inter->found) {
         cost = inter->cost;                             /* analyse.c:3058 */
-        type = PHX_P_L0;                                /* analyse.c:3056 */
+        /* analyse.c:3021/:3040 — P_SKIP is a distinct MB type, not a
+         * zero-residual P_L0; the entropy writer keys off d.skip. */
+        type = inter->skip ? PHX_P_SKIP : PHX_P_L0;     /* :3021/:3056 */
         PHX_COPY2_IF_LT(cost, c->satd_i16x16, type, PHX_I_16x16); /* :3221 */
         PHX_COPY2_IF_LT(cost, c->satd_i8x8,   type, PHX_I_8x8);   /* :3222 */
         PHX_COPY2_IF_LT(cost, c->satd_i4x4,   type, PHX_I_4x4);   /* :3223 */
@@ -1146,23 +1627,43 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d,
     memset(d->dct, 0, sizeof(d->dct));
     d->skip = 0;
 
-    if (type == PHX_P_L0) {
+    if (type == PHX_P_L0 || type == PHX_P_SKIP) {
         /* analyse.c:1316/1326 — ref/mv cached for all 16 4x4 blocks of the
-         * 16x16 partition; single list-0 reference, no residual (cbp=0). */
+         * 16x16 partition; single list-0 reference, no residual (cbp=0).
+         * P_SKIP additionally zeroes mvr[] for future predictors (:3025-3027). */
+        int is_skip = type == PHX_P_SKIP;
         for (int i = 0; i < 16; i++) {
             d->ref[0][i] = 0;
             d->ref[1][i] = -1;
             d->mv[0][i][0] = inter->mv[0];              /* qpel, me.h:55 */
             d->mv[0][i][1] = inter->mv[1];
             d->mv[1][i][0] = d->mv[1][i][1] = 0;
-            c->cache->ref[0][phx_scan8[i]] = 0;         /* analyse.c:1316 */
-            c->cache->mv[0][phx_scan8[i]][0] = inter->mv[0];
-            c->cache->mv[0][phx_scan8[i]][1] = inter->mv[1];
+            c->cache->ref[0][phx_scan8[i]] = is_skip ? -1 : 0;
+            c->cache->mv[0][phx_scan8[i]][0] = is_skip ? 0 : inter->mv[0];
+            c->cache->mv[0][phx_scan8[i]][1] = is_skip ? 0 : inter->mv[1];
             /* macroblock.c:1735 — inter MBs carry no intra4x4 predictor. */
             c->cache->intra4x4_pred_mode[phx_scan8[i]] = PHX_I_PRED_4x4_DC;
         }
         d->skip = (uint8_t)inter->skip;
         c->cbp_luma = c->cbp_chroma = 0;                /* macroblock.c:624/943 */
+        /* encoder/macroblock.c:953-964 — x264 promotes a zero-residual
+         * D_16x16 P_L0 whose MV equals the cached pskip MV to P_SKIP at the
+         * end of x264_macroblock_encode.  Publish the same decision here so
+         * the entropy stage sees x264's MB type (the encoder still performs
+         * the MC at macroblock.c:654-681). */
+        if (!d->skip) {
+            int16_t pskip[2];
+            phx_predict_mv_pskip(c->cache, pskip);      /* mvpred.c:166-181 */
+            if (inter->mv[0] == pskip[0] && inter->mv[1] == pskip[1]) {
+                d->skip = 1;
+                type = PHX_P_SKIP;                      /* macroblock.c:963 */
+                for (int i = 0; i < 16; i++) {
+                    c->cache->ref[0][phx_scan8[i]] = -1;
+                    c->cache->mv[0][phx_scan8[i]][0] = 0;
+                    c->cache->mv[0][phx_scan8[i]][1] = 0;
+                }
+            }
+        }
     } else if (type == PHX_I_16x16) {
         phx_predict16(c->pred16, c->fdec, c->fdec_stride);
         phx_encode_i16(c, d);
@@ -1222,7 +1723,7 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d,
         d->intra16_pred_mode = (int8_t)c->pred16;
     }
 
-    if (type == PHX_P_L0) {
+    if (type == PHX_P_L0 || type == PHX_P_SKIP) {
         /* macroblock.c:940-943 — inter chroma has its own MC path; analysis
          * does not fabricate chroma coefficients.  phx_encoder.c performs the
          * integer-MV chroma copy for this no-residual decision. */
@@ -1239,7 +1740,8 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d,
     d->cbp_luma = c->cbp_luma;
     d->cbp_chroma = c->cbp_chroma;
     d->i_cbp = (c->cbp_chroma << 4) | c->cbp_luma
-             | ((type == PHX_P_L0) ? 0 : 0x1700);     /* macroblock.c:946-951 */
+             | ((type == PHX_P_L0 || type == PHX_P_SKIP) ? 0 : 0x1700);
+                                                     /* macroblock.c:946-951 */
                                                     /* inter cbp has no DC flags; intra cbp keeps 0x1700 (macroblock.c:946-951) */
 }
 
@@ -1293,13 +1795,46 @@ int phx_macroblock_analyse_slice(const phx_param_t *p, const phx_frame_t *fenc,
 
     phx_setup_fdec(&c);
     phx_analysis_init(&c, qp);
+    /* analyse.c:2937-2938 — mb_init_fenc_cache() only when RD is active. */
+    if (c.mbrd) phx_analysis_mb_init_fenc_cache(&c);
     phx_init_neighbours(&c);
 
     /* P-slice ME (analyse.c:3036-3038) runs before the intra analysis of
      * :3198 so both costs are available for the :3221-3223 comparison.  B
      * slices keep the intra-only path until list-1 data is exposed. */
-    if (slice_type == PHX_SLICE_P)
-        phx_analysis_inter_p16x16(&c, &inter);       /* TODO on no fref */
+    if (slice_type == PHX_SLICE_P) {
+        /* analyse.c:2959/:3007-3013 — fast P_SKIP detection runs *before* the
+         * 16x16 ME.  At subme >= 3 it only arms b_try_skip; at lower subme a
+         * neighbouring P_SKIP arms the direct probe.  b_fast_pskip == 0
+         * (placebo, base.c:598) disables both. */
+        if (p->b_fast_pskip) {
+            if (p->i_subpel_refine >= 3)
+                c.b_try_skip = 1;                       /* analyse.c:3007-3008 */
+            else if (cache->type_left[0] == PHX_P_SKIP ||
+                     cache->type_top == PHX_P_SKIP ||
+                     cache->type_topleft == PHX_P_SKIP ||
+                     cache->type_topright == PHX_P_SKIP) /* :3009-3012 */
+                c.fast_skip = phx_analysis_probe_pskip(
+                    p, fenc, fref, cache, mb_x, mb_y, qp,
+                    phx_chroma_qp_of(p, qp));            /* :3013 */
+        }
+        if (c.fast_skip) {
+            /* analyse.c:3019-3027 — P_SKIP with the cached pskip MV and no
+             * residual; ME is skipped entirely (the caller returns early at
+             * :3040-3045). */
+            int16_t skip_mv[2];
+            phx_predict_mv_pskip(cache, skip_mv);        /* mvpred.c:166-181 */
+            inter.found = 1;
+            inter.skip = 1;
+            inter.cost = 0;
+            inter.mv[0] = skip_mv[0];
+            inter.mv[1] = skip_mv[1];
+        } else {
+            phx_analysis_inter_p16x16(&c, &inter);      /* :3038 */
+        }
+        /* analyse.c:2939 — i_satd_inter is the P 16x16 ME cost. */
+        if (inter.found) c.i_satd_inter = inter.cost;
+    }
 
     /* I-slice path (analyse.c:2934-2952) / P-slice intra trial (:3198): I16
      * is always evaluated; I8/I4 are gated by analyse.intra (base.c:435). */
