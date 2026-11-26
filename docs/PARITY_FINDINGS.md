@@ -298,4 +298,14 @@ higher presets still 2.4-3.5x larger, first diffs 668-682
 
 Moving the first divergence from byte ~600 to ~3673 means several complete NALs now match byte-for-byte; the remaining gaps are later MB decisions and B-slice payloads. Still not parity — B-inter and L1 reference work are in flight.
 
+## F28 — L0/L1 DPB stages byte-exact; B-consequence upstream
+
+DPB1 instrumented real diag.yuv: for display-frame-1 B x264 list selection is
+L0=IDR(fn0,poc0), L1=BREF(fn2,poc4), and Phoenix's DPB selects the same
+pictures. Feeding x264's own fref planes through phx_dpb gives 0/4096 active
+and 0/16384 border diffs for BOTH lists; colocated state diff 0. The real
+Phoenix L1 differs by 3396/4096 active pixels with colocated mb_type[0]=0
+(I_4x4) vs x264's 8 (B_L0_L0) — a downstream consequence of the missing B-inter
+path, not a DPB defect. check_l1_golden() added; all DPB goldens pass.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
