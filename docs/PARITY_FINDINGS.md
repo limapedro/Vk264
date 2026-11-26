@@ -377,4 +377,14 @@ and reconstruction saved by mb_analyse_intra with i_skip_intra==2
 First divergent bin remains 3 (I8 predictor). Candidate-handoff fix delegated;
 ctest 30/30 PASS.
 
+## F35 — i_skip_intra candidate handoff lands; 8x8 residual writer next
+
+Implemented x264's i_skip_intra==2 handoff (analyse.c:322-325): saved/restored
+I8/I4 DCT+nnz+CBP backups (analyse.c:840-850/:965-974) and re-encoded only the
+final block (macroblock.c:717-728). Goldens assert all candidate arrays
+byte-identical to instrumented x264 MB0. Real-clip first divergent bin moved
+3 -> 17; bins 0-16 now match. Bin 17 is x264's 8x8 residual sig context 402 vs
+Phoenix's 4x4 context 96 — phx_encoder writes I8 luma residual as 16 4x4 blocks
+instead of x264's four 8x8 blocks (cabac.c:1046-1057). Delegated; ctest 30/30.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
