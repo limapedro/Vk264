@@ -128,3 +128,21 @@ Quality at 6000 kb/s unchanged: 1080p 300f VMAF 95.297, 640p 99.52.
 
 Current object: 100 fps at 1080p is met in the encode loop (85 fps end-to-end
 on 300 frames); remaining gap is perceptual quality on game content (~2.6 VMAF).
+
+## Negative motion experiments (reverted)
+
+On the 300f game clip at 6000 and 8000 kbps (exact `--fps 25 --gop 50 --qp 34`):
+
+| Change | ΔPSNR-Y | ΔVMAF | Cost |
+|---|---:|---:|---|
+| SATD finalists 4→8 | +0.020 | −0.005 | spatial 1.19→1.76 ms, process 86.5→82.1 |
+| SATD for subpel | +0.014 | −0.020 | motion 1.96→2.65 ms, process →68.6 |
+| Subpel refinement of older references | +0.013 / −0.071 | +0.017 / −0.113 | process →72.5, loop →92 |
+| MV cost penalty ×4 / ×0 | −0.226 / −0.014 | −0.093 / −0.020 | — |
+| `--partitions 1` | −1.03 | −0.97 | entropy 0.09→7.04 ms |
+| `--aq 1` | −0.63 | −1.28 | process →67 |
+
+Reason: `matches[].cost` only drives 8×8 partitions (off in `slow`), and older
+references cover ~0.76 % of P macroblocks. Remaining gap is structural —
+no B-frames, CABAC or trellis/RDO/MB-tree. Baseline hash
+`0be1a42df0209d5bbb367b5693fced48d0d75e95ff72a6feba9e6b198ee16d03`.
