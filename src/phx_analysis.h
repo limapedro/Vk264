@@ -24,6 +24,7 @@
  *   reference/x264/common/pixel.c:55-73/:242-288/:311-332 SAD / SATD kernels
  *   reference/x264/encoder/analyse.c:2918  x264_macroblock_analyse()
  *   reference/x264/encoder/analyse.c:1255-1332 mb_analyse_inter_p16x16()
+ *   reference/x264/encoder/analyse.c:3334-3359 B-direct / B_SKIP gate
  *   reference/x264/encoder/analyse.c:2953-3024 P_SKIP fast-skip / b_try_skip
  *   reference/x264/encoder/macroblock.c:988-1139 probe_skip (4:2:0)
  *   reference/x264/encoder/macroblock.c:953-964 P_L0 -> P_SKIP promotion
@@ -51,6 +52,7 @@
 #include "phx_mb_decision.h"
 #include "phx_cabac.h"        /* phx_cabac_t, trellis context read-only */
 #include "phx_slice.h"        /* PHX_SLICE_I/P/B, encoder.c:3522/3530/3539 */
+#include "phx_mvdirect.h"     /* B1's byte-exact direct / B_SKIP predictor */
 
 #ifdef __cplusplus
 extern "C" {
@@ -129,6 +131,30 @@ int phx_macroblock_analyse_slice(const phx_param_t *p, const phx_frame_t *fenc,
                                  phx_mb_cache_t *cache, phx_cabac_t *cb,
                                  int mb_x, int mb_y, int qp, int slice_type,
                                  phx_mb_decision_t *d);
+
+/* Exact per-frame B-slice inputs the caller's DPB must supply (DPB1 is adding
+ * the list-1 accessors).  `col` is x264's h->fref[1][0] state consumed by B1's
+ * phx_mvdirect_predict(); `fref1` is the colocated picture itself for the
+ * bidirectional probe.  SHADER: B — read-only DPB/frame state. */
+typedef struct {
+    const phx_frame_t *fref1;           /* list-1 reference 0 */
+    const phx_mvdirect_col_t *col;      /* h->fref[1][0] fields, B1's input */
+    int cur_poc;                        /* h->fdec->i_poc */
+    int b_direct_spatial;               /* h->sh.b_direct_spatial_mv_pred */
+    int bipred_weight;                  /* h->bipred_weight[r0][r1], 32 default */
+} phx_analysis_b_input_t;
+
+/* Additive B-frame entry point: same ABI as phx_macroblock_analyse_slice()
+ * plus the list-1/colocated bundle above.  For B slices it calls B1's
+ * phx_mvdirect_predict() and the analyse.c:3334-3359 B_SKIP gate/probe, and
+ * publishes PHX_B_SKIP with the exact direct MV/ref arrays.  A NULL `b`
+ * keeps the existing intra-only fallback.  SHADER: B — one MB, no hidden state. */
+int phx_macroblock_analyse_slice_b(const phx_param_t *p, const phx_frame_t *fenc,
+                                   const phx_frame_t *fref0,
+                                   const phx_analysis_b_input_t *b,
+                                   phx_mb_cache_t *cache, phx_cabac_t *cb,
+                                   int mb_x, int mb_y, int qp,
+                                   phx_mb_decision_t *d);
 
 #ifdef __cplusplus
 }

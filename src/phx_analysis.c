@@ -187,6 +187,7 @@ typedef struct {
     int i_satd_inter;                 /* analyse.c:2939 COST_MAX for I slices */
     int b_try_skip;                   /* analyse.c:2959/:3008 P_SKIP trial gate */
     int fast_skip;                    /* analyse.c:3009-3013 fast P_SKIP result */
+    phx_mvdirect_result_t b_direct;   /* B1's direct prediction for this MB */
     phx_cost_tables_t *costs;
     phx_quant_tables_t *quant;
     phx_mb_analysis_t a;
@@ -210,6 +211,7 @@ typedef struct {
  * SHADER: B — one record per MB, no hidden state. */
 typedef struct {
     int found, cost, sad, skip;
+    int b_skip;                       /* x264 B_SKIP from analyse.c:3338-3358 */
     int mv[2];                        /* qpel, x264_me_t.mv (encoder/me.h:55) */
 } phx_inter_result_t;
 
@@ -1630,8 +1632,10 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d,
     if (inter && inter->found) {
         cost = inter->cost;                             /* analyse.c:3058 */
         /* analyse.c:3021/:3040 — P_SKIP is a distinct MB type, not a
-         * zero-residual P_L0; the entropy writer keys off d.skip. */
-        type = inter->skip ? PHX_P_SKIP : PHX_P_L0;     /* :3021/:3056 */
+         * zero-residual P_L0; the entropy writer keys off d.skip.
+         * B_SKIP (analyse.c:3338-3358) is the B-slice equivalent. */
+        type = inter->b_skip ? PHX_B_SKIP
+             : inter->skip ? PHX_P_SKIP : PHX_P_L0;    /* :3021/:3056 */
         PHX_COPY2_IF_LT(cost, c->satd_i16x16, type, PHX_I_16x16); /* :3221 */
         PHX_COPY2_IF_LT(cost, c->satd_i8x8,   type, PHX_I_8x8);   /* :3222 */
         PHX_COPY2_IF_LT(cost, c->satd_i4x4,   type, PHX_I_4x4);   /* :3223 */
@@ -1649,7 +1653,23 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d,
     memset(d->dct, 0, sizeof(d->dct));
     d->skip = 0;
 
-    if (type == PHX_P_L0 || type == PHX_P_SKIP) {
+    if (type == PHX_B_SKIP) {
+        /* analyse.c:3338-3358 / macroblock.c:966-970 — B_SKIP carries the
+         * direct MVs/refs on all 16 4x4 blocks, zero residual and no cbp.
+         * B1's phx_mvdirect_result_t uses the same raster-4x4 layout. */
+        d->skip = 1;
+        d->i_partition = PHX_MVDIR_D_16x16;
+        for (int l = 0; l < 2; l++)
+            for (int i = 0; i < 16; i++) {
+                d->ref[l][i] = c->b_direct.ref[l][i];
+                d->mv[l][i][0] = c->b_direct.mv[l][i][0];
+                d->mv[l][i][1] = c->b_direct.mv[l][i][1];
+                c->cache->ref[l][phx_scan8[i]] = d->ref[l][i];
+                c->cache->mv[l][phx_scan8[i]][0] = d->mv[l][i][0];
+                c->cache->mv[l][phx_scan8[i]][1] = d->mv[l][i][1];
+            }
+        c->cbp_luma = c->cbp_chroma = 0;
+    } else if (type == PHX_P_L0 || type == PHX_P_SKIP) {
         /* analyse.c:1316/1326 — ref/mv cached for all 16 4x4 blocks of the
          * 16x16 partition; single list-0 reference, no residual (cbp=0).
          * P_SKIP additionally zeroes mvr[] for future predictors (:3025-3027). */
@@ -1745,7 +1765,7 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d,
         d->intra16_pred_mode = (int8_t)c->pred16;
     }
 
-    if (type == PHX_P_L0 || type == PHX_P_SKIP) {
+    if (type == PHX_P_L0 || type == PHX_P_SKIP || type == PHX_B_SKIP) {
         /* macroblock.c:940-943 — inter chroma has its own MC path; analysis
          * does not fabricate chroma coefficients.  phx_encoder.c performs the
          * integer-MV chroma copy for this no-residual decision. */
@@ -1762,7 +1782,8 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d,
     d->cbp_luma = c->cbp_luma;
     d->cbp_chroma = c->cbp_chroma;
     d->i_cbp = (c->cbp_chroma << 4) | c->cbp_luma
-             | ((type == PHX_P_L0 || type == PHX_P_SKIP) ? 0 : 0x1700);
+             | ((type == PHX_P_L0 || type == PHX_P_SKIP ||
+                 type == PHX_B_SKIP) ? 0 : 0x1700);
                                                      /* macroblock.c:946-951 */
                                                     /* inter cbp has no DC flags; intra cbp keeps 0x1700 (macroblock.c:946-951) */
 }
@@ -1771,11 +1792,13 @@ static void phx_analysis_finalise(phx_analysis_ctx_t *c, phx_mb_decision_t *d,
  * branch of :2953/:3038 and the mode comparison of :3200-3223.  B-slice
  * analysis is still a TODO (no list-1 reference/motion data).
  * SHADER: B — one invocation per macroblock, no hidden state. */
-int phx_macroblock_analyse_slice(const phx_param_t *p, const phx_frame_t *fenc,
-                                 const phx_frame_t *fref,
-                                 phx_mb_cache_t *cache, phx_cabac_t *cb,
-                                 int mb_x, int mb_y, int qp, int slice_type,
-                                 phx_mb_decision_t *d)
+static int phx_macroblock_analyse_impl(const phx_param_t *p,
+                                       const phx_frame_t *fenc,
+                                       const phx_frame_t *fref,
+                                       const phx_analysis_b_input_t *b,
+                                       phx_mb_cache_t *cache, phx_cabac_t *cb,
+                                       int mb_x, int mb_y, int qp,
+                                       int slice_type, phx_mb_decision_t *d)
 {
     phx_analysis_ctx_t c;
     phx_inter_result_t inter;
@@ -1821,9 +1844,44 @@ int phx_macroblock_analyse_slice(const phx_param_t *p, const phx_frame_t *fenc,
     if (c.mbrd) phx_analysis_mb_init_fenc_cache(&c);
     phx_init_neighbours(&c);
 
+    /* B-slice direct/B_SKIP path (analyse.c:3334-3359).  B1's predictor and
+     * probe are byte-exact; all list-1/colocated state arrives in `b` from
+     * the caller's DPB (DPB1 accessors).  No B frame is forced when `b` is
+     * absent — the existing intra-only fallback stays in place. */
+    if (slice_type == PHX_SLICE_B && b && b->fref1 && b->col && fref) {
+        phx_mvdirect_input_t din;
+        memset(&din, 0, sizeof(din));
+        din.cache = cache;
+        din.mb_x = mb_x; din.mb_y = mb_y;
+        din.mb_xy = mb_y * (fenc->i_width/16) + mb_x;
+        /* macroblock.c:682-683 — b8/b4 strides are 2x/4x the MB width. */
+        int mbw = fenc->i_width/16;
+        din.i_b8_xy = 2*(mb_y * (2*mbw) + mb_x);       /* :682 */
+        din.i_b4_xy = 4*(mb_y * (4*mbw) + mb_x);       /* :683 */
+        din.direct_mode = p->i_direct_mv_pred;
+        din.b_direct_spatial = b->b_direct_spatial;
+        din.i_threads = 1;                         /* single-threaded encoder */
+        din.col = b->col;
+        din.cur_poc = b->cur_poc;
+        if (phx_mvdirect_predict(&din, &c.b_direct) == 0 &&
+            c.b_direct.available) {
+            /* analyse.c:3338-3359 — the direct prediction is usable; with
+             * mbrd == 0 the probe decides B_SKIP directly (:3356-3358). */
+            int bskip = phx_mvdirect_probe_bskip(
+                fenc, fref, b->fref1, &c.b_direct,
+                mb_x, mb_y, qp, phx_chroma_qp_of(p, qp),
+                b->bipred_weight ? b->bipred_weight : 32);
+            if (bskip > 0) {
+                inter.found = 1;
+                inter.b_skip = 1;
+                inter.cost = 0;                    /* B_SKIP wins the compare */
+                c.i_satd_inter = 0;
+            }
+        }
+    }
+
     /* P-slice ME (analyse.c:3036-3038) runs before the intra analysis of
-     * :3198 so both costs are available for the :3221-3223 comparison.  B
-     * slices keep the intra-only path until list-1 data is exposed. */
+     * :3198 so both costs are available for the :3221-3223 comparison. */
     if (slice_type == PHX_SLICE_P) {
         /* analyse.c:2959/:3007-3013 — fast P_SKIP detection runs *before* the
          * 16x16 ME.  At subme >= 3 it only arms b_try_skip; at lower subme a
@@ -1892,4 +1950,27 @@ int phx_macroblock_analyse(const phx_param_t *p, const phx_frame_t *f,
 {
     return phx_macroblock_analyse_slice(p, f, NULL, cache, NULL,
                                         mb_x, mb_y, qp, PHX_SLICE_I, d);
+}
+
+/* B-direct/B_SKIP entry point — forwards to the shared implementation with
+ * the caller's list-1/colocated bundle.  SHADER: B — explicit DPB inputs. */
+int phx_macroblock_analyse_slice_b(const phx_param_t *p, const phx_frame_t *fenc,
+                                   const phx_frame_t *fref0,
+                                   const phx_analysis_b_input_t *b,
+                                   phx_mb_cache_t *cache, phx_cabac_t *cb,
+                                   int mb_x, int mb_y, int qp,
+                                   phx_mb_decision_t *d)
+{
+    return phx_macroblock_analyse_impl(p, fenc, fref0, b, cache, cb,
+                                       mb_x, mb_y, qp, PHX_SLICE_B, d);
+}
+
+int phx_macroblock_analyse_slice(const phx_param_t *p, const phx_frame_t *fenc,
+                                 const phx_frame_t *fref,
+                                 phx_mb_cache_t *cache, phx_cabac_t *cb,
+                                 int mb_x, int mb_y, int qp, int slice_type,
+                                 phx_mb_decision_t *d)
+{
+    return phx_macroblock_analyse_impl(p, fenc, fref, NULL, cache, cb,
+                                       mb_x, mb_y, qp, slice_type, d);
 }
