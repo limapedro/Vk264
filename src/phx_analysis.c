@@ -782,27 +782,72 @@ static void phx_search_i4(phx_analysis_ctx_t *c)
     c->satd_i4x4 = i_cost;
 }
 
+/* x264 common/pixel.c:55-73 — PIXEL_SAD_C(4,4) and the sibling SSD kernel.
+ * SHADER: A — one 4x4 reduction over fenc/fdec (or fenc/zero). */
+static int phx_pixel_sad_4x4(const uint8_t *p1, int s1,
+                             const uint8_t *p2, int s2)
+{
+    int sum = 0;                                    /* pixel.c:59 */
+    for (int y = 0; y < 4; y++, p1 += s1, p2 += s2) /* :60 */
+        for (int x = 0; x < 4; x++)                 /* :61 */
+            sum += abs((int)p1[x] - (int)p2[x]);    /* :64 */
+    return sum;                                     /* :69 */
+}
+static int phx_pixel_ssd_4x4(const uint8_t *p1, int s1,
+                             const uint8_t *p2, int s2)
+{
+    int sum = 0;
+    for (int y = 0; y < 4; y++, p1 += s1, p2 += s2)
+        for (int x = 0; x < 4; x++) {
+            int d = (int)p1[x] - (int)p2[x];
+            sum += d*d;
+        }
+    return sum;
+}
+
+/* x264 encoder/rdo.c:94-112 — cached_satd() for PIXEL_4x4 (index 2 in the
+ * :96-98 tables): SATD(fenc,zero) - SAD(fenc,zero)>>1.  Phoenix has no
+ * frame-level cache, so recompute the same value from the source block; the
+ * cache in :101-110 is only a speed optimisation.  SHADER: A — pure fenc. */
+static int phx_rdo_satd_ac_4x4(const uint8_t *p, int stride)
+{
+    static const uint8_t zero[16] = { 0 };
+    int dc = phx_pixel_sad_4x4(p, stride, zero, 0) >> 1;    /* rdo.c:107 */
+    return phx_satd_4x4(p, stride, zero, 0) - dc;           /* :108 */
+}
+
+/* x264 encoder/rdo.c:123-148 — ssd_plane(PIXEL_4x4, p=0): SSD plus the psy-RD
+ * "absolute difference of complexities" term.  i_psy_rd is FIX8(f_psy_rd)
+ * for subme>=6 and 0 otherwise (encoder.c:1218; the fenc SATD cache that
+ * analyse.c:570-584 resets is only an optimisation of rdo.c:94-112).
+ * SHADER: A — one 4x4 comparison, no hidden state. */
+static int phx_rdo_ssd4(const phx_analysis_ctx_t *c,
+                        const uint8_t *src, int ss,
+                        const uint8_t *dst, int ds)
+{
+    int ssd = phx_pixel_ssd_4x4(src, ss, dst, ds);         /* rdo.c:147 */
+    int psy_rd = c->p->i_subpel_refine >= 6
+               ? (int)(c->p->f_psy_rd*(1 << 8) + .5) : 0;  /* encoder.c:1218 */
+    if (psy_rd) {                                          /* :128 */
+        int fenc_ac = phx_rdo_satd_ac_4x4(src, ss);        /* :134/:108 */
+        int fdec_ac = phx_rdo_satd_ac_4x4(dst, ds);        /* :133 (uncached) */
+        int64_t tmp = ((int64_t)abs(fdec_ac - fenc_ac) * psy_rd
+                        * c->a.i_lambda + 128) >> 8;       /* :144 */
+        ssd += (int)(tmp < PHX_COST_MAX ? tmp : PHX_COST_MAX); /* :145/:147 */
+    }
+    return ssd;
+}
+
 /* x264 encoder/rdo.c:315-347 — rd_cost_i4x4(), reduced to the 4:2:0 luma
  * plane.  The SSD is measured after the candidate mode has been encoded into
- * p_fdec; the bit cost is the ordered intra4x4_pred_mode + residual bins of
- * partition_i4x4_size_cabac() (cabac.c:1203-1211) counted with a COPY_CABAC
- * state (rdo.c:182-185), so no real entropy state is advanced.  SHADER: B —
+ * p_fdec; the bit cost is the exact FIX8 `f8_bits_encoded` accumulated by the
+ * size-only intra4x4_pred_mode + residual writers (cabac.h:99-124,
+ * rdo.c:31-69/71-73/315-347, cabac.c:775-858/1203-1211).  No copied
+ * arithmetic coder and no byte-position estimate is used.  SHADER: B —
  * one candidate cost, no hidden state. */
 static uint64_t phx_analysis_rd_i4(phx_analysis_ctx_t *c, int idx,
                                    int mode, const phx_dctcoef coef[16])
 {
-    uint8_t buf[512];
-    phx_cabac_t tmp;
-    if (c->cb) {
-        tmp = *c->cb;                               /* COPY_CABAC, rdo.c:183 */
-        tmp.p_start = buf; tmp.p = buf; tmp.p_end = buf + sizeof(buf);
-        phx_cabac_encode_init_core(&tmp);            /* cabac.c:53 */
-    } else {
-        memset(&tmp, 0, sizeof(tmp));
-        phx_cabac_context_init(&tmp, c->slice_type, c->qp, 0);
-        phx_cabac_encode_init(&tmp, buf, buf + sizeof(buf));
-    }
-
     phx_mb_cache_t cc = *c->cache;                  /* local cache copy */
     phx_cabac_mb_t mb;
     phx_cabac_mb_init(&mb, &cc);                    /* cabac.c:32 */
@@ -816,29 +861,19 @@ static uint64_t phx_analysis_rd_i4(phx_analysis_ctx_t *c, int idx,
     mb.i_fref[0] = 0; mb.i_fref[1] = 0;
 
     int pred = phx_predict4_mode(c, idx);            /* cabac.c:1205 */
-    int fixed = PHX_MODE4_FIX(mode);                  /* :1207 */
-    phx_cabac_intra4x4_pred_mode(&tmp, pred, fixed);  /* :1208 */
-    phx_cabac_block_residual_cbf(&tmp, &mb, PHX_DCT_LUMA_4x4, idx,
-                                 coef, 1, 0, 0);      /* :1210 */
-
-    /* rdo.c:185 — f8_bits_encoded is FIX8(bits); the real coder's position is
-     * bits, so scale by 256 before applying lambda2. */
-    int bits = (int)(8 * ((tmp.p - tmp.p_start) + tmp.i_bytes_outstanding))
-             + tmp.i_queue + 9;
-    if (bits < 0) bits = 0;
-    uint64_t i_bits = (((uint64_t)bits * 256 * (unsigned)c->a.i_lambda2)
-                       + 32768) >> 16;              /* rdo.c:185 */
+    /* rdo.c:341 — lambda2 here is a->i_lambda2 (analyse.c:259), so the FIX8
+     * bit total is scaled by >>8 (not the trellis >>4 of rdo.c:185). */
+    uint64_t i_bits = ((uint64_t)phx_rdo_size_partition_i4x4(
+                           c->cb, &mb, idx, pred, mode, coef,
+                           c->slice_type, c->qp)
+                       * (unsigned)c->a.i_lambda2 + 128) >> 8;
 
     const uint8_t *src = c->fenc + phx_block_xy[idx][0]
                        + phx_block_xy[idx][1]*c->fenc_stride;
     const uint8_t *dst = c->fdec + phx_block_xy[idx][0]
                        + phx_block_xy[idx][1]*c->fdec_stride;
-    uint64_t ssd = 0;                                /* rdo.c:327 */
-    for (int y = 0; y < 4; y++)
-        for (int x = 0; x < 4; x++) {
-            int d = (int)src[x + y*c->fenc_stride] - (int)dst[x + y*c->fdec_stride];
-            ssd += (unsigned)(d*d);
-        }
+    uint64_t ssd = (uint64_t)phx_rdo_ssd4(c, src, c->fenc_stride,
+                                           dst, c->fdec_stride); /* rdo.c:327 */
     return (ssd << 8) + i_bits;                      /* rdo.c:346 */
 }
 
@@ -872,6 +907,9 @@ static void phx_analysis_intra_rd_refine_i4(phx_analysis_ctx_t *c,
             phx_predict4(mode, dst, c->fdec_stride);    /* :932 */
             phx_dctcoef coef[16];
             int nz = phx_encode_i4(c, idx, coef);       /* :323 (trellis gate) */
+            /* macroblock.h:158 — x264_mb_encode_i4x4 publishes the candidate
+             * nnz before partition_i4x4_size_cabac() reads the CBF context. */
+            c->cache->non_zero_count[phx_scan8[idx]] = (uint8_t)nz;
             uint64_t cost = phx_analysis_rd_i4(c, idx, mode, coef); /* :1107 */
             if (cost < best_cost) {
                 best_cost = cost;
@@ -884,6 +922,7 @@ static void phx_analysis_intra_rd_refine_i4(phx_analysis_ctx_t *c,
         }
         for (int y = 0; y < 4; y++)                    /* :1124-1131 */
             memcpy(dst + y*c->fdec_stride, backup[y], 4);
+        c->cache->non_zero_count[phx_scan8[idx]] = (uint8_t)best_nz; /* :1130 */
         c->pred4[idx] = best_mode;                     /* :1111 */
         c->cache->intra4x4_pred_mode[phx_scan8[idx]] = (int8_t)best_mode;
                                                         /* :1133 */
@@ -1268,10 +1307,12 @@ int phx_macroblock_analyse_slice(const phx_param_t *p, const phx_frame_t *fenc,
     if (p->analyse_intra & PHX_ANALYSE_I8x8) phx_search_i8(&c);
     if (p->analyse_intra & PHX_ANALYSE_I4x4) phx_search_i4(&c);
     phx_analysis_finalise(&c, d, &inter);
-    /* analyse.c:2940/:2950 — mbrd>=1 selects the I4 modes by RD cost (the
-     * 715-bin probe uses subme=7 => mbrd=1).  Only the winning I_4x4 decision
-     * is refined; P_L0 carries no intra4x4 predictors. */
-    if (c.mbrd > 0 && d->mb_type == PHX_I_4x4 &&
+    /* analyse.c:2937-2951 — mbrd>=1 runs intra_rd() (whole-MB RD over the
+     * SATD-chosen modes), while the *per-block* rd_cost_i4x4() refinement of
+     * :1086-1135 is gated by mbrd>=2 (:2950).  The 715-bin probe uses
+     * subme=7 => mbrd=1, so no individual I4 mode may be replaced by a
+     * per-block RD cost there.  P_L0 carries no intra4x4 predictors. */
+    if (c.mbrd > 1 && d->mb_type == PHX_I_4x4 &&
         (p->analyse_intra & PHX_ANALYSE_I4x4)) {
         phx_analysis_intra_rd_refine_i4(&c, d);
         d->cbp_luma = c.cbp_luma;

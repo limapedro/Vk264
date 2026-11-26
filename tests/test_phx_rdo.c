@@ -230,6 +230,40 @@ int main(void)
         check(nz == 0 || nz == 1, "8x8 smoke return value");
     }
 
+    /* Size-only CABAC accumulation (rdo.c:384-415).  prefix 0 adds nothing
+     * beyond the bypass sign bit (256); prefix 1 adds one entropy decision
+     * for b=0 plus the sign (x264_cabac_entropy[0] = 7, tables.c:1717). */
+    phx_rdo_init();
+    for (int st = 0; st < 128; st++)
+        check(phx_rdo_size_unary(0)[st] == 256, "size_unary[0]");
+    /* x264_cabac_entropy[0] = FIX8(-ln2(0.5)) = 7 (tables.c:1717). */
+    check(phx_rdo_size_unary(1)[0] == 256 + 7, "size_unary[1][0]");
+    check(phx_rdo_size_unary(15) == NULL, "size_unary out of range");
+    check(phx_rdo_size_5ones()[0] != 0, "size_5ones generated");
+    {
+        phx_cabac_t live;
+        phx_cabac_size_t sz;
+        uint8_t before[sizeof(live.state)];
+        memset(&live, 0, sizeof(live));
+        phx_cabac_context_init(&live, PHX_SLICE_I, 26, 0);
+        memcpy(before, live.state, sizeof(before));
+        phx_rdo_size_init(&sz, &live, PHX_SLICE_I, 26);
+        check(sz.f8_bits_encoded == 0, "size init f8_bits");
+        check(memcmp(sz.state, live.state, sizeof(sz.state)) == 0,
+              "size init COPY_CABAC state");
+        /* cabac.c:83-96, equal predictors: one ctx-68 decision for b=1. */
+        {
+            int st = sz.state[68];
+            phx_rdo_size_intra4x4_pred_mode(&sz, 2, 2);   /* cabac.c:86 */
+            check(sz.f8_bits_encoded > 0,
+                  "size intra4x4 equal mode adds a decision");
+            check(sz.state[68] == phx_cabac_transition[st][1],
+                  "size decision advances only the local state");
+        }
+        check(memcmp(before, live.state, sizeof(before)) == 0,
+              "size-only writer leaves live CABAC state untouched");
+    }
+
     /* Bit-cost primitives, golden values from x264 common/bitstream.h:283-289
      * and common/tables.c:1717-1750 as observed in the harness. */
     check(phx_rdo_bs_size_ue_big(0) == 1, "bs_size_ue_big(0)");

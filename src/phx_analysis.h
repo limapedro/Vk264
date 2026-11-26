@@ -82,9 +82,12 @@ int phx_macroblock_analyse(const phx_param_t *p, const phx_frame_t *f,
  * P_SKIP is produced only when the pskip MV probe of analyse.c:1296-1301 and
  * mvpred.c:166-181 succeeds and the prediction residual is exactly zero.
  * `cb` is the live CABAC coder (analyse.c:261 switches trellis on only when
- * i_trellis>1 && mbrd>=1) and supplies the COPY_CABAC state for the mbrd>=1
- * I_4x4 RD refinement of analyse.c:1086-1135; pass NULL for standalone
- * analysis (plain deadzone quant, SATD-only mode choice).
+ * i_trellis>1 && mbrd>=1) and supplies the COPY_CABAC context states
+ * (rdo.c:71-73) for the mbrd>=1 I_4x4 RD refinement of analyse.c:1086-1135.
+ * The refinement uses the exact size-only bit accumulator exposed by
+ * phx_rdo.h (common/cabac.h:99-124, rdo.c:31-69/315-347); it never copies or
+ * advances the arithmetic coder.  Pass NULL for standalone analysis (plain
+ * deadzone quant, SATD-only mode choice).
  *
  * This is an additive API: the seven-argument phx_macroblock_analyse() above
  * remains the I-slice wrapper so standalone callers keep their ABI.

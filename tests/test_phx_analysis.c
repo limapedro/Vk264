@@ -141,6 +141,54 @@ static int check_p_analysis(void)
     return 0;
 }
 
+/* MBRD size accounting must not advance the live arithmetic coder: x264's
+ * COPY_CABAC (rdo.c:71-73) copies only f8_bits_encoded + 460 context states,
+ * and the size-only writers (cabac.h:101-124) never touch i_low/i_range/p.
+ * SHADER: B — verifies the A/B state boundary at the analysis output. */
+static int check_analysis_leaves_cabac_untouched(void)
+{
+    phx_param_t p;
+    phx_param_default(&p);
+    p.i_width = p.i_height = 32;
+    p.i_subpel_refine = 7;                              /* medium: mbrd=1 */
+    phx_param_finalize(&p);
+    phx_frame_t *f = phx_frame_new(32, 32, 0);
+    phx_mb_state_t *s = phx_mb_state_new(2, 2);
+    phx_mb_cache_t cache;
+    phx_mb_decision_t d;
+    phx_cabac_t cb;
+    uint8_t buf[512];
+    int rc;
+    if (!f || !s) { printf("FAIL cabac-immutability: allocation\n"); return 1; }
+    fill_frame(f);
+    s->slice_type = PHX_SLICE_I;
+    s->first_mb = 0;
+    memset(&cb, 0, sizeof(cb));
+    phx_cabac_context_init(&cb, PHX_SLICE_I, 26, 0);
+    phx_cabac_encode_init(&cb, buf, buf + sizeof(buf));
+    uint8_t state[sizeof(cb.state)];
+    memcpy(state, cb.state, sizeof(state));
+    int low = cb.i_low, range = cb.i_range, queue = cb.i_queue;
+    int outstanding = cb.i_bytes_outstanding;
+    uint8_t *at = cb.p;
+
+    memset(&d, 0, sizeof(d));
+    memset(&cache, 0, sizeof(cache));
+    phx_macroblock_cache_load(s, &cache, 0, 0, 0);
+    rc = phx_macroblock_analyse_slice(&p, f, NULL, &cache, &cb,
+                                      0, 0, 26, PHX_SLICE_I, &d);
+    CHECK(rc == 0, "cabac-immutability: analysis succeeds with live coder");
+    CHECK(cb.i_low == low && cb.i_range == range && cb.i_queue == queue &&
+          cb.i_bytes_outstanding == outstanding && cb.p == at,
+          "analysis does not advance the live arithmetic coder");
+    CHECK(memcmp(state, cb.state, sizeof(state)) == 0,
+          "analysis does not modify live CABAC contexts");
+
+    phx_mb_state_delete(s);
+    phx_frame_delete(f);
+    return 0;
+}
+
 static void check_decision(const phx_mb_decision_t *d, const char *tag)
 {
     CHECK(d->mb_type == PHX_I_4x4 || d->mb_type == PHX_I_8x8 ||
@@ -294,6 +342,7 @@ int main(void)
     if (!rc2) check_decision(&d2, "interior");
 
     fails += check_p_analysis();
+    fails += check_analysis_leaves_cabac_untouched();
 
     /* Bad arguments must fail cleanly without touching the decision. */
     CHECK(phx_macroblock_analyse(NULL, f, &cache, 0, 0, 26, &d2) == -1,
