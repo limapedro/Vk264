@@ -215,4 +215,12 @@ Re-ran the same 16-video × 10-preset × 2-entropy scaled matrix after the F17 S
 
 Every case now has byte-identical SPS, PPS, SEI, NAL framing and slice headers; all divergence is inside slice entropy (MB decisions/coefficients). The decode-error count did not change, confirming these are bitstream-syntax/state defects, not header defects. Per-preset clean counts: ultrafast 6/32, all others 0/32; ultrafast CABAC/CAVLC stream sizes are now close to x264 (ratio ~0.93), while higher presets remain 3.6–5.6× larger because Phoenix codes B frames as intra (B1's direct/B_SKIP goldens are landed but not yet integrated).
 
+## F20 — harness false positive, empty DPB, and full-frame reconstruction
+
+A matrix run appeared to report 75/320 byte-exact. All 75 were cases where Phoenix emitted **no stream** (I had rebuilt `phx_cli.exe` mid-run, so the CLI was briefly absent); `byte_exact` was computed as `first_diff is None`, which also held for missing files. The harness now requires both streams to exist and be non-empty. True byte-exact remains 0/320.
+
+Instrumenting the B path then found that **every** `phx_dpb_store_frame()` returned -1: `phx_encoder.c` passed x264's per-MB `FDEC_STRIDE=32` (`common.h:571`) while the DPB expected a full-frame stride (`>= i_width`). DPB1 now accepts the per-MB layout and assembles full planes MB-by-MB; M8/M11 replaced the constant `0x1700` CBP with x264's data-derived bits (`encoder/macroblock.c:945-951`), which moved the real-clip first divergent bin 589 → 379.
+
+Phoenix's FDEC scratch physically holds only two 16x16 MBs per 16-row band, so it cannot represent a 64-wide reconstructed frame. `phx_encoder` now assembles a full `phx_frame_t` from each MB's luma/chroma (x264's `h->fdec->plane`) and feeds that to the DPB; reference counts are now non-zero and B list0/list1 can be built. B_SKIP still does not fire on real clips (Z1 investigating), and the strict encoder test still expects x264's MVD (0,0) where Phoenix emits (8,0) (M4 investigating).
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
