@@ -412,8 +412,13 @@ void phx_macroblock_deblock_strength(const phx_mb_state_t *s,
 
     if( phx_db_is_intra( s->type[xy] ) )             /* macroblock.c:1443-1446 */
     {
+        /* macroblock.c:1444/1446 use M64 at bs[0][2]/bs[1][2], which writes
+         * eight bytes each and therefore also seeds edge 3 (not just 1/2).
+         * x264's own bs object confirms edges 1,2,3 are all 0x03. */
         for( int k = 0; k < 4; k++ )
-            bs[0][1][k] = bs[1][1][k] = bs[0][2][k] = bs[1][2][k] = 3;
+            bs[0][1][k] = bs[0][2][k] = bs[0][3][k] = 3;
+        for( int k = 0; k < 4; k++ )
+            bs[1][1][k] = bs[1][2][k] = bs[1][3][k] = 3;
         return;
     }
 

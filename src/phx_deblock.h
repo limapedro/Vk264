@@ -64,7 +64,8 @@ void phx_deblock_strength_c(const phx_mb_cache_t *c, uint8_t bs[2][8][4],
 /* x264_macroblock_deblock_strength, macroblock.c:1438-1622 (progressive
  * subset: the MBAFF helper at :1364-1436 and the slice-edge neighbour reload
  * at :1466-1538 are not needed when cache_load already saw the neighbours).
- * Includes intra bs seeding (:1441-1447), the 8x8dct early termination
+ * Includes intra bs seeding (:1441-1447, M32 at edge 1 + M64 at edge 2 which
+ * also seeds edge 3), the 8x8dct early termination
  * (:1451-1464) and the CAVLC+8x8dct nnz munging (:1568-1615).
  * `b_transform_8x8_mode` is pps.b_transform_8x8_mode (macroblock.c:1569).
  * SHADER: B — derives the bs edge array from the shared MB cache/state.
