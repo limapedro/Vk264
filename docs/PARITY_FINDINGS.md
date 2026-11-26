@@ -440,4 +440,13 @@ and predictor clip/roundclip. On diag.yuv POC4 MB0 L1, MV/cost/cost_mv
 inputs: x264 evaluates fullpel (-2,10)/452 and ends (-8,39)/654; Phoenix's HEX
 walk stops at (-1,10)/637. ctest -R phx_me 1/1 PASS; HEX-walk fix delegated.
 
+## F41 — i_me_range/i_mv_range conflation fixed
+
+M4's step-by-step HEX trace showed Phoenix's third X3 candidate (-2,10)/452
+was rejected by CHECK_MVRANGE because i_me_range=16 was also used as analyse's
+i_mv_range (y limit 9); x264 uses i_mv_range=64. Split the two parameters in
+phx_me16_mvc(). Both real L1 goldens now byte-exact: MB0 (-1,24)/797/103 and
+MB1 (-8,39)/654/143. ctest -R phx_me 1/1 PASS. phx_analysis still calls the
+old single-MVP phx_me16(), so the mvc[] integration is next.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
