@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Translated from common/dct.c and encoder/macroblock.c.
+// Copyright (C) 2003-2024 x264 project.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "chroma_hadamard.glsl"
+layout(local_size_x = 64) in;
+
+struct Fixture {
+    int source[128], prediction[128];
+    int blocks420[64], blocks422[128];
+    int residualSum;
+    int residual420[4], residual422[8];
+    int transformed420[4], transformed422[8];
+};
+layout(std430, binding = 0) buffer Corpus { Fixture fixtures[]; };
+
+int sub4x4_dct_dc(uint fixture, int offset) {
+    int sum = 0;
+    for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x) {
+            int pixel = offset + 8*y + x;
+            sum += fixtures[fixture].source[pixel] - fixtures[fixture].prediction[pixel];
+        }
+    return sum;
+}
+
+void main() {
+    uint fixture = gl_GlobalInvocationID.x;
+    if (fixture >= fixtures.length()) return;
+
+    int residual[8], coefficients[8];
+    for (int i = 0; i < 8; ++i) {
+        residual[i] = sub4x4_dct_dc(fixture, (i / 2)*32 + (i % 2)*4);
+        coefficients[i] = fixtures[fixture].blocks422[16*i];
+        fixtures[fixture].blocks422[16*i] = 0;
+    }
+    fixtures[fixture].residualSum = residual[0];
+
+    // sub8x8_dct_dc and dct2x2dc apply the same butterfly to different inputs.
+    ivec4 residual420 = chromaHadamard2x2(ivec4(residual[0], residual[1], residual[2], residual[3]));
+    ivec4 coefficients420;
+    for (int i = 0; i < 4; ++i) {
+        coefficients420[i] = fixtures[fixture].blocks420[16*i];
+        fixtures[fixture].blocks420[16*i] = 0;
+    }
+    ivec4 transformed420 = chromaHadamard2x2(coefficients420);
+    for (int i = 0; i < 4; ++i) {
+        fixtures[fixture].residual420[i] = bitfieldExtract(residual420[i], 0, 16);
+        fixtures[fixture].transformed420[i] = bitfieldExtract(transformed420[i], 0, 16);
+    }
+
+    // sub8x16_dct_dc and dct2x4dc use the 2x4 butterfly in x264 coefficient order.
+    int residual422[8], transformed422[8];
+    chromaHadamard2x4(residual, residual422);
+    chromaHadamard2x4(coefficients, transformed422);
+    for (int i = 0; i < 8; ++i) {
+        fixtures[fixture].residual422[i] = bitfieldExtract(residual422[i], 0, 16);
+        fixtures[fixture].transformed422[i] = bitfieldExtract(transformed422[i], 0, 16);
+    }
+}

@@ -1,0 +1,193 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Progressive 4:2:0 row filtering from common/deblock.c.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#ifdef DEBLOCK_SUBGROUP
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_vote : require
+#endif
+#include "deblock_tables.glsl"
+#ifdef DEBLOCK_TILED
+layout(local_size_x = 128) in;
+#else
+layout(local_size_x = 64) in;
+#endif
+
+layout(push_constant) uniform Pass { int diagonal; };
+layout(std430, binding = 0) coherent buffer Frame {
+    int widthInMbs, heightInMbs, qp, chromaQp, intra, offsetA, offsetB;
+    uint words[];
+};
+
+#ifdef DEBLOCK_TILED
+const int tileSamples = 688;
+shared uint samples[4*tileSamples];
+shared int strengths[128];
+#ifndef DEBLOCK_SUBGROUP
+shared int activeSegments[16];
+#endif
+#define EDGE_PIXEL(index) samples[int(fixture)+index]
+#else
+#define EDGE_PIXEL(index) words[fixture+uint(index)]
+#endif
+#include "deblock_math.glsl"
+#undef EDGE_PIXEL
+
+int strength(int mb, bool horizontal, int edge, int segment) {
+    if (intra != 0) return edge == 0 ? 4 : 3;
+    int neighbor = edge != 0 ? mb : mb-(horizontal ? widthInMbs : 1);
+    int q = horizontal ? 4*edge+segment : 4*segment+edge;
+    int p = edge != 0 ? q-(horizontal ? 4 : 1) : horizontal ? 12+segment : 4*segment+3;
+    if ((((words[3*mb] >> q) | (words[3*neighbor] >> p)) & 1u) != 0u) return 2;
+    if (abs(int(words[3*mb+1])-int(words[3*neighbor+1])) >= 4 ||
+        abs(int(words[3*mb+2])-int(words[3*neighbor+2])) >= 4) return 1;
+    return 0;
+}
+
+#ifdef DEBLOCK_TILED
+int tileIndex(int plane, int x, int y) {
+    int stride = plane == 0 ? 20 : 12;
+    int offset = plane == 0 ? 0 : 400+144*(plane-1);
+    return offset + (y+4)*stride+x+4;
+}
+
+void copyWord(int local, int global, bool load) {
+    if (load) {
+        uint word = words[global];
+        for (int i = 0; i < 4; ++i) samples[local+i] = (word >> (8*i)) & 255u;
+    } else {
+        uint word = 0u;
+        for (int i = 0; i < 4; ++i) word |= samples[local+i] << (8*i);
+        words[global] = word;
+    }
+}
+
+void copyTile(int tile, int x, int y, int lane, int plane, int along, bool left, bool top, bool load) {
+    int macroblocks = widthInMbs*heightInMbs;
+    int yStride = 4*widthInMbs, cStride = 2*widthInMbs;
+    int yBase = 3*macroblocks + 16*y*yStride + 4*x;
+    int cBase = 67*macroblocks + 8*y*cStride + 2*x;
+    int yRow = lane/4, yCol = lane&3;
+    copyWord(tile+tileIndex(0, 4*yCol, yRow), yBase+yRow*yStride+yCol, load);
+    copyWord(tile+tileIndex(0, 4*yCol, yRow+8), yBase+(yRow+8)*yStride+yCol, load);
+    int component = 1+lane/16, cRow = (lane&15)/2, cCol = lane&1;
+    copyWord(tile+tileIndex(component, 4*cCol, cRow),
+             cBase+16*macroblocks*(component-1)+cRow*cStride+cCol, load);
+    int base = plane == 0 ? yBase : cBase+16*macroblocks*(plane-1);
+    int stride = plane == 0 ? yStride : cStride;
+    if (left) copyWord(tile+tileIndex(plane, -4, along), base+along*stride-1, load);
+    int columns = plane == 0 ? 4 : 2;
+    int row = along/columns-4, col = along%columns;
+    if (top) copyWord(tile+tileIndex(plane, 4*col, row), base+row*stride+col, load);
+}
+
+void filterTile(int tile, int team, int plane, int along, int alpha, int beta, int indexA, bool horizontal) {
+    bool chroma = plane != 0;
+    int stride = chroma ? 12 : 20;
+    int segment = along >> (chroma ? 1 : 2);
+    for (int edge = 0; edge < 4; ++edge) {
+        if (chroma && (edge&1) != 0) continue;
+        int bs = strengths[32*team+16*int(horizontal)+4*edge+segment];
+        if (bs == 0) continue;
+        int center = edge*(chroma ? 2 : 4);
+        int index = horizontal ? tileIndex(plane, along, center) : tileIndex(plane, center, along);
+        int tc = bs == 4 ? 0 : tcTable[indexA][bs]+int(chroma);
+        filterLine(uint(tile), index, horizontal ? stride : 1, alpha, beta, tc, bs == 4, chroma);
+    }
+}
+
+void main() {
+    // Workgroups own 4×4 tiles in skewed (x+y,y) coordinates.
+    int tileV = int(gl_WorkGroupID.x), tileU = diagonal-tileV;
+    if (tileU < 0 || tileU >= (widthInMbs+heightInMbs+2)/4) return;
+#ifdef DEBLOCK_SUBGROUP
+    int lane = int(gl_SubgroupInvocationID), team = int(gl_SubgroupID);
+#else
+    int lane = int(gl_LocalInvocationIndex)&31, team = int(gl_LocalInvocationIndex)/32;
+#endif
+    int tile = team*tileSamples, y = 4*tileV+team;
+    int plane = lane < 16 ? 0 : lane < 24 ? 1 : 2;
+    int along = lane-(plane == 0 ? 0 : 8*(plane+1));
+    int planeQp = plane == 0 ? qp : chromaQp;
+    int indexA = planeQp+offsetA+24;
+    int alpha = alphaTable[indexA], beta = betaTable[planeQp+offsetB+24];
+    for (int wave = 0; wave < 7; ++wave) {
+        int localU = wave-team, x = 4*tileU+localU-y;
+        bool valid = localU >= 0 && localU < 4 && x >= 0 && x < widthInMbs && y < heightInMbs;
+        bool left = x > 0, top = y > 0;
+        int mb = y*widthInMbs+x;
+        bool horizontal = lane >= 16;
+        int edge = (lane&15)/4;
+        bool available = edge != 0 || (horizontal ? top : left);
+        int bs = valid && available && ((edge&1) == 0 || (words[3*mb]&65536u) == 0u)
+            ? strength(mb, horizontal, edge, lane&3) : 0;
+        strengths[32*team+lane] = bs;
+#ifdef DEBLOCK_SUBGROUP
+        bool needsFilter = subgroupAny(bs != 0);
+#else
+        barrier();
+        if (lane < 4) {
+            int anyStrength = 0;
+            for (int i = 0; i < 8; ++i) anyStrength |= strengths[32*team+8*lane+i];
+            activeSegments[4*team+lane] = anyStrength;
+        }
+        barrier();
+        bool needsFilter = (activeSegments[4*team] | activeSegments[4*team+1] |
+                       activeSegments[4*team+2] | activeSegments[4*team+3]) != 0;
+#endif
+        if (needsFilter) copyTile(tile, x, y, lane, plane, along, left, top, true);
+        barrier();
+        if (needsFilter && alpha != 0 && beta != 0)
+            filterTile(tile, team, plane, along, alpha, beta, indexA, false);
+        barrier();
+        if (needsFilter && alpha != 0 && beta != 0)
+            filterTile(tile, team, plane, along, alpha, beta, indexA, true);
+        barrier();
+        if (needsFilter) copyTile(tile, x, y, lane, plane, along, left, top, false);
+        memoryBarrierBuffer();
+        barrier();
+    }
+}
+#else
+void filterEdge(uint plane, int center, int stride, bool horizontal, int mb, int edge, bool chroma) {
+    int indexA = (chroma ? chromaQp : qp)+offsetA+24;
+    int indexB = (chroma ? chromaQp : qp)+offsetB+24;
+    int alpha = alphaTable[indexA], beta = betaTable[indexB];
+    if (alpha == 0 || beta == 0) return;
+    int along = horizontal ? 1 : stride, across = horizontal ? stride : 1;
+    int samplesPerSegment = chroma ? 2 : 4;
+    for (int segment = 0; segment < 4; ++segment) {
+        int value = strength(mb, horizontal, edge, segment);
+        if (value == 0) continue;
+        bool strong = value == 4;
+        int tc = strong ? 0 : tcTable[indexA][value]+int(chroma);
+        int start = center+samplesPerSegment*segment*along;
+        for (int sampleIndex = 0; sampleIndex < samplesPerSegment; ++sampleIndex)
+            filterLine(plane, start+sampleIndex*along, across, alpha, beta, tc, strong, chroma);
+    }
+}
+void main() {
+    // Left, top, and top-right macroblocks finish in earlier passes.
+    int y = int(gl_GlobalInvocationID.x), x = diagonal-2*y;
+    if (y >= heightInMbs || x < 0 || x >= widthInMbs) return;
+    int mb = y*widthInMbs+x;
+    int stride = 16*widthInMbs, chromaStride = stride/2;
+    uint luma = uint(3*widthInMbs*heightInMbs);
+    int lumaSamples = stride*16*heightInMbs;
+    uint chroma = luma+uint(lumaSamples);
+    int lumaStart = 16*(y*stride+x), chromaStart = 8*(y*chromaStride+x);
+    for (int dir = 0; dir < 2; ++dir) {
+        bool horizontal = dir == 1;
+        int first = (horizontal ? y : x) == 0 ? 1 : 0;
+        for (int edge = first; edge < 4; ++edge) {
+            if ((edge & 1) != 0 && (words[3*mb] & 65536u) != 0u) continue;
+            filterEdge(luma, lumaStart+4*edge*(horizontal ? stride : 1), stride, horizontal, mb, edge, false);
+            if ((edge & 1) == 0) {
+                int center = chromaStart+2*edge*(horizontal ? chromaStride : 1);
+                filterEdge(chroma, center, chromaStride, horizontal, mb, edge, true);
+                filterEdge(chroma+uint(lumaSamples/4), center, chromaStride, horizontal, mb, edge, true);
+            }
+        }
+    }
+}
+#endif

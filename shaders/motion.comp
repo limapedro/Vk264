@@ -1,0 +1,125 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "layout.glsl"
+
+layout(local_size_x=32) in;
+shared uint costs[32];
+shared int samples[64];
+shared int lowSamples[16];
+
+uint score(ivec2 origin, ivec2 mv, uint lane, int pitch, int shift, bool integerOnly) {
+    uint sad = 0;
+    for (int n = 0; n < pitch * pitch; ++n) {
+        ivec2 xy = origin + 2 * ivec2(n & (pitch - 1), n >> shift);
+        int predicted = integerOnly ? refPixel(0, xy + (mv >> 2)) : lumaPrediction(xy, mv);
+        sad += uint(abs(samples[n] - predicted));
+    }
+    // Tiebreak deterministically and favor short vectors when SAD is close.
+    uint penalty = uint(findMSB(uint(abs(mv.x) + 1)) + findMSB(uint(abs(mv.y) + 1)));
+    return 32u * (sad + 3u * penalty) + lane;
+}
+
+uint selectLane(uint lane, uint cost) {
+    costs[lane] = cost;
+    barrier();
+    for (uint stride = 16u; stride != 0u; stride >>= 1u) {
+        if (lane < stride) costs[lane] = min(costs[lane], costs[lane + stride]);
+        barrier();
+    }
+    return costs[0];
+}
+
+ivec2 coarse(uint lane, int radius) {
+    ivec2 grid = ivec2(int(lane % 5u), int(lane / 5u)) - 2;
+    return 4 * ((grid * radius) / 2);
+}
+
+ivec2 offsetAt(uint index, uint width) {
+    return ivec2(int(index % width), int(index / width)) - int(width / 2u);
+}
+
+ivec2 pyramidSeed(ivec2 origin, int radius, uint lane) {
+    ivec2 xy = origin >> 2;
+    if (lane < 16u) lowSamples[lane] = int(quarterAt(xy + ivec2(lane & 3u, lane >> 2u)) & 255u);
+    barrier();
+
+    uint width = uint(radius / 4) * 2u + 1u;
+    uint best = 0xffffffffu;
+    // Keep the dense near search. Quality presets also test distant matches
+    // on a sixteen-pixel grid before refining the winning displacement.
+    uint cells = width * width;
+    uint rings = pc.satdCandidates >= 4u ? 3u : 2u;
+    for (uint cell = lane; cell < rings * cells; cell += 32u) {
+        ivec2 seed = offsetAt(cell % cells, width);
+        int stride = 1 << int(cell / cells);
+        if (cell >= cells) {
+            seed *= stride;
+            if (max(abs(seed.x), abs(seed.y)) <= (radius / 4) * (stride / 2)) continue;
+        }
+        uint sad = 0u;
+        for (uint n = 0u; n < 16u; ++n) {
+            int predicted = int(quarterAt(xy + seed + ivec2(n & 3u, n >> 2u)) >> 8);
+            sad += uint(abs(lowSamples[n] - predicted));
+        }
+        uint cost = 2u * sad + uint(abs(seed.x) + abs(seed.y));
+        best = min(best, (cost << 10u) | cell);
+    }
+    uint winner = selectLane(lane, best) & 1023u;
+    barrier();
+    return (16 << int(winner / cells)) * offsetAt(winner % cells, width);
+}
+
+ivec2 refineInteger(ivec2 origin, ivec2 seed, int limit, uint lane, int pitch, int shift) {
+    // Search within three pixels of the coarse match and also around zero motion.
+    uint best = 0xffffffffu;
+    for (uint cell = lane; cell < 58u; cell += 32u) {
+        ivec2 candidate = cell < 49u ? seed + 4 * offsetAt(cell, 7u) : 4 * offsetAt(cell - 49u, 3u);
+        uint cost = score(origin, clamp(candidate, -limit, limit), 0u, pitch, shift, true) >> 5u;
+        best = min(best, (cost << 6u) | cell);
+    }
+    uint winner = selectLane(lane, best) & 63u;
+    barrier();
+    ivec2 candidate = winner < 49u ? seed + 4 * offsetAt(winner, 7u) : 4 * offsetAt(winner - 49u, 3u);
+    return clamp(candidate, -limit, limit);
+}
+
+void main() {
+    uint mb = gl_WorkGroupID.x;
+    uint part = gl_WorkGroupID.y;
+    uint matchIndex = spatialMotion() ? motionSeedIndex(mb) : 5u * mb + part;
+    uint lane = gl_LocalInvocationID.x;
+    int radius = int(pc.motionRadius);
+    if (radius == 0) {
+        if (lane == 0u) matches[matchIndex] = MotionMatch(ivec2(0), 0u, 0u);
+        return;
+    }
+    ivec2 origin = mbOrigin(mb, 0);
+    int shift = part == 0u ? 3 : 2;
+    int pitch = 1 << shift;
+    if (part != 0u) origin += 8 * ivec2(int((part - 1u) & 1u), int((part - 1u) >> 1u));
+    for (int n = int(lane); n < pitch * pitch; n += 32)
+        samples[n] = srcPixel(0, origin + 2 * ivec2(n & (pitch - 1), n >> shift));
+    barrier();
+    int limit = part == 0u && radius >= 4 ? hierarchicalMotionLimit() : 4 * radius;
+    ivec2 best;
+    bool hierarchical = part == 0u && radius >= 4;
+    if (hierarchical) {
+        ivec2 seed = pyramidSeed(origin, radius, lane);
+        best = refineInteger(origin, seed, limit, lane, pitch, shift);
+    } else {
+        uint coarseWinner = selectLane(lane, lane < 25u ? score(origin, coarse(lane, radius), lane, pitch, shift, true) : 0xffffffffu);
+        best = coarse(coarseWinner & 31u, radius);
+        barrier();
+    }
+    const ivec2 refine[9] = ivec2[9](ivec2(0,0),ivec2(-1,0),ivec2(1,0),ivec2(0,-1),ivec2(0,1),
+        ivec2(-1,-1),ivec2(1,-1),ivec2(-1,1),ivec2(1,1));
+    uint winner = 0u;
+    for (int step = hierarchical ? (pc.subpel != 0u ? 2 : 4) : 4; step >= (pc.subpel != 0u ? 1 : 4); step >>= 1) {
+        uint cost = 0xffffffffu;
+        if (lane < 9u) cost = score(origin, clamp(best + step * refine[lane], -limit, limit), lane, pitch, shift, step == 4);
+        winner = selectLane(lane, cost);
+        best = clamp(best + step * refine[winner & 31u], -limit, limit);
+        barrier();
+    }
+    if (lane == 0u) matches[matchIndex] = MotionMatch(best, winner >> 5u, 0u);
+}

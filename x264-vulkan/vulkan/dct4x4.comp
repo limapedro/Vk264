@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Translated from common/dct.c. Copyright (C) 2003-2024 x264 project.
+// See COPYING and UPSTREAM-REVISION.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#define BLOCK_SIDE 4
+#include "dct_layout.glsl"
+
+layout(local_size_x = 64) in;
+
+#include "dct4x4_math.glsl"
+
+void main() {
+    uint block = gl_GlobalInvocationID.x / BLOCKS_PER_GROUP;
+    if (block >= blocks.length()) return;
+    int blockIndex = int(gl_GlobalInvocationID.x % BLOCKS_PER_GROUP);
+    int pixelBase = pixelOffset(blockIndex);
+    int coefficientBase = blockIndex * BLOCK_COEFFICIENTS;
+
+    // Match x264's coefficient order. The horizontal frequency is major.
+    ivec4 tmp[4];
+    for (int y = 0; y < 4; ++y) {
+        ivec4 difference;
+        for (int x = 0; x < 4; ++x) {
+            int p = pixelBase + GROUP_SIDE*y + x;
+            difference[x] = int(blocks[block].sourcePixels[p]) - int(blocks[block].predictedPixels[p]);
+        }
+        ivec4 row = forwardPass(difference);
+        for (int x = 0; x < 4; ++x) tmp[x][y] = row[x];
+    }
+    for (int x = 0; x < 4; ++x) {
+        ivec4 coefficients = forwardPass(tmp[x]);
+        for (int y = 0; y < 4; ++y) blocks[block].transformed[coefficientBase + 4*x+y] = coefficients[y];
+    }
+
+    for (int y = 0; y < 4; ++y) {
+        ivec4 coefficients;
+        for (int x = 0; x < 4; ++x) coefficients[x] = blocks[block].inverseCoefficients[coefficientBase + 4*x+y];
+        tmp[y] = bitfieldExtract(inversePass(coefficients), 0, 16);
+    }
+    for (int x = 0; x < 4; ++x) {
+        ivec4 residual = (inversePass(ivec4(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x])) + 32) >> 6;
+        for (int y = 0; y < 4; ++y) {
+            int p = pixelBase + GROUP_SIDE*y + x;
+            blocks[block].reconstructed[p] = uint(clamp(int(blocks[block].predictedPixels[p]) + residual[y], 0, 255));
+        }
+    }
+}
