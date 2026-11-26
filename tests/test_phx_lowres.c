@@ -76,7 +76,10 @@ static void lr_test_costs(void)
                                      p.i_bframe, 1, 0);
     LR_CHECK(c != NULL, "lowres context allocated");
     if (!c) { lr_free_frames(frames, LR_FRAMES); return; }
-    phx_lowres_set_mbtree(c, p.b_mb_tree);          /* slicetype.c:823 */
+    /* The x264 golden build uses --qp 28 (CQP), which disables MB-tree; its
+     * slicetype.c:823 do_edges is therefore 0.  Match that here so the cached
+     * edge-block MVs do not perturb an interior block's predictor. */
+    phx_lowres_set_mbtree(c, 0);                    /* slicetype.c:823 */
     for (int i = 0; i < LR_FRAMES; i++) {
         phx_frame_init_lowres(frames[i]);            /* mc.c:458 */
         phx_lowres_frame_reset(c, frames[i]);        /* mc.c:473-481 */
@@ -88,9 +91,21 @@ static void lr_test_costs(void)
     int cp2 = phx_lowres_frame_cost(c, frames, 0, 1, 1);
     int cb1 = phx_lowres_frame_cost(c, frames, 0, 2, 1);
     printf("costs: P=%d P(again)=%d B=%d\n", cp1, cp2, cb1);
-    LR_CHECK(cp1 > 0, "P frame cost is nonzero");
-    LR_CHECK(cp2 > 0 && cp2 == cp1, "P frame cost is reproducible / cached");
-    LR_CHECK(cb1 > 0, "B path frame cost is nonzero");
+    /* Byte-exact oracle from the C-only instrumented x264 build
+     * (tools/build_reference_x264.py, --preset medium --qp 28 --keyint 30
+     * --min-keyint 30 --scenecut 0, synth fixture of parity_harness.py:64-77).
+     * slicetype.c:836-995 scores, in this call order:
+     *   cost(0,1,1)=1993  cost(0,2,1)=1324
+     *   cost(1,2,2)=2102  cost(0,2,2)=3008
+     * SHADER: C -- golden cost accumulation. */
+    LR_CHECK(cp1 == 1993, "P cost(0,1,1) == x264 1993");
+    LR_CHECK(cp2 == 1993 && cp2 == cp1, "P cost cached/reproducible == 1993");
+    LR_CHECK(cb1 == 1324, "B cost(0,2,1) == x264 1324");
+    int cp2f = phx_lowres_frame_cost(c, frames, 1, 2, 2);
+    int cb2f = phx_lowres_frame_cost(c, frames, 0, 2, 2);
+    printf("costs: P2=%d B2=%d\n", cp2f, cb2f);
+    LR_CHECK(cp2f == 2102, "P cost(1,2,2) == x264 2102");
+    LR_CHECK(cb2f == 3008, "B cost(0,2,2) == x264 3008");
 
     /* The standalone signature uses its own lazily created context. */
     phx_frame_init_lowres(frames[0]);
