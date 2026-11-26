@@ -83,6 +83,9 @@ typedef struct {
     int i_cbp_luma, i_cbp_chroma, i_qp, b_transform_8x8;
     int i_chroma_pred_mode;         /* h->mb.i_chroma_pred_mode (raw 0..6) */
     uint8_t *p_fdec;                /* reconstructed MB, FDEC_STRIDE layout */
+    /* macroblock.c:537/:546 — the two 4:2:0 chroma windows of the same MB
+     * scratch.  Optional: NULL on the legacy cache-test path. */
+    uint8_t *p_fdec_u, *p_fdec_v;
     int fdec_stride;
     int8_t  intra4x4_pred_mode[40]; /* X264_SCAN8_LUMA_SIZE = 5*8 */
     uint8_t non_zero_count[120];    /* X264_SCAN8_SIZE = 3*40 */
@@ -105,6 +108,18 @@ void phx_macroblock_cache_load_neighbours(phx_mb_state_t *s, phx_mb_cache_t *c,
 /* macroblock.c:855 — load the current MB's neighbour caches. */
 void phx_macroblock_cache_load(phx_mb_state_t *s, phx_mb_cache_t *c,
                                int mb_x, int mb_y, int b_mbaff);
+
+/* macroblock.c:568-610 / :1000-1024 — seed the per-MB FDEC scratch from the
+ * encoder's full-picture reconstruction.  c->p_fdec must already point at an
+ * MB-sized scratch with 2 rows of top padding and a 1-pixel left border
+ * (Phoenix p_fdec = fdec_buf + 2*FDEC_STRIDE + 1; x264 macroblock.c:533 uses
+ * fdec_buf + 2*FDEC_STRIDE, whose [-1] byte is the last byte of padding row 1).
+ * The caller owns the scratch, so standalone cache tests keep their old
+ * five-argument load path untouched. */
+void phx_macroblock_cache_load_fdec(phx_mb_state_t *s, phx_mb_cache_t *c,
+                                    int mb_x, int mb_y, int b_mbaff,
+                                    const uint8_t *recon_y, int recon_y_stride,
+                                    const uint8_t *recon_uv, int recon_uv_stride);
 
 /* macroblock.c:1638 — back up the bottom rows for intra prediction. */
 void phx_macroblock_backup_intra(phx_mb_state_t *s, int mb_x, int mb_y,
