@@ -26,6 +26,7 @@
 #include "phx_tables.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int fails = 0;
@@ -208,6 +209,113 @@ static void check_interpolation(const phx_cost_tables_t *cost)
     phx_frame_delete(fref);
 }
 
+/* ---- public one-call refinement API (x264_me_refine_qpel analogue) ------ */
+
+/* tools/parity_harness.py:64-77 fixture frame N luma is
+ * (x*7 + y*13 + 29*N) & 255, with frame.c:535-552 edge replication.  The
+ * instrumented x264 harness used the identical construction, so both sides
+ * see byte-identical padded planes.  SHADER: A — deterministic input. */
+static uint8_t fixture_pix(int x, int y, int frame)
+{
+    return (uint8_t)((x*7 + y*13 + 29*frame) & 255);
+}
+
+static void fill_fixture(phx_frame_t *f, int frame)
+{
+    int s = f->i_stride;
+    for (int y = -PHX_PADV; y < f->i_height + PHX_PADV; y++)
+        for (int x = -PHX_PADH; x < f->i_width + PHX_PADH; x++)
+            f->plane[y*s + x] = fixture_pix(x, y, frame);
+    for (int y = 0; y < f->i_height; y++) {
+        uint8_t l = f->plane[y*s], r = f->plane[y*s + f->i_width - 1];
+        for (int k = 0; k < PHX_PADH; k++) {
+            f->plane[y*s - PHX_PADH + k] = l;
+            f->plane[y*s + f->i_width + k] = r;
+        }
+    }
+    for (int k = 0; k < PHX_PADV; k++) {
+        memcpy(f->plane - (k+1)*s - PHX_PADH, f->plane - PHX_PADH,
+               (size_t)(f->i_width + 2*PHX_PADH));
+        memcpy(f->plane + (f->i_height+k)*s - PHX_PADH,
+               f->plane + (f->i_height-1)*s - PHX_PADH,
+               (size_t)(f->i_width + 2*PHX_PADH));
+    }
+}
+
+/* SAD at the zero MV for the given MB (me.c:291: the MVP, no MV bits). */
+static int fixture_sad(const phx_frame_t *fenc, const phx_frame_t *fref,
+                       int mb_x, int mb_y)
+{
+    const uint8_t *p = fenc->plane + (mb_y*16)*fenc->i_stride + mb_x*16;
+    const uint8_t *q = fref->plane + (mb_y*16)*fref->i_stride + mb_x*16;
+    int sum = 0;
+    for (int y = 0; y < 16; y++) {
+        for (int x = 0; x < 16; x++) sum += abs((int)p[x] - (int)q[x]);
+        p += fenc->i_stride; q += fref->i_stride;
+    }
+    return sum;
+}
+
+/* Goldens from the real instrumented x264 refine path on the fixed fixture:
+ * b_refine_qpel == 0 reproduces the me.c:792-797 call inside
+ * x264_me_search_ref(); == 1 reproduces analyse.c:3125 x264_me_refine_qpel().
+ * medium-frame1-mb5 / qpel02-frame1-mb5 exercise Z1's P_SKIP case; the
+ * veryfast-frame3-mb0 case is the reported (0,0) -> (0,2) qpel divergence. */
+typedef struct {
+    const char *name;
+    int rf, ef, mb_x, mb_y, subme, br;
+    int mv[2], cost, cost_mv;
+} api_golden_t;
+
+static const api_golden_t api_goldens[] = {
+    {"medium-frame1-mb5",    0,1, 1,1, 7,0, { 0, 6}, 12763, 48},
+    {"veryfast-frame3-mb0",  2,3, 0,0, 2,0, { 0, 2}, 17202, 33},
+    {"qpel02-frame1-mb5",    0,1, 1,1, 2,0, { 0, 2}, 21721, 33},
+    {"superfast-sad-subme1", 0,1, 1,1, 1,1, { 0, 3},  9853, 38},
+    {"refineqpel-subme2",    2,3, 0,0, 2,1, { 0, 0}, 14750,  8},
+};
+
+static void case_api(const phx_cost_tables_t *cost, int lambda,
+                     const api_golden_t *g)
+{
+    phx_frame_t *fref = phx_frame_new(64, 64, 0);
+    phx_frame_t *fenc = phx_frame_new(64, 64, 0);
+    CHECK(fref && fenc, "frame_new public API");
+    if (!fref || !fenc) return;
+    fill_fixture(fref, g->rf);
+    fill_fixture(fenc, g->ef);
+
+    int16_t mvp[2] = { 0, 0 };
+    int16_t mv[2] = { 0, 0 };
+    int c = fixture_sad(fenc, fref, g->mb_x, g->mb_y), cmv = 0;
+    /* Primary path: no caller-supplied planes (self-contained). */
+    int rc = phx_me_refine_subpel_mv(fenc, fref, g->mb_x, g->mb_y, cost,
+                                     lambda, 16, g->subme, g->br, mvp,
+                                     mv, &c, &cmv, NULL);
+    CHECK(rc == 0, "refine_subpel_mv succeeds");
+    printf("  %-22s subme=%d br=%d mv=(%d,%d) cost=%d cost_mv=%d\n",
+           g->name, g->subme, g->br, mv[0], mv[1], c, cmv);
+    CHECK(mv[0] == g->mv[0] && mv[1] == g->mv[1],
+          "x264 public-API MV golden");
+    CHECK(c == g->cost, "x264 public-API cost golden");
+    CHECK(cmv == g->cost_mv, "x264 public-API cost_mv golden");
+
+    /* Per-frame reuse path: same output with caller-supplied hpel planes. */
+    phx_me_refplanes_t rp;
+    CHECK(phx_me_refplanes_init(fref, &rp) == 0, "refplanes_init public API");
+    int16_t mv2[2] = { 0, 0 };
+    int c2 = fixture_sad(fenc, fref, g->mb_x, g->mb_y), cmv2 = 0;
+    CHECK(phx_me_refine_subpel_mv(fenc, fref, g->mb_x, g->mb_y, cost,
+                                  lambda, 16, g->subme, g->br, mvp,
+                                  mv2, &c2, &cmv2, &rp) == 0,
+          "refine_subpel_mv prepared succeeds");
+    CHECK(mv2[0] == mv[0] && mv2[1] == mv[1] && c2 == c && cmv2 == cmv,
+          "prepared planes == self-contained planes");
+    phx_me_refplanes_free(&rp);
+    phx_frame_delete(fref);
+    phx_frame_delete(fenc);
+}
+
 int main(void)
 {
     const int mv_range = 16;
@@ -222,6 +330,10 @@ int main(void)
     for (unsigned i = 0; i < sizeof(goldens)/sizeof(goldens[0]); i++)
         case_golden(&cost, lambda, &goldens[i]);
     check_interpolation(&cost);
+
+    printf("x264-instrumented public refine API goldens (real-clip P_SKIP cases):\n");
+    for (unsigned i = 0; i < sizeof(api_goldens)/sizeof(api_goldens[0]); i++)
+        case_api(&cost, lambda, &api_goldens[i]);
 
     /* Invalid inputs are rejected, never guessed.  UMH is now supported. */
     {
@@ -243,6 +355,13 @@ int main(void)
         CHECK(phx_me_refine_subpel(0, 0, 4, 4, NULL, &rp, &cost, 16, lambda,
                                    1, 1, NULL, mv, &c, &cmv) == -1,
               "refine null fenc rejected");
+        int16_t smv[2] = { 0, 0 };
+        CHECK(phx_me_refine_subpel_mv(NULL, f, 0, 0, &cost, lambda, 16, 1,
+                                      1, NULL, smv, &c, &cmv, NULL) == -1,
+              "public API null fenc rejected");
+        CHECK(phx_me_refine_subpel_mv(f, f, 4, 0, &cost, lambda, 16, 1,
+                                      1, NULL, smv, &c, &cmv, NULL) == -1,
+              "public API out-of-range MB rejected");
         phx_me_refplanes_free(&rp);
         phx_frame_delete(f);
     }
