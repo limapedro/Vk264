@@ -249,6 +249,11 @@ typedef struct {
     int b_type;                         /* inter->b_type (:3397-3402) */
     int16_t cand_l0_mv[2], cand_l1_mv[2];  /* per-list me16x16.mv, qpel */
     int cand_l0_ref, cand_l1_ref;
+    /* The matching x264_me_t.cost / .cost_mv of each per-list search
+     * (encoder/me.h:53-54, analyse.c:1937-1938).  `poc` is the caller's
+     * h->fdec->i_poc (-1 without a B input).  SHADER: B/C — read-only. */
+    int cand_l0_cost, cand_l1_cost, cand_l0_cost_mv, cand_l1_cost_mv;
+    int poc;
     /* Exact MV/ref handed to phx_inter_rd_cost (analyse_update_cache state). */
     int16_t used_mv[19][2][2];
     int used_ref[19][2];

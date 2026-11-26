@@ -1406,6 +1406,25 @@ static const int x264_inter_rd_poc2_mb1_bskip = 1185;
 static const int x264_inter_rd_poc2_mb1_direct = 1243;
 static const int x264_inter_rd_poc2_mb1_l0 = 1408;
 
+/* x264's x264_me_search_ref() on diag.yuv POC4, MB0/MB1, both lists, captured
+ * by instrumenting encoder/analyse.c:1938 after the call (--qp 28 --preset
+ * medium --keyint 30 --scenecut 0 --threads 1, MB QP29 -> lambda 7,
+ * i_me_range 16, i_mv_range 64; x264_medump.exe, MEDIAG lines).  These are the
+ * exact x264_me_t.mv/cost/cost_mv arrays Phoenix's analysis candidate state
+ * must match.  mvc[] sizes recorded by the same dump: MB0 6/MB1 6 on L0 and
+ * MB0 6/MB1 5 on L1, matching test_phx_me.c's stand-alone L1 goldens.
+ * SHADER: B/C — immutable observation constants, no x264 bytes in Phoenix. */
+static const struct {
+    int mb_x, list;
+    int16_t mv[2];
+    int cost, cost_mv;
+} x264_me_poc4[] = {
+    { 0, 0, {   8, -11 }, 454, 118 },
+    { 0, 1, {  -1,  24 }, 797, 103 },
+    { 1, 0, {   9, -16 }, 934,  74 },
+    { 1, 1, {  -8,  39 }, 654, 143 },
+};
+
 static int check_inter_rd_diag_golden(void)
 {
     static const char *candidates[] = {
@@ -1472,6 +1491,25 @@ static int check_inter_rd_diag_golden(void)
      * not asserted byte-identical: ssd_mb's inputs still depend on the
      * documented FENC/DPB defects (phx_analysis.c flag note, F33), and the
      * decision override is therefore gated off.  No cost is fabricated. */
+    /* Byte-exact per-list ME observation (analyse.c:1937-1938).  x264's
+     * L1 triples are asserted in test_phx_me.c's mvc_goldens; here the full
+     * pipeline's published candidate state is printed beside them so any
+     * remaining input/DPB divergence is explicit, not hidden.  SHADER: C. */
+    for (unsigned i = 0; i < sizeof(x264_me_poc4)/sizeof(x264_me_poc4[0]); i++) {
+        const struct { int mb_x, list; int16_t mv[2]; int cost, cost_mv; } *g
+            = &x264_me_poc4[i];
+        const phx_inter_rd_diag_rec_t *r = g->mb_x ? b1 : b0;
+        const int16_t *mv = g->list ? r->cand_l1_mv : r->cand_l0_mv;
+        int cost = g->list ? r->cand_l1_cost : r->cand_l0_cost;
+        int cost_mv = g->list ? r->cand_l1_cost_mv : r->cand_l0_cost_mv;
+        printf("  ME golden POC4 MB%d L%d: x264 (%d,%d)/%d/%d "
+               "phx (%d,%d)/%d/%d %s\n",
+               g->mb_x, g->list, g->mv[0], g->mv[1], g->cost, g->cost_mv,
+               mv[0], mv[1], cost, cost_mv,
+               (mv[0] == g->mv[0] && mv[1] == g->mv[1] &&
+                cost == g->cost && cost_mv == g->cost_mv)
+                 ? "(exact)" : "(DIVERGED)");
+    }
     printf("  inter RD golden x264 MB0 [direct,l0,l1]=%d,%d,%d phx=%d,%d,%d "
            "(bskip %d/%d)\n",
            x264_inter_rd_poc4[0].rd_direct, x264_inter_rd_poc4[0].rd_l0,
