@@ -1396,6 +1396,7 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     memset(&b_input, 0, sizeof(b_input));
     memset(&b_col, 0, sizeof(b_col));
     int b_slice = (fc.i_type == PHX_SLICE_B && h->recon_dpb);
+            h->recon_dpb ? phx_dpb_count(h->recon_dpb) : -1);
     if (b_slice) {
         phx_dpb_list_cfg_t bcfg;
         memset(&bcfg, 0, sizeof(bcfg));
@@ -1463,9 +1464,12 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 d.i_partition = PHX_D_16x16;
                 d.cbp_luma = d.cbp_chroma = 0;
             }
+            int b_skip = (b_slice && rc == 0 && d.skip &&
+                          (d.mb_type == PHX_B_SKIP || d.mb_type == PHX_B_DIRECT));
             int inter = (rc == 0 && fc.i_type == PHX_SLICE_P &&
                          (is_skip || d.mb_type == PHX_P_L0) &&
                          d.cbp_luma == 0 && d.cbp_chroma == 0);
+            if (b_skip) inter = 0;                       /* B_SKIP has its own MC path */
             if (rc < 0 || (!inter && d.mb_type != PHX_I_16x16 &&
                            d.mb_type != PHX_I_4x4 && d.mb_type != PHX_I_PCM)) {
                 d.mb_type = PHX_I_16x16;
@@ -1486,9 +1490,16 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
              * mode indices (analyse.c:3739-3751); the FIX4/FIX16 mapping is
              * applied only by the CABAC/CAVLC syntax writers. */
             d.b_transform_8x8 = 0;                     /* pps transform flag is 0 below */
-            rc = phx_macroblock_encode_ex(&h->param, h->fenc, fref, c,
-                                          mb_x, mb_y, &d,
-                                          h->param.b_cabac ? &h->cabac : NULL); /* :2865 */
+            if (b_skip) {
+                /* encoder/macroblock.c:697-703 — B_SKIP MC from both lists
+                 * with the direct MVs published by analysis. */
+                rc = phx_macroblock_encode_b(&h->param, h->fenc, fref, fref1, c,
+                                             mb_x, mb_y, &d, 32);
+            } else {
+                rc = phx_macroblock_encode_ex(&h->param, h->fenc, fref, c,
+                                              mb_x, mb_y, &d,
+                                              h->param.b_cabac ? &h->cabac : NULL); /* :2865 */
+            }
             if (rc < 0) {
                 /* Last resort: an empty I_16x16 MB keeps the slice parseable
                  * if the B-stage refuses the decision (unsupported inter
@@ -1510,16 +1521,16 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 inter = 0;
                 is_skip = 0;
             }
-            if (is_skip) {
+            if (is_skip || b_skip) {
                 /* Restore x264's published type AND skip flag for the neighbour
                  * cache and the entropy stage (encoder.c:2883 IS_SKIP).  The
                  * B-stage encode resets d->skip to 0; leaving it that way sent
-                 * a P_SKIP mb_type through the coded-MB writer and desynced
+                 * a skip mb_type through the coded-MB writer and desynced
                  * CAVLC at the following MB. */
-                d.mb_type = PHX_P_SKIP;
+                d.mb_type = b_skip ? PHX_B_SKIP : PHX_P_SKIP;
                 d.skip = 1;
             }
-            if (!inter) {
+            if (!inter && !b_skip) {
                 /* encoder/macroblock.c:925-941/259-498 — intra chroma DC+AC. */
                 int crc = phx_macroblock_encode_chroma(&h->param, h->fenc, c,
                                                        mb_x, mb_y, &d);
@@ -1620,7 +1631,12 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
         sp.display_frame = frame_index;
         sp.i_type = fc.i_type;
         sp.b_kept_as_ref = 1;
-        phx_dpb_store_frame(h->recon_dpb, &sp);               /* encoder.c:3882 */
+                h->mb_state->mb_width, h->mb_state->mb_height,
+                h->mb_state->mb_stride, h->mb_state->b8_stride,
+                h->mb_state->b4_stride, !!h->mb_state->field,
+                !!h->mb_state->ref[0], !!h->mb_state->mv[0]);
+        int src = phx_dpb_store_frame(h->recon_dpb, &sp);      /* encoder.c:3882 */
+                h->i_frame, src, phx_dpb_count(h->recon_dpb));
     }
 
     phx_nal_t nal;
