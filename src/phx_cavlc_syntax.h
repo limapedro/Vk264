@@ -6,6 +6,9 @@
  * coefficient syntax that follows the header in x264_macroblock_write_cavlc.
  *
  * Exact source lines followed (all paths relative to reference/x264/):
+ *   common/dct.c:936-948      zigzag_interleave_8x8_cavlc
+ *   encoder/cavlc.c:276-284   cavlc_macroblock_luma_residual interleave call
+ *   encoder/cavlc.c:290-293   4x4 residual write loop
  *   encoder/cavlc.c:36-46     cbp_to_golomb
  *   encoder/cavlc.c:48-53     mb_type_b_to_golomb
  *   encoder/cavlc.c:55-58     subpartition_p_to_golomb
@@ -101,6 +104,18 @@ typedef struct {
 
 /* Zero-init.  SHADER: C. */
 void phx_cavlc_mb_init(phx_cavlc_mb_t *mb, phx_bs_t *bs, phx_mb_cache_t *cache);
+
+/* common/dct.c:936-948 (zigzag_interleave_8x8_cavlc, installed at dct.c:1065
+ * for the progressive C path): split ONE 64-coefficient zigzag-scanned 8x8
+ * array into the four 4x4 coefficient lists x264's CAVLC residual writer
+ * consumes.  `src` is h->dct.luma8x8[i8]; `dst` is the flat 4*16 array at
+ * h->dct.luma4x4[i8*4]; `nnz` is &h->mb.cache.non_zero_count[scan8[i8*4]],
+ * so the four flags land at nnz offsets 0,1,8,9 (scan8's 2x2 luma layout).
+ * The stride-4 read and the !!nz reduction are verbatim; do not replace
+ * them with a contiguous 16-coefficient memcpy (that is the I8 divergence).
+ * SHADER: C -- pure coefficient permutation plus four flag writes; no
+ * bitstream or entropy state is touched. */
+void phx_cavlc_interleave_8x8(int16_t *dst, const int16_t *src, uint8_t *nnz);
 
 /* Verbatim syntax-mapping tables (encoder/cavlc.c:36-63), exposed so parity
  * tests can check the literal x264 values. */

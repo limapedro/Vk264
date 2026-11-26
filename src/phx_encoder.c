@@ -1137,7 +1137,8 @@ static void phx_encoder_cavlc_qp_delta(phx_bs_t *bs, int qp, int *last_qp)
   * SHADER: C — strictly serial CAVLC MB syntax. */
 static void phx_encoder_write_cavlc_mb(phx_t *h, const phx_mb_decision_t *d,
                                        phx_cavlc_t *cav, int *last_qp,
-                                       int slice_type)
+                                       int slice_type,
+                                       const phx_mb_i8x8_block_t i8x8[4])
 {
     phx_bs_t *bs = cav->bs;
     int mt = d->mb_type;
@@ -1223,13 +1224,34 @@ static void phx_encoder_write_cavlc_mb(phx_t *h, const phx_mb_decision_t *d,
         }
     } else if (d->cbp_luma || d->cbp_chroma) {
         phx_encoder_cavlc_qp_delta(bs, d->i_qp, last_qp); /* cavlc.c:575 */
+        /* cavlc.c:276-284 -- with b_transform_8x8, x264 first shuffles each
+         * 64-coefficient h->dct.luma8x8[i8] into the four 4x4 lists that the
+         * residual loop at :290-293 writes.  Phoenix carries those arrays in
+         * the explicit i8x8 handoff (phx_mbencode.h:61-69); the decision's
+         * dct[phx_scan8[..]] slots hold the un-shuffled contiguous 16s and
+         * are only correct for the flat 4x4 path.  Gate on the I8 MB type so
+         * no other MB type changes.  SHADER: C -- serial coefficient order. */
+        int use_i8_interleave = (mt == PHX_I_8x8 && d->b_transform_8x8 &&
+                                 h->pps.b_transform_8x8_mode && i8x8 != NULL);
         for (int i8 = 0; i8 < 4; i8++) {
             if (!(d->cbp_luma & (1 << i8))) continue;   /* :287 */
-            for (int j = 0; j < 4; j++) {
-                int idx = i8*4 + j;
-                int n;
-                const int16_t *l = phx_encoder_block(d, PHX_BLK_LUMA4, idx, &n);
-                phx_encoder_cavlc_block(h, cav, PHX_DCT_LUMA_4x4, idx, l, n);
+            if (use_i8_interleave &&
+                h->mb_cache.non_zero_count[phx_scan8[i8*4]]) /* cavlc.c:279 */
+            {
+                int16_t inter[4*16];                    /* luma4x4[i8*4] */
+                phx_cavlc_interleave_8x8(inter, i8x8[i8].coef,
+                    &h->mb_cache.non_zero_count[phx_scan8[i8*4]]); /* :282-284 */
+                for (int j = 0; j < 4; j++)             /* :290-293 */
+                    phx_encoder_cavlc_block(h, cav, PHX_DCT_LUMA_4x4,
+                                            i8*4 + j, &inter[j*16], 16);
+            } else {
+                for (int j = 0; j < 4; j++) {
+                    int idx = i8*4 + j;
+                    int n;
+                    const int16_t *l = phx_encoder_block(d, PHX_BLK_LUMA4,
+                                                         idx, &n);
+                    phx_encoder_cavlc_block(h, cav, PHX_DCT_LUMA_4x4, idx, l, n);
+                }
             }
         }
     }
@@ -1782,7 +1804,7 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                     phx_cavlc_mb_skip(cav.bs, &cavlc_skip_run, d.skip, 0);
                 if (!d.skip)
                     phx_encoder_write_cavlc_mb(h, &d, &cav, &last_qp,
-                                               fc.i_type); /* :2892 */
+                                               fc.i_type, i8x8); /* :2892 */
                 /* encoder.c:2883-2884 — a skipped MB only increments the run;
                  * it does not touch last_qp or write any syntax. */
             }
