@@ -12,6 +12,8 @@
 #include "phx_frame.h"
 #include "phx_mbcache.h"
 #include "phx_mb_decision.h"
+#include "phx_cost.h"           /* high-ref cost-table bounds (regression) */
+#include "phx_rdo.h"            /* high-ref MBRD / RDO scratch bounds */
 
 #include <stdio.h>
 #include <string.h>
@@ -189,6 +191,153 @@ static int check_analysis_leaves_cabac_untouched(void)
     return 0;
 }
 
+/* Regression: the high-reference/high-B presets (slower 8 refs, veryslow
+ * 16 refs / 8 B, placebo 16 refs / 16 B) previously crashed a full CLI encode
+ * (phx rc 3221225477 / 0xC0000005).  Keep the analysis, cost and RDO scratch
+ * paths under test independently of the CLI: every MB of a 2x2-MB frame is
+ * analysed in both I and P slices with the live CABAC coder (mbrd >= 2), so
+ * the I4 RD refinement and the trellis QNS paths really execute.  Then probe
+ * the cost/RDO table boundaries with the same presets' reference counts.
+ * SHADER: B — host-side bounds regression at the A/B output boundary. */
+static int check_high_ref_analysis(void)
+{
+    static const struct {
+        const char *name;
+        int refs, bframes, subme, mv_range;
+    } cases[] = {
+        { "slower",    8,  3,  9, 16 },
+        { "veryslow", 16,  8, 10, 24 },
+        { "placebo",  16, 16, 11, 24 },
+    };
+
+    for (unsigned k = 0; k < sizeof(cases)/sizeof(cases[0]); k++) {
+        phx_param_t p;
+        phx_param_default(&p);
+        CHECK(phx_param_apply_preset(&p, cases[k].name) == 0,
+              "high-ref preset is recognised");
+        CHECK(p.i_frame_reference == cases[k].refs,
+              "preset keeps x264's reference count");
+        CHECK(p.i_bframe == cases[k].bframes,
+              "preset keeps x264's B-frame count");
+        CHECK(p.i_subpel_refine == cases[k].subme,
+              "preset keeps x264's subme (mbrd driver)");
+        p.i_width = p.i_height = 32;
+        p.analyse_inter = 1;
+        p.analyse_intra = 3;
+        phx_param_finalize(&p);
+
+        phx_frame_t *f = phx_frame_new(32, 32, 0);
+        phx_frame_t *fref = phx_frame_new(32, 32, 0);
+        phx_mb_state_t *s = phx_mb_state_new(2, 2);
+        if (!f || !fref || !s) {
+            printf("FAIL high-ref %s: allocation\n", cases[k].name);
+            return 1;
+        }
+        fill_frame(f); fill_chroma(f);
+        fill_frame(fref); fill_chroma(fref);
+        phx_frame_init_lowres(f);
+        phx_frame_init_lowres(fref);
+
+        uint8_t buf[512];
+        phx_cabac_t cb;
+        memset(&cb, 0, sizeof(cb));
+        for (int slice = PHX_SLICE_I; slice <= PHX_SLICE_P; slice++) {
+            s->slice_type = slice;
+            s->first_mb = 0;
+            for (int i = 0; i < 4; i++)
+                s->type[i] = slice == PHX_SLICE_P ? PHX_P_L0 : PHX_I_16x16;
+            phx_cabac_context_init(&cb, slice, 28, 0);
+            phx_cabac_encode_init(&cb, buf, buf + sizeof(buf));
+            uint8_t state[sizeof(cb.state)];
+            memcpy(state, cb.state, sizeof(state));
+            int low = cb.i_low, range = cb.i_range;
+            for (int mb_y = 0; mb_y < 2; mb_y++) {
+                for (int mb_x = 0; mb_x < 2; mb_x++) {
+                    phx_mb_cache_t cache;
+                    phx_mb_decision_t d;
+                    memset(&cache, 0, sizeof(cache));
+                    memset(&d, 0, sizeof(d));
+                    phx_macroblock_cache_load(s, &cache, mb_x, mb_y, 0);
+                    int rc = phx_macroblock_analyse_slice(
+                        &p, f, slice == PHX_SLICE_P ? fref : NULL,
+                        &cache, &cb, mb_x, mb_y, 28, slice, &d);
+                    CHECK(rc == 0, "high-ref analysis returns success");
+                    if (rc) continue;
+                    /* Bounded decision arrays, independent of the MB type. */
+                    CHECK(d.i_qp == 28 && d.i_partition == 16,
+                          "high-ref decision QP/partition in range");
+                    CHECK(d.intra16_pred_mode >= 0 && d.intra16_pred_mode <= 6 &&
+                          d.chroma_pred_mode >= 0 && d.chroma_pred_mode <= 6,
+                          "high-ref intra predictor indices in range");
+                    for (int i = 0; i < 16; i++) {
+                        CHECK(d.intra4x4_pred_mode[i] >= 0 &&
+                              d.intra4x4_pred_mode[i] <= 11,
+                              "high-ref I4 predictor index in range");
+                        CHECK(d.ref[0][i] >= -1 && d.ref[0][i] < 16 &&
+                              d.ref[1][i] >= -1 && d.ref[1][i] < 16,
+                              "high-ref ref index is bounded by 16 refs");
+                    }
+                    for (int i = 0; i < 4; i++)
+                        CHECK(d.intra8x8_pred_mode[i] >= 0 &&
+                              d.intra8x8_pred_mode[i] <= 11,
+                              "high-ref I8 predictor index in range");
+                    for (int i = 0; i < 48; i++)
+                        CHECK(d.nnz[i] <= 1, "high-ref nnz is boolean");
+                    for (int i = 0; i < 48; i++)
+                        for (int j = 0; j < 16; j++)
+                            CHECK(d.dct[i][j] >= -32768 && d.dct[i][j] <= 32767,
+                                  "high-ref coefficient fits int16");
+                }
+            }
+            CHECK(cb.i_low == low && cb.i_range == range &&
+                  memcmp(state, cb.state, sizeof(state)) == 0,
+                  "high-ref MBRD leaves the live arithmetic coder untouched");
+        }
+
+        /* The cost tables are built with the preset's mv_range (16/24) and
+         * indexed by up to 16 references; x264 clips that lookup to 2 slots. */
+        phx_cost_tables_t costs;
+        CHECK(phx_analyse_init_costs(&costs, cases[k].mv_range,
+                  (int)p.i_me_method, 28, 28) == 0,
+              "high-ref cost tables initialise");
+        phx_mb_analysis_t a;
+        memset(&a, 0, sizeof(a));
+        phx_mb_analyse_init_qp(&p, 28, p.i_chroma_qp_index_offset, 3, &a);
+        phx_mb_analyse_load_costs(&costs, &a, cases[k].refs, cases[k].refs);
+        CHECK(costs.cost_mv[28] && a.p_cost_mv == costs.cost_mv[28],
+              "high-ref MV cost pointer is inside the centred allocation");
+        CHECK(a.p_cost_ref[0] == costs.cost_ref[28][2] &&
+              a.p_cost_ref[1] == costs.cost_ref[28][2],
+              "high-ref reference costs clip to the three x264 slots");
+        phx_analyse_free_costs(&costs, cases[k].mv_range);
+        CHECK(phx_analyse_init_costs(&costs, cases[k].mv_range,
+                  (int)p.i_me_method, 28, 28) == 0,
+              "cost tables rebuild without leaking the mv_range allocation");
+        phx_analyse_free_costs(&costs, cases[k].mv_range);
+
+        /* RDO scratch/tables must stay bounded for every QP and category. */
+        for (int qp = 0; qp <= 51; qp++)
+            for (int list = 0; list < 4; list++) {
+                CHECK(phx_rdo_quant4_mf(list, qp) != NULL &&
+                      phx_rdo_quant4_bias0(list, qp) != NULL &&
+                      phx_rdo_unquant4_mf(list, qp) != NULL,
+                      "RDO 4x4 table in range");
+            }
+        CHECK(phx_rdo_quant4_mf(0, 52) == NULL, "RDO table rejects QP > 51");
+        for (int prefix = 0; prefix < 15; prefix++)
+            CHECK(phx_rdo_size_unary(prefix) != NULL &&
+                  phx_rdo_transition_unary(prefix) != NULL,
+                  "size-only RDO unary table in range");
+        CHECK(phx_rdo_size_unary(15) == NULL,
+              "size-only RDO unary table rejects out-of-range prefix");
+
+        phx_mb_state_delete(s);
+        phx_frame_delete(fref);
+        phx_frame_delete(f);
+    }
+    return 0;
+}
+
 static void check_decision(const phx_mb_decision_t *d, const char *tag)
 {
     CHECK(d->mb_type == PHX_I_4x4 || d->mb_type == PHX_I_8x8 ||
@@ -343,6 +492,7 @@ int main(void)
 
     fails += check_p_analysis();
     fails += check_analysis_leaves_cabac_untouched();
+    fails += check_high_ref_analysis();
 
     /* Bad arguments must fail cleanly without touching the decision. */
     CHECK(phx_macroblock_analyse(NULL, f, &cache, 0, 0, 26, &d2) == -1,

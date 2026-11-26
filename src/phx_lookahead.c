@@ -446,7 +446,10 @@ static void phx_lh_slicetype_decide(phx_lookahead_t *l)
             }
         }
 
-        if (bframes == l->p.i_bframe || !l->next[bframes+1].f) {
+        if (bframes == l->p.i_bframe || bframes + 1 >= l->next_size) {
+            /* x264's list is NULL-terminated at the live end (slicetype.c:1865-1872);
+             * reading a stale slot here lets bframes reach next_size and the
+             * reorder shift below memmoves a negative count. */
             /* End of minigop: no more B frames are possible.
              * slicetype.c:1865-1872. */
             if (frm->i_type == PHX_TYPE_AUTO || PHX_IS_B(frm->i_type))
