@@ -1073,6 +1073,80 @@ static int check_transform_costs_golden(void)
     return 0;
 }
 
+
+/* x264 instrumented intra_rd() golden on build/oracle_full/clip2229_320x180.yuv
+ * (64x64 raw-I420 view, medium, QP25, CABAC, --threads 1).  The three
+ * rd_cost_mb() results at MB0 and the selected mb_class_e are below.  The
+ * winner is asserted byte-exactly; the per-mode numbers are printed as the
+ * parity target for the remaining cost components.  SHADER: B — decision
+ * boundary observation, no entropy state. */
+static const int x264_mb0_rd[3] = { 13544, 12241, 11511 }; /* I16, I4, I8 */
+
+static int check_intra_rd_mb0_golden(void)
+{
+    static const char *candidates[] = {
+        "build/oracle_full/clip2229_320x180.yuv",
+        "../../oracle_full/clip2229_320x180.yuv", "clip2229_320x180.yuv"
+    };
+    const char *path = NULL;
+    for (unsigned i = 0; i < sizeof(candidates)/sizeof(candidates[0]); i++) {
+        FILE *fp = fopen(candidates[i], "rb");
+        if (fp) { fclose(fp); path = candidates[i]; break; }
+    }
+    if (!path) { printf("  intra_rd golden: fixture not present, skipped\n"); return 0; }
+
+    phx_param_t p;
+    phx_param_default(&p);
+    phx_param_apply_preset(&p, "medium");
+    p.i_width = 64; p.i_height = 64; p.b_cabac = 1;
+    phx_param_finalize(&p);
+    phx_frame_t *f = phx_frame_new(64, 64, 0);
+    phx_mb_state_t *st = phx_mb_state_new(4, 4);
+    phx_cabac_t cb;
+    uint8_t cbuf[512];
+    if (!f || !st) { printf("FAIL intra_rd golden: allocation\n"); return 1; }
+    FILE *fp = fopen(path, "rb");
+    if (!fp || fread(f->plane, 1, 64*64*3/2, fp) != 64*64*3/2) {
+        printf("FAIL intra_rd golden: fixture read\n");
+        if (fp) fclose(fp);
+        return 1;
+    }
+    fclose(fp);
+    st->slice_type = PHX_SLICE_I; st->first_mb = 0;
+    for (int i = 0; i < 16; i++) st->type[i] = PHX_I_16x16;
+    memset(&cb, 0, sizeof(cb));
+    phx_cabac_context_init(&cb, PHX_SLICE_I, 25, 0);
+    phx_cabac_encode_init(&cb, cbuf, cbuf + sizeof(cbuf));
+
+    phx_mb_cache_t cache;
+    phx_mb_decision_t d;
+    memset(&cache, 0, sizeof(cache));
+    memset(&d, 0, sizeof(d));
+    phx_macroblock_cache_load(st, &cache, 0, 0, 0);
+    phx_g_intra_rd_diag_enable = 1;
+    phx_g_intra_rd_diag_count = 0;
+    int rc = phx_macroblock_analyse_slice(&p, f, NULL, &cache, &cb,
+                                          0, 0, 25, PHX_SLICE_I, &d);
+    phx_g_intra_rd_diag_enable = 0;
+    CHECK(rc == 0, "intra_rd golden: analysis succeeds");
+    if (!rc) {
+        const phx_intra_rd_diag_rec_t *r = phx_g_intra_rd_diag
+            ? &phx_g_intra_rd_diag[0] : NULL;
+        CHECKF(d.mb_type == PHX_I_8x8,
+               "intra_rd golden: MB0 winner is I_8x8 (x264: %d, got %d)",
+               PHX_I_8x8, d.mb_type);
+        if (r && r->cost[PHX_I_16x16] != 0) {
+            printf("  intra_rd golden x264 RD[16,4,8] = %d,%d,%d; "
+                   "phx = %d,%d,%d\n", x264_mb0_rd[0], x264_mb0_rd[1],
+                   x264_mb0_rd[2], r->cost[PHX_I_16x16],
+                   r->cost[PHX_I_4x4], r->cost[PHX_I_8x8]);
+        }
+    }
+    phx_mb_state_delete(st);
+    phx_frame_delete(f);
+    return 0;
+}
+
 int main(void)
 {
     phx_param_t p;
@@ -1171,6 +1245,7 @@ int main(void)
     fails += check_high_ref_analysis();
     fails += check_transform_allowed();
     fails += check_transform_costs_golden();
+    fails += check_intra_rd_mb0_golden();
 
     /* Source-aligned I4 mode-decision goldens (worker Z1, rows 1-3). */
     fails += check_mb0_i4_golden("superfast", z1_superfast_modes);

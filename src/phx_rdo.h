@@ -230,6 +230,14 @@ void phx_rdo_size_block_residual_cbf_ex(phx_cabac_size_t *cb,
                                          const phx_dctcoef_t *l, int b_intra,
                                          int b_dc);
 
+/* x264_cabac_block_residual_8x8_rd_c() (cabac.c:860-875) behind the size-only
+ * writers.  Uses the 8x8 significant/last offset tables (common/tables.c:
+ * 1757-1792) and the same merged sigmap+level state machine as the 4x4 path.
+ * 4:2:0 calls it directly per cbp_luma bit (cabac.c:1048-1049); the 4:4:4
+ * cbf variant at cabac.c:1040-1042 is not exposed here.  SHADER: C. */
+void phx_rdo_size_block_residual_8x8(phx_cabac_size_t *cb, int ctx_block_cat,
+                                     const phx_dctcoef_t *l);
+
 /* partition_i4x4_size_cabac() (cabac.c:1203-1211) on a size-only coder.
  * `i_mode` is the raw 0..11 predictor; the FIX4 mapping is applied internally
  * (cabac.c:1207).  Returns the FIX8 bit total `f8_bits_encoded`, ready for
@@ -257,12 +265,19 @@ int phx_rdo_size_partition_i4x4(const phx_cabac_t *live, phx_cabac_mb_t *mb,
  * P_SKIP is handled exactly as rdo.c:176-179: one FIX8 bit (256) and no state
  * change; callers using phx_rdo_macroblock_bits get (lambda2+128)>>8.
  *
- * 4:2:0, frame, b_transform_8x8 == 0.  8x8-transform residual coding and
- * B-slices are not exposed by this entry point yet.  SHADER: C — strictly
- * serial bin order; no arithmetic-coder or stream state is touched.
+ * 4:2:0, frame.  8x8-transform residual coding is supported through
+ * `phx_rdo_size_block_residual_8x8()` and `data->luma8x8` (x264's
+ * cabac_block_residual_8x8 at cabac.c:869-875); set
+ * `mb->cache->b_transform_8x8` for an I_8x8 / 8x8dct candidate so the
+ * transform-size flag at cabac.c:419-420 and the 64-coefficient residual at
+ * cabac.c:1048-1049 are both counted.  B-slices are supported through
+ * phx_rdo_macroblock_bits() below.  SHADER: C — strictly serial bin order; no
+ * arithmetic-coder or stream state is touched.
  * ------------------------------------------------------------------------- */
 typedef struct {
     int16_t luma4x4[48][16];          /* h->dct.luma4x4[][] (AC cats use +1) */
+    int16_t luma8x8[4][64];           /* h->dct.luma8x8[0..3], zigzag-scanned
+                                       * (encoder/macroblock.h:206) */
     int16_t luma16x16_dc[16];         /* h->dct.luma16x16_dc[0] */
     int16_t chroma_dc[2][4];          /* h->dct.chroma_dc[][] */
     int16_t mvd[2][4][2];             /* qpel MVDs, 8x8 block index 0..3 */

@@ -425,12 +425,13 @@ void phx_rdo_size_intra4x4_pred_mode(phx_cabac_size_t *cb,
 }
 
 /* cabac.c:775-858 — cabac_block_residual_internal(), RDO_SKIP_BS==1 branch
- * (the "merged sigmap and level coding" fast path used by RDO).  b_8x8 == 0
- * and chroma422dc == 0 here: partition_i4x4_size_cabac only calls this for a
- * luma 4x4 block (cabac.c:1210). */
-static void phx_rdo_size_block_residual(phx_cabac_size_t *cb,
-                                        int ctx_block_cat,
-                                        const phx_dctcoef_t *l)
+ * (the "merged sigmap and level coding" fast path used by RDO).
+ * b_8x8 selects the 8x8 sigmap offset tables of :777/:824-826/:855-856;
+ * chroma422dc is not needed by the 4:2:0 callers.  SHADER: C. */
+static void phx_rdo_size_block_residual_ex(phx_cabac_size_t *cb,
+                                           int ctx_block_cat,
+                                           const phx_dctcoef_t *l,
+                                           int b_8x8)
 {
     int ctx_sig = phx_sig_off[0][ctx_block_cat];             /* cabac.c:778 */
     int ctx_last = phx_last_off[0][ctx_block_cat];          /* :779 */
@@ -440,9 +441,9 @@ static void phx_rdo_size_block_residual(phx_cabac_size_t *cb,
     int ctx = phx_coeff_abs_level1_ctx[0] + ctx_level;       /* :783 */
     int node_ctx;
 
-    if (last != phx_count_cat_m1[ctx_block_cat]) {          /* :787 */
-        phx_rdo_size_decision(cb, ctx_sig + last, 1);        /* :789-790 */
-        phx_rdo_size_decision(cb, ctx_last + last, 1);       /* :791-792 */
+    if (last != (b_8x8 ? 63 : phx_count_cat_m1[ctx_block_cat])) { /* :787 */
+        phx_rdo_size_decision(cb, ctx_sig + (b_8x8 ? phx_sig_off8[0][last] : last), 1); /* :789-790 */
+        phx_rdo_size_decision(cb, ctx_last + (b_8x8 ? phx_last_off8[last] : last), 1);  /* :791-792 */
     }
 
     if (coeff_abs > 1) {                                    /* :795 */
@@ -464,10 +465,12 @@ static void phx_rdo_size_block_residual(phx_cabac_size_t *cb,
     }
 
     for (int i = last-1; i >= 0; i--) {                     /* :819 */
+        int sig_idx = b_8x8 ? phx_sig_off8[0][i] : i;       /* :824-825 */
+        int last_idx = b_8x8 ? phx_last_off8[i] : i;        /* :826-827 */
         if (l[i]) {
             coeff_abs = abs(l[i]);                          /* :823 */
-            phx_rdo_size_decision(cb, ctx_sig + i, 1);      /* :824-825 */
-            phx_rdo_size_decision(cb, ctx_last + i, 0);     /* :826-827 */
+            phx_rdo_size_decision(cb, ctx_sig + sig_idx, 1);/* :824-825 */
+            phx_rdo_size_decision(cb, ctx_last + last_idx, 0); /* :826-827 */
             ctx = phx_coeff_abs_level1_ctx[node_ctx] + ctx_level; /* :828 */
 
             if (coeff_abs > 1) {                            /* :830 */
@@ -488,8 +491,23 @@ static void phx_rdo_size_block_residual(phx_cabac_size_t *cb,
                 phx_rdo_size_bypass(cb);                    /* :851 */
             }
         } else
-            phx_rdo_size_decision(cb, ctx_sig + i, 0);      /* :855-856 */
+            phx_rdo_size_decision(cb, ctx_sig + sig_idx, 0);/* :855-856 */
     }
+}
+
+/* 4x4 / chroma-DC path (cabac.c:864-866). */
+static void phx_rdo_size_block_residual(phx_cabac_size_t *cb,
+                                        int ctx_block_cat,
+                                        const phx_dctcoef_t *l)
+{
+    phx_rdo_size_block_residual_ex(cb, ctx_block_cat, l, 0);
+}
+
+/* x264_cabac_block_residual_8x8_rd_c() (cabac.c:860-875). */
+void phx_rdo_size_block_residual_8x8(phx_cabac_size_t *cb, int ctx_block_cat,
+                                     const phx_dctcoef_t *l)
+{
+    phx_rdo_size_block_residual_ex(cb, ctx_block_cat, l, 1);
 }
 
 void phx_rdo_size_block_residual_cbf_ex(phx_cabac_size_t *cb,
@@ -1285,6 +1303,24 @@ static void m8_header_p(phx_cabac_size_t *cb, phx_cabac_mb_t *mb,
 static void m8_header_b(phx_cabac_size_t *cb, phx_cabac_mb_t *mb,
                         const phx_rdo_mb_data_t *data, int i_mb_type);
 
+/* common/macroblock.h:445-461 — x264_transform_allowed[] and the P_8x8
+ * sub-partition condition, used by the :973 transform-size gate.  SHADER: A. */
+static int m8_transform_allowed(const phx_cabac_mb_t *mb,
+                                const phx_rdo_mb_data_t *data)
+{
+    static const uint8_t allowed[19] = {
+        0,0,0,0,1,2,0,1,1,1,1,1,1,1,1,1,1,1,0
+    };
+    int type = mb->i_type;
+    if (type < 0 || type > 18) return 0;
+    if (type == PHX_P_8x8) {
+        for (int i = 0; i < 4; i++)
+            if (data->sub_partition[i] != PHX_D_L0_8x8) return 0; /* :460 */
+        return 1;
+    }
+    return allowed[type];
+}
+
 static int m8_macroblock_size_internal(phx_cabac_size_t *cb,
                                        phx_cabac_mb_t *mb,
                                        const phx_rdo_mb_data_t *data,
@@ -1302,8 +1338,9 @@ static int m8_macroblock_size_internal(phx_cabac_size_t *cb,
         m8_cbp_luma(cb, mb);                                /* :968 */
         m8_cbp_chroma(cb, mb);                              /* :970 */
     }
-    if (mb->b_transform_8x8_mode && mb->cache->i_cbp_luma)
-        m8_transform_size(cb, mb);                          /* :973-976 */
+    if (mb->b_transform_8x8_mode && mb->cache->i_cbp_luma &&
+        m8_transform_allowed(mb, data))                    /* :973 */
+        m8_transform_size(cb, mb);                          /* :975 */
 
     if (mb->cache->i_cbp_luma || mb->cache->i_cbp_chroma ||
         i_mb_type == PHX_I_16x16) {                          /* :978 */
@@ -1320,6 +1357,14 @@ static int m8_macroblock_size_internal(phx_cabac_size_t *cb,
                 for (int i = 0; i < 16; i++)
                     phx_rdo_size_block_residual_cbf(cb, mb, PHX_DCT_LUMA_AC,
                         i, data->luma4x4[i]+1, b_intra);    /* :994 */
+        } else if (mb->cache->b_transform_8x8) {
+            /* cabac.c:1046-1050 — 4:2:0 plane_count==1: one 64-coefficient
+             * 8x8 residual per CBP bit, with no per-8x8 CBF (the four luma
+             * CBP bins at :968 already signalled them). */
+            for (int i8x8 = 0; i8x8 < 4; i8x8++)
+                if (mb->cache->i_cbp_luma & (1 << i8x8))
+                    phx_rdo_size_block_residual_8x8(cb, PHX_DCT_LUMA_8x8,
+                                                    data->luma8x8[i8x8]); /* :1049 */
         } else {
             for (int i8x8 = 0; i8x8 < 4; i8x8++)
                 if (mb->cache->i_cbp_luma & (1 << i8x8))
