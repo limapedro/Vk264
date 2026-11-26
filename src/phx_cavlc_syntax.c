@@ -412,11 +412,21 @@ int phx_cavlc_mb_skip(phx_bs_t *s, int *skip_run, int b_skip, int b_last)
 {
     int start = phx_bs_pos(s);
     if (b_skip) { (*skip_run)++; return 0; }                 /* encoder.c:2884 */
-    if (*skip_run > 0)
+    if (b_last)
     {
-        phx_bs_write_ue(s, (unsigned)*skip_run);             /* encoder.c:2889, :3088 */
-        *skip_run = 0;                                       /* encoder.c:2890 */
+        /* encoder.c:3087-3088 — trailing run is written only when nonzero. */
+        if (*skip_run > 0)
+            phx_bs_write_ue(s, (unsigned)*skip_run);         /* encoder.c:3088 */
     }
-    (void)b_last; /* flushing is identical at a coded MB and at slice end */
+    else
+    {
+        /* encoder.c:2876-2890 — a coded MB in a P/B slice writes ue(i_skip)
+         * UNCONDITIONALLY, including ue(0) (a single '1' bit) when the
+         * previous MB was coded.  Only the slice-end flush is conditional;
+         * treating both call sites alike dropped one bit per coded MB and
+         * shifted every following CAVLC header. */
+        phx_bs_write_ue(s, (unsigned)*skip_run);             /* encoder.c:2889 */
+    }
+    *skip_run = 0;                                           /* encoder.c:2890 */
     return phx_bs_pos(s) - start;
 }

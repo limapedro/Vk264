@@ -307,15 +307,42 @@ int main(void)
               (const uint8_t[]){0xF9,0xB6,0xC6,0xF2,0x5D,0xCB,0xB4,0xD1}, 8);
     }
 
-    /* mb_skip_flag: P and B use different context bases (11 vs 24). */
+    /* Worker M10 / row 17 writer half: x264_cabac_mb_skip()
+     * (encoder/cabac.c:189-195).  Golden from an instrumented x264 build:
+     * x264_t zeroed, h.sh.i_type fixed, h.mb.cache.i_neighbour_skip derived
+     * from fixed neighbour MB types per common/macroblock.c:1304-1305
+     * (left=P_L0 & top=P_SKIP -> 1; left=P_L0 & top=P_L0 -> 2;
+     *  left=P_SKIP & top=P_SKIP -> 0), h.cabac with all states 0x40,
+     * x264_cabac_mb_skip() then x264_cabac_encode_flush(h, &h.cabac).
+     * The ordered bin records (ctx, bin, state before, low/range) also match
+     * x264's for all six cases.  SHADER: C. */
+    setup(&cb, PHX_SLICE_P, 26);
+    cache.i_neighbour_skip = 1;                 /* ctx 11+1 = 12, bin 1 */
+    phx_cabac_mb_skip(&cb, &mb, 1);
+    check("mb_skip_P_skip_n1", &cb, (const uint8_t[]){0xFE,0xF1}, 2);
+    setup(&cb, PHX_SLICE_P, 26);
+    cache.i_neighbour_skip = 2;                 /* ctx 11+2 = 13, bin 0 */
+    phx_cabac_mb_skip(&cb, &mb, 0);
+    check("mb_skip_P_noskip_n2", &cb, (const uint8_t[]){0xE6,0x81}, 2);
+    setup(&cb, PHX_SLICE_P, 26);
+    cache.i_neighbour_skip = 0;                 /* ctx 11, bin 1 */
+    phx_cabac_mb_skip(&cb, &mb, 1);
+    check("mb_skip_P_skip_n0", &cb, (const uint8_t[]){0xFE,0xF1}, 2);
+    setup(&cb, PHX_SLICE_B, 26);
+    cache.i_neighbour_skip = 1;                 /* ctx 11+1+13 = 25, bin 1 */
+    phx_cabac_mb_skip(&cb, &mb, 1);
+    check("mb_skip_B_skip_n1", &cb, (const uint8_t[]){0xFE,0xF1}, 2);
+    setup(&cb, PHX_SLICE_B, 26);
+    cache.i_neighbour_skip = 2;                 /* ctx 11+2+13 = 26, bin 0 */
+    phx_cabac_mb_skip(&cb, &mb, 0);
+    check("mb_skip_B_noskip_n2", &cb, (const uint8_t[]){0xE6,0x81}, 2);
+    /* First bin of a P_SKIP MB following a coded MB: x264 emits the terminal
+     * bin (encoder.c:2870) and then the skip flag at ctx 13 (cabac.c:191). */
     setup(&cb, PHX_SLICE_P, 26);
     cache.i_neighbour_skip = 2;
+    phx_cabac_encode_terminal(&cb);
     phx_cabac_mb_skip(&cb, &mb, 1);
-    check("mb_skip_P", &cb, (const uint8_t[]){0xFE,0xF1}, 2);
-    setup(&cb, PHX_SLICE_B, 26);
-    cache.i_neighbour_skip = 1;
-    phx_cabac_mb_skip(&cb, &mb, 0);
-    check("mb_skip_B", &cb, (const uint8_t[]){0xE6,0x81}, 2);
+    check("mb_skip_P_after_terminal", &cb, (const uint8_t[]){0xFD,0xF1}, 2);
 
     /* Direct MVD component trees: |mvd| > 9 (ue_bypass) and negative sign. */
     setup(&cb, PHX_SLICE_P, 26);

@@ -129,11 +129,15 @@ int phx_cavlc_mvd(phx_cavlc_mb_t *mb, int i_list, int idx, int width);
  * Returns bits written (or -1 for unsupported I_PCM).  SHADER: C. */
 int phx_cavlc_mb_header(phx_cavlc_mb_t *mb);
 
-/* encoder.c:2883-2890, :3087-3088 — CAVLC has no mb_skip *flag*: skipped MBs
+/* encoder.c:2876-2890, :3087-3088 — CAVLC has no mb_skip *flag*: skipped MBs
  * are accumulated into a `mb_skip_run` written with bs_write_ue.  Pass
- * b_skip=1 to accumulate (no bits written), b_skip=0 when a coded MB is
- * reached, or b_last=1 at slice end to flush the trailing run.
- * Returns bits written and resets *skip_run to 0 after a flush.  SHADER: C. */
+ * b_skip=1 to accumulate (no bits written), b_skip=0 with b_last=0 when a
+ * coded P/B MB is reached (encoder.c:2889 writes ue(0) even for an empty
+ * run), or b_last=1 at slice end to flush the trailing run only if nonzero
+ * (encoder.c:3087-3088).  Do not call with b_last=0 in an I slice:
+ * encoder.c:2876 suppresses the run there.  IS_SKIP() is false for I MBs,
+ * so *skip_run stays 0.  Returns bits written and resets *skip_run to 0
+ * after a flush.  SHADER: C. */
 int phx_cavlc_mb_skip(phx_bs_t *s, int *skip_run, int b_skip, int b_last);
 
 #endif

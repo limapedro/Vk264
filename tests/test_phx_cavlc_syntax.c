@@ -8,7 +8,9 @@
  *     se(v): codeNum = 2v-1 (v>0), -2v (v<=0)
  *     te(x,v): x==1 ? 1^v : ue(v)
  *   common/mvpred.c:30-127   (MV predictor used by cavlc_mvd)
- * No x264 runtime is needed: these are fixed, source-derived vectors.
+ * The mb_skip_run vectors (test_skip_run_golden) are instead captured from
+ * an instrumented x264 build replaying encoder.c:2883-2890 and :3087-3088
+ * with x264's own bs_write_ue() on fixed skip/non-skip MB sequences.
  *
  * SHADER: C — the tested writers are the serial entropy stage.
  */
@@ -368,6 +370,60 @@ static void test_skip_and_pcm(void)
     CHECK(bits == -1 && phx_bs_pos(&s) == 0, "I_PCM must be refused without writing");
 }
 
+/* Worker M10 / row 17 writer half: mb_skip_run from instrumented x264
+ * encoder.c:2883-2890 + :3087-3088.  Golden bit strings / bytes:
+ *   coded only            ue(0)                -> "1"       80
+ *   run 2 then coded      ue(2)                -> "011"     60
+ *   mixed                 ue(0)ue(2)ue(0)ue(1) -> 10111010 BA
+ *   final run 5           ue(5)                -> "00110"   30
+ *   B mixed               ue(1)ue(2)           -> "010011"  4C
+ * The `ue(0)` at a coded P/B MB is mandatory (encoder.c:2889); only the
+ * slice-end flush at :3087 is conditional.  SHADER: C. */
+static void skip_seq(const int *types, int n, phx_bs_t *s, uint8_t *buf)
+{
+    int run = 0;
+    phx_bs_init(s, buf, 64);
+    for (int i = 0; i < n; i++)
+        phx_cavlc_mb_skip(s, &run, types[i], 0);
+    phx_cavlc_mb_skip(s, &run, 0, 1);             /* encoder.c:3087-3088 */
+    CHECK(run == 0, "skip_run not reset after slice-end flush");
+}
+
+static void test_skip_run_golden(void)
+{
+    phx_bs_t s; uint8_t buf[64];
+
+    { const int t[] = { 0 };
+      skip_seq(t, 1, &s, buf);
+      CHECK(phx_bs_pos(&s) == 1 && buf[0] == 0x80,
+            "coded_only: pos=%d byte=%02x expected 1/80", phx_bs_pos(&s), buf[0]);
+      check_bits("golden ue(0) at coded MB", &s, "1"); }
+
+    { const int t[] = { 1, 1, 0 };
+      skip_seq(t, 3, &s, buf);
+      CHECK(phx_bs_pos(&s) == 3 && buf[0] == 0x60,
+            "run2_then_coded: pos=%d byte=%02x expected 3/60", phx_bs_pos(&s), buf[0]);
+      check_bits("golden run2 then coded", &s, "011"); }
+
+    { const int t[] = { 0, 1, 1, 0, 0, 1 };
+      skip_seq(t, 6, &s, buf);
+      CHECK(phx_bs_pos(&s) == 8 && buf[0] == 0xBA,
+            "mixed: pos=%d byte=%02x expected 8/BA", phx_bs_pos(&s), buf[0]);
+      check_bits("golden mixed skip runs", &s, "10111010"); }
+
+    { const int t[] = { 1, 1, 1, 1, 1 };
+      skip_seq(t, 5, &s, buf);
+      CHECK(phx_bs_pos(&s) == 5 && buf[0] == 0x30,
+            "final_run5: pos=%d byte=%02x expected 5/30", phx_bs_pos(&s), buf[0]);
+      check_bits("golden final run5", &s, "00110"); }
+
+    { const int t[] = { 1, 0, 1, 1, 0 };
+      skip_seq(t, 5, &s, buf);
+      CHECK(phx_bs_pos(&s) == 6 && buf[0] == 0x4C,
+            "B_mixed: pos=%d byte=%02x expected 6/4C", phx_bs_pos(&s), buf[0]);
+      check_bits("golden B mixed skip runs", &s, "010011"); }
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -379,6 +435,7 @@ int main(void)
     test_header_i();
     test_header_b();
     test_skip_and_pcm();
+    test_skip_run_golden();
     printf("%s: %d checks, %d failed\n", n_failed ? "FAIL" : "PASS", n_tests, n_failed);
     return n_failed ? 1 : 0;
 }
