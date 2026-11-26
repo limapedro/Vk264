@@ -365,4 +365,16 @@ divergent bin moved 1 -> 3 (I8 predictor bit). Per-mode gaps remain: Phoenix
 I4/I8 bit totals 5866/5386 vs x264 8806/9143, and I16 raw 29955 vs 1405.
 Both are delegated with byte-exact cost goldens. ctest 30/30 PASS.
 
+## F34 — intra_rd gap is candidate handoff, not the RDO writer
+
+Instrumentation of phx_rdo's size-only writer showed x264's first 17 ordered
+bins emitted byte-for-byte for the I8 candidate; divergence begins at the
+chroma-CBP AC bin (ctx81) and 8x8 sig offsets (ctx402 vs 414). So the ~2/3
+FIX8 bit totals (I4 5866 vs 8806, I8 5386 vs 9143) come from different
+candidate data, not missing syntax. x264's mbrd>=1 candidates reuse the DCT
+and reconstruction saved by mb_analyse_intra with i_skip_intra==2
+(analyse.c:322-325, macroblock.c:717-728); Phoenix re-encodes from scratch.
+First divergent bin remains 3 (I8 predictor). Candidate-handoff fix delegated;
+ctest 30/30 PASS.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
