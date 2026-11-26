@@ -240,6 +240,21 @@ typedef struct {
     int bskip, thresh;
     int rd_direct, rd_l0, rd_l1, rd_bi;
     int winner;                         /* selected mb_class_e, or -1 */
+
+    /* Byte-exact parity observation of analyse.c:2640/:2648/:2656's SATD
+     * gates and rdo.c:123-160's ssd_mb() terms.  Indexed by raw mb_type;
+     * bskip_* are the corresponding terms of analyse.c:3348's i_bskip_cost.
+     * No entropy state is touched.  SHADER: B/C. */
+    int cand_satd[19];                  /* inter->cost_l0/cost_l1/cost_bi */
+    int b_type;                         /* inter->b_type (:3397-3402) */
+    int16_t cand_l0_mv[2], cand_l1_mv[2];  /* per-list me16x16.mv, qpel */
+    int cand_l0_ref, cand_l1_ref;
+    /* Exact MV/ref handed to phx_inter_rd_cost (analyse_update_cache state). */
+    int16_t used_mv[19][2][2];
+    int used_ref[19][2];
+    int ssd_luma[19], ssd_psy[19];      /* rdo.c:147 luma SSD / :144 psy */
+    int ssd_chroma[19], ssd_chroma_term[19]; /* rdo.c:156/:157 chroma terms */
+    int bskip_luma, bskip_psy, bskip_chroma, bskip_chroma_term;
 } phx_inter_rd_diag_rec_t;
 extern phx_inter_rd_diag_rec_t phx_g_inter_rd_diag[4096];
 extern int phx_g_inter_rd_diag_count, phx_g_inter_rd_diag_enable;

@@ -28,7 +28,7 @@
 #include "phx_tables.h"
 
 #include <stdlib.h>
-#include <string.h>`n#include <stdio.h>  /* DEBUG */
+#include <string.h>
 
 #define PHX_COST_MAX       (1 << 28)       /* encoder/me.h:30 */
 #define PHX_ANALYSE_I4x4   1               /* common/base.c:435 (phx_param.c:14) */
@@ -290,6 +290,9 @@ typedef struct {
     int inter_rd_bskip, inter_rd_thresh;
     int inter_rd_direct, inter_rd_l0, inter_rd_l1, inter_rd_bi;
     phx_mb_decision_t inter_rd_d;
+    /* rdo.c:123-160 term split of the last phx_b_ssd_pred() call (diagnostic
+     * only, publication to phx_g_inter_rd_diag is SHADER: B/C). */
+    int dbg_b_luma, dbg_b_psy, dbg_b_chroma, dbg_b_chroma_term;
 } phx_analysis_ctx_t;
 
 /* Full-pel P16 search result, the reduced x264_me_t of analyse.c:1257-1313.
@@ -308,6 +311,13 @@ typedef struct {
     int b_type;
     int16_t b_mv[2][2];               /* [list][x,y], qpel */
     int b_ref[2];                     /* [list] reference index */
+    /* Per-list 16x16 ME results (analyse.c:1938/:1940) for mb_analyse_b_rd's
+     * independent L0 (:2640-2644) and L1 (:2648-2652) candidates.  b_mv/b_ref
+     * above describe only the SATD winner; re-costing L1 from them would
+     * silently encode the L0 prediction (analyse.c:2651's update_cache uses
+     * a->l1.me16x16).  SHADER: B — one MV/ref pair per list. */
+    int16_t l0_mv[2], l1_mv[2];
+    int l0_ref, l1_ref;
     int cost_l0, cost_l1, cost_bi, cost_direct, i_bskip_cost;
 } phx_inter_result_t;
 
@@ -1151,7 +1161,12 @@ static void phx_search_i8(phx_analysis_ctx_t *c)
         /* x264_macroblock_cache_intra8x8_pred (:831) publishes the raw mode
          * to all four 4x4 cache slots; the search only needs one slot for the
          * next block's x264_mb_predict_intra4x4_mode (:766). */
-        c->cache->intra4x4_pred_mode[phx_scan8[4*idx]] = (int8_t)best_mode;
+        /* common/rectangle.h:157-159 — x264_macroblock_cache_intra8x8_pred()
+         * writes a 2x2 rectangle of 4x4 slots, not a single slot.  Only slot
+         * 4*idx was published, so i_pred_mode for the next 8x8 block (and the
+         * 3*lambda bonus at :817) could read a stale C/A neighbour. */
+        for (int j = 0; j < 4; j++)
+            c->cache->intra4x4_pred_mode[phx_scan8[4*idx+j]] = (int8_t)best_mode;
     }
     if (idx == 3) {
         c->satd_i8x8 = i_cost;
@@ -1837,21 +1852,22 @@ static void phx_b_pred16(const phx_analysis_ctx_t *c,
  * luma psy-RD complexity term (:128-146) is reproduced from encoder.c:1218
  * (i_psy_rd = FIX8(f_psy_rd) at subme>=6) and analyse.c:269 (i_psy_rd_lambda).
  * SHADER: B — pure reduction, no state. */
-static int phx_b_ssd_pred(const phx_analysis_ctx_t *c,
+static int phx_b_ssd_pred(phx_analysis_ctx_t *c,
                           const uint8_t pred[16*16],
                           const uint8_t u[8*16], const uint8_t v[8*16])
 {
     static const uint8_t zero[16] = { 0 };
-    int ssd = 0;
+    int luma_ssd = 0, psy_term = 0;
     /* rdo.c:127-133 — p_fenc[0] has FENC_STRIDE=16 in x264; Phoenix's fenc
      * pointer lives in the full picture and must be indexed with fenc_stride.
      * Treating it as a contiguous 16x16 block mixed rows of the source frame. */
     for (int i = 0; i < 256; i++) {                       /* PIXEL_16x16 SSD */
         int d = (int)c->fenc[(size_t)(i >> 4)*c->fenc_stride + (i & 15)]
               - (int)pred[i];
-        ssd += d * d;
+        luma_ssd += d * d;
     }
-    int psy_rd = c->p->b_psy && c->p->i_subpel_refine >= 6 ? 256 : 0;
+    int psy_rd = c->p->b_psy && c->p->i_subpel_refine >= 6
+               ? (int)(c->p->f_psy_rd*(1 << 8) + .5) : 0; /* encoder.c:1218 */
     if (psy_rd && c->a.i_psy_rd_lambda) {
         int dc_pred = phx_sad_16x16(pred, 16, zero, 0) >> 1;       /* :141 */
         int dc_fenc = phx_sad_16x16(c->fenc, c->fenc_stride, zero, 0) >> 1;
@@ -1859,7 +1875,7 @@ static int phx_b_ssd_pred(const phx_analysis_ctx_t *c,
                        - (phx_satd_16x16(c->fenc, c->fenc_stride, zero, 0)
                           - dc_fenc));                            /* :142-143 */
         int64_t tmp = ((int64_t)satd * psy_rd * c->a.i_psy_rd_lambda + 128) >> 8;
-        ssd += (int)(tmp > PHX_COST_MAX ? PHX_COST_MAX : tmp);     /* :144-145 */
+        psy_term = (int)(tmp > PHX_COST_MAX ? PHX_COST_MAX : tmp); /* :144-145 */
     }
     /* 4:2:0 chroma SSD with the chroma lambda2 offset (rdo.c:153-158). */
     int cs = c->f->i_stride_planes[1];
@@ -1874,8 +1890,13 @@ static int phx_b_ssd_pred(const phx_analysis_ctx_t *c,
                 chroma_ssd += d * d;
             }
     }
-    ssd += (int)(((uint64_t)chroma_ssd * c->a.i_chroma_lambda2_offset + 128) >> 8);
-    return ssd;
+    int chroma_term =
+        (int)(((uint64_t)chroma_ssd * c->a.i_chroma_lambda2_offset + 128) >> 8);
+    c->dbg_b_luma = luma_ssd;
+    c->dbg_b_psy = psy_term;
+    c->dbg_b_chroma = chroma_ssd;
+    c->dbg_b_chroma_term = chroma_term;
+    return luma_ssd + psy_term + chroma_term;
 }
 
 /* Build the 4:2:0 chroma prediction for one B MC candidate from the explicit
@@ -1907,7 +1928,7 @@ static void phx_b_chroma_pred(const phx_analysis_ctx_t *c,
 
 /* x264 analyse.c:3348 ssd_mb() of the direct prediction used by the mbrd
  * B_SKIP gate.  SHADER: B — deterministic workgroup reduction. */
-static int phx_b_ssd_mb(const phx_analysis_ctx_t *c,
+static int phx_b_ssd_mb(phx_analysis_ctx_t *c,
                         const phx_analysis_b_input_t *b,
                         const phx_mvdirect_result_t *dir)
 {
@@ -1972,6 +1993,10 @@ static void phx_analysis_inter_b16x16(phx_analysis_ctx_t *c,
         }
         /* REF_COST(l, 0) is zero with one active reference (:1932/:1941). */
     }
+    /* analyse.c:2640-2652 re-costs each list from a->l0/l1.me16x16, not from
+     * the SATD winner or BI's zero-vector fallback.  Preserve both ME results
+     * before the BI block below can overwrite `mv`.  SHADER: B. */
+    int16_t me_mv[2][2] = { { mv[0][0], mv[0][1] }, { mv[1][0], mv[1][1] } };
 
     /* :1976-1991 — BI uses the two best 16x16 MVs. */
     uint8_t bi_pred[16*16];
@@ -2042,13 +2067,17 @@ static void phx_analysis_inter_b16x16(phx_analysis_ctx_t *c,
     out->cost_l0 = cost[0];
     out->cost_l1 = cost[1];
     out->cost_bi = cost_bi;
+    out->l0_mv[0] = me_mv[0][0]; out->l0_mv[1] = me_mv[0][1]; out->l0_ref = 0;
+    out->l1_mv[0] = me_mv[1][0]; out->l1_mv[1] = me_mv[1][1]; out->l1_ref = 0;
     if (type == PHX_B_L0_L0) {
-        out->b_mv[0][0] = mv[0][0]; out->b_mv[0][1] = mv[0][1];
+        /* analyse_update_cache (:3762-3765) uses a->l0.me16x16.mv, NOT the
+         * BI-local `mv` that :2062-2066 may have zeroed. */
+        out->b_mv[0][0] = me_mv[0][0]; out->b_mv[0][1] = me_mv[0][1];
         out->b_mv[1][0] = out->b_mv[1][1] = 0;
         out->b_ref[0] = 0; out->b_ref[1] = -1;
     } else if (type == PHX_B_L1_L1) {
         out->b_mv[0][0] = out->b_mv[0][1] = 0;
-        out->b_mv[1][0] = mv[1][0]; out->b_mv[1][1] = mv[1][1];
+        out->b_mv[1][0] = me_mv[1][0]; out->b_mv[1][1] = me_mv[1][1];
         out->b_ref[0] = -1; out->b_ref[1] = 0;
     } else if (type == PHX_B_BI_BI) {
         out->b_mv[0][0] = mv[0][0]; out->b_mv[0][1] = mv[0][1];
@@ -2649,6 +2678,16 @@ static void phx_analysis_inter_rd(phx_analysis_ctx_t *c,
     phx_mb_decision_t cand;
     int best, winner;
     int skipbit = (c->a.i_lambda2 + 128) >> 8;              /* rdo.c:178 */
+    /* phx_b_ssd_mb() published the i_bskip_cost terms immediately before this
+     * call (analyse.c:3348); snapshot them before any candidate re-uses the
+     * diagnostic fields.  SHADER: B/C. */
+    int bskip_luma = c->dbg_b_luma, bskip_psy = c->dbg_b_psy;
+    int bskip_chroma = c->dbg_b_chroma, bskip_chroma_term = c->dbg_b_chroma_term;
+    int cand_satd[19] = { 0 };
+    int ssd_luma[19] = { 0 }, ssd_psy[19] = { 0 };
+    int ssd_chroma[19] = { 0 }, ssd_chroma_term[19] = { 0 };
+    int16_t used_mv[19][2][2] = { { { 0 } } };
+    int used_ref[19][2] = { { 0 } };
 
     for (int t = 0; t < 19; t++) {
         c->inter_rd_cost[t] = PHX_COST_MAX;
@@ -2687,6 +2726,11 @@ static void phx_analysis_inter_rd(phx_analysis_ctx_t *c,
         c->inter_rd_ssd[PHX_B_DIRECT] = inter->i_bskip_cost;
         c->inter_rd_bits[PHX_B_DIRECT] = skipbit;
         c->inter_rd_direct = c->inter_rd_cost[PHX_B_DIRECT];
+        cand_satd[PHX_B_DIRECT] = inter->cost_direct;
+        ssd_luma[PHX_B_DIRECT] = bskip_luma;
+        ssd_psy[PHX_B_DIRECT] = bskip_psy;
+        ssd_chroma[PHX_B_DIRECT] = bskip_chroma;
+        ssd_chroma_term[PHX_B_DIRECT] = bskip_chroma_term;
     }
 
     /* 16x16 single-list / bidirectional candidates of :2640-2660 (B) and
@@ -2707,6 +2751,7 @@ static void phx_analysis_inter_rd(phx_analysis_ctx_t *c,
                      : t == PHX_B_L1_L1 ? inter->cost_l1
                      : t == PHX_B_BI_BI ? inter->cost_bi
                      : inter->cost;
+            cand_satd[t] = satd;
             /* :2640/:2648/:2656 gate the RD pass by the SATD candidate cost;
              * :2552 additionally requires me16x16.cost <= i_satd*3/2. */
             if (!(satd < c->inter_rd_thresh)) continue;
@@ -2727,16 +2772,40 @@ static void phx_analysis_inter_rd(phx_analysis_ctx_t *c,
                     cand.ref[1][i] = -1;
                 }
             } else {
+                /* analyse.c:2640-2660: each 16x16 candidate is re-costed from
+                 * ITS OWN a->l0/a->l1 me16x16 MV/ref after analyse_update_cache
+                 * (:2643/:2651/:2659).  b_mv/b_ref only describe the SATD
+                 * winner and would silently encode the wrong prediction for
+                 * the losing list.  SHADER: B — one per-list MV/ref pair. */
+                const int16_t (*mv0)[2] = NULL, (*mv1)[2] = NULL;
+                int ref0 = -1, ref1 = -1;
+                if (t == PHX_B_L0_L0) {
+                    mv0 = &inter->l0_mv; ref0 = inter->l0_ref;
+                } else if (t == PHX_B_L1_L1) {
+                    mv1 = &inter->l1_mv; ref1 = inter->l1_ref;
+                } else {
+                    mv0 = &inter->b_mv[0]; mv1 = &inter->b_mv[1];
+                    ref0 = inter->b_ref[0]; ref1 = inter->b_ref[1];
+                }
                 for (int i = 0; i < 16; i++) {
-                    cand.mv[0][i][0] = inter->b_mv[0][0];
-                    cand.mv[0][i][1] = inter->b_mv[0][1];
-                    cand.mv[1][i][0] = inter->b_mv[1][0];
-                    cand.mv[1][i][1] = inter->b_mv[1][1];
-                    cand.ref[0][i] = inter->b_ref[0];
-                    cand.ref[1][i] = inter->b_ref[1];
+                    cand.mv[0][i][0] = mv0 ? (*mv0)[0] : 0;
+                    cand.mv[0][i][1] = mv0 ? (*mv0)[1] : 0;
+                    cand.mv[1][i][0] = mv1 ? (*mv1)[0] : 0;
+                    cand.mv[1][i][1] = mv1 ? (*mv1)[1] : 0;
+                    cand.ref[0][i] = ref0;
+                    cand.ref[1][i] = ref1;
                 }
             }
+            for (int i = 0; i < 2; i++) {
+                used_ref[t][i] = cand.ref[i][0];
+                used_mv[t][i][0] = cand.mv[i][0][0];
+                used_mv[t][i][1] = cand.mv[i][0][1];
+            }
             rd = phx_inter_rd_cost(c, &cand, &cc_cache, &ssd, &bits);
+            ssd_luma[t] = c->dbg_b_luma;
+            ssd_psy[t] = c->dbg_b_psy;
+            ssd_chroma[t] = c->dbg_b_chroma;
+            ssd_chroma_term[t] = c->dbg_b_chroma_term;
             c->inter_rd_cost[t] = rd;
             c->inter_rd_ssd[t] = ssd;
             c->inter_rd_bits[t] = bits;
@@ -2823,13 +2892,25 @@ static void phx_analysis_inter_rd(phx_analysis_ctx_t *c,
                     wd.ref[0][i] = 0; wd.ref[1][i] = -1;
                 }
             } else {
+                /* Same per-list publication as the costed candidate above:
+                 * analyse.c:2643/:2651/:2659 uses a->l0/a->l1 ME results. */
+                const int16_t (*mv0)[2] = NULL, (*mv1)[2] = NULL;
+                int ref0 = -1, ref1 = -1;
+                if (winner == PHX_B_L0_L0) {
+                    mv0 = &inter->l0_mv; ref0 = inter->l0_ref;
+                } else if (winner == PHX_B_L1_L1) {
+                    mv1 = &inter->l1_mv; ref1 = inter->l1_ref;
+                } else {
+                    mv0 = &inter->b_mv[0]; mv1 = &inter->b_mv[1];
+                    ref0 = inter->b_ref[0]; ref1 = inter->b_ref[1];
+                }
                 for (int i = 0; i < 16; i++) {
-                    wd.mv[0][i][0] = inter->b_mv[0][0];
-                    wd.mv[0][i][1] = inter->b_mv[0][1];
-                    wd.mv[1][i][0] = inter->b_mv[1][0];
-                    wd.mv[1][i][1] = inter->b_mv[1][1];
-                    wd.ref[0][i] = inter->b_ref[0];
-                    wd.ref[1][i] = inter->b_ref[1];
+                    wd.mv[0][i][0] = mv0 ? (*mv0)[0] : 0;
+                    wd.mv[0][i][1] = mv0 ? (*mv0)[1] : 0;
+                    wd.mv[1][i][0] = mv1 ? (*mv1)[0] : 0;
+                    wd.mv[1][i][1] = mv1 ? (*mv1)[1] : 0;
+                    wd.ref[0][i] = ref0;
+                    wd.ref[1][i] = ref1;
                 }
             }
             (void)phx_inter_rd_cost(c, &wd, &wc, &wssd, &wbits);
@@ -2855,9 +2936,20 @@ static void phx_analysis_inter_rd(phx_analysis_ctx_t *c,
                     c->inter_rd_d.mv[l][i][0] = c->b_direct.mv[l][i][0];
                     c->inter_rd_d.mv[l][i][1] = c->b_direct.mv[l][i][1];
                 } else if (c->slice_type == PHX_SLICE_B) {
-                    c->inter_rd_d.ref[l][i] = inter->b_ref[l];
-                    c->inter_rd_d.mv[l][i][0] = inter->b_mv[l][0];
-                    c->inter_rd_d.mv[l][i][1] = inter->b_mv[l][1];
+                    /* analyse_update_cache (:3762-3765/:3825-3846) publishes
+                     * the winning list's own me16x16 MV/ref, not the SATD
+                     * winner's b_mv/b_ref. */
+                    int use_l0 = (winner == PHX_B_L0_L0);
+                    int use_l1 = (winner == PHX_B_L1_L1);
+                    c->inter_rd_d.ref[l][i] =
+                        use_l0 ? inter->l0_ref :
+                        use_l1 ? inter->l1_ref : inter->b_ref[l];
+                    c->inter_rd_d.mv[l][i][0] =
+                        use_l0 ? inter->l0_mv[0] :
+                        use_l1 ? inter->l1_mv[0] : inter->b_mv[l][0];
+                    c->inter_rd_d.mv[l][i][1] =
+                        use_l0 ? inter->l0_mv[1] :
+                        use_l1 ? inter->l1_mv[1] : inter->b_mv[l][1];
                 } else {
                     c->inter_rd_d.ref[l][i] = l ? -1 : 0;
                     c->inter_rd_d.mv[l][i][0] = l ? 0 : inter->mv[0];
@@ -2883,7 +2975,26 @@ static void phx_analysis_inter_rd(phx_analysis_ctx_t *c,
             r->cost[t] = c->inter_rd_cost[t];
             r->ssd[t] = c->inter_rd_ssd[t];
             r->bits[t] = c->inter_rd_bits[t];
+            r->cand_satd[t] = cand_satd[t];
+            r->ssd_luma[t] = ssd_luma[t];
+            r->ssd_psy[t] = ssd_psy[t];
+            r->ssd_chroma[t] = ssd_chroma[t];
+            r->ssd_chroma_term[t] = ssd_chroma_term[t];
+            r->used_ref[t][0] = used_ref[t][0];
+            r->used_ref[t][1] = used_ref[t][1];
+            memcpy(r->used_mv[t], used_mv[t], sizeof(used_mv[t]));
         }
+        r->b_type = inter->b_type;
+        r->cand_l0_mv[0] = inter->l0_mv[0];
+        r->cand_l0_mv[1] = inter->l0_mv[1];
+        r->cand_l1_mv[0] = inter->l1_mv[0];
+        r->cand_l1_mv[1] = inter->l1_mv[1];
+        r->cand_l0_ref = inter->l0_ref;
+        r->cand_l1_ref = inter->l1_ref;
+        r->bskip_luma = bskip_luma;
+        r->bskip_psy = bskip_psy;
+        r->bskip_chroma = bskip_chroma;
+        r->bskip_chroma_term = bskip_chroma_term;
         r->bskip = c->inter_rd_bskip;
         r->thresh = c->inter_rd_thresh;
         r->rd_direct = c->inter_rd_direct;
@@ -3217,6 +3328,19 @@ static int phx_macroblock_analyse_impl(const phx_param_t *p,
         din.cur_poc = b->cur_poc;
         if (phx_mvdirect_predict(&din, &c.b_direct) == 0 &&
             c.b_direct.available) {
+            /* common/mvpred.c:500-513 — x264_mb_predict_mv_direct16x16()
+             * publishes the direct ref/MV into h->mb.cache before the 16x16
+             * search so x264_mb_predict_mv_16x16() (:1936) sees them.  Without
+             * this the L1 MVP is derived from the previous MB, which sent the
+             * L1 search to a different MV (and hid the L1 RD candidate).
+             * SHADER: B — one cache write set per MB. */
+            for (int l = 0; l < 2; l++)
+                for (int i = 0; i < 16; i++) {
+                    const int k = phx_scan8[i];
+                    c.cache->ref[l][k] = (int8_t)c.b_direct.ref[l][i];
+                    c.cache->mv[l][k][0] = c.b_direct.mv[l][i][0];
+                    c.cache->mv[l][k][1] = c.b_direct.mv[l][i][1];
+                }
             int bskip = 0;
             if (c.mbrd) {
                 /* analyse.c:3346-3350 — with RD active x264 does NOT use the
