@@ -35,6 +35,63 @@
 #define PHX_PACK16TO32_MASK2(mx,my) \
     (((uint32_t)(mx) << 16) | ((uint32_t)(my) & 0x7FFF))
 
+/* x264 common/macroblock.h:395-402 — pack16to32_mask() (little endian).
+ * Used by x264_predictor_roundclip() and me.c:281 to compare MVs; distinct
+ * from the CHECK_MVRANGE packing above (me.c:204). */
+#define PHX_PACK16TO32(mx,my) \
+    (((uint32_t)(my) << 16) | ((uint32_t)(mx) & 0xFFFF))
+
+/* x264 common/common.h:774-788 — x264_predictor_roundclip(), fullpel form
+ * used by me.c:296 with i_pixel == PIXEL_16x16 (subme < 3). */
+static int phx_predictor_roundclip(int16_t dst[][2], const int16_t (*mvc)[2],
+                                   int i_mvc, int mv_x_min, int mv_y_min,
+                                   int mv_x_max, int mv_y_max, uint32_t pmv)
+{
+    int cnt = 0;                                        /* common.h:776 */
+    for (int i = 0; i < i_mvc; i++)                      /* common.h:777 */
+    {
+        int mx = (mvc[i][0] + 2) >> 2;                  /* :779 */
+        int my = (mvc[i][1] + 2) >> 2;                  /* :780 */
+        uint32_t mv = PHX_PACK16TO32(mx, my);            /* :781 */
+        if (!mv || mv == pmv) continue;                  /* :782 */
+        dst[cnt][0] = PHX_CLIP3(mx, mv_x_min, mv_x_max); /* :783 */
+        dst[cnt][1] = PHX_CLIP3(my, mv_y_min, mv_y_max); /* :784 */
+        cnt++;                                          /* :785 */
+    }
+    return cnt;                                         /* :787 */
+}
+
+/* x264 common/common.h:790-805 — x264_predictor_clip(), used by the
+ * subme >= 3 qpel-predictor branch (me.c:231). */
+static int phx_predictor_clip(int16_t dst[][2], const int16_t (*mvc)[2],
+                              int i_mvc, int mv_x_min, int mv_y_min,
+                              int mv_x_max, int mv_y_max, uint32_t pmv)
+{
+    int cnt = 0;                                        /* common.h:776 */
+    int qx0 = mv_x_min << 2, qy0 = mv_y_min << 2;       /* common.h:793 */
+    int qx1 = mv_x_max << 2, qy1 = mv_y_max << 2;
+    for (int i = 0; i < i_mvc; i++)                      /* common.h:794 */
+    {
+        uint32_t mv = PHX_PACK16TO32(mvc[i][0], mvc[i][1]); /* :796 M32() */
+        if (!mv || mv == pmv) continue;                  /* :799 */
+        dst[cnt][0] = PHX_CLIP3(mvc[i][0], qx0, qx1);    /* :800 */
+        dst[cnt][1] = PHX_CLIP3(mvc[i][1], qy0, qy1);    /* :801 */
+        cnt++;                                          /* :802 */
+    }
+    return cnt;                                         /* :804 */
+}
+
+/* x264 common/base.h:248-257 — x264_predictor_difference(), used by the
+ * UMH adaptive search-range block (me.c:508). */
+static int phx_predictor_difference(const int16_t (*mvc)[2], int i_mvc)
+{
+    int sum = 0;                                        /* base.h:250 */
+    for (int i = 0; i < i_mvc-1; i++)                    /* base.h:251 */
+        sum += abs(mvc[i][0] - mvc[i+1][0])
+             + abs(mvc[i][1] - mvc[i+1][1]);             /* :253-254 */
+    return sum;                                         /* :256 */
+}
+
 /* x264 encoder/me.c:52-56 — search patterns, copied verbatim. */
 static const uint8_t phx_mod6m1[8] = { 5,0,1,2,3,4,5,0 };
 static const int8_t  phx_hex2[8][2] = {
@@ -155,6 +212,7 @@ typedef struct {
     int lambda;               /* analyse.c:149 */
     int mv_range;             /* table half-width guard, analyse.c:151 */
     int mvp_x, mvp_y;         /* me.c:211-212 subtraction offsets (qpel) */
+    int ox, oy;               /* plane-origin qpel offset (x*4, y*4) */
     int bmx, bmy, bcost;      /* me.c:189 — the ONLY best-MV state */
 } phx_me_ctx_t;
 
@@ -175,6 +233,31 @@ static int phx_bits_mvd(const phx_me_ctx_t *c, int mx, int my)
     int cy = (c->p_cost_mv && dy >= -lim && dy <= lim)
            ? c->p_cost_mv[dy] : phx_mv_cost_formula(c->lambda, dy);
     return cx + cy;
+}
+
+/* qpel MV-bit lookup for COST_MV_HPEL (me.c:78): p_cost_mvx[mx] =
+ * p_cost_mv[mx - mvp[0]], with the same bounds/fallback as phx_bits_mvd. */
+static int phx_bits_qpel_ctx(const phx_me_ctx_t *c, int mx, int my)
+{
+    int dx = mx - c->mvp_x, dy = my - c->mvp_y;
+    int lim = 8 * c->mv_range;
+    int cx = (c->p_cost_mv && dx >= -lim && dx <= lim)
+           ? c->p_cost_mv[dx] : phx_mv_cost_formula(c->lambda, dx);
+    int cy = (c->p_cost_mv && dy >= -lim && dy <= lim)
+           ? c->p_cost_mv[dy] : phx_mv_cost_formula(c->lambda, dy);
+    return cx + cy;
+}
+
+/* x264 encoder/me.c:72-79 COST_MV_HPEL(): get_ref() + SAD + qpel MV bits.
+ * SHADER: A — pure interpolation using the caller's filtered planes. */
+static void phx_cost_mv_hpel(const phx_me_ctx_t *c,
+                             const phx_me_refplanes_t *rp,
+                             int mx, int my, int *cost)
+{
+    uint8_t pix[16*16];
+    phx_mc_luma16(rp, c->ox+mx, c->oy+my, pix, 16, 16, 16); /* me.c:76 */
+    *cost = phx_pixel_sad_16x16(c->fenc, c->stride, pix, 16) /* :77 */
+          + phx_bits_qpel_ctx(c, mx, my);                   /* :78 */
 }
 
 /* x264 encoder/me.c:63-70 — COST_MV(). */
@@ -308,9 +391,16 @@ static void phx_hex2_search(phx_me_ctx_t *c, int mv_range,
     c->bcost >>= 4;                                 /* me.c:418 */
 }
 
-int phx_me16(int x, int y, const phx_frame_t *fenc, const phx_frame_t *fref,
-             const phx_cost_tables_t *cost, int mv_range, int lambda,
-             int method, const int16_t pred[2], int *out_mv)
+/* Fullpel search core — shared by phx_me16() (i_mvc == 0) and the additive
+ * phx_me16_mvc() API.  SHADER: A — pure, state-free. */
+static int phx_me16_core(int x, int y, const phx_frame_t *fenc,
+                         const phx_frame_t *fref,
+                         const phx_cost_tables_t *cost, int mv_range,
+                         int lambda, int method, int subme,
+                         const int16_t pred[2],
+                         const int16_t (*mvc)[2], int i_mvc,
+                         const phx_me_refplanes_t *refplanes,
+                         int *out_mv, int *out_cost, int *out_cost_mv)
 {
     if (!fenc || !fref || !fenc->plane || !fref->plane || !out_mv)
         return -1;
@@ -361,19 +451,106 @@ int phx_me16(int x, int y, const phx_frame_t *fenc, const phx_frame_t *fref,
     c.mv_range = mv_range;
     c.mvp_x = pred ? pred[0] : 0;                    /* me.h:50, me.c:211 */
     c.mvp_y = pred ? pred[1] : 0;
+    c.ox = x * 4; c.oy = y * 4;                       /* plane origin in qpel */
     c.bcost = PHX_COST_MAX;                          /* me.c:189 */
 
-    /* x264 me.c:276-281 — full-pel MVP branch (subme < 3).  All best-MV
-     * state lives in `c`; x264's bmx/bmy are c.bmx/c.bmy here. */
-    c.bmx = PHX_CLIP3(PHX_FPEL(c.mvp_x), mv_x_min, mv_x_max); /* me.c:279 */
-    c.bmy = PHX_CLIP3(PHX_FPEL(c.mvp_y), mv_y_min, mv_y_max); /* me.c:280 */
-    int pmvx = c.bmx, pmvy = c.bmy;                  /* me.c:281 pmv */
-    /* me.c:291 — SAD only; MV bits are deliberately omitted for the MVP. */
-    c.bcost = phx_pixel_sad_16x16(c.fenc, c.stride,
-                                   c.fref + c.bmy*c.stride + c.bmx, c.stride);
-    /* me.c:316-317 — test the zero vector when it is not the MVP.
-     * (No mvc[] candidates exist in this API: me.c:293-313 is skipped.) */
-    if (c.bmx | c.bmy) phx_cost_mv(&c, 0, 0);
+    /* Filtered reference planes are needed by COST_MV_HPEL (subme >= 3)
+     * and by the in-search refine_subpel() call (subme >= 2), me.c:792-797. */
+    phx_me_refplanes_t local_rp;
+    const phx_me_refplanes_t *rp = refplanes;
+    if (subme >= 2 && !rp) {
+        if (phx_me_refplanes_init(fref, &local_rp)) return -1;
+        rp = &local_rp;
+    }
+
+    int pmvx, pmvy, bpred_mx = 0, bpred_my = 0;
+    int bpred_cost = PHX_COST_MAX;                     /* me.c:190 */
+    uint32_t pmv, bpred_mv = 0;                        /* me.c:207/257 */
+
+    if (subme >= 3)
+    {
+        /* x264 me.c:214-275 — subpel predictor branch. */
+        bpred_mx = PHX_CLIP3(c.mvp_x, mv_x_min*4, mv_x_max*4); /* me.c:219 */
+        bpred_my = PHX_CLIP3(c.mvp_y, mv_y_min*4, mv_y_max*4); /* me.c:220 */
+        pmv = PHX_PACK16TO32(bpred_mx, bpred_my);              /* me.c:221 */
+        pmvx = PHX_FPEL(bpred_mx);                             /* me.c:222 */
+        pmvy = PHX_FPEL(bpred_my);                             /* me.c:223 */
+        phx_cost_mv_hpel(&c, rp, bpred_mx, bpred_my, &bpred_cost); /* :225 */
+        int pmv_cost = bpred_cost;                             /* :226 */
+
+        if (i_mvc > 0)                                         /* me.c:228 */
+        {
+            int16_t mvc_temp[17][2];                           /* me.c:195 */
+            int valid = phx_predictor_clip(mvc_temp+2, mvc, i_mvc,
+                                   mv_x_min, mv_y_min, mv_x_max, mv_y_max,
+                                   pmv);                       /* me.c:231 */
+            if (valid > 0)                                     /* :232 */
+            {
+                int i = 1, cost;
+                mvc_temp[1][0] = (int16_t)bpred_mx;            /* me.c:238 */
+                mvc_temp[1][1] = (int16_t)bpred_my;
+                bpred_cost <<= 4;                              /* :239 */
+                do {
+                    int mx = mvc_temp[i+1][0], my = mvc_temp[i+1][1]; /* :242-243 */
+                    phx_cost_mv_hpel(&c, rp, mx, my, &cost);    /* me.c:244 */
+                    PHX_COPY1_IF_LT_TAG(bpred_cost, (cost<<4)+i, i); /* :245 */
+                } while (++i <= valid);                        /* :246 */
+                bpred_mx = mvc_temp[(bpred_cost&15)+1][0];     /* :247 */
+                bpred_my = mvc_temp[(bpred_cost&15)+1][1];     /* :248 */
+                bpred_cost >>= 4;                              /* :249 */
+            }
+        }
+        c.bmx = PHX_FPEL(bpred_mx);                            /* me.c:255 */
+        c.bmy = PHX_FPEL(bpred_my);                            /* me.c:256 */
+        bpred_mv = PHX_PACK16TO32(bpred_mx, bpred_my);         /* :257 */
+        if (bpred_mv & 0x00030003)                             /* :258 */
+            phx_cost_mv(&c, c.bmx, c.bmy);                     /* :259 */
+        else
+            c.bcost = bpred_cost;                              /* :261 */
+        if (pmv) {
+            if (c.bmx | c.bmy) phx_cost_mv(&c, 0, 0);          /* :264-266 */
+        } else {
+            if (pmv_cost < c.bcost) {                          /* :273 COPY3_IF_LT */
+                c.bcost = pmv_cost; c.bmx = 0; c.bmy = 0;
+            }
+        }
+    }
+    else
+    {
+        /* x264 me.c:276-317 — fullpel MVP branch (subme < 3). */
+        c.bmx = PHX_CLIP3(PHX_FPEL(c.mvp_x), mv_x_min, mv_x_max); /* :279 */
+        c.bmy = PHX_CLIP3(PHX_FPEL(c.mvp_y), mv_y_min, mv_y_max); /* :280 */
+        pmvx = c.bmx; pmvy = c.bmy;                             /* :281 */
+        pmv = PHX_PACK16TO32(c.bmx, c.bmy);                     /* :281 */
+        c.bcost = phx_pixel_sad_16x16(c.fenc, c.stride,
+                       c.fref + c.bmy*c.stride + c.bmx, c.stride); /* :291 */
+
+        if (i_mvc > 0)                                         /* me.c:293 */
+        {
+            int16_t mvc_temp[17][2];                           /* me.c:195 */
+            int valid = phx_predictor_roundclip(mvc_temp+2, mvc, i_mvc,
+                                    mv_x_min, mv_y_min, mv_x_max, mv_y_max,
+                                    pmv);                      /* me.c:296 */
+            if (valid > 0)                                     /* :297 */
+            {
+                int i = 1, cost;
+                mvc_temp[1][0] = (int16_t)c.bmx;               /* me.c:300 */
+                mvc_temp[1][1] = (int16_t)c.bmy;
+                c.bcost <<= 4;                                 /* :301 */
+                do {
+                    int mx = mvc_temp[i+1][0], my = mvc_temp[i+1][1]; /* :304-305 */
+                    cost = phx_pixel_sad_16x16(c.fenc, c.stride,
+                               c.fref + my*c.stride + mx, c.stride)
+                         + phx_bits_mvd(&c, mx, my);           /* :306 */
+                    PHX_COPY1_IF_LT_TAG(c.bcost, (cost<<4)+i, i); /* :307 */
+                } while (++i <= valid);                        /* :308 */
+                c.bmx = mvc_temp[(c.bcost&15)+1][0];           /* :309 */
+                c.bmy = mvc_temp[(c.bcost&15)+1][1];           /* :310 */
+                c.bcost >>= 4;                                 /* :311 */
+            }
+        }
+        if (pmv) phx_cost_mv(&c, 0, 0);                        /* me.c:317 */
+    }
 
     int costs[16];
 
@@ -479,13 +656,44 @@ int phx_me16(int x, int y, const phx_frame_t *fenc, const phx_frame_t *fref,
             }
         }
 
-        /* me.c:468-519 — adaptive search range.  No mvc[] exists in this
-         * API (i_mvc == 0), so the multiplier block is skipped verbatim. */
+        /* me.c:468-519 — adaptive search range from the mvc[] candidate
+         * list.  i_pixel == PIXEL_16x16 (0), so mvd = 25 for a single
+         * candidate (me.c:485-490) and the mvp is not counted separately for
+         * multiple candidates (me.c:502-507). */
+        int me_range = mv_range;                       /* me.c:188 i_me_range */
+        if (i_mvc)                                     /* me.c:469 */
+        {
+            static const uint8_t range_mul[4][4] = {  /* me.c:474-480 */
+                { 3, 3, 4, 4 },
+                { 3, 4, 4, 4 },
+                { 4, 4, 4, 5 },
+                { 4, 4, 5, 6 },
+            };
+            int mvd, sad_ctx, mvd_ctx;
+            int denom = 1;                             /* me.c:483 */
+            if (i_mvc == 1)                            /* me.c:485 */
+                mvd = 25;                              /* me.c:490 */
+            else
+            {
+                denom = i_mvc - 1;                     /* me.c:500 */
+                mvd = 0;                               /* me.c:501 */
+                /* i_pixel == PIXEL_16x16: skip :502-507 */
+                mvd += phx_predictor_difference(mvc, i_mvc); /* me.c:508 */
+            }
+            /* SAD_THRESH(v) = bcost < v (pixel_size_shift[0] = 0, me.c:427/449). */
+            sad_ctx = c.bcost < 1000 ? 0              /* me.c:511 */
+                    : c.bcost < 2000 ? 1
+                    : c.bcost < 4000 ? 2 : 3;
+            mvd_ctx = mvd < 10*denom ? 0              /* me.c:514 */
+                    : mvd < 20*denom ? 1
+                    : mvd < 40*denom ? 2 : 3;
+            me_range = me_range * range_mul[mvd_ctx][sad_ctx] >> 2; /* :518 */
+        }
 
         /* me.c:521-523 — CROSS(cross_start, i_me_range, i_me_range>>1). */
         {
             int i = cross_start;
-            int x_max = mv_range, y_max = mv_range >> 1;
+            int x_max = me_range, y_max = me_range >> 1;
             if (x_max <= PHX_MIN(mv_x_max-omx, omx-mv_x_min)) /* :155 */
                 for (; i < x_max-2; i += 4)          /* :156 */
                 {
@@ -527,7 +735,7 @@ int phx_me16(int x, int y, const phx_frame_t *fenc, const phx_frame_t *fref,
             {-4, 0}, { 4, 0}, {-4, 1}, { 4, 1},
             {-4, 2}, { 4, 2}, {-2, 3}, { 2, 3},
         };
-        for (int i = 1; i <= (mv_range >> 2); i++)   /* me.c:531/612 */
+        for (int i = 1; i <= (me_range >> 2); i++)   /* me.c:531/612 */
         {
             if (4*i > PHX_MIN4(mv_x_max-omx, omx-mv_x_min,
                                mv_y_max-omy, omy-mv_y_min)) /* me.c:541-542 */
@@ -570,14 +778,67 @@ int phx_me16(int x, int y, const phx_frame_t *fenc, const phx_frame_t *fref,
     phx_umh_end: ;                                   /* me.c:615 break */
     }
 
-    /* x264 me.c:774-784 — qpel MV / cost output (subme < 3 branch). */
-    int cost_mv = phx_bits_mvd(&c, c.bmx, c.bmy);    /* me.c:779 */
-    int final_cost = c.bcost;                        /* me.c:780 */
-    if (c.bmx == pmvx && c.bmy == pmvy)              /* me.c:782 bmv == pmv */
-        final_cost += cost_mv;                       /* me.c:782 */
-    out_mv[0] = c.bmx * 4;                           /* SPEL(bmx), me.c:179 */
-    out_mv[1] = c.bmy * 4;                           /* SPEL(bmy), me.c:179 */
-    return final_cost;                               /* x264_me_t.cost, me.h:54 */
+    /* x264 me.c:774-789 — qpel MV / cost output. */
+    int cost_mv, final_cost;
+    if (subme < 3)                                     /* me.c:777-784 */
+    {
+        cost_mv = phx_bits_mvd(&c, c.bmx, c.bmy);      /* me.c:779 */
+        final_cost = c.bcost;                          /* me.c:780 */
+        if (c.bmx == pmvx && c.bmy == pmvy)            /* me.c:782 bmv == pmv */
+            final_cost += cost_mv;                     /* me.c:782 */
+        out_mv[0] = c.bmx * 4;                         /* SPEL(bmx), me.c:179 */
+        out_mv[1] = c.bmy * 4;                         /* SPEL(bmy), me.c:179 */
+    }
+    else                                               /* me.c:785-789 */
+    {
+        uint32_t bmv = PHX_PACK16TO32(c.bmx*4, c.bmy*4); /* me.c:775-776 */
+        uint32_t chosen = bpred_cost < c.bcost ? bpred_mv : bmv; /* :787 */
+        final_cost = PHX_MIN(bpred_cost, c.bcost);     /* me.c:788 */
+        out_mv[0] = (int16_t)(chosen & 0xFFFF);        /* M32(m->mv), :787 */
+        out_mv[1] = (int16_t)(chosen >> 16);
+    }
+
+    /* x264 me.c:791-797 — in-search refine_subpel() for subme >= 2. */
+    if (subme >= 2 && rp) {
+        int imv[2] = { out_mv[0], out_mv[1] };
+        if (phx_me_refine_subpel(mb_x, mb_y, mb_w, mb_h, fenc, rp, cost,
+                                 mv_range, lambda, subme, 0, pred,
+                                 imv, &final_cost, &cost_mv)) return -1;
+        out_mv[0] = (int16_t)imv[0];
+        out_mv[1] = (int16_t)imv[1];
+    } else if (subme < 3) {
+        /* cost_mv already computed above */
+    } else {
+        cost_mv = phx_bits_qpel_ctx(&c, out_mv[0], out_mv[1]); /* fallback */
+    }
+    if (out_cost) *out_cost = final_cost;              /* me.h:54 */
+    if (out_cost_mv) *out_cost_mv = cost_mv;           /* me.h:53 */
+    return final_cost;                                 /* x264_me_t.cost */
+}
+
+/* Original ABI: no extra predictors (x264 i_mvc == 0). */
+int phx_me16(int x, int y, const phx_frame_t *fenc, const phx_frame_t *fref,
+             const phx_cost_tables_t *cost, int mv_range, int lambda,
+             int method, const int16_t pred[2], int *out_mv)
+{
+    return phx_me16_core(x, y, fenc, fref, cost, mv_range, lambda, method,
+                         0, pred, NULL, 0, NULL, out_mv, NULL, NULL);
+}
+
+/* Additive ABI: x264's mvc[] candidate list (mvpred.c:519-560) with the
+ * subme >= 3 predictor branch (me.c:214-275), roundclip (me.c:293-313),
+ * UMH adaptive range (me.c:468-519) and in-search refine (me.c:791-797). */
+int phx_me16_mvc(int x, int y, const phx_frame_t *fenc,
+                 const phx_frame_t *fref, const phx_cost_tables_t *cost,
+                 int mv_range, int lambda, int method, int subme,
+                 const int16_t pred[2], const int16_t (*mvc)[2], int i_mvc,
+                 const phx_me_refplanes_t *refplanes,
+                 int *out_mv, int *out_cost, int *out_cost_mv)
+{
+    if (i_mvc < 0 || i_mvc > 16 || (i_mvc > 0 && !mvc)) return -1;
+    return phx_me16_core(x, y, fenc, fref, cost, mv_range, lambda, method,
+                         subme, pred, mvc, i_mvc, refplanes,
+                         out_mv, out_cost, out_cost_mv);
 }
 
 /* ------------------------------------------------------------------------ */

@@ -31,6 +31,10 @@
  *   common/tables.c:183-184     x264_hpel_ref0 / x264_hpel_ref1
  *   common/pixel.c:55-73        PIXEL_SAD_C( x264_pixel_sad_16x16, 16, 16 )
  *   common/pixel.c:242-327      Hadamard + SATD (16x16) for the satd path
+ *   encoder/analyse.c:1937      x264_mb_predict_mv_ref16x16() call site
+ *   common/mvpred.c:519-560     mvc[] candidate-list construction
+ *   common/common.h:774-805     x264_predictor_roundclip / _clip
+ *   common/base.h:248-257       x264_predictor_difference
  *   encoder/analyse.c:143-177   init_costs() — MV cost table construction
  *   encoder/analyse.c:186-188   log2 cost model used by that table
  *   common/tables.c:97,102      x264_lambda_tab (via phx_lambda_tab)
@@ -106,6 +110,43 @@ typedef struct {
     uint8_t *owned[3];          /* backing allocations for p[1], p[2], p[3] */
     int i_stride;
 } phx_me_refplanes_t;
+
+/* Additive API: the same fullpel search with x264's extra MV-candidate list.
+ *
+ * x264's encoder/analyse.c:1937 calls x264_mb_predict_mv_ref16x16()
+ * (common/mvpred.c:519-560) to build `mvc[]` from mb.mvr, lowres MVs and
+ * spatial neighbours; x264_me_search_ref() then uses that list in two places:
+ *   - me.c:293-313: x264_predictor_roundclip() (common/common.h:774-788)
+ *     rounds each candidate to fullpel, drops zero/duplicate-of-MVP entries,
+ *     and picks the best by SAD + BITS_MVD with a 4-bit tie tag;
+ *   - me.c:468-519: the UMH adaptive search-range block uses
+ *     x264_predictor_difference() (common/base.h:248-257) and range_mul[][].
+ * This function runs both byte-for-byte.  `pred` is m->mvp (me.h:50),
+ * `mvc[i]` are the candidates in quarter-pel units exactly as mvpred.c emits,
+ * `i_mvc` is their count (x264 allows up to 16).  Passing mvc == NULL or
+ * i_mvc == 0 reproduces phx_me16() exactly.
+ *
+ * `subme` is h->mb.i_subpel_refine.  For subme >= 3 this API also implements
+ * the qpel-predictor branch (me.c:214-275: COST_MV_HPEL at :72-79,
+ * x264_predictor_clip at common/common.h:790-805) and the final choice at
+ * me.c:774-789; for subme >= 2 it finishes with the in-search
+ * refine_subpel() call at me.c:792-797 (b_refine_qpel == 0), so the returned
+ * MV/cost are x264's final x264_me_t.mv/cost after x264_me_search_ref().
+ * `refplanes` supplies the filtered reference planes for those steps; NULL
+ * prepares them from `fref` internally.  For subme < 3 no refine runs and the
+ * result is identical to phx_me16().
+ *
+ * `out_mv` is the MV in quarter-pel units (me.c:774-784, SPEL at :179);
+ * `out_cost` / `out_cost_mv` may be NULL, otherwise they receive m->cost /
+ * m->cost_mv (me.h:53-54, me.c:779/991).
+ *
+ * SHADER: A — pure, state-free given its explicit candidate list. */
+int phx_me16_mvc(int x, int y, const phx_frame_t *fenc,
+                 const phx_frame_t *fref, const phx_cost_tables_t *cost,
+                 int mv_range, int lambda, int method, int subme,
+                 const int16_t pred[2], const int16_t (*mvc)[2], int i_mvc,
+                 const phx_me_refplanes_t *refplanes,
+                 int *out_mv, int *out_cost, int *out_cost_mv);
 
 /* x264_frame_filter() (common/mc.c:704-726) for a complete progressive frame:
  * start = -8, height = i_height + 16, offs = start*stride - 8, then
