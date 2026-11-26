@@ -258,4 +258,8 @@ returns x264's (7,0)/298/50. Phoenix's DPB REF has 14 pixels off by ±1 in the
 e.g. 128 vs 124), so refine cannot improve (8,0) → (7,0). Owner: reconstruction
 / deblock / border expansion, not ME.
 
+## F24 — bin 2250 is the same I16-MB4 mode defect
+
+After the chroma-predictor fix, the scaled-clip first divergent bin moved 1167 → 2250. M8's instrumented trace shows it is the **same** root cause as the earlier bin 809 on the other fixture: MB4 I_16x16, x264 raw prediction mode 0 (V, fix16 0) vs Phoenix raw mode 5 (DC_TOP, fix16 2), at identical coder state (`low/range 816/360`, `ctx 9 b 0` vs `b 1`). The two bits are `i_pred>>1` and `i_pred&1` (`cabac.c:64-65`); the writer and context are exact. It also explains the byte divergence in CAVLC (`cavlc.c:310` uses the same fix table). Owner remains Z1's `phx_search_i16()` (`analyse.c:688-742`). No new work item.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
