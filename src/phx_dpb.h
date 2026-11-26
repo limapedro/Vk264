@@ -54,6 +54,7 @@
 #include "phx_mbcache.h"
 #include "phx_deblock.h"
 #include "phx_slice.h"           /* PHX_SLICE_{I,P,B}, PHX_SLICE_REF_MAX */
+#include "phx_mvdirect.h"        /* phx_mvdirect_col_t (Z1 consumer) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -62,9 +63,30 @@ extern "C" {
 #define PHX_DPB_MAX_PICTURES 16   /* base.h:137 X264_REF_MAX */
 #define PHX_DPB_REF_MAX PHX_SLICE_REF_MAX /* same 16-entry slice ref arrays */
 
+/* Per-picture copy of the MB state that mvpred.c:183-441 reads from the
+ * colocated frame (h->fref[1][0]).  Layouts and strides are x264's:
+ *   mb_type/mb_partition/field [mb_count], indexed by i_mb_xy (mvpred.c:188,
+ *     :189, :195, :340-343);
+ *   ref[l] [b8_stride*2*mb_height] int8, indexed by i_mb_8x8 (mvpred.c:259,
+ *     :376-377, frame.c:180);
+ *   mv[l] [b4_stride*4*mb_height] int16[2], indexed by i_mb_4x4
+ *     (mvpred.c:265, :378-379, frame.c:178);
+ *   b8_stride = 2*mb_width, b4_stride = 4*mb_width (common.h:528-530).
+ * SHADER: B — read-only SSBO-style data for Z1's direct-mode workgroup. */
+typedef struct {
+    uint8_t *mb_type;            /* [mb_count] */
+    uint8_t *mb_partition;       /* [mb_count], x264 D_* enum (macroblock.h:136) */
+    int8_t  *ref[2];             /* [b8_stride*2*mb_height] */
+    int16_t (*mv[2])[2];         /* [b4_stride*4*mb_height] */
+    uint8_t *field;              /* [mb_count], zeroed for progressive */
+    int i_mb_stride, i_b8_stride, i_b4_stride;
+    int i_delta_poc[2];          /* frame.h:42, mvpred.c:218-219/:364-365 */
+} phx_dpb_col_state_t;
+
 /* One decoded picture.  `frame` owns its planes (phx_frame_new/delete); the
  * metadata mirrors the x264_frame_t fields read by reference_build_list()
- * (encoder.c:2295-2411). */
+ * (encoder.c:2295-2411).  `col` owns a per-picture state copy so it can act
+ * as h->fref[1][0] for B direct prediction. */
 typedef struct {
     int i_frame_num;             /* x264_frame_t.i_frame_num */
     int i_poc;                   /* x264_frame_t.i_poc */
@@ -72,6 +94,7 @@ typedef struct {
     int i_type;                  /* PHX_TYPE_* decided type */
     int b_kept_as_ref;           /* fdec->b_kept_as_ref (encoder.c:2470) */
     phx_frame_t *frame;          /* reconstructed + deblocked planes */
+    phx_dpb_col_state_t col;     /* owned MV/type state for colocated mode */
 } phx_dpb_entry_t;
 
 /* The DPB handle.  Created once per encoder, reset on IDR.  SHADER: C. */
@@ -107,6 +130,12 @@ typedef struct {
     const uint8_t *fdec_uv;      /* interleaved NV12 U/V */
     int fdec_uv_stride;
     const phx_mb_state_t *mb_state;
+    /* phx_mb_state_t has no partition[] member; x264's fdec->mb_partition
+     * (macroblock.c:1729/:1781, mvpred.c:189) must be supplied separately.
+     * mb_count bytes, x264 D_* enum values; NULL derives D_16x16 for every
+     * MB (macroblock.c:1723), which is NOT byte-exact for sub-partitions. */
+    const uint8_t *mb_partition;
+    const int *delta_poc;        /* 2 ints, NULL => progressive {0,0} */
     const int *qp_array;
     int qp;                      /* used when qp_array == NULL */
     int b_cabac;
@@ -204,6 +233,19 @@ const phx_frame_t *phx_dpb_get_ref_l0_at(const phx_dpb_t *dpb, int current_poc,
                                          int current_frame, int ref_idx);
 const phx_frame_t *phx_dpb_get_ref_l1_at(const phx_dpb_t *dpb, int current_poc,
                                          int current_frame, int ref_idx);
+
+/* common/mvpred.c:188-219/340-379 — fill Z1's colocated-picture view from the
+ * stored state of the short-term reference with this frame_num.  Typically
+ * called with fc.ref_frame_num[1][0] (h->fref[1][0]) for a B slice.  The
+ * strides are x264's frame-level strides (frame.c:178-180, common.h:528-530).
+ * Returns 0 on success, -1 for a missing picture/NULL arguments. */
+int phx_dpb_get_col(const phx_dpb_t *dpb, int frame_num,
+                    phx_mvdirect_col_t *out);
+
+/* Same, from an already-built reference list (encoder.c:2295-2411): list 1,
+ * ref_idx 0 is the colocated picture for temporal direct mode. */
+int phx_dpb_get_col_from_lists(const phx_dpb_ref_lists_t *lists, int list,
+                               int ref_idx, phx_mvdirect_col_t *out);
 
 /* encoder.c:2563 — clear all short-term references on an IDR. */
 void phx_dpb_reset(phx_dpb_t *dpb);

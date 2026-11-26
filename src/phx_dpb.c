@@ -18,6 +18,55 @@
 static const int phx_dpb_nz_idx[8]  = { 0, 2, 8, 10, 16, 18, 32, 34 };
 static const int phx_dpb_nz_dst[8]  = { 0, 4, 8, 12, 16, 20, 32, 36 };
 
+/* mvpred.c:188-219/340-379 — release the per-picture colocated state copy. */
+static void phx_dpb_col_free(phx_dpb_col_state_t *c)
+{
+    free(c->mb_type); free(c->mb_partition);
+    free(c->ref[0]); free(c->ref[1]);
+    free(c->mv[0]); free(c->mv[1]);
+    free(c->field);
+    memset(c, 0, sizeof(*c));
+}
+
+/* macroblock.c:1683/1723/1785-1827 — snapshot the encoder's per-MB state.
+ * The source arrays already carry x264's frame-level strides, so the byte
+ * copy is exact (no re-indexing).  SHADER: C — one serial deep copy. */
+static int phx_dpb_col_copy(phx_dpb_col_state_t *dst,
+                            const phx_mb_state_t *s,
+                            const uint8_t *partition, const int *delta_poc)
+{
+    int n = s->mb_count;
+    size_t nref = (size_t)s->b8_stride * 2 * s->mb_height;
+    size_t nmv  = (size_t)s->b4_stride * 4 * s->mb_height;
+    memset(dst, 0, sizeof(*dst));
+    dst->mb_type = (uint8_t *)malloc((size_t)n);
+    dst->mb_partition = (uint8_t *)malloc((size_t)n);
+    dst->ref[0] = (int8_t *)malloc(nref);
+    dst->ref[1] = (int8_t *)malloc(nref);
+    dst->mv[0] = (int16_t (*)[2])malloc(nmv * sizeof(int16_t[2]));
+    dst->mv[1] = (int16_t (*)[2])malloc(nmv * sizeof(int16_t[2]));
+    dst->field = (uint8_t *)malloc((size_t)n);
+    if (!dst->mb_type || !dst->mb_partition || !dst->ref[0] || !dst->ref[1] ||
+        !dst->mv[0] || !dst->mv[1] || !dst->field) {
+        phx_dpb_col_free(dst); return -1;
+    }
+    memcpy(dst->mb_type, s->type, (size_t)n);            /* :1683 */
+    if (partition) memcpy(dst->mb_partition, partition, (size_t)n);
+    else memset(dst->mb_partition, 16, (size_t)n);       /* D_16x16, :1723 */
+    memcpy(dst->ref[0], s->ref[0], nref);                /* :1785-1790 */
+    memcpy(dst->ref[1], s->ref[1], nref);
+    memcpy(dst->mv[0], s->mv[0], nmv*sizeof(int16_t[2]));/* :1791-1794 */
+    memcpy(dst->mv[1], s->mv[1], nmv*sizeof(int16_t[2]));
+    if (s->field) memcpy(dst->field, s->field, (size_t)n);
+    else memset(dst->field, 0, (size_t)n);               /* progressive */
+    dst->i_mb_stride = s->mb_stride;
+    dst->i_b8_stride = s->b8_stride;
+    dst->i_b4_stride = s->b4_stride;
+    dst->i_delta_poc[0] = delta_poc ? delta_poc[0] : 0;  /* frame.h:42 */
+    dst->i_delta_poc[1] = delta_poc ? delta_poc[1] : 0;
+    return 0;
+}
+
 phx_dpb_t *phx_dpb_create(int width, int height, int bframes)
 {
     if (width <= 0 || height <= 0 || width % 16 || height % 16) return NULL;
@@ -34,8 +83,10 @@ phx_dpb_t *phx_dpb_create(int width, int height, int bframes)
 void phx_dpb_free(phx_dpb_t *dpb)
 {
     if (!dpb) return;
-    for (int i = 0; i < dpb->n_pictures; i++)
+    for (int i = 0; i < dpb->n_pictures; i++) {
+        phx_dpb_col_free(&dpb->pictures[i].col);     /* mvpred.c:188 */
         phx_frame_delete(dpb->pictures[i].frame);    /* frame.c:312 */
+    }
     memset(dpb->pictures, 0, sizeof(dpb->pictures));
     dpb->n_pictures = 0;
     free(dpb);
@@ -44,8 +95,10 @@ void phx_dpb_free(phx_dpb_t *dpb)
 void phx_dpb_reset(phx_dpb_t *dpb)
 {
     if (!dpb) return;
-    for (int i = 0; i < dpb->n_pictures; i++)
+    for (int i = 0; i < dpb->n_pictures; i++) {
+        phx_dpb_col_free(&dpb->pictures[i].col);
         phx_frame_delete(dpb->pictures[i].frame);
+    }
     memset(dpb->pictures, 0, sizeof(dpb->pictures));
     dpb->n_pictures = 0;
 }
@@ -55,6 +108,7 @@ int phx_dpb_remove_poc(phx_dpb_t *dpb, int poc)
     if (!dpb) return 0;
     for (int i = 0; i < dpb->n_pictures; i++)
         if (dpb->pictures[i].i_poc == poc) {
+            phx_dpb_col_free(&dpb->pictures[i].col);
             phx_frame_delete(dpb->pictures[i].frame);
             memmove(&dpb->pictures[i], &dpb->pictures[i+1],
                     (size_t)(dpb->n_pictures - i - 1) * sizeof(dpb->pictures[0]));
@@ -91,12 +145,18 @@ static void phx_dpb_rebuild_mb_cache(const phx_mb_state_t *s, phx_mb_cache_t *c,
         uint8_t *dst = &c->non_zero_count[phx_scan8[phx_dpb_nz_idx[k]]];
         memcpy(dst, src, 4);                          /* :1761-1768 */
     }
+    /* macroblock.c:1785-1806 stores current-MB ref/mv at the frame-level
+     * b8/b4 strides, NOT at xy*4 / xy*16 (those coincide only for mb_x==0). */
+    const int i_b8 = (mb_y*2)*s->b8_stride + mb_x*2;  /* macroblock.c:1789 */
+    const int i_b4 = (mb_y*4)*s->b4_stride + mb_x*4;  /* :1793 */
     for (int l = 0; l < 2; l++) {
         for (int i = 0; i < 16; i++) {
-            /* Four 4x4 blocks share one 8x8 ref (macroblock.c:1785-1790). */
-            c->ref[l][phx_scan8[i]] = s->ref[l][xy*4 + (i >> 2)];
-            c->mv[l][phx_scan8[i]][0] = s->mv[l][xy*16 + i][0];
-            c->mv[l][phx_scan8[i]][1] = s->mv[l][xy*16 + i][1]; /* :1791-1794 */
+            c->ref[l][phx_scan8[i]] =
+                s->ref[l][i_b8 + (i>>2)*s->b8_stride + (i&1)];  /* :1787-1790 */
+            c->mv[l][phx_scan8[i]][0] =
+                s->mv[l][i_b4 + (i>>2)*s->b4_stride + (i&3)][0];
+            c->mv[l][phx_scan8[i]][1] =
+                s->mv[l][i_b4 + (i>>2)*s->b4_stride + (i&3)][1]; /* :1791-1794 */
         }
     }
 }
@@ -120,8 +180,10 @@ int phx_dpb_store_frame(phx_dpb_t *dpb, const phx_dpb_store_params_t *p)
     if (s->mb_width != dpb->i_mb_width || s->mb_height != dpb->i_mb_height ||
         s->mb_stride != dpb->i_mb_width || !s->type || !s->non_zero_count ||
         !s->cbp || !s->mb_transform_size || !s->slice_table ||
-        !s->ref[0] || !s->mv[0] || !s->field)
-        return -1;
+        !s->ref[0] || !s->mv[0] || !s->field) return -1;
+    if (s->b8_stride != 2*dpb->i_mb_width ||
+        s->b4_stride != 4*dpb->i_mb_width ||
+        !s->ref[1] || !s->mv[1]) return -1;
     if (p->qp < 0 || p->qp > PHX_QP_MAX) return -1;
     if (p->qp_array)
         for (int i = 0; i < s->mb_count; i++)
@@ -129,6 +191,10 @@ int phx_dpb_store_frame(phx_dpb_t *dpb, const phx_dpb_store_params_t *p)
 
     phx_frame_t *f = phx_frame_new(dpb->i_width, dpb->i_height, dpb->bframes);
     if (!f) return -1;
+    phx_dpb_col_state_t col;
+    if (phx_dpb_col_copy(&col, s, p->mb_partition, p->delta_poc) < 0) {
+        phx_frame_delete(f); return -1;                 /* mvpred.c:188-219 */
+    }
 
     /* macroblock.c:632/636-637 — copy the completed FDEC reconstruction into
      * the owned frame.  The source buffers are read-only; the single-frame
@@ -157,7 +223,7 @@ int phx_dpb_store_frame(phx_dpb_t *dpb, const phx_dpb_store_params_t *p)
             phx_dpb_rebuild_mb_cache(s, &c, mb_x, mb_y);
             int rc = phx_frame_deblock_ex(f, (phx_mb_state_t *)s, &c,
                                           mb_x, mb_y, qp, p->b_cabac, &cfg);
-            if (rc < 0) { phx_frame_delete(f); return -1; }
+            if (rc < 0) { phx_dpb_col_free(&col); phx_frame_delete(f); return -1; }
         }
     }
     phx_dpb_expand_border(f);                           /* encoder.c:2470 */
@@ -165,6 +231,7 @@ int phx_dpb_store_frame(phx_dpb_t *dpb, const phx_dpb_store_params_t *p)
     if (dpb->n_pictures == PHX_DPB_MAX_PICTURES) {
         /* encoder.c:2555-2556 — oldest short-term picture is evicted when the
          * DPB is full (MMCO/overflow handling remains a documented TODO). */
+        phx_dpb_col_free(&dpb->pictures[0].col);
         phx_frame_delete(dpb->pictures[0].frame);
         memmove(&dpb->pictures[0], &dpb->pictures[1],
                 (size_t)(PHX_DPB_MAX_PICTURES - 1) * sizeof(dpb->pictures[0]));
@@ -177,6 +244,7 @@ int phx_dpb_store_frame(phx_dpb_t *dpb, const phx_dpb_store_params_t *p)
     dpb->pictures[slot].i_type = p->i_type;
     dpb->pictures[slot].b_kept_as_ref = p->b_kept_as_ref;
     dpb->pictures[slot].frame = f;
+    dpb->pictures[slot].col = col;
     return 0;
 }
 
@@ -361,4 +429,48 @@ const phx_frame_t *phx_dpb_get_ref_l1_at(const phx_dpb_t *dpb, int current_poc,
     if (phx_dpb_init_ref_lists(dpb, &lists, current_poc, current_frame,
                                PHX_SLICE_B, NULL) < 0) return NULL;
     return phx_dpb_ref_frame(&lists, 1, ref_idx);
+}
+
+/* mvpred.c:188-219/340-379 — project a stored picture's state into Z1's
+ * colocated view.  The arrays are already laid out with x264 frame strides,
+ * so no element-wise re-indexing is needed. */
+static void phx_dpb_fill_col(const phx_dpb_entry_t *e, phx_mvdirect_col_t *out)
+{
+    const phx_dpb_col_state_t *c = &e->col;
+    out->mb_type = c->mb_type;
+    out->mb_partition = c->mb_partition;
+    out->ref[0] = c->ref[0];  out->ref[1] = c->ref[1];
+    out->mv[0] = c->mv[0];    out->mv[1] = c->mv[1];
+    out->field = c->field;
+    out->i_poc = e->i_poc;
+    out->i_delta_poc[0] = c->i_delta_poc[0];
+    out->i_delta_poc[1] = c->i_delta_poc[1];
+    out->i_mb_stride = c->i_mb_stride;
+    out->i_b8_stride = c->i_b8_stride;
+    out->i_b4_stride = c->i_b4_stride;
+}
+
+int phx_dpb_get_col(const phx_dpb_t *dpb, int frame_num,
+                    phx_mvdirect_col_t *out)
+{
+    if (!dpb || !out) return -1;
+    for (int i = 0; i < dpb->n_pictures; i++)            /* encoder.c:2372 */
+        if (dpb->pictures[i].b_kept_as_ref &&
+            dpb->pictures[i].i_frame_num == frame_num &&
+            dpb->pictures[i].col.mb_type) {
+            phx_dpb_fill_col(&dpb->pictures[i], out);
+            return 0;
+        }
+    return -1;
+}
+
+int phx_dpb_get_col_from_lists(const phx_dpb_ref_lists_t *lists, int list,
+                               int ref_idx, phx_mvdirect_col_t *out)
+{
+    if (!lists || !out || list < 0 || list > 1 || ref_idx < 0 ||
+        ref_idx >= lists->i_ref[list]) return -1;
+    const phx_dpb_entry_t *e = &lists->frame_entry[list][ref_idx];
+    if (!e->col.mb_type) return -1;
+    phx_dpb_fill_col(e, out);
+    return 0;
 }
