@@ -412,4 +412,13 @@ four chroma AC blocks. Enabling inexact costs would drop first-B-frame type
 agreement from 10/16 to 3/16, so no fake win. ctest 30/30 PASS; chroma-candidate
 fix delegated.
 
+## F38 — first CAVLC MB diverges at mb_type
+
+Focused matrix still 0/80 byte-exact, 5/80 clean decode. On real 320x180 CAVLC
+streams, SPS/PPS/SEI and the 30-bit slice header are byte-exact, but the IDR
+slice payload diverges at byte 4 — the first MB's mb_type (x264 0xFF vs Phoenix
+0xFE). This is an earlier divergence than the I8 residual region fixed in F36
+and is delegated with a bit-level golden requirement. The CABAC path's first
+divergent bin remains 395 (chroma AC coefficient handoff).
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
