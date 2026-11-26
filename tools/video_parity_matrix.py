@@ -67,11 +67,15 @@ def nals(path: pathlib.Path) -> int:
 
 
 def encode(video: str, out: pathlib.Path, preset: str, entropy: str,
-           frames: int, qp: int, use_x264: bool) -> tuple[bool, str]:
+           frames: int, qp: int, use_x264: bool,
+           width: int = 0, height: int = 0) -> tuple[bool, str]:
     args = [sys.executable, 'tools/oracle_video.py', video, str(out),
             '--frames', str(frames), '--preset', preset, '--qp', str(qp),
             '--entropy', entropy, '--fps', '25',
             '--report', str(out.with_suffix('.json'))]
+    if width and height:
+        args += ['--width', str(width), '--height', str(height),
+                 '--fit', 'scale']
     if use_x264:
         args.append('--x264')
     rc, text = run(args)
@@ -85,6 +89,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--presets', default='ultrafast')
     ap.add_argument('--entropies', default='cabac')
     ap.add_argument('--frames', type=int, default=30)
+    ap.add_argument('--width', type=int, default=0,
+                    help='optional scaled width (0 = native)')
+    ap.add_argument('--height', type=int, default=0,
+                    help='optional scaled height (0 = native)')
     ap.add_argument('--qp', type=int, default=28)
     ap.add_argument('--out-dir', default='build/oracle_matrix')
     a = ap.parse_args(argv)
@@ -100,13 +108,17 @@ def main(argv: list[str] | None = None) -> int:
         video = entry['source']
         geo = probe(video)
         frames = min(a.frames, geo['frames'] or a.frames)
+        if a.width and a.height:
+            geo['width'], geo['height'] = a.width, a.height
         for preset in a.presets.split(','):
             for entropy in a.entropies.split(','):
                 tag = f'{name}-{preset}-{entropy}'
                 phx = out / f'{tag}.phx.h264'
                 ref = out / f'{tag}.x264.h264'
-                ok_p, _ = encode(video, phx, preset, entropy, frames, a.qp, False)
-                ok_r, _ = encode(video, ref, preset, entropy, frames, a.qp, True)
+                ok_p, _ = encode(video, phx, preset, entropy, frames, a.qp,
+                                 False, a.width, a.height)
+                ok_r, _ = encode(video, ref, preset, entropy, frames, a.qp,
+                                 True, a.width, a.height)
                 pe, perr = decode_errors(phx) if phx.exists() else (-1, None)
                 re_, rerr = decode_errors(ref) if ref.exists() else (-1, None)
                 pb = phx.stat().st_size if phx.exists() else None
