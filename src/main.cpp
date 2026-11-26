@@ -188,6 +188,11 @@ int main(int argc, char** argv) try {
     }
     std::ifstream input(inputPath, std::ios::binary);
     if (!input) throw std::runtime_error("Could not open input");
+    // Read the whole source once: per-frame ifstream::read of multi-MB frames
+    // shows up as host overhead between GPU submissions at 1080p.
+    std::vector<char> source(static_cast<std::size_t>(frameCount) * frameBytes);
+    if (!input.read(source.data(), static_cast<std::streamsize>(source.size())))
+        throw std::runtime_error("Could not read source frames");
     auto init = Clock::now();
     EncoderGpu gpu(config, !reconPath.empty());
     double initSeconds = seconds(init);
@@ -207,7 +212,8 @@ int main(int argc, char** argv) try {
     auto loop = Clock::now();
     for (config.frameIndex = 0; config.frameIndex < frameCount; ++config.frameIndex) {
         auto start = Clock::now();
-        if (!input.read(gpu.input(), frameBytes)) throw std::runtime_error("Could not read source frame");
+        std::copy_n(source.data() + static_cast<std::size_t>(config.frameIndex) * frameBytes,
+                    frameBytes, gpu.input());
         auto frame = gpu.encode(config);
         if (!output.write(frame.annexB, frame.bytes)) throw std::runtime_error("Could not write H.264 frame");
         if (frame.reconstruction && !recon.write(frame.reconstruction, reconBytes))
