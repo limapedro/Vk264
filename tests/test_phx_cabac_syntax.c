@@ -307,6 +307,35 @@ int main(void)
               (const uint8_t[]){0xF9,0xB6,0xC6,0xF2,0x5D,0xCB,0xB4,0xD1}, 8);
     }
 
+    /* Real-video bin 396 (build/oracle_full/diag.yuv, --preset ultrafast):
+     * instrumented x264 and Phoenix enter DCT_CHROMA_AC residual coding with
+     * the SAME low/range 85896/256, but with different coefficient arrays.
+     * x264 (cabac.c:1078 passes h->dct.luma4x4[j]+1, skipping the 4x4 DC):
+     *   [-1,0,0,...] -> sig ctx=152 b=1, last ctx=213 b=1, bytes FEB9.
+     * Phoenix's non-trellis handoff (phx_chroma.c:296-297 full zigzag array,
+     * phx_encoder.c:1259-1263 no +1) feeds the full array:
+     *   [0,-1,0,...] -> sig ctx=152 b=0, ctx=153 b=1, bytes E6B9.
+     * Both vectors are x264-golden byte-exact here: the writer is correct for
+     * whatever array it receives; the divergence is upstream.  SHADER: C. */
+    {
+        static const phx_dctcoef_t d[16] = {
+            -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        };
+        setup(&cb, PHX_SLICE_P, 26);
+        phx_cabac_block_residual(&cb, &mb, PHX_DCT_CHROMA_AC, d, 0);
+        check("block_residual_chroma_ac_x264", &cb,
+              (const uint8_t[]){0xFE,0xB9}, 2);
+    }
+    {
+        static const phx_dctcoef_t d[16] = {
+            0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        };
+        setup(&cb, PHX_SLICE_P, 26);
+        phx_cabac_block_residual(&cb, &mb, PHX_DCT_CHROMA_AC, d, 0);
+        check("block_residual_chroma_ac_phx", &cb,
+              (const uint8_t[]){0xE6,0xB9}, 2);
+    }
+
     /* Worker M10 / row 17 writer half: x264_cabac_mb_skip()
      * (encoder/cabac.c:189-195).  Golden from an instrumented x264 build:
      * x264_t zeroed, h.sh.i_type fixed, h.mb.cache.i_neighbour_skip derived

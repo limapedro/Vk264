@@ -846,8 +846,12 @@ static const int16_t *phx_encoder_block(const phx_mb_decision_t *d, int kind,
     case PHX_BLK_CHROMA_DC: *ncoeff = 4;  return d->chroma_dct[idx][0];
     case PHX_BLK_CHROMA_AC: *ncoeff = 15;
         /* chroma AC scan8 indices are 16..19 (U) and 32..35 (V), so the
-         * plane index is idx/16 - 1, not idx/16 (which would be 2 for V). */
-        return d->chroma_dct[(idx >> 4) - 1][1 + (idx & 3)];
+         * plane index is idx/16 - 1, not idx/16 (which would be 2 for V).
+         * x264 cabac.c:1078 / cavlc.c:588 pass h->dct.luma4x4[j]+1: each
+         * 4x4 AC block's zigzag index 0 is its own DC and is skipped because
+         * chroma DC is coded separately as the 2x2 block.  phx_chroma.c:296
+         * stores the full scanned 16 coefficients, so add the +1 here. */
+        return d->chroma_dct[(idx >> 4) - 1][1 + (idx & 3)] + 1;
     default: *ncoeff = 0; return NULL;
     }
 }
