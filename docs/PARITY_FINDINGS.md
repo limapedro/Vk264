@@ -449,4 +449,13 @@ phx_me16_mvc(). Both real L1 goldens now byte-exact: MB0 (-1,24)/797/103 and
 MB1 (-8,39)/654/143. ctest -R phx_me 1/1 PASS. phx_analysis still calls the
 old single-MVP phx_me16(), so the mvc[] integration is next.
 
+## F42 — mvc[] wired, but full-pipeline ME still loses vertical MV
+
+Standalone phx_me16_mvc goldens are byte-exact with x264 inputs, but in the
+full pipeline phx_analysis's B per-list calls return MVs with no vertical
+component (e.g. MB1 L1 x264 (-8,39)/654/143 vs Phoenix (0,0)/1116/90). Passing
+i_mvc=0 gives the same result, so the candidate list / call arguments are not
+reaching the search as expected. phx_g_inter_rd_decision_enable stays OFF.
+Joint analysis+ME trace delegated with full-pipeline golden requirement.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
