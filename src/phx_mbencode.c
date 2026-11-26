@@ -1600,10 +1600,10 @@ int phx_mb_encode_chroma_trellis(const phx_param_t *p, phx_frame_t *f,
             if (flag) {
                 ac_nnz = 1;
                 /* rdo.c:890 leaves levels in natural order; x264's
-                 * zigzagf.scan_4x4() (macroblock.c:391) feeds CABAC.  The
-                 * chroma AC residual starts at coefficient 1 (cabac.c:1078,
-                 * h->dct.luma4x4[j]+1); the C-stage exposes the same 15-bin
-                 * window (phx_encoder.c:505-506), so skip scan[0] here. */
+                 * zigzagf.scan_4x4() (macroblock.c:391) feeds CABAC.  Store the
+                 * FULL 16-coefficient scan like x264's h->dct.luma4x4[j]: the
+                 * entropy stage applies the single +1 (cabac.c:1078) itself.
+                 * Storing the 15-bin AC window here made the writer skip twice. */
                 /* encoder/cabac.c:1074 writes U blocks (scan8 16..19) before
                  * V blocks (32..35).  phx_encoder.c:505-508 maps those scan8
                  * ranges to chroma_dct[0][1+i] and chroma_dct[1][1+i]
@@ -1612,9 +1612,11 @@ int phx_mb_encode_chroma_trellis(const phx_param_t *p, phx_frame_t *f,
                  * wrong order (first divergent CABAC bin: chroma AC U sig flag
                  * ctx=152).  SHADER: B — one serial store per block. */
                 const int dest = ch;
-                for (int k = 0; k < 15; k++)
-                    d->chroma_dct[dest][1+i][k] = ac[ch][i][phx_zigzag4[k+1]];
-                d->chroma_dct[dest][1+i][15] = 0;
+                /* macroblock.c:82-96 dct2x2dc() zeroes each block's DC before
+                 * quantization, so scan slot 0 is 0 in x264's h->dct.luma4x4[]. */
+                d->chroma_dct[dest][1+i][0] = 0;
+                for (int k = 1; k < 16; k++)
+                    d->chroma_dct[dest][1+i][k] = ac[ch][i][phx_zigzag4[k]];
             } else {
                 memset(d->chroma_dct[ch][1+i], 0,
                        16 * sizeof(phx_dctcoef));        /* macroblock.c:434 */
