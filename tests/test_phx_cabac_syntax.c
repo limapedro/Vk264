@@ -250,6 +250,63 @@ int main(void)
               (const uint8_t[]){0xFE,0x14,0xBE,0x81}, 4);
     }
 
+    /* Regression (worker M10): chroma-DC coeff_abs_level_minus1 > 1.  The
+     * vectors below are byte-for-byte output of the instrumented x264 golden
+     * harness: it #includes reference/x264/encoder/cabac.c, zero-initialises
+     * x264_t, calls x264_quant_init() plus quant.c:878-882 /
+     * encoder.c:1446 coeff_last aliases, sets all 1024 cb.state[] = 0x40,
+     * invokes cabac_block_residual_internal() with the literal arrays below
+     * and appends x264_cabac_encode_flush(h, &cb).
+     *
+     *   {13,-7,0,0} is the exact x264 chroma-DC pair at ultrafast bin 932;
+     *   {9,-5,0,0} is what Phoenix's upstream trellis currently hands to
+     *   this writer.  Both must produce x264's bins: the writer is
+     *   coefficient-agnostic and the bin-932 divergence is upstream
+     *   (phx_rdo.c chroma-DC QNS), see docs/preset_audit/medium.md:149-166.
+     *   The mixed vector walks node_ctx 0/4/5/6 through the levelgt1 chain
+     *   (cabac.c:650-662, :672).  SHADER: C. */
+    {
+        static const phx_dctcoef_t d[16] = {
+            13, -7, 0, 0, 0, 0, 0, 0, 13, 0, -7, 0, 0, 0, 0, 0
+        };
+        setup(&cb, PHX_SLICE_P, 26);
+        phx_cabac_block_residual(&cb, &mb, PHX_DCT_CHROMA_DC, d, 0);
+        check("block_residual_chroma_dc_gt1", &cb,
+              (const uint8_t[]){0xFC,0x6F,0xFF,0xE9,0x7F,0xFF,0xE7,0xF9}, 8);
+    }
+    {
+        static const phx_dctcoef_t d[16] = {
+            9, -5, 0, 0, 0, 0, 0, 0, 9, 0, -5, 0, 0, 0, 0, 0
+        };
+        setup(&cb, PHX_SLICE_P, 26);
+        phx_cabac_block_residual(&cb, &mb, PHX_DCT_CHROMA_DC, d, 0);
+        check("block_residual_chroma_dc_gt1_phxcoef", &cb,
+              (const uint8_t[]){0xFC,0x6F,0xFE,0xF7,0xFF,0xD5,0xD1}, 7);
+    }
+    {
+        static const phx_dctcoef_t d[16] = {
+            7, -13, 2, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        };
+        setup(&cb, PHX_SLICE_P, 26);
+        phx_cabac_block_residual(&cb, &mb, PHX_DCT_CHROMA_DC, d, 0);
+        check("block_residual_chroma_dc_nodectx", &cb,
+              (const uint8_t[]){0xFC,0x30,0xDF,0xFF,0xF6,0x5D,0xFF,0xFF,
+                                0xFE,0xFF,0xFF,0x38,0xC1}, 13);
+    }
+    /* quant.c:878-879 aliases CHROMAU_DC/V_DC to coeff_last16 (4:4:4 path);
+     * a nonzero at index 15 must be scanned.  Golden from the same
+     * instrumented x264 harness with ctx_block_cat = DCT_CHROMAU_DC.
+     * SHADER: C. */
+    {
+        static const phx_dctcoef_t d[16] = {
+            1, 0, 2, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 0, 0, 5
+        };
+        setup(&cb, PHX_SLICE_P, 26);
+        phx_cabac_block_residual(&cb, &mb, PHX_DCT_CHROMAU_DC, d, 0);
+        check("block_residual_chromau_dc_16", &cb,
+              (const uint8_t[]){0xF9,0xB6,0xC6,0xF2,0x5D,0xCB,0xB4,0xD1}, 8);
+    }
+
     /* mb_skip_flag: P and B use different context bases (11 vs 24). */
     setup(&cb, PHX_SLICE_P, 26);
     cache.i_neighbour_skip = 2;
