@@ -1561,7 +1561,9 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
              * overlap slots remain.  Intra predictor fields carry x264's raw
              * mode indices (analyse.c:3739-3751); the FIX4/FIX16 mapping is
              * applied only by the CABAC/CAVLC syntax writers. */
-            d.b_transform_8x8 = 0;                     /* pps transform flag is 0 below */
+            /* Preserve the analysis/published 8x8dct decision (analyse.c:307,
+             * :564 and macroblock.c:713-737).  The PPS gate is applied by
+             * phx_encoder_apply_decision() and the entropy writers. */
             if (b_skip || b_inter) {
                 /* encoder/macroblock.c:697-703 (B_SKIP) and :801-914 (bidir
                  * residual) — MC from both lists with the MVs published by

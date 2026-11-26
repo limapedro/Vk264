@@ -32,6 +32,11 @@
 #define PHX_ANALYSE_I4x4   1               /* common/base.c:435 (phx_param.c:14) */
 #define PHX_ANALYSE_I8x8   2               /* common/base.c:435 (phx_param.c:15) */
 
+/* Transform-size decision observation (see phx_analysis.h).  SHADER: B/C —
+ * written once per analysed MB, never read by the encoder or entropy stage. */
+phx_transform_diag_rec_t phx_g_transform_diag[4096];
+int phx_g_transform_diag_count = 0, phx_g_transform_diag_enable = 0;
+
 /* x264 common/pixel.c:237-240 — 8-bit scalar build. */
 typedef uint16_t phx_sum_t;
 typedef uint32_t phx_sum2_t;
@@ -380,9 +385,13 @@ static int phx_mbcmp4(int b_satd,
                   : phx_sad_4x4(p1, s1, p2, s2);
 }
 
-/* x264 common/pixel.c:334-372 — sa8d_8x8() + x264_pixel_sa8d_8x8().
- * SHADER: A — one invocation per 8x8 block. */
-static int phx_sa8d_8x8(const uint8_t *p1, int s1, const uint8_t *p2, int s2)
+/* x264 common/pixel.c:334-381 — sa8d_8x8() and sa8d_16x16().  The C-only
+ * reference keeps the 8x8 accumulator *unscaled* (pixel.c:365) and applies
+ * (sum+2)>>2 once per 8x8 at :371 / once after four tiles at :380.  Expose
+ * both forms so analyse.c:2761's i_cost8 is byte-exact: summing four already
+ * scaled 8x8 costs would not be.  SHADER: A — one invocation per 8x8 window. */
+static phx_sum2_t phx_sa8d_raw_8x8(const uint8_t *p1, int s1,
+                                   const uint8_t *p2, int s2)
 {
     phx_sum2_t tmp[8][4], a0,a1,a2,a3,a4,a5,a6,a7,b0,b1,b2,b3;
     phx_sum2_t sum = 0;
@@ -410,6 +419,20 @@ static int phx_sa8d_8x8(const uint8_t *p1, int s1, const uint8_t *p2, int s2)
         b0 += phx_abs2(a3+a7) + phx_abs2(a3-a7);
         sum += (phx_sum_t)b0 + (b0 >> PHX_BITS_PER_SUM);
     }
+    return sum;
+}
+/* x264 common/pixel.c:368-372. */
+static int phx_sa8d_8x8(const uint8_t *p1, int s1, const uint8_t *p2, int s2)
+{
+    return (int)((phx_sa8d_raw_8x8(p1, s1, p2, s2) + 2) >> 2);
+}
+/* x264 common/pixel.c:374-381 — h->pixf.sa8d[PIXEL_16x16]. */
+static int phx_sa8d_16x16(const uint8_t *p1, int s1, const uint8_t *p2, int s2)
+{
+    phx_sum2_t sum = phx_sa8d_raw_8x8(p1, s1, p2, s2)
+                   + phx_sa8d_raw_8x8(p1 + 8, s1, p2 + 8, s2)
+                   + phx_sa8d_raw_8x8(p1 + 8*s1, s1, p2 + 8*s2, s2)
+                   + phx_sa8d_raw_8x8(p1 + 8 + 8*s1, s1, p2 + 8 + 8*s2, s2);
     return (int)((sum + 2) >> 2);
 }
 
@@ -1889,6 +1912,128 @@ static void phx_analysis_inter_b16x16(phx_analysis_ctx_t *c,
     }
 }
 
+/* ---- transform-size decision (encoder/analyse.c:2735-2770) -------------- */
+
+/* x264 common/macroblock.h:444-448 — x264_transform_allowed[X264_MBTYPE_MAX].
+ * Intra and skip are disallowed; P_8x8 is conditional on all four sub-
+ * partitions being D_L0_8x8 (macroblock.h:460).  Phoenix has no B_8x8
+ * partition driver, but the table entry is kept for source fidelity.
+ * SHADER: A — immutable table lookup. */
+static int phx_transform_allowed(const phx_mb_decision_t *d)
+{
+    static const uint8_t allowed[19] = {
+        0,0,0,0,1,2,0,1,1,1,1,1,1,1,1,1,1,1,0
+    };
+    if (d->mb_type < 0 || d->mb_type > 18) return 0;
+    if (d->mb_type == PHX_P_8x8)
+        return d->i_partition == PHX_D_8x8;
+    return allowed[d->mb_type];
+}
+
+/* x264 common/macroblock.h:454-461 — x264_mb_transform_8x8_allowed().
+ * The PPS gate is h->pps->b_transform_8x8_mode (encoder/set.c:502), which is
+ * param.analyse.b_transform_8x8 copied into phx_headers.c:147; analysis uses
+ * that source parameter as its read-only copy of the PPS flag.
+ * SHADER: B — no entropy/cache mutation. */
+static int phx_mb_transform_8x8_allowed(const phx_param_t *p,
+                                        const phx_mb_decision_t *d)
+{
+    if (!p->b_transform_8x8) return 0;                  /* macroblock.h:456 */
+    return phx_transform_allowed(d);                    /* :458-460 */
+}
+
+int phx_mb_transform_8x8_allowed_ex(int pps_mode, int mb_type, int i_partition)
+{
+    phx_mb_decision_t d;
+    memset(&d, 0, sizeof(d));
+    d.mb_type = mb_type;
+    d.i_partition = i_partition;
+    if (!pps_mode) return 0;                            /* macroblock.h:456 */
+    return phx_transform_allowed(&d);                   /* :458-460 */
+}
+
+void phx_mb_transform_costs(const uint8_t *fenc, int fence_stride,
+                            const uint8_t *pred, int pred_stride,
+                            int *cost8, int *cost4, int *b8)
+{
+    if (!fenc || !pred) return;
+    int c8 = phx_sa8d_16x16(fenc, fence_stride, pred, pred_stride);
+    int c4 = phx_satd_16x16(fenc, fence_stride, pred, pred_stride);
+    if (cost8) *cost8 = c8;
+    if (cost4) *cost4 = c4;
+    if (b8) *b8 = (c8 < c4);                            /* analyse.c:2768 */
+}
+
+/* x264 encoder/analyse.c:2740 — x264_mb_mc() fills p_fdec with the motion-
+ * compensated prediction before the SA8D/SATD comparison.  Only luma is
+ * needed for 4:2:0 (analyse.c:2742, plane_count==1); the chroma windows are
+ * deliberately untouched.  SHADER: B — explicit fref/neighbour inputs. */
+static int phx_analysis_transform_mc(phx_analysis_ctx_t *c,
+                                     const phx_mb_decision_t *d,
+                                     uint8_t out[16*16])
+{
+    if (d->mb_type == PHX_P_L0) {
+        if (!c->fref || !c->fref->plane) return -1;
+        return phx_mc_luma_mb(c->fref, out, 16, c->mb_x, c->mb_y,
+                              d->mv[0][0][0], d->mv[0][0][1], 16, 16);
+    }
+    if (d->mb_type >= PHX_B_DIRECT && d->mb_type <= PHX_B_8x8) {
+        const int ref[2] = { d->ref[0][0], d->ref[1][0] };
+        if (!c->b || !c->b->fref1 || !c->fref || !c->fref->plane) return -1;
+        phx_b_pred16(c, c->b, ref, d->mv[0][0], d->mv[1][0], out);
+        return 0;
+    }
+    return -1;                       /* intra/skip: no MC (allowed()==0) */
+}
+
+/* x264 encoder/analyse.c:2735-2770 — mb_analyse_transform().  With the C-only
+ * reference build pixf.sa8d_satd[PIXEL_16x16] is NULL (common/pixel.c:942/
+ * :998/:1018/... set it only for SIMD), so the authoritative branch is
+ * :2757-2766:
+ * i_cost8 = sa8d[16x16], i_cost4 = satd[16x16], b8 = i_cost8 < i_cost4.
+ * The call site is gated on !a->i_mbrd (analyse.c:3718-3719).  At mbrd>=1
+ * x264 instead uses mb_analyse_transform_rd() (:2773-2800) and the QP-change
+ * toggle (:2904-2912), both of which need rd_cost_mb(); phx_rdo.h does not
+ * expose it, so those two toggles stay TODO -- no transform size is invented.
+ * For I_8x8 the encoder itself sets b8=1 (encoder/macroblock.c:713-715),
+ * which is what analyse.c:419-420 writes; I_4x4/I_16x16 are disallowed by
+ * macroblock.h:445-448 and stay 0 (analyse.c:307).  SHADER: B — one decision
+ * per MB, explicit fenc/fref/cache inputs, no entropy state. */
+static void phx_analysis_mb_transform(phx_analysis_ctx_t *c,
+                                      phx_mb_decision_t *d)
+{
+    phx_transform_diag_rec_t *rec = NULL;
+    int allowed = phx_mb_transform_8x8_allowed(c->p, d);
+    uint8_t mc[16*16];
+    int i_cost8 = 0, i_cost4 = 0;
+
+    if (allowed) {
+        if (phx_analysis_transform_mc(c, d, mc) == 0) {
+            i_cost8 = phx_sa8d_16x16(c->fenc, c->fenc_stride, mc, 16);
+            i_cost4 = phx_satd_16x16(c->fenc, c->fenc_stride, mc, 16);
+        }
+    }
+    if (allowed && c->mbrd == 0 && i_cost4 > 0)
+        d->b_transform_8x8 = (i_cost8 < i_cost4);       /* analyse.c:2768 */
+    else if (d->mb_type == PHX_I_8x8)
+        d->b_transform_8x8 = 1;                         /* macroblock.c:715 */
+    else if (!allowed)
+        d->b_transform_8x8 = 0;                         /* analyse.c:307 */
+
+    if (phx_g_transform_diag_enable &&
+        phx_g_transform_diag_count < 4096) {
+        rec = &phx_g_transform_diag[phx_g_transform_diag_count++];
+        memset(rec, 0, sizeof(*rec));
+        rec->mb_x = c->mb_x; rec->mb_y = c->mb_y;
+        rec->mb_type = d->mb_type; rec->i_partition = d->i_partition;
+        rec->allowed = allowed; rec->mbrd = c->mbrd;
+        rec->pps_mode = c->p->b_transform_8x8;
+        rec->i_cost8 = i_cost8; rec->i_cost4 = i_cost4;
+        rec->b_transform_8x8 = d->b_transform_8x8;
+    }
+    c->cache->b_transform_8x8 = d->b_transform_8x8;     /* macroblock.c:1779 */
+}
+
 /* ---- driver (encoder/analyse.c:2918-2952, :3734-3753) ------------------- */
 
 /* x264 encoder/analyse.c:294-305 — mb_analyse_init() (I-slice/progressive
@@ -2312,6 +2457,11 @@ static int phx_macroblock_analyse_impl(const phx_param_t *p,
     if (p->analyse_intra & PHX_ANALYSE_I8x8) phx_search_i8(&c);
     if (p->analyse_intra & PHX_ANALYSE_I4x4) phx_search_i4(&c);
     phx_analysis_finalise(&c, d, &inter);
+    /* analyse.c:3718-3719 — transform-size decision runs after the final MB
+     * type is known and analyse_update_cache() has published it (vfast and
+     * below).  At mbrd>=1 x264's RD toggles are TODO (rd_cost_mb is not
+     * exposed by phx_rdo.h); no transform size is forced in that case. */
+    phx_analysis_mb_transform(&c, d);
     /* analyse.c:2937-2951 — mbrd>=1 runs intra_rd() (whole-MB RD over the
      * SATD-chosen modes), while the *per-block* rd_cost_i4x4() refinement of
      * :1086-1135 is gated by mbrd>=2 (:2950).  The 715-bin probe uses
