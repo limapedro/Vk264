@@ -1385,6 +1385,37 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     d.chroma_pred_mode = 0;
     d.i_qp = sh.i_qp;
 
+    /* encoder.c:2295-2411 / 3057 — B slices need both reference lists and the
+     * colocated picture's per-MB state for direct-MV prediction.  Built once
+     * per slice; pointers stay valid for the whole MB loop.  SHADER: C. */
+    phx_dpb_ref_lists_t b_lists;
+    phx_analysis_b_input_t b_input;
+    const phx_frame_t *fref1 = NULL;
+    phx_mvdirect_col_t b_col;
+    memset(&b_lists, 0, sizeof(b_lists));
+    memset(&b_input, 0, sizeof(b_input));
+    memset(&b_col, 0, sizeof(b_col));
+    int b_slice = (fc.i_type == PHX_SLICE_B && h->recon_dpb);
+    if (b_slice) {
+        phx_dpb_list_cfg_t bcfg;
+        memset(&bcfg, 0, sizeof(bcfg));
+        bcfg.max_ref0 = h->param.i_frame_reference;
+        bcfg.max_ref1 = h->param.i_frame_reference;
+        bcfg.frame_reference = h->param.i_frame_reference;
+        if (phx_dpb_init_ref_lists(h->recon_dpb, &b_lists, fc.i_poc,
+                                   frame_index, fc.i_type, &bcfg) == 0) {
+            fref1 = phx_dpb_ref_frame(&b_lists, 1, 0);
+            (void)phx_dpb_get_col_from_lists(&b_lists, 1, 0, &b_col);
+            b_input.fref1 = fref1;
+            b_input.col = &b_col;
+            b_input.cur_poc = fc.i_poc;
+            b_input.b_direct_spatial = h->param.i_direct_mv_pred != 3;
+            b_input.bipred_weight = 32;
+        } else {
+            b_slice = 0;
+        }
+    }
+
     for (int mb_y = 0; mb_y < h->i_mb_height; mb_y++) { /* encoder.c:2808-2810 */
         for (int mb_x = 0; mb_x < h->i_mb_width; mb_x++) {
             int mb_xy = mb_y * h->i_mb_width + mb_x;   /* encoder.c:2814 */
@@ -1405,7 +1436,12 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
             d.i_partition = PHX_D_16x16;
             d.intra16_pred_mode = 2;
             d.chroma_pred_mode = 0;
-            int rc = phx_macroblock_analyse_slice(&h->param, h->fenc, fref, c,
+            int rc = b_slice
+                   ? phx_macroblock_analyse_slice_b(&h->param, h->fenc, fref,
+                                                    &b_input, c,
+                                                    h->param.b_cabac ? &h->cabac : NULL,
+                                                    mb_x, mb_y, d.i_qp, &d)
+                   : phx_macroblock_analyse_slice(&h->param, h->fenc, fref, c,
                                                   h->param.b_cabac ? &h->cabac : NULL,
                                                   mb_x, mb_y, d.i_qp,
                                                   fc.i_type, &d); /* :2861 */
