@@ -248,7 +248,9 @@ static void test_chroma(void)
     for (int y = -PAD; y < H/2+PAD; y++) {
         for (int x = -PAD; x < W+PAD; x++)
             src[y*S+x] = (uint8_t)(2*x);
-        for (int x = 0; x < 64; x += 2) {
+        /* Keep the write inside the padded src window: x reaches W+PAD-1,
+         * so this loop must stop at W+PAD (not 64) or it writes past sp[]. */
+        for (int x = 0; x < W+PAD; x += 2) {
             src[y*S+x] = 100; src[y*S+x+1] = 150;
         }
     }

@@ -578,8 +578,10 @@ void phx_encoder_frame_context(phx_t *h, int decided_type, int display_frame,
         h->i_last_idr = display_frame;                 /* encoder.c:3505 */
         h->n_dpb = 0;                                  /* reference_reset():2563 */
     }
-    int mask = (1 << h->sps.i_log2_max_frame_num) - 1;
-    fc->i_frame_num = h->i_frame_num & mask;           /* encoder.c:227/136 */
+    /* x264 keeps i_frame_num unbounded (encoder.c:3882/136); the mask is
+     * applied only when writing the syntax element (set.c/encoder.c:227).
+     * Wrapping here made MMCO reference diffs negative after frame_num 15. */
+    fc->i_frame_num = h->i_frame_num;                  /* encoder.c:136 */
     int last_idr = h->i_last_idr > 0 ? h->i_last_idr : 0; /* :3513 X264_MAX */
     h->i_poc = 2 * (display_frame - last_idr);         /* encoder.c:3513 */
     fc->i_poc = h->i_poc;                              /* encoder.c:2653 */
@@ -641,7 +643,7 @@ void phx_encoder_frame_context(phx_t *h, int decided_type, int display_frame,
      * the rule that makes two B frames in a minigop carry the same frame_num
      * in x264's streams. */
     if (fc->i_nal_ref_idc != 0)                        /* NAL_PRIORITY_DISPOSABLE */
-        h->i_frame_num = (h->i_frame_num + 1) & mask;  /* encoder.c:3882 */
+        h->i_frame_num++;                              /* encoder.c:3882 */
 }
 
 /* bs_align_1 (common/bitstream.h:187-191): x264 pads the slice header with
