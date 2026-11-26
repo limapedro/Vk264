@@ -10,10 +10,16 @@
  *   reference/x264/encoder/macroblock.c:126   mb_encode_i16x16
  *   reference/x264/encoder/macroblock.c:259   mb_encode_chroma_internal
  *   reference/x264/encoder/macroblock.c:654   P_SKIP MC (p_fref[0][0])
+ *   reference/x264/encoder/macroblock.c:669   P_SKIP chroma MC + mv0 shortcut
  *   reference/x264/encoder/macroblock.c:769   inter MC (x264_mb_mc)
- *   reference/x264/common/mc.c:162             mc_copy (16x16 row copy)
- *   reference/x264/encoder/analyse.c:336       mv_min/mv_max frame-edge clip
- *   reference/x264/encoder/me.c:178            FPEL(qpel) rounding
+ *   reference/x264/common/macroblock.c:61     inter 16x16 chroma MC call site
+ *   reference/x264/common/mc.c:63-75          pixel_avg_wxh (qpel average)
+ *   reference/x264/common/mc.c:162            mc_copy (16x16 row copy)
+ *   reference/x264/common/mc.c:174-219        hpel_filter / mc_luma
+ *   reference/x264/common/mc.c:252-283        mc_chroma (1/8-pel bilinear)
+ *   reference/x264/common/tables.c:183-184    hpel_ref0 / hpel_ref1
+ *   reference/x264/encoder/analyse.c:336      mv_min/mv_max frame-edge clip
+ *   reference/x264/encoder/analyse.c:261      b_trellis = trellis>1 && mbrd
  *   reference/x264/encoder/macroblock.h:112   STORE_8x8_NNZ
  *   reference/x264/encoder/macroblock.h:132   x264_mb_encode_i4x4
  *   reference/x264/encoder/macroblock.h:168   x264_mb_encode_i8x8
@@ -52,7 +58,12 @@ extern "C" {
  * writes mirror macroblock_cache_save
  * (reference/x264/common/macroblock.c:1680, :1761-1779).  The inter branch is
  * macroblock_encode_internal's no-residual P_L0/D_16x16 path (:654-667,
- * :769-775), reconstructed from the caller-supplied list-0 reference plane.
+ * :769-775), reconstructed from the caller-supplied list-0 reference plane:
+ * luma MC follows common/mc.c:198-219 (integer MV = mc_copy; fractional MV =
+ * 6-tap HPEL + (a+b+1)>>1 qpel average) and inter chroma follows
+ * encoder/macroblock.c:669-681 / common/macroblock.c:61-64 (mc.c:252-283).
+ * Quantization uses the final-encode b_trellis flag of analyse.c:3724
+ * (b_trellis = i_trellis); analyse.c:261 is the analysis-only gate.
  * Returns 0 on success and -1 for an unsupported or invalid mode/argument.
  *
  * SHADER: B — serial-per-MB reconstruction that completes the B-stage record.
@@ -65,8 +76,9 @@ int phx_macroblock_encode(const phx_param_t *p, phx_frame_t *f,
  * x264's context state (rdo.c:1142-1157).  NULL keeps the plain deadzone path.
  * fref is the caller's list-0 reference 0 (h->fref[0][0], macroblock.c:666):
  * it is required only for the accepted no-residual PHX_P_L0/D_16x16 decision,
- * whose motion-compensated luma reconstruction follows macroblock.c:654-667
- * and :769-775 plus mc_copy (common/mc.c:162-171).  NULL rejects that mode.
+ * whose motion-compensated luma/chroma reconstruction follows
+ * macroblock.c:654-667/:669-681/:769-775, common/macroblock.c:61-64 and
+ * common/mc.c:162-219/:252-283.  NULL rejects that mode.
  * SHADER: B — serial per-MB reconstruction; fref is read-only. */
 int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
                              const phx_frame_t *fref,

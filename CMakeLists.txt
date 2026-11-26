@@ -36,6 +36,10 @@ add_library(phx STATIC
     src/phx_rdo.c
     src/phx_me.c
     src/phx_lowres.c
+    src/phx_cavlc_syntax.c
+    src/phx_mc.c
+    src/phx_ratecontrol.c
+    src/phx_deblock.c
 )
 target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -127,3 +131,19 @@ add_executable(phx_test_lowres tests/test_phx_lowres.c)
 target_compile_definitions(phx_test_lowres PRIVATE PHX_LOWRES_STANDALONE)
 target_link_libraries(phx_test_lowres PRIVATE phx)
 add_test(NAME phx_lowres COMMAND phx_test_lowres)
+
+add_executable(phx_test_cavlc_syntax tests/test_phx_cavlc_syntax.c)
+target_link_libraries(phx_test_cavlc_syntax PRIVATE phx)
+add_test(NAME phx_cavlc_syntax COMMAND phx_test_cavlc_syntax)
+
+add_executable(phx_test_mc tests/test_phx_mc.c)
+target_link_libraries(phx_test_mc PRIVATE phx)
+add_test(NAME phx_mc COMMAND phx_test_mc)
+
+add_executable(phx_test_ratecontrol tests/test_phx_ratecontrol.c)
+target_link_libraries(phx_test_ratecontrol PRIVATE phx)
+add_test(NAME phx_ratecontrol COMMAND phx_test_ratecontrol)
+
+add_executable(phx_test_deblock tests/test_phx_deblock.c)
+target_link_libraries(phx_test_deblock PRIVATE phx)
+add_test(NAME phx_deblock COMMAND phx_test_deblock)

@@ -15,6 +15,7 @@
 #include "phx_dct.h"
 #include "phx_quant.h"
 #include "phx_chroma.h"
+#include "phx_mc.h"
 
 #include <string.h>
 
@@ -299,6 +300,9 @@ static void phx_mb_encode_i4x4(const phx_param_t *param,
         phx_sub4x4_dct(dct, fenc + phx_block_idx_xy_fenc[idx], PHX_FENC_STRIDE,
                        p, PHX_FDEC_STRIDE);                  /* macroblock.h:155 */
         int used_trellis = 0;
+        /* analyse.c:3724 — the FINAL MB encode sets h->mb.b_trellis =
+         * h->param.analyse.i_trellis (no mbrd gate; analyse.c:261 is the
+         * analysis-only trial switch).  Medium trellis=1 therefore uses QNS. */
         if (cb && param->i_trellis > 0 && i_qp <= PHX_QP_MAX_SPEC) {
             /* rdo.c:1142-1157 — QNS uses the live CABAC context state and
              * writes coefficients in zigzag order. */
@@ -376,19 +380,22 @@ static void phx_mb_clear_inter_residual(phx_mb_decision_t *d,
     }
 }
 
-/* Motion-compensated 16x16 luma copy for P_L0/D_16x16 with cbp == 0.
+/* Motion-compensated 16x16 luma for P_L0/D_16x16 with cbp == 0.
  * Follows encoder/macroblock.c:654-667 (p_fdec[p] <- mc_luma(..., p_fref[0][0],
  * i_stride[p], mvx, mvy, 16, 16)) and the inter branch at :769-775
  * (x264_mb_mc when MC was not already done in analysis).  The MV is clipped
- * to the frame-edge limits of analyse.c:336-337/:391-392, converted from
- * qpel with FPEL() (encoder/me.c:178), and the 16 rows are copied by
- * mc_copy (common/mc.c:162-171).  d->ref[0][0] selects list-0 reference 0 —
+ * to the frame-edge limits of analyse.c:336-337/:391-392 (macroblock.c:659/
+ * :661) and passed in quarter-pel units to phx_mc_luma(), which follows
+ * common/mc.c:198-219 exactly: fullpel uses mc_copy (:218), halfpel uses the
+ * H/V/C planes from hpel_filter (:174-196), and quarterpel uses the
+ * x264_hpel_ref0/ref1 tables plus (a+b+1)>>1 (:63-75/:207-211).
+ * Integer MVs keep the old fullpel output byte for byte (qpel_idx == 0).
+ * d->ref[0][0] selects list-0 reference 0 -
  * the only list entry Phoenix passes in (macroblock.c:666 p_fref[0][0]).
- * No interpolation/filtering is fabricated: a non-fullpel MV uses its
- * rounded fullpel sample, exactly the FPEL() convention above.
- * SHADER: B — one serial 16x16 row copy into the B-stage FDEC window. */
+ * SHADER: B - one serial 16x16 MC block into the B-stage FDEC window. */
 static int phx_mb_mc_l0_16x16(const phx_frame_t *fref, uint8_t *p_dst,
-                              int mb_x, int mb_y, const phx_mb_decision_t *d)
+                              int mb_x, int mb_y, const phx_mb_decision_t *d,
+                              int *mvx_out, int *mvy_out)
 {
     if (!fref || !fref->plane || fref->i_stride <= 0 ||
         fref->i_width <= 0 || fref->i_height <= 0)
@@ -406,18 +413,56 @@ static int phx_mb_mc_l0_16x16(const phx_frame_t *fref, uint8_t *p_dst,
     const int mvx = phx_mb_clip3i(d->mv[0][0][0], mv_min_x, mv_max_x);
                                                              /* macroblock.c:659 */
     const int mvy = phx_mb_clip3i(d->mv[0][0][1], mv_min_y, mv_max_y);
+    if (mvx_out) *mvx_out = mvx;
+    if (mvy_out) *mvy_out = mvy;   /* shared with chroma MC (macroblock.c:64) */
                                                              /* macroblock.c:661 */
-    const int mx = (mvx + 2) >> 2;                           /* me.c:178 FPEL */
-    const int my = (mvy + 2) >> 2;
+    /* common/macroblock.c:568-640 builds p_fref[0][0][0..3]; phx_mc_luma_mb
+     * prepares the H/V/C planes with x264_frame_filter (mc.c:704-726) and
+     * points them at the current MB origin.  Fullpel keeps the old mc_copy
+     * result exactly (qpel_idx == 0); fractional MVs now use x264's 6-tap
+     * HPEL planes and (a+b+1)>>1 qpel average (mc.c:198-219). */
+    return phx_mc_luma_mb(fref, p_dst, PHX_FDEC_STRIDE, mb_x, mb_y,
+                          mvx, mvy, 16, 16);
+}
 
-    /* p_fdec pointer for this MB is p_dst (common/common.h:571); the source
-     * pointer is the ref frame plane offset by the MB origin plus the MV
-     * (common/macroblock.c:625-635 builds p_fref with ref_pix_offset). */
-    const uint8_t *src = fref->plane
-        + (size_t)(mb_y * 16 + my) * fref->i_stride + mb_x * 16 + mx;
-    for (int y = 0; y < 16; y++)                        /* mc.c:164-170 */
-        memcpy(p_dst + y * PHX_FDEC_STRIDE, src + y * fref->i_stride, 16);
-    return 0;
+/* Inter chroma MC for P_L0/D_16x16, 4:2:0 NV12.
+ * encoder/macroblock.c:669-681 does mc_chroma for P_SKIP (with a deinterleave
+ * shortcut for mv0); the non-skip inter path is common/macroblock.c:61-64,
+ * which calls the same mc_chroma with mvx and 2*mvy>>CHROMA_V_SHIFT (4:2:0
+ * => mvy>>1).  common/mc.c:252-283 supplies the bilinear coefficients.
+ * The planar U/V result is interleaved back into the NV12 frame plane with
+ * the mc.c:392-400 store pattern (Phoenix has no separate chroma FDEC).
+ * SHADER: B — one serial 8x8 chroma MC block per MB. */
+static void phx_mb_mc_chroma_l0(const phx_frame_t *fref, phx_frame_t *f,
+                                 int mb_x, int mb_y, int mvx, int mvy)
+{
+    if (!fref || !fref->plane_chroma || !f || !f->plane_chroma ||
+        fref->i_stride_planes[1] <= 0 || f->i_stride_planes[1] <= 0)
+        return;
+
+    const int src_stride = fref->i_stride_planes[1];
+    const int dst_stride = f->i_stride_planes[1];
+    /* common/macroblock.c:568-576: 8*mb_y rows and 8*mb_x chroma samples;
+     * NV12 stores a U/V pair per byte position so the x offset is 16 bytes. */
+    const size_t src_off = (size_t)(mb_y*8)*src_stride + (size_t)(mb_x*16);
+    const size_t dst_off = (size_t)(mb_y*8)*dst_stride + (size_t)(mb_x*16);
+    const uint8_t *src = fref->plane_chroma + src_off;
+    uint8_t *dst = f->plane_chroma + dst_off;
+
+    uint8_t cu[8*8], cv[8*8];                            /* planar FDEC U/V */
+    if (mvx | mvy) {
+        /* 4:2:0: CHROMA_V_SHIFT == 1 => mvy >> 1 (macroblock.c:53/64). */
+        phx_mc_chroma(cu, 8, cv, 8, src, src_stride,
+                      mvx, mvy >> 1, 8, 8);               /* mc.c:252-283 */
+    } else {
+        /* macroblock.c:674-681 — mv0 deinterleave shortcut. */
+        phx_mc_deinterleave_chroma(cu, 8, cv, 8, src, src_stride, 8, 8);
+    }
+    for (int y = 0; y < 8; y++)                          /* mc.c:392-400 */
+        for (int x = 0; x < 8; x++) {
+            dst[y*dst_stride + 2*x]   = cu[y*8 + x];     /* U */
+            dst[y*dst_stride + 2*x+1] = cv[y*8 + x];     /* V */
+        }
 }
 
 /* x264_macroblock_encode — reference/x264/encoder/macroblock.c:974-982,
@@ -504,10 +549,13 @@ int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
     d->b_transform_8x8 = 0;
 
     if (inter_l0) {
-        /* macroblock.c:654-667/:769-775 + mc.c:162-171 — MC into p_fdec from
-         * the caller's L0 reference 0, then no residual (cbp == 0). */
-        if (phx_mb_mc_l0_16x16(fref, p_dst, mb_x, mb_y, d) < 0)
+        /* macroblock.c:654-667/:769-775 + common/macroblock.c:61-64 — luma
+         * and chroma MC from the caller's L0 reference 0, then no residual
+         * (cbp == 0).  Both planes use the same clipped qpel MV. */
+        int mvx = 0, mvy = 0;
+        if (phx_mb_mc_l0_16x16(fref, p_dst, mb_x, mb_y, d, &mvx, &mvy) < 0)
             return -1;
+        phx_mb_mc_chroma_l0(fref, f, mb_x, mb_y, mvx, mvy);
         phx_mb_clear_inter_residual(d, cache);  /* macroblock.c:624-626 */
     } else if (d->mb_type == PHX_I_16x16) {
         phx_mb_encode_i16x16(&qt, fenc, p_dst, d->i_qp,
@@ -682,6 +730,8 @@ int phx_mb_encode_chroma_trellis(const phx_param_t *p, phx_frame_t *f,
 {
     if (!p || !f || !cache || !d || !f->plane || !f->plane_chroma)
         return phx_macroblock_encode_chroma(p, f, cache, mb_x, mb_y, d);
+    /* macroblock.c:384/419 — chroma QNS uses the same final-encode flag:
+     * analyse.c:3724 sets b_trellis = i_trellis (no mbrd gate). */
     if (!p->b_cabac || p->i_trellis <= 0 || !phx_mb_active_cabac ||
         d->i_qp < 0 || d->i_qp > PHX_QP_MAX_SPEC ||
         f->i_width % 16 || f->i_height % 16)

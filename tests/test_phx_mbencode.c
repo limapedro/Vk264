@@ -17,7 +17,9 @@
 #include "phx_param.h"
 #include "phx_dct.h"
 #include "phx_cabac_syntax.h"
+#include "phx_mc.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define TEST_W 16
@@ -336,6 +338,9 @@ static void phx_test_first_mb_chroma_trellis(void)
     phx_param_apply_preset(&p, "medium");
     p.b_cabac = 1;
     phx_param_finalize(&p);            /* chroma QP offset -2 (subme>=6) */
+    /* analyse.c:3724 — final encode uses b_trellis = i_trellis, so medium
+     * (trellis=1) still runs QNS; the golden trace below was produced with
+     * that setting. */
     CHECK(p.i_trellis > 0, "medium preset enables trellis");
 
     phx_frame_t *f = phx_frame_new(TEST_W, TEST_H, 0);
@@ -412,6 +417,66 @@ static void phx_test_first_mb_chroma_trellis(void)
     phx_frame_delete(f);
 }
 
+/* Reference luma/chroma MC oracle for the B-stage integration tests.  The
+ * primitives themselves are checked against the literal x264 formulas in
+ * tests/test_phx_mc.c; here we verify that phx_mbencode.c wires the correct
+ * planes, MV and chroma scaling into them (macroblock.c:654-681,
+ * common/macroblock.c:61-64).  SHADER: B — test fixture oracle. */
+static void phx_test_ref_mc(const phx_frame_t *ref, int mb_x, int mb_y,
+                             int mvx, int mvy, uint8_t luma[256],
+                             uint8_t chroma[128])
+{
+    const int s = ref->i_stride;
+    const size_t bytes = (size_t)s*(ref->i_height + 16) + 16;
+    const size_t off0 = 8*(size_t)s + 8;  /* mc.c:717 full-frame -8 offset */
+    uint8_t *base = (uint8_t *)malloc(off0 + 3*bytes);
+    uint8_t *hp = base + off0, *vp = hp + bytes, *cp = vp + bytes;
+    int16_t *buf = (int16_t *)malloc((size_t)(ref->i_width + 32)*sizeof(int16_t));
+    if (!base || !buf) {
+        free(base); free(buf);
+        printf("FAIL oracle allocation\n"), ++fails;
+        return;
+    }
+    phx_mc_hpel_filter_frame(ref->plane, s, ref->i_width, ref->i_height,
+                             hp, vp, cp, buf);
+    const size_t off = (size_t)(mb_y*16)*s + (size_t)(mb_x*16);
+    const uint8_t *planes[4] = { ref->plane + off, hp + off, vp + off, cp + off };
+    phx_mc_luma(luma, 16, planes, s, mvx, mvy, 16, 16);
+
+    uint8_t cu[64], cv[64];
+    const int cs = ref->i_stride_planes[1];
+    const uint8_t *csrc = ref->plane_chroma
+                        + (size_t)(mb_y*8)*cs + (size_t)(mb_x*16);
+    if (mvx | mvy)
+        phx_mc_chroma(cu, 8, cv, 8, csrc, cs, mvx, mvy >> 1, 8, 8);
+    else
+        phx_mc_deinterleave_chroma(cu, 8, cv, 8, csrc, cs, 8, 8);
+    for (int y = 0; y < 8; y++)
+        for (int x = 0; x < 8; x++) {
+            chroma[y*16+2*x]   = cu[y*8+x];
+            chroma[y*16+2*x+1] = cv[y*8+x];
+        }
+    free(base); free(buf);
+}
+
+/* Fill both planes of a reference frame deterministically, including the
+ * padded border, so fractional MC never reads fabricated zero samples.
+ * SHADER: B — test fixture. */
+static void phx_test_fill_ref(phx_frame_t *ref)
+{
+    for (int y = -PHX_PADV; y < ref->i_height + PHX_PADV; y++)
+        for (int x = -PHX_PADH; x < ref->i_stride; x++)
+            ref->plane[y*ref->i_stride+x] = phx_test_pixel(x, y);
+    const int cs = ref->i_stride_planes[1];
+    /* NV12: x counts chroma samples, each occupying two bytes; the left pad
+     * is PHX_PADH/2 samples and the right edge is cs/2 - PHX_PADH/2. */
+    for (int y = -(PHX_PADV/2); y < ref->i_height/2 + PHX_PADV/2; y++)
+        for (int x = -(PHX_PADH/2); x < cs/2 - PHX_PADH/2; x++) {
+            ref->plane_chroma[y*cs+2*x]   = (uint8_t)(11*x + 5*y + 17);
+            ref->plane_chroma[y*cs+2*x+1] = (uint8_t)(7*x + 13*y + 41);
+        }
+}
+
 /* P_L0/D_16x16 no-residual reconstruction from a caller-supplied reference.
  * The MV is fixed at (8,4) qpel, i.e. (2,1) fullpel via me.c:178 FPEL(); the
  * reconstructed MB must equal the reference at (x+2,y+1) for all 256 samples.
@@ -441,8 +506,7 @@ static void phx_test_p_l0_mc(void)
     }
     phx_plane_expand_border(f->plane, f->i_stride, 32, 32,
                             PHX_PADH, PHX_PADV, 1, 1, 0);
-    phx_plane_expand_border(ref->plane, ref->i_stride, 32, 32,
-                            PHX_PADH, PHX_PADV, 1, 1, 0);
+    phx_test_fill_ref(ref);
 
     phx_mb_state_t *s = phx_mb_state_new(2, 2);
     CHECK(s != NULL, "P_L0 MB state");
@@ -491,6 +555,18 @@ static void phx_test_p_l0_mc(void)
                 }
             }
         }
+        uint8_t want_l[256], want_c[128];
+        phx_test_ref_mc(ref, 0, 0, 8, 4, want_l, want_c);
+        const int cs = f->i_stride_planes[1];
+        for (int y = 0; y < 8; y++)
+            for (int k = 0; k < 16; k++) {
+                const uint8_t got = f->plane_chroma[y*cs+k];
+                if (got != want_c[y*16+k]) {
+                    printf("FAIL P_L0 chroma (%d,%d): got %d want %d\n",
+                           k/2, y, got, want_c[y*16+k]);
+                    ++fails;
+                }
+            }
         for (int i = 0; i < 48; i++) {
             CHECK(d->nnz[i] == 0, "P_L0 nnz cleared");
             CHECK(c->non_zero_count[phx_scan8[i]] == 0,
@@ -513,7 +589,95 @@ static void phx_test_p_l0_mc(void)
     CHECK(phx_macroblock_encode_ex(&p, f, NULL, &c1, 0, 0, &d1, NULL) == -1,
           "P_L0 without reference is rejected");
 
-    printf("P_L0 MC: MV=(8,4) qpel -> fullpel (2,1), 256/256 samples from ref, cbp=0\n");
+    printf("P_L0 MC: MV=(8,4) qpel -> fullpel (2,1) luma, chroma mvy=2 (halfpel), cbp=0\n");
+    phx_mb_state_delete(s);
+    phx_frame_delete(f);
+    phx_frame_delete(ref);
+}
+
+/* Fractional-MV P_L0 reconstruction: the B stage must interpolate luma with
+ * x264's HPEL/qpel path (common/mc.c:174-219) and scale chroma MV vertically
+ * by 1/2 (common/macroblock.c:53/64), not round to fullpel via FPEL().
+ * Integer MV (0,0) must remain an exact copy (fullpel path unchanged).
+ * SHADER: B — verifies the B-stage MC handoff for subpel decisions. */
+static void phx_test_p_l0_subpel(void)
+{
+    phx_param_t p;
+    phx_param_default(&p);
+    p.b_cabac = 1;
+
+    phx_frame_t *f = phx_frame_new(32, 32, 0);
+    phx_frame_t *ref = phx_frame_new(32, 32, 0);
+    CHECK(f && ref, "subpel frame allocation");
+    if (!f || !ref) {
+        if (f) phx_frame_delete(f);
+        if (ref) phx_frame_delete(ref);
+        return;
+    }
+    phx_test_fill_ref(ref);
+    for (int y = 0; y < 32; y++)
+        for (int x = 0; x < 32; x++)
+            f->plane[y*f->i_stride+x] = (uint8_t)(phx_test_pixel(x,y) ^ 0x3c);
+
+    phx_mb_state_t *s = phx_mb_state_new(2, 2);
+    CHECK(s != NULL, "subpel MB state");
+    if (!s) { phx_frame_delete(f); phx_frame_delete(ref); return; }
+    s->slice_type = 0;
+    s->first_mb = 0;
+
+    /* (mvx,mvy) quarter-pel cases: horizontal halfpel, qpel average, both
+     * ==3 pointer shifts, vertical qpel, and the integer-MV control. */
+    static const int mvs[][2] = {
+        {2,0}, {1,0}, {3,3}, {0,1}, {0,0}
+    };
+    for (size_t t = 0; t < sizeof(mvs)/sizeof(mvs[0]); t++) {
+        phx_mb_decision_t d;
+        phx_mb_cache_t c;
+        uint8_t recon[PHX_FDEC_STRIDE*18 + PHX_FDEC_STRIDE];
+        memset(&c, 0, sizeof(c));
+        phx_macroblock_cache_load(s, &c, 0, 0, 0);
+        c.p_fdec = recon + PHX_FDEC_STRIDE + 1;
+        c.fdec_stride = PHX_FDEC_STRIDE;
+        memset(recon, 0, sizeof(recon));
+        memset(&d, 0, sizeof(d));
+        d.mb_type = PHX_P_L0;
+        d.i_partition = PHX_D_16x16;
+        d.i_qp = TEST_QP;
+        d.ref[0][0] = 0;
+        d.mv[0][0][0] = (int16_t)mvs[t][0];
+        d.mv[0][0][1] = (int16_t)mvs[t][1];
+
+        CHECK(phx_macroblock_encode_ex(&p, f, ref, &c, 0, 0, &d, NULL) == 0,
+              "subpel P_L0 encode accepted");
+        uint8_t want_l[256], want_c[128];
+        phx_test_ref_mc(ref, 0, 0, mvs[t][0], mvs[t][1], want_l, want_c);
+        for (int y = 0; y < 16; y++)
+            for (int x = 0; x < 16; x++)
+                if (c.p_fdec[y*PHX_FDEC_STRIDE+x] != want_l[y*16+x]) {
+                    printf("FAIL subpel luma mv=(%d,%d) (%d,%d): %d vs %d\n",
+                           mvs[t][0], mvs[t][1], x, y,
+                           c.p_fdec[y*PHX_FDEC_STRIDE+x], want_l[y*16+x]);
+                    ++fails;
+                }
+        const int cs = f->i_stride_planes[1];
+        for (int y = 0; y < 8; y++)
+            for (int k = 0; k < 16; k++)
+                if (f->plane_chroma[y*cs+k] != want_c[y*16+k]) {
+                    printf("FAIL subpel chroma mv=(%d,%d) (%d,%d): %d vs %d\n",
+                           mvs[t][0], mvs[t][1], k/2, y,
+                           f->plane_chroma[y*cs+k], want_c[y*16+k]);
+                    ++fails;
+                }
+        if (mvs[t][0] == 0 && mvs[t][1] == 0) {
+            /* Integer MV: old fullpel path must be byte-identical. */
+            for (int y = 0; y < 16; y++)
+                for (int x = 0; x < 16; x++)
+                    CHECK(c.p_fdec[y*PHX_FDEC_STRIDE+x] ==
+                          ref->plane[y*ref->i_stride+x],
+                          "integer-MV output unchanged");
+        }
+    }
+    printf("P_L0 subpel MC: 5 MV cases matched x264 hpel/qpel + chroma formulas\n");
     phx_mb_state_delete(s);
     phx_frame_delete(f);
     phx_frame_delete(ref);
@@ -526,6 +690,7 @@ int main(void)
     phx_test_first_mb_handoff();
     phx_test_first_mb_chroma_trellis();
     phx_test_p_l0_mc();
+    phx_test_p_l0_subpel();
 
     if (fails) {
         printf("FAIL %d check(s)\n", fails);
