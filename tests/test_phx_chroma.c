@@ -15,6 +15,8 @@
  * SHADER: B — verifies the chroma half of the B->C handoff.
  */
 #include "phx_chroma.h"
+#include "phx_analysis.h"
+#include "phx_mbencode.h"
 #include "phx_param.h"
 #include <stdio.h>
 #include <string.h>
@@ -222,16 +224,32 @@ static void phx_test_case(int mb_x, int mb_y, int mode, const char *name)
            name, mb_x, mb_y, mode, nz1, d1.cbp_chroma, h1);
 }
 
-/* Golden first-MB medium/cabac chroma state reported by the probe worker:
- * chroma_pred_mode 6 (DC_128), cbp_chroma 2 (DC+AC) and zigzag chroma DC
- * arrays [15,0,-9,0] for U and V (macroblock.c:329/:457/:477 -> :487-489).
- * The U/V ramps leave 15/-9 after quant_2x2_dc with chroma QP 20 (medium's
- * psy chroma offset -2 applied to luma QP 22).  x264's chroma DC quantizer
- * is quant4_mf[CQM_4IC][qp+3][0]>>1 / quant4_bias<<1 (macroblock.c:425-426).
+/* encoder/macroblock.c:34-41 — the exact ZIG(i,y,x) => dct[x*2+y] mapping,
+ * spelled out here so the golden is derived from x264's formula rather than
+ * from a copied coefficient string.  SHADER: B — independent golden order. */
+static void phx_test_x264_zigzag2_dc(int16_t level[4], const int16_t natural[4])
+{
+    level[0] = natural[0*2+0];          /* ZIG(0,0,0): macroblock.c:37 */
+    level[1] = natural[1*2+0];          /* ZIG(1,0,1): macroblock.c:38 */
+    level[2] = natural[0*2+1];          /* ZIG(2,1,0): macroblock.c:39 */
+    level[3] = natural[1*2+1];          /* ZIG(3,1,1): macroblock.c:40 */
+}
+
+/* Golden first-MB medium/cabac chroma state, taken from the instrumented
+ * x264 encoder (build/x264_ref/obj harness, encoder/cabac.c L1DC hook):
+ * chroma_pred_mode 6 (DC_128), cbp_chroma 2 (DC+AC).  quant_2x2_dc with
+ * chroma QP 20 (medium's offset -2 applied to luma QP 22) leaves the natural
+ * 2x2 block {15,0,-9,0}; zigzag_scan_2x2_dc (macroblock.c:34-41) swaps the
+ * two middle samples, so the array handed to CABAC is {15,-9,0,0}
+ * (macroblock.c:457/:477 -> :487-489, cabac.c:1069-1070).
  * SHADER: B — golden B-stage chroma handoff assertion. */
 static void phx_test_golden_first_mb(void)
 {
-    static const int16_t golden_dc[4] = { 15, 0, -9, 0 };
+    /* quant_2x2_dc's natural Hadamard order (macroblock.c:425-426), mapped
+     * through x264's formula into the order CABAC receives. */
+    static const int16_t natural_dc[4] = { 15, 0, -9, 0 };
+    int16_t golden_dc[4];
+    phx_test_x264_zigzag2_dc(golden_dc, natural_dc);
 
     phx_param_t p;
     phx_param_default(&p);
@@ -290,8 +308,8 @@ static void phx_test_golden_first_mb(void)
         for (int ch = 0; ch < 2; ch++) {
             CHECK(memcmp(d->chroma_dct[ch][0], golden_dc,
                          sizeof(golden_dc)) == 0,
-                  ch ? "golden V DC [15,0,-9,0]"
-                     : "golden U DC [15,0,-9,0]");
+                  ch ? "golden V DC [15,-9,0,0]"
+                     : "golden U DC [15,-9,0,0]");
             CHECK(d->chroma_nnz[ch][0] == 1, "golden chroma DC nnz");
             for (int b = 1; b < 5; b++)
                 CHECK(d->chroma_nnz[ch][b] == 1, "golden chroma AC nnz");
@@ -315,8 +333,74 @@ static void phx_test_golden_first_mb(void)
     printf("golden first MB: mode=%d cbp_chroma=%d U_DC=%d,%d V_DC=%d,%d "
            "nz_blocks=%d recon_hash=%08x\n",
            d1.chroma_pred_mode, d1.cbp_chroma,
-           d1.chroma_dct[0][0][0], d1.chroma_dct[0][0][2],
-           d1.chroma_dct[1][0][0], d1.chroma_dct[1][0][2], nz1, h1);
+           d1.chroma_dct[0][0][0], d1.chroma_dct[0][0][1],
+           d1.chroma_dct[1][0][0], d1.chroma_dct[1][0][1], nz1, h1);
+}
+
+/* Second independent golden: the exact first-MB U/V ramps of the synth
+ * fixture (U = 128+5*x, V = 128+5*y), medium/cabac at MB QP 25.  x264's
+ * instrumented encoder (build/x264_ref/obj, encoder/cabac.c L1DC hook) puts
+ * the nonzero second coefficient at zigzag index 1 for U and index 2 for V;
+ * that is precisely the macroblock.c:34-41 swap.  Magnitudes come from the
+ * shared quant/DCT stages and are deliberately not asserted here.
+ * SHADER: B — golden B-stage chroma DC *order* assertion. */
+static void phx_test_golden_uv_ramps(void)
+{
+    phx_param_t p;
+    phx_param_default(&p);
+    phx_param_apply_preset(&p, "medium");
+    p.b_cabac = 1;
+    phx_param_finalize(&p);
+    CHECK(p.i_chroma_qp_index_offset == -2, "ramp golden chroma QP offset");
+
+    phx_frame_t *f = phx_frame_new(TEST_W, TEST_H, 0);
+    CHECK(f != NULL, "ramp golden frame allocation");
+    if (!f) return;
+    const int s = f->i_stride_planes[1];
+    for (int y = 0; y < f->i_lines_planes[1]; y++)
+        for (int x = 0; x < f->i_width_planes[1]; x++) {
+            f->plane_chroma[y*s + 2*x + 0] = (uint8_t)(128 + 5*(x & 7));
+            f->plane_chroma[y*s + 2*x + 1] = (uint8_t)(128 + 5*(y & 7));
+        }
+
+    phx_frame_init_lowres(f);
+    phx_mb_state_t *st = phx_mb_state_new(1, 1);
+    CHECK(st != NULL, "ramp golden MB state");
+    if (!st) { phx_frame_delete(f); return; }
+    st->slice_type = 2;
+    st->first_mb = 0;
+    phx_mb_cache_t c;
+    memset(&c, 0, sizeof(c));
+    phx_macroblock_cache_load(st, &c, 0, 0, 0);
+
+    phx_mb_decision_t d;
+    memset(&d, 0, sizeof(d));
+    d.i_qp = 25;                        /* qp_idx 12-2+25 = 35 -> chroma QP 23 */
+    CHECK(phx_macroblock_analyse(&p, f, &c, 0, 0, d.i_qp, &d) == 0,
+          "ramp golden analysis");
+    if (d.mb_type == PHX_I_8x8) d.mb_type = PHX_I_16x16;
+    d.b_transform_8x8 = 0;
+    CHECK(phx_macroblock_encode(&p, f, &c, 0, 0, &d) == 0,
+          "ramp golden luma encode");
+    d.chroma_pred_mode = 6;             /* x264 MB0: DC_128 */
+
+    CHECK(phx_macroblock_encode_chroma(&p, f, &c, 0, 0, &d) == 0,
+          "ramp golden chroma encode");
+    phx_test_check_nnz(&d, &c);
+    /* x264 L1DC for the U ramp: {a,-b,0,0}; V ramp: {a,0,-b,0}. */
+    CHECK(d.chroma_dct[0][0][0] > 0 && d.chroma_dct[0][0][1] < 0 &&
+          d.chroma_dct[0][0][2] == 0 && d.chroma_dct[0][0][3] == 0,
+          "ramp golden U DC order (x264 zigzag)");
+    CHECK(d.chroma_dct[1][0][0] > 0 && d.chroma_dct[1][0][1] == 0 &&
+          d.chroma_dct[1][0][2] < 0 && d.chroma_dct[1][0][3] == 0,
+          "ramp golden V DC order (x264 zigzag)");
+    printf("ramp MB: U_DC=%d,%d,%d,%d V_DC=%d,%d,%d,%d cbp_chroma=%d\n",
+           d.chroma_dct[0][0][0], d.chroma_dct[0][0][1],
+           d.chroma_dct[0][0][2], d.chroma_dct[0][0][3],
+           d.chroma_dct[1][0][0], d.chroma_dct[1][0][1],
+           d.chroma_dct[1][0][2], d.chroma_dct[1][0][3], d.cbp_chroma);
+    phx_mb_state_delete(st);
+    phx_frame_delete(f);
 }
 
 /* Standalone driver.  SHADER: B — B-stage chroma verification entry point. */
@@ -326,6 +410,7 @@ int main(void)
     phx_test_case(1, 1, 3, "planar");
     phx_test_case(0, 0, 6, "DC128");  /* frame edge: available-mode fallback */
     phx_test_golden_first_mb();       /* medium/cabac first-MB golden state */
+    phx_test_golden_uv_ramps();       /* synth U/V ramps, x264 zigzag golden */
 
     phx_mb_decision_t d;
     phx_mb_cache_t c;

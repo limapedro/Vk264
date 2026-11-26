@@ -29,14 +29,21 @@ static const uint8_t phx_zigzag4[16] = {
      0,  4,  1,  2,  5,  8, 12,  9,  6,  3,  7, 10, 13, 14, 11, 15
 };
 
-/* encoder/macroblock.c:35-41 — zigzag_scan_2x2_dc().
+/* encoder/macroblock.c:34-41 — zigzag_scan_2x2_dc().  The ZIG(i,y,x) macro
+ * indexes dct[x*2+y], so i=1 reads dct[2] (x=1,y=0) and i=2 reads dct[1]
+ * (x=0,y=1): the two middle coefficients are swapped.  The natural 2x2 order
+ * is what idct_dequant_2x2_dc()/dconly() consume (macroblock.c:458/:478);
+ * only the copy handed to CABAC (h->dct.chroma_dc[ch], macroblock.c:457/:477)
+ * is zigzagged.  Using the natural order here sent U's -9/-7 to scan index 2
+ * instead of x264's index 1, changing the first chroma DC significant_coeff
+ * / last_coeff bin while the coder state was identical.
  * SHADER: B — DC coefficient order written into d->chroma_dct[ch][0]. */
 static void phx_zigzag_scan_2x2_dc(phx_dctcoef level[4], const phx_dctcoef dct[4])
 {
-    level[0] = dct[0*2+0];                             /* macroblock.c:37 */
-    level[1] = dct[0*2+1];                             /* macroblock.c:38 */
-    level[2] = dct[1*2+0];                             /* macroblock.c:39 */
-    level[3] = dct[1*2+1];                             /* macroblock.c:40 */
+    level[0] = dct[0*2+0];                             /* macroblock.c:37 ZIG(0,0,0) */
+    level[1] = dct[1*2+0];                             /* macroblock.c:38 ZIG(1,0,1) */
+    level[2] = dct[0*2+1];                             /* macroblock.c:39 ZIG(2,1,0) */
+    level[3] = dct[1*2+1];                             /* macroblock.c:40 ZIG(3,1,1) */
 }
 
 /* encoder/macroblock.c:56-70 — idct_dequant_2x2_dc().  No assembly version
