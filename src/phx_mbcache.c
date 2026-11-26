@@ -46,6 +46,7 @@ phx_mb_state_t *phx_mb_state_new(int mb_width, int mb_height)
     s->type = calloc(n, 1);
     s->intra4x4_pred_mode = calloc(n, sizeof(*s->intra4x4_pred_mode));
     s->non_zero_count = calloc(n, sizeof(*s->non_zero_count));
+    s->chroma_pred_mode = calloc(n, 1);                      /* macroblock.c:1835 */
     s->cbp = calloc(n, sizeof(int16_t));
     s->mb_transform_size = calloc(n, 1);
     s->ref[0] = calloc(n*4, 1);
@@ -76,6 +77,7 @@ void phx_mb_state_delete(phx_mb_state_t *s)
 {
     if (!s) return;
     free(s->type); free(s->intra4x4_pred_mode); free(s->non_zero_count);
+    free(s->chroma_pred_mode);
     free(s->cbp); free(s->mb_transform_size);
     free(s->ref[0]); free(s->ref[1]); free(s->mv[0]); free(s->mv[1]);
     free(s->mvd[0]); free(s->mvd[1]); free(s->slice_table); free(s->field);
@@ -592,6 +594,16 @@ void phx_macroblock_cache_save(phx_mb_state_t *s, phx_mb_cache_t *c, int b_mbaff
                  | (c->non_zero_count[phx_scan8[49]] << 9)
                  | (c->non_zero_count[phx_scan8[50]] << 10);
         s->cbp[xy] = (int16_t)cbp;
+    }
+
+    /* common/macroblock.c:1835 — store the FIXED chroma predictor.  x264's
+     * x264_mb_chroma_pred_mode_fix[] = {0,1,2,3,0,0,0}; Phoenix's
+     * c->i_chroma_pred_mode carries the raw 0..6 index. */
+    {
+        static const uint8_t chroma_fix[7] = { 0, 1, 2, 3, 0, 0, 0 };
+        int raw = c->i_chroma_pred_mode;
+        s->chroma_pred_mode[xy] = (uint8_t)((raw >= 0 && raw < 7)
+                                            ? chroma_fix[raw] : 0);
     }
 
     int intra = mb_type == PHX_I_4x4 || mb_type == PHX_I_8x8

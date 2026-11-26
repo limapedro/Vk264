@@ -46,6 +46,9 @@ typedef struct {
     uint8_t *type;
     int8_t  (*intra4x4_pred_mode)[8];
     uint8_t (*non_zero_count)[48];
+    /* common/macroblock.c:1835 — fixed chroma predictor per MB, read by
+     * cabac_intra_chroma_pred_mode() (cabac.c:104-107) through the neighbours. */
+    uint8_t *chroma_pred_mode;
     int16_t *cbp;
     uint8_t *mb_transform_size;
     int8_t  *ref[2];                /* [mb_count*4] 8x8 blocks */
@@ -78,6 +81,7 @@ typedef struct {
     int field_decoding_flag, b_allow_skip, i_neighbour_skip;
     int i_cbp_top, i_cbp_left, i_neighbour_transform_size;
     int i_cbp_luma, i_cbp_chroma, i_qp, b_transform_8x8;
+    int i_chroma_pred_mode;         /* h->mb.i_chroma_pred_mode (raw 0..6) */
     uint8_t *p_fdec;                /* reconstructed MB, FDEC_STRIDE layout */
     int fdec_stride;
     int8_t  intra4x4_pred_mode[40]; /* X264_SCAN8_LUMA_SIZE = 5*8 */
