@@ -108,6 +108,24 @@ typedef struct phx_t {
      * so phx_me16() has a real list-0 picture.  SHADER: C — serial host state,
      * advanced once per reference NAL. */
     int i_last_ref_frame;
+
+    /* Serial DPB mirror (encoder.c:2533-2606, 2295-2411).  One entry per
+     * decoded picture kept as a short-term reference; frame_num/POC/display
+     * number are the x264_frame_t fields read by reference_build_list().
+     * `i_poc_l0ref0` is fdec->i_poc_l0ref0 (encoder.c:3869-3870).  The prev_*
+     * record holds the previous frame's fdec until reference_update() at the
+     * start of the next frame; prev_fc carries its MMCO commands so they can
+     * be applied to the DPB exactly where x264 applies them.  SHADER: C —
+     * one ordered push/remove per coded frame. */
+#define PHX_ENC_DPB_MAX 16              /* common/base.h:137 (X264_REF_MAX) */
+    struct {
+        int i_frame_num, i_poc, i_frame, i_type;
+        int b_kept_as_ref, b_duplicate, b_corrupt;
+        int i_poc_l0ref0;
+    } dpb[PHX_ENC_DPB_MAX];
+    int n_dpb;
+    phx_slice_frame_t prev_fc;
+    int prev_type, prev_poc_l0ref0, prev_display_frame, b_prev_valid;
 } phx_t;
 
 /* x264_encoder_open (api.c:76 -> encoder.c:1507): validate params, copy them

@@ -326,7 +326,8 @@ static int phx_encoder_slice_type(int type)
 /* ratecontrol.c:821-825 — CQP QP per slice type.  TODO(worker-ratecontrol):
  * replace with the real rc->qp_constant[] once VBV/CRF are ported.
  * SHADER: C — serial scalar derivation. */
-static int phx_encoder_slice_qp(const phx_t *h, int slice_type)
+static int phx_encoder_slice_qp(const phx_t *h, int slice_type,
+                                int b_kept_as_ref)
 {
     int qp = h->param.i_qp_constant;
     if (qp < 0) qp = h->pps.i_pic_init_qp;                   /* set.c:494 */
@@ -336,9 +337,221 @@ static int phx_encoder_slice_qp(const phx_t *h, int slice_type)
     else if (slice_type == PHX_SLICE_B)
         offset = 6.0 * log2(h->param.f_pb_factor);          /* ratecontrol.c:822/825 */
     qp = (int)(qp + offset + 0.5);                          /* :824-825 */
+    /* ratecontrol.c:1506-1511 — a B slice kept as a reference (BREF in a
+     * normal pyramid) uses the midpoint of the B and P constant QPs. */
+    if (slice_type == PHX_SLICE_B && b_kept_as_ref) {
+        int qp_p = h->param.i_qp_constant;
+        if (qp_p < 0) qp_p = h->pps.i_pic_init_qp;
+        qp = (qp + qp_p) / 2;                               /* :1509 */
+    }
     if (qp < 0) qp = 0;
     if (qp > PHX_QP_MAX_SPEC) qp = PHX_QP_MAX_SPEC;
     return qp;
+}
+
+/* encoder.c:2533-2560 — the DPB is a serial queue of decoded pictures kept as
+ * short-term references.  This helper runs at the start of every frame, after
+ * the previous picture's reconstruction: first apply that picture's MMCO
+ * commands (matched by i_poc, encoder.c:2548-2551), then push its fdec when it
+ * was kept as a reference (:2553-2557).  SHADER: C — one ordered queue. */
+static void phx_encoder_dpb_remove(phx_t *h, int idx)
+{
+    if (idx < 0 || idx >= h->n_dpb) return;
+    memmove(&h->dpb[idx], &h->dpb[idx+1],
+            (size_t)(h->n_dpb - idx - 1) * sizeof(h->dpb[0]));
+    h->n_dpb--;
+}
+
+static void phx_encoder_dpb_refresh(phx_t *h)
+{
+    if (!h->b_prev_valid) return;
+
+    /* encoder.c:2548-2551 — reference_update() applies the prior MMCO list. */
+    for (int i = 0; i < h->prev_fc.i_mmco_command_count &&
+                    i < PHX_SLICE_REF_MAX; i++)
+        for (int j = 0; j < h->n_dpb; j++)
+            if (h->dpb[j].i_poc == h->prev_fc.mmco_poc[i]) {
+                phx_encoder_dpb_remove(h, j);
+                break;
+            }
+
+    /* encoder.c:3559-3560 — only a non-disposable frame in a normal GOP
+     * contributes a new DPB entry.  :2555-2556 drops the oldest when the
+     * sps.i_num_ref_frames-sized buffer overflows. */
+    if (h->prev_fc.i_nal_ref_idc != 0 && h->param.i_keyint_max > 1 &&
+        h->n_dpb < PHX_ENC_DPB_MAX) {
+        /* The entry mirrors x264_frame_t's i_frame_num/i_poc/i_frame and the
+         * fdec->i_poc_l0ref0 written at encoder.c:3869-3870. */
+        int slot = h->n_dpb++;
+        h->dpb[slot].i_frame_num = h->prev_fc.i_frame_num;
+        h->dpb[slot].i_poc = h->prev_fc.i_poc;
+        h->dpb[slot].i_frame = h->prev_display_frame;
+        h->dpb[slot].i_type = h->prev_type;
+        h->dpb[slot].b_kept_as_ref = 1;
+        h->dpb[slot].b_duplicate = 0;
+        h->dpb[slot].b_corrupt = 0;
+        h->dpb[slot].i_poc_l0ref0 = h->prev_poc_l0ref0;
+        int max_dpb = h->sps.vui_max_dec_frame_buffering > 0
+                    ? h->sps.vui_max_dec_frame_buffering
+                    : h->sps.i_num_ref_frames;
+        if (max_dpb > 0 && h->n_dpb > max_dpb)
+            phx_encoder_dpb_remove(h, 0);
+    }
+    h->b_prev_valid = 0;
+}
+
+/* Look up a DPB entry's POC / i_poc_l0ref0 by frame_num.  Duplicates carry
+ * the original frame_num (weighted_reference_duplicate, encoder.c:2186), so
+ * the first match is the same picture x264's fref[] points at. */
+static int phx_encoder_dpb_lookup(const phx_t *h, int frame_num,
+                                  int *poc, int *l0ref0)
+{
+    for (int i = 0; i < h->n_dpb; i++)
+        if (h->dpb[i].i_frame_num == frame_num) {
+            if (poc) *poc = h->dpb[i].i_poc;
+            if (l0ref0) *l0ref0 = h->dpb[i].i_poc_l0ref0;
+            return 1;
+        }
+    return 0;
+}
+
+/* encoder.c:2295-2411, 2571-2606 — derive the two reference lists, the MMCO
+ * commands needed for a pyramid minigop, the direct-prediction flag and the
+ * SMART weightp duplicate.  All inputs come from the serial DPB above; no
+ * golden stream values are used.  SHADER: C — one sorted list build/frame. */
+static void phx_encoder_build_ref_lists(phx_t *h, phx_slice_frame_t *fc,
+                                        int decided_type, int display_frame)
+{
+    int idx[2][PHX_ENC_DPB_MAX], n[2] = { 0, 0 };
+    fc->i_ref[0] = fc->i_ref[1] = 0;
+    fc->i_mmco_command_count = 0;
+    fc->b_ref_reorder[0] = fc->b_ref_reorder[1] = 0;
+    memset(fc->ref_frame_num, 0, sizeof(fc->ref_frame_num));
+    memset(fc->mmco_diff, 0, sizeof(fc->mmco_diff));
+    memset(fc->mmco_poc, 0, sizeof(fc->mmco_poc));
+    if (fc->i_type == PHX_SLICE_I) return;  /* encoder.c:2302-2303 */
+
+    /* encoder.c:2305-2313 — split the DPB by POC around the current frame. */
+    for (int i = 0; i < h->n_dpb; i++) {
+        if (h->dpb[i].b_corrupt) continue;                /* :2307 */
+        if (h->dpb[i].i_poc < fc->i_poc)
+            idx[0][n[0]++] = i;
+        else if (h->dpb[i].i_poc > fc->i_poc)
+            idx[1][n[1]++] = i;
+    }
+
+    /* encoder.c:2340-2360 — order by |fenc->i_frame - ref->i_frame|.  The
+     * bubble form is kept so ties resolve exactly as in x264. */
+    for (int list = 0; list < 2; list++) {
+        int swapped;
+        do {
+            swapped = 0;
+            for (int i = 0; i < n[list] - 1; i++) {
+                int a = idx[list][i], b = idx[list][i+1];
+                int da = abs(display_frame - h->dpb[a].i_frame);
+                int db = abs(display_frame - h->dpb[b].i_frame);
+                if (da > db) {
+                    int t = idx[list][i];
+                    idx[list][i] = idx[list][i+1];
+                    idx[list][i+1] = t;
+                    swapped = 1;
+                }
+            }
+        } while (swapped);
+    }
+
+    /* encoder.c:2364-2366 — DPB/reorder/ref-count caps. */
+    int max_ref1 = h->sps.vui_num_reorder_frames > 0
+                 ? h->sps.vui_num_reorder_frames : h->param.i_frame_reference;
+    if (max_ref1 > h->param.i_frame_reference)
+        max_ref1 = h->param.i_frame_reference;
+    if (n[1] > max_ref1) n[1] = max_ref1;
+    if (n[0] > h->param.i_frame_reference) n[0] = h->param.i_frame_reference;
+
+    /* encoder.c:2138-2160 — a non-default list order needs an explicit
+     * ref_pic_list_modification.  The P rule is by frame_num, B by POC. */
+    for (int list = 0; list <= (fc->i_type == PHX_SLICE_B); list++)
+        for (int i = 0; i < n[list] - 1; i++) {
+            int ai = idx[list][i], bi = idx[list][i+1];
+            int framenum_diff = h->dpb[bi].i_frame_num - h->dpb[ai].i_frame_num;
+            int poc_diff = h->dpb[bi].i_poc - h->dpb[ai].i_poc;
+            if (fc->i_type == PHX_SLICE_P ? framenum_diff > 0
+                : list == 1 ? poc_diff < 0 : poc_diff > 0) {
+                fc->b_ref_reorder[list] = 1;
+                break;
+            }
+        }
+
+    /* encoder.c:2581-2606 — a BREF at the head of a pyramid minigop has
+     * later disposable frames, so reference_hierarchy_reset() does not take
+     * its early return.  It reserves room for the delayed B pictures by
+     * marking the oldest L0 entries unused with MMCO commands. */
+    if (decided_type == PHX_TYPE_BREF && h->param.i_bframe > 1) {
+        int max_dpb = h->sps.vui_max_dec_frame_buffering > 0
+                    ? h->sps.vui_max_dec_frame_buffering
+                    : h->sps.i_num_ref_frames;
+        int remove = h->n_dpb + 2 - max_dpb;
+        if (remove > 0 && n[0] > 0) {
+            int order[PHX_ENC_DPB_MAX];
+            for (int i = 0; i < n[0]; i++) order[i] = idx[0][i];
+            /* :2318-2330 — sort by i_frame (display number) descending so
+             * the last entries are the oldest short-term references. */
+            int swapped;
+            do {
+                swapped = 0;
+                for (int i = 0; i < n[0] - 1; i++)
+                    if (h->dpb[order[i]].i_frame <
+                        h->dpb[order[i+1]].i_frame) {
+                        int t = order[i];
+                        order[i] = order[i+1];
+                        order[i+1] = t;
+                        swapped = 1;
+                    }
+            } while (swapped);
+            for (int k = 0; k < remove && k < n[0] &&
+                            k < PHX_SLICE_REF_MAX; k++) {
+                int d = h->dpb[order[n[0]-1-k]].i_frame_num;
+                fc->mmco_diff[fc->i_mmco_command_count] = fc->i_frame_num - d;
+                fc->mmco_poc[fc->i_mmco_command_count] =
+                    h->dpb[order[n[0]-1-k]].i_poc;
+                fc->i_mmco_command_count++;
+            }
+        }
+    }
+
+    /* encoder.c:2372-2405 — SMART weightp duplicates the newest L0 ref.
+     * Without a content-derived fenc weight (x264_weights_analyse is a
+     * lookahead port TODO), this is the offset -1 duplicate at :2386-2388. */
+    if (fc->i_type == PHX_SLICE_P && h->param.i_weighted_pred >= 2 &&
+        n[0] > 1 && n[0] < PHX_ENC_DPB_MAX) {
+        memmove(&idx[0][2], &idx[0][1],
+                (size_t)(n[0] - 1) * sizeof(idx[0][0]));
+        idx[0][1] = idx[0][0];                         /* :2186-2197 */
+        n[0]++;                                        /* :2194-2195 */
+        fc->b_ref_reorder[0] = 1;                      /* :2193 */
+        fc->weight[1][0].b_weighted = 1;               /* :301 */
+        fc->weight[1][0].i_scale = 1;                  /* SET_WEIGHT(:2386) */
+        fc->weight[1][0].i_denom = 0;
+        fc->weight[1][0].i_offset = -1;
+    }
+
+    fc->i_ref[0] = n[0];
+    fc->i_ref[1] = n[1];
+    for (int list = 0; list < 2; list++)
+        for (int i = 0; i < n[list] && i < PHX_SLICE_REF_MAX; i++)
+            fc->ref_frame_num[list][i] = h->dpb[idx[list][i]].i_frame_num;
+
+    /* encoder.c:156-170 — direct mode.  The spatial predictor is selected
+     * when L0ref0's POC matches fref[1][0]->i_poc_l0ref0; otherwise x264
+     * forces spatial prediction regardless of the parameter default. */
+    if (fc->i_type == PHX_SLICE_B && n[0] > 0 && n[1] > 0) {
+        int poc0 = 0, poc_l0ref0 = 0;
+        phx_encoder_dpb_lookup(h, fc->ref_frame_num[0][0], &poc0, NULL);
+        phx_encoder_dpb_lookup(h, fc->ref_frame_num[1][0], NULL, &poc_l0ref0);
+        fc->b_direct_spatial_mv_pred = (poc_l0ref0 == poc0)
+            ? (h->param.i_direct_mv_pred == 1 /* X264_DIRECT_PRED_SPATIAL */)
+            : 1;
+    }
 }
 
 /* encoder.c:3499-3513, 3517-3554, 3881-3882, 2613-2637 — per-frame slice
@@ -354,11 +567,16 @@ void phx_encoder_frame_context(phx_t *h, int decided_type, int display_frame,
     if (!h || !fc) return;
     memset(fc, 0, sizeof(*fc));
 
-    /* encoder.c:3503-3505 — a keyframe/IDR resets frame_num and records the
-     * presentation number used by the POC formula below. */
+    /* encoder.c:3481 — the previous fdec enters the DPB (and its MMCO list
+     * is applied) before the new frame's type-dependent setup. */
+    phx_encoder_dpb_refresh(h);
+
+    /* encoder.c:3503-3505 + 3517-3524 — a keyframe/IDR resets frame_num,
+     * records the POC anchor and clears every reference picture. */
     if (decided_type == PHX_TYPE_IDR) {
         h->i_frame_num = 0;                            /* encoder.c:3504 */
         h->i_last_idr = display_frame;                 /* encoder.c:3505 */
+        h->n_dpb = 0;                                  /* reference_reset():2563 */
     }
     int mask = (1 << h->sps.i_log2_max_frame_num) - 1;
     fc->i_frame_num = h->i_frame_num & mask;           /* encoder.c:227/136 */
@@ -393,19 +611,30 @@ void phx_encoder_frame_context(phx_t *h, int decided_type, int display_frame,
 
     fc->i_first_mb = 0;                                /* encoder.c:132 */
     fc->i_last_mb = h->mb_state->mb_count - 1;         /* encoder.c:133 */
-    fc->i_qp = phx_encoder_slice_qp(h, fc->i_type);    /* ratecontrol.c:821-825 */
+    fc->i_qp = phx_encoder_slice_qp(h, fc->i_type,
+                                    fc->i_nal_ref_idc != 0); /* ratecontrol.c:821-825,1509 */
     fc->b_variable_qp = 0;                             /* encoder.c:205 */
     fc->b_sliced_threads = 0;                          /* encoder.c:206 */
     fc->b_mbaff = 0;                                   /* encoder.c:138 */
-    fc->b_direct_spatial_mv_pred = 0;                  /* encoder.c:156 */
-    fc->i_cabac_init_idc = 0;                          /* encoder.c:196 */
+    fc->i_cabac_init_idc = 0;                          /* encoder.c:196;
+     * x264's default param.i_cabac_init_idc is 0 and phx_param_t has no knob */
 
-    /* encoder.c:177-190 — list sizes and ref_pic_list_modification.  The
-     * BREF tag is carried above; real reference lists / weighted prediction
-     * are still TODO (encoder.c:3553-3570, slicetype.c:1918-1924). */
-    fc->i_ref[0] = (fc->i_type != PHX_SLICE_I) ? 1 : 0; /* encoder.c:186 */
-    fc->i_ref[1] = (fc->i_type == PHX_SLICE_B) ? 1 : 0; /* encoder.c:186 */
-    fc->b_ref_reorder[0] = fc->b_ref_reorder[1] = 0;    /* encoder.c:177-178 */
+    /* encoder.c:2305-2411, 2581-2606, 156-170, 2372-2405 — list sizes,
+     * reorder flags, MMCO, direct mode and the weightp duplicate. */
+    phx_encoder_build_ref_lists(h, fc, decided_type, display_frame);
+
+    /* encoder.c:3869-3870 — the next reference picture records the POC of
+     * this frame's L0 ref 0 for its own direct-mode decision. */
+    h->prev_type = decided_type;
+    h->prev_display_frame = display_frame;
+    h->prev_poc_l0ref0 = 0;
+    if (fc->i_ref[0] > 0) {
+        int poc0 = 0;
+        if (phx_encoder_dpb_lookup(h, fc->ref_frame_num[0][0], &poc0, NULL))
+            h->prev_poc_l0ref0 = poc0;
+    }
+    h->prev_fc = *fc;
+    h->b_prev_valid = 1;
 
     /* encoder.c:3881-3882 — frame_num advances only for a reference picture.
      * Disposable B frames reuse the previous reference's frame_num.  This is
@@ -967,14 +1196,10 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
         fref = h->input_frames[h->i_last_ref_frame];
 
     phx_slice_header_t sh;
+    /* encoder.c:2639-2645 derives the override and active list sizes from
+     * the DPB lists in fc; phx_slice_header_init() now carries all of the
+     * weights/MMCO state through as well. */
     phx_slice_header_init(&sh, &h->param, &h->sps, &h->pps, &fc); /* :2791 */
-    /* encoder.c:173-175/254-259 — pps defaults are already one entry per
-     * list; no override is needed.  Mark both fields explicitly so the
-     * decision is visible at the entropy stage. */
-    sh.b_num_ref_idx_override = 0;                       /* encoder.c:254 */
-    sh.i_num_ref_idx_l0_active = fc.i_ref[0] ? fc.i_ref[0] : 1; /* :257 */
-    sh.i_num_ref_idx_l1_active = fc.i_ref[1] ? fc.i_ref[1] : 1; /* :259 */
-    sh.i_mmco_command_count = 0;                         /* encoder.c:337 */
 
     phx_bs_t bs;
     phx_bs_init(&bs, h->rbsp, h->i_bitstream);         /* encoder.c:2776 bs_realign */

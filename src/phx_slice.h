@@ -67,6 +67,13 @@ typedef struct {
     int b_ref_reorder[2];             /* encoder.c:177-178 h->b_ref_reorder */
     int i_ref[2];                     /* encoder.c:186 h->i_ref[list] */
     int ref_frame_num[2][PHX_SLICE_REF_MAX]; /* encoder.c:188, fref[][].i_frame_num */
+    /* pred_weight_table() inputs (encoder.c:2202-2284, 291-321).  The caller
+     * supplies the x264 fenc->weight[][] analysis result; index 0 is the
+     * original list-0 reference, index 1 the weighted-reference duplicate. */
+    phx_slice_weight_t weight[PHX_SLICE_REF_MAX*2][3]; /* encoder.c:193/2214 */
+    int i_mmco_command_count;         /* encoder.c:3508/2332/2595 */
+    int mmco_diff[PHX_SLICE_REF_MAX]; /* i_difference_of_pic_nums, 1-based (:343) */
+    int mmco_poc[PHX_SLICE_REF_MAX];  /* matched DPB picture (:2596), bookkeeping */
     int i_cabac_init_idc;             /* encoder.c:196 */
     int i_deblocking_filter_alphac0;  /* encoder.c:203 */
     int i_deblocking_filter_beta;     /* encoder.c:203 */
@@ -94,6 +101,7 @@ typedef struct {
     phx_slice_weight_t weight[PHX_SLICE_REF_MAX*2][3]; /* :193, :296-318 */
     int i_mmco_command_count;         /* encoder.c:196 (struct), :337-345 */
     int mmco_diff[PHX_SLICE_REF_MAX]; /* i_difference_of_pic_nums, 1-based (:343) */
+    int mmco_poc[PHX_SLICE_REF_MAX];  /* matched DPB picture (:2596), bookkeeping */
     int i_cabac_init_idc;             /* encoder.c:203 (struct), :350-351 */
     int i_qp, i_qp_delta;             /* encoder.c:205-206, :353 */
     int i_disable_deblocking_filter_idc; /* encoder.c:211, :357 */

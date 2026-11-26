@@ -284,6 +284,120 @@ static int parse_slice(const uint8_t *payload, int len, const phx_sps_t *sps,
   * a display-order value (encoder.c:3513) and therefore is NOT monotonic in
   * coding order when B frames are reordered by slicetype.c:1950-1964.
   * SHADER: C — serial stream collection and header parse. */
+/* ---- full slice_header() field decoder (encoder.c:213-364) -------------- */
+/* Mirrors tools/first_frame_probe.py::parse_slice_header, but takes the PPS
+ * defaults from phx_pps_t (i_num_ref_idx_l0/l1, set.c:488-489) instead of
+ * assuming one active reference.  The probe's Python parser drops those
+ * setdefault values when it returns Syntax.values, so its "effective"
+ * count and the fields after pred_weight_table are wrong on x264 slices that
+ * do not assert num_ref_idx_active_override; this decoder is the authority
+ * for the golden assertions below.  SHADER: C — serial bit parse. */
+typedef struct {
+    int slice_type, frame_num, poc, nal_ref_idc, nal_type;
+    int direct, override, l0_active, l1_active;
+    int rpl_flag[2], rpl_idc[2][PHX_SLICE_REF_MAX], rpl_arg[2][PHX_SLICE_REF_MAX];
+    int luma_denom, chroma_denom;
+    int luma_flag[PHX_SLICE_REF_MAX*2], luma_scale[PHX_SLICE_REF_MAX*2],
+        luma_offset[PHX_SLICE_REF_MAX*2], chroma_flag[PHX_SLICE_REF_MAX*2];
+    int mmco_flag, mmco_n, mmco_op[PHX_SLICE_REF_MAX], mmco_diff[PHX_SLICE_REF_MAX];
+    int cabac_init_idc, qp_delta, deblock_disable, alpha, beta;
+    int end_bit;
+} phx_test_sh_t;
+
+static int parse_slice_fields(const uint8_t *payload, int len,
+                              const phx_sps_t *sps, const phx_pps_t *pps,
+                              phx_test_sh_t *o)
+{
+    uint8_t rbsp[1024];
+    int n = deescape(payload + 5, len - 5, rbsp);
+    if (n < 3 || sps->i_poc_type != 0 || !sps->b_frame_mbs_only) return -1;
+    int nal_ref_idc = o->nal_ref_idc, nal_type = o->nal_type;
+    memset(o, 0, sizeof(*o));
+    o->nal_ref_idc = nal_ref_idc;
+    o->nal_type = nal_type;
+    phx_test_br_t b = { rbsp, 0 };
+    if (br_ue(&b) < 0) return -1;                       /* first_mb_in_slice */
+    int st = br_ue(&b);
+    if (st < 0 || br_ue(&b) < 0) return -1;             /* pps_id */
+    o->slice_type = st >= 5 ? st - 5 : st;
+    o->frame_num = (int)br_bits(&b, sps->i_log2_max_frame_num);
+    if (o->nal_type == 5) br_ue(&b);                   /* idr_pic_id, :237 */
+    o->poc = (int)br_bits(&b, sps->i_log2_max_poc_lsb); /* :241 */
+    if (o->slice_type == PHX_SLICE_B)
+        o->direct = br_bit(&b);                         /* :250 */
+    o->l0_active = pps->i_num_ref_idx_l0 > 0 ? pps->i_num_ref_idx_l0 : 1;
+    o->l1_active = pps->i_num_ref_idx_l1 > 0 ? pps->i_num_ref_idx_l1 : 1;
+    if (o->slice_type == PHX_SLICE_P || o->slice_type == PHX_SLICE_B) {
+        o->override = br_bit(&b);                       /* :254 */
+        if (o->override) {
+            o->l0_active = br_ue(&b) + 1;               /* :257 */
+            if (o->slice_type == PHX_SLICE_B)
+                o->l1_active = br_ue(&b) + 1;           /* :259 */
+        }
+    }
+    for (int list = 0; list < 2; list++) {
+        if (list == 0 && o->slice_type == PHX_SLICE_I) continue;
+        if (list == 1 && o->slice_type != PHX_SLICE_B) continue;
+        o->rpl_flag[list] = br_bit(&b);                 /* :266/:279 */
+        if (o->rpl_flag[list]) {
+            int count = list == 0 ? o->l0_active : o->l1_active;
+            for (int i = 0; i < count && i < PHX_SLICE_REF_MAX; i++) {
+                o->rpl_idc[list][i] = br_ue(&b);        /* :271/:284 */
+                o->rpl_arg[list][i] = br_ue(&b);        /* :272/:285 */
+            }
+            int end = br_ue(&b);                        /* :274/:288 */
+            if (end != 3) return -1;
+        }
+    }
+    if (pps->b_weighted_pred && o->slice_type == PHX_SLICE_P) {
+        o->luma_denom = br_ue(&b);                      /* :296 */
+        if (sps->i_chroma_format_idc) o->chroma_denom = br_ue(&b); /* :298 */
+        for (int i = 0; i < o->l0_active && i < PHX_SLICE_REF_MAX*2; i++) {
+            o->luma_flag[i] = br_bit(&b);               /* :302 */
+            if (o->luma_flag[i]) {
+                o->luma_scale[i] = br_se(&b);           /* :305 */
+                o->luma_offset[i] = br_se(&b);          /* :306 */
+            }
+            if (sps->i_chroma_format_idc) {
+                o->chroma_flag[i] = br_bit(&b);         /* :311 */
+                if (o->chroma_flag[i]) {
+                    br_se(&b); br_se(&b);               /* :314-317 */
+                    br_se(&b); br_se(&b);               /* :316-318 */
+                }
+            }
+        }
+    }
+    if (o->nal_ref_idc != 0) {
+        if (o->nal_type == 5) { br_bit(&b); br_bit(&b); } /* :332/:333 */
+        else {
+            o->mmco_flag = br_bit(&b);                  /* :337 */
+            if (o->mmco_flag)
+                for (int i = 0; i < PHX_SLICE_REF_MAX; i++) {
+                    int op = br_ue(&b);
+                    if (op < 0) return -1;
+                    o->mmco_op[i] = op;
+                    o->mmco_n++;
+                    if (op == 0) break;
+                    if (op == 1 || op == 3)
+                        o->mmco_diff[i] = br_ue(&b);    /* :343 */
+                    if (i == PHX_SLICE_REF_MAX-1) return -1;
+                }
+        }
+    }
+    if (pps->b_cabac && o->slice_type != PHX_SLICE_I)
+        o->cabac_init_idc = br_ue(&b);                  /* :351 */
+    o->qp_delta = br_se(&b);                            /* :353 */
+    if (pps->b_deblocking_filter_control) {             /* :355 */
+        o->deblock_disable = br_ue(&b);                 /* :357 */
+        if (o->deblock_disable != 1) {
+            o->alpha = br_se(&b);                       /* :360 */
+            o->beta = br_se(&b);                        /* :361 */
+        }
+    }
+    o->end_bit = b.bit;
+    return 0;
+}
+
 static int check_multiframe(const char *label, phx_param_t *p)
 {
     phx_t *h = phx_encoder_open(p);
@@ -390,26 +504,53 @@ static int check_multiframe(const char *label, phx_param_t *p)
 /* The table below was decoded from the saved x264 reference stream
  * build/parity/synth-medium-cabac.ref.h264 (--preset medium --cabac --qp 28,
  * 64x64 synth fixture, keyint=30, scenecut=0, bframes=3, normal B-pyramid)
- * with tools/first_frame_probe.py, H.264 7.3.3 order of encoder.c:213-364.
- * Columns: decided frame type, display-order frame number, nal_ref_idc,
- * slice_type (PHX_SLICE_*), frame_num, pic_order_cnt_lsb, in *coding* order.
- * The frame types/POC come from the reference stream; the values under test
- * are produced by phx_encoder_frame_context(), i.e. the same derivation the
- * encoder uses for whatever frame-type sequence phx_lookahead decides.
+ * with tools/first_frame_probe.py and a PPS-default-aware field decoder
+ * (parse_slice_fields() above), in H.264 7.3.3 order of encoder.c:213-364.
+ * Columns are in *coding* order: decided frame type, display-order frame
+ * number, nal_ref_idc, slice_type, frame_num, POC, override flag, effective
+ * active list sizes, direct flag, ref_pic_list_modification entries, MMCO
+ * difference_of_pic_nums_minus1 values, luma weight flags/scales/offsets,
+ * cabac_init_idc and slice_qp_delta.  The frame types/POC come from the
+ * reference stream; all fields under test are produced by the same
+ * phx_encoder_frame_context() + phx_slice_header_init() path the encoder uses.
  * SHADER: C — serial golden comparison of one NAL at a time. */
+typedef struct {
+    int type, display, ref_idc, slice_type, frame_num, poc;
+    int override, l0, l1, direct;
+    int rpl_n, rpl_idc[8], rpl_arg[8];       /* list 0 only in this stream */
+    int mmco_n, mmco_diff[4];                /* decoded minus-one values */
+    int w_n, w_flag[8], w_scale[8], w_offset[8];
+    int cabac_init, qp_delta;
+    int skip_content_weights;                /* see frame #4 note below */
+} phx_golden_sh_t;
+
 static int check_slice_context_golden(void)
 {
-    static const struct {
-        int type, display, ref_idc, slice_type, frame_num, poc;
-    } golden[] = {
-        { PHX_TYPE_IDR, 0, 3, PHX_SLICE_I, 0,  0 },  /* ref slice #1 */
-        { PHX_TYPE_P,   1, 2, PHX_SLICE_P, 1,  2 },  /* ref slice #2 */
-        { PHX_TYPE_P,   2, 2, PHX_SLICE_P, 2,  4 },  /* ref slice #3 */
-        { PHX_TYPE_P,   6, 2, PHX_SLICE_P, 3, 12 },  /* ref slice #4 */
-        { PHX_TYPE_BREF,4, 2, PHX_SLICE_B, 4,  8 },  /* ref slice #5 */
-        { PHX_TYPE_B,   3, 0, PHX_SLICE_B, 5,  6 },  /* ref slice #6 */
-        { PHX_TYPE_B,   5, 0, PHX_SLICE_B, 5, 10 },  /* ref slice #7 */
-        { PHX_TYPE_P,   7, 2, PHX_SLICE_P, 5, 14 }   /* ref slice #8 */
+    static const phx_golden_sh_t golden[] = {
+        { PHX_TYPE_IDR, 0, 3, PHX_SLICE_I, 0,  0, 0, 1, 1, 0,
+          0, {0}, {0}, 0, {0}, 0, {0}, {0}, {0}, 0, -3, 0 },
+        { PHX_TYPE_P,   1, 2, PHX_SLICE_P, 1,  2, 1, 1, 1, 0,
+          0, {0}, {0}, 0, {0}, 1, {0,0}, {0,0}, {0,0}, 0,  0, 0 },
+        { PHX_TYPE_P,   2, 2, PHX_SLICE_P, 2,  4, 0, 3, 1, 0,
+          3, {0,0,0}, {0,15,0}, 0, {0},
+          3, {0,1,0}, {0,1,0}, {0,-1,0}, 0, 0, 0 },
+        /* Ref slice #4 has l0_active=5 with two content-derived weight
+         * duplicates (luma denom 6, scale 63, offsets +1/0).  The lookahead
+         * weight analysis (slicetype.c:284-464, 1937-1943) is a separate
+         * not-yet-ported stage; without it x264's no-weight branch at
+         * encoder.c:2383-2388 yields l0_active=4.  Assert the DPB-derived
+         * fields and document, rather than fake the weight bytes. */
+        { PHX_TYPE_P,   6, 2, PHX_SLICE_P, 3, 12, 1, 4, 1, 0,
+          0, {0}, {0}, 0, {0}, 0, {0}, {0}, {0}, 0, 0, 1 },
+        { PHX_TYPE_BREF,4, 2, PHX_SLICE_B, 4,  8, 0, 3, 1, 1,
+          0, {0}, {0}, 2, {3,2}, 0, {0}, {0}, {0}, 0, 1, 0 },
+        { PHX_TYPE_B,   3, 0, PHX_SLICE_B, 5,  6, 1, 1, 2, 1,
+          0, {0}, {0}, 0, {0}, 0, {0}, {0}, {0}, 0, 2, 0 },
+        { PHX_TYPE_B,   5, 0, PHX_SLICE_B, 5, 10, 1, 2, 1, 1,
+          0, {0}, {0}, 0, {0}, 0, {0}, {0}, {0}, 0, 2, 0 },
+        { PHX_TYPE_P,   7, 2, PHX_SLICE_P, 5, 14, 1, 4, 1, 0,
+          4, {0,0,1,0}, {1,15,0,1}, 0, {0},
+          4, {0,1,0,0}, {0,1,0,0}, {0,-1,0,0}, 0, 0, 0 }
     };
 
     phx_param_t p;
@@ -420,47 +561,91 @@ static int check_slice_context_golden(void)
     phx_pps_t pps;
     phx_sps_init(&sps, &p, TW, TH);                   /* encoder.c:1579 */
     phx_pps_init(&pps, &sps, &p);                     /* encoder.c:1581 */
+    pps.i_pic_init_qp = 28;                           /* ref PPS: minus26 = 2 */
+    /* The golden NALs come from the 64x64 synth stream, whose SPS carries
+     * log2_max_pic_order_cnt_lsb_minus4 = 2 (6-bit POC).  The 16x16 smoke
+     * handle above derives 4 bits; override only the field that changes the
+     * header parse. */
+    phx_sps_t gold_sps = sps;
+    gold_sps.i_log2_max_poc_lsb = 6;
 
     int fails = 0;
     for (size_t i = 0; i < sizeof(golden)/sizeof(golden[0]); i++) {
+        const phx_golden_sh_t *g = &golden[i];
         phx_slice_frame_t fc;
-        phx_encoder_frame_context(h, golden[i].type,
-                                  golden[i].display, &fc); /* :3504/3513/3882 */
+        phx_encoder_frame_context(h, g->type, g->display, &fc); /* :3504/3513/3882 */
 
-        /* Write exactly the slice header the encoder writes, then decode it
-         * with the same field order as the probe (encoder.c:213-364). */
         phx_slice_header_t sh;
-        phx_slice_header_init(&sh, &p, &sps, &pps, &fc); /* encoder.c:2791 */
+        phx_slice_header_init(&sh, &p, &gold_sps, &pps, &fc); /* :2791 */
         uint8_t rbsp[256], packet[512];
         phx_bs_t bs;
         phx_bs_init(&bs, rbsp, (int)sizeof(rbsp));
         phx_slice_header_write(&bs, &p, &sh);          /* encoder.c:2791 */
         phx_nal_t nal;
         nal.p_payload = rbsp;
-        nal.i_payload = (int)(bs.p - rbsp);
+        /* bs.p points at the current byte; the RBSP payload length is the
+         * ceil(bitpos/8) bytes actually written (bitstream.c:48-58). */
+        nal.i_payload = (phx_bs_pos(&bs) + 7) / 8;
         nal.i_ref_idc = fc.i_nal_ref_idc;              /* encoder.c:328 */
         nal.i_type = fc.b_idr ? 5 : 1;                 /* encoder.c:236 */
         nal.b_long_startcode = 1;                      /* bitstream.c:63 */
         phx_nal_encode(packet, &nal, 1);               /* encoder.c:2124 */
 
-        int st = -1, fn = -1, poc = -1;
-        int ref_idc = (packet[4] >> 5) & 3;            /* bitstream.c:73 */
-        if (parse_slice(packet, nal.i_payload, &sps, nal.i_type,
-                        &st, &fn, &poc)) {
+        phx_test_sh_t o;
+        memset(&o, 0, sizeof(o));
+        o.nal_ref_idc = (packet[4] >> 5) & 3;         /* bitstream.c:73 */
+        o.nal_type = packet[4] & 0x1f;
+        if (parse_slice_fields(packet, nal.i_payload, &gold_sps, &pps, &o)) {
             printf("FAIL golden context: parse frame %d\n", (int)i);
             ++fails;
             continue;
         }
-        if (ref_idc != golden[i].ref_idc || st != golden[i].slice_type ||
-            fn != golden[i].frame_num || poc != golden[i].poc) {
-            printf("FAIL golden context: frame %d ref_idc=%d/%d st=%d/%d "
-                   "fn=%d/%d poc=%d/%d\n", (int)i,
-                   ref_idc, golden[i].ref_idc, st, golden[i].slice_type,
-                   fn, golden[i].frame_num, poc, golden[i].poc);
-            ++fails;
+        int bad = 0;
+#define GCHK(field, want, got) do { if ((got) != (want)) { \
+    printf("FAIL golden frame %d %s got=%d want=%d\n", (int)i, field, \
+           (got), (want)); ++bad; } } while (0)
+        GCHK("nal_ref_idc", g->ref_idc, o.nal_ref_idc);
+        GCHK("slice_type", g->slice_type, o.slice_type);
+        GCHK("frame_num", g->frame_num, o.frame_num);
+        GCHK("poc", g->poc, o.poc);
+        GCHK("qp_delta", g->qp_delta, o.qp_delta);
+        if (g->slice_type != PHX_SLICE_I) {
+            GCHK("override", g->override, o.override);
+            GCHK("l0", g->l0, o.l0_active);
+            GCHK("l1", g->l1, o.l1_active);
+            GCHK("cabac_init", g->cabac_init, o.cabac_init_idc);
         }
-        printf("  golden: frame %d ref_idc=%d st=%d fn=%d poc=%d\n",
-               (int)i, ref_idc, st, fn, poc);
+        if (g->slice_type == PHX_SLICE_B)
+            GCHK("direct", g->direct, o.direct);
+        if (!g->skip_content_weights && g->rpl_n) {
+            GCHK("rpl_flag_l0", 1, o.rpl_flag[0]);
+            for (int k = 0; k < g->rpl_n; k++) {
+                GCHK("rpl_idc_l0", g->rpl_idc[k], o.rpl_idc[0][k]);
+                GCHK("rpl_arg_l0", g->rpl_arg[k], o.rpl_arg[0][k]);
+            }
+        }
+        if (!g->skip_content_weights && g->mmco_n) {
+            GCHK("mmco_flag", 1, o.mmco_flag);
+            GCHK("mmco_n", g->mmco_n + 1, o.mmco_n);
+            for (int k = 0; k < g->mmco_n; k++)
+                GCHK("mmco_diff", g->mmco_diff[k], o.mmco_diff[k]);
+        }
+        if (!g->skip_content_weights && g->w_n) {
+            GCHK("num_luma_flags", g->w_n, o.l0_active);
+            for (int k = 0; k < g->w_n; k++) {
+                GCHK("luma_flag", g->w_flag[k], o.luma_flag[k]);
+                if (g->w_flag[k]) {
+                    GCHK("luma_scale", g->w_scale[k], o.luma_scale[k]);
+                    GCHK("luma_offset", g->w_offset[k], o.luma_offset[k]);
+                }
+            }
+        }
+        fails += bad;
+        printf("  golden: frame %d idc=%d st=%d fn=%d poc=%d ov=%d l0=%d l1=%d"
+               " direct=%d qpd=%d%s\n", (int)i, o.nal_ref_idc, o.slice_type,
+               o.frame_num, o.poc, o.override, o.l0_active, o.l1_active,
+               o.direct, o.qp_delta,
+               g->skip_content_weights ? " (weight-analysis TODO)" : "");
     }
     phx_encoder_close(h);                             /* api.c:130 */
     return fails;

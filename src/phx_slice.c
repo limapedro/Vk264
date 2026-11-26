@@ -45,9 +45,17 @@ void phx_slice_header_init(phx_slice_header_t *sh, const phx_param_t *param,
     /* :156-170 — derived from 2-pass stats in x264; supplied explicitly here. */
     sh->b_direct_spatial_mv_pred = frame->b_direct_spatial_mv_pred;
 
+    /* encoder.c:2639-2645 — slice_init() (not the defaults at :173-175)
+     * installs the active list sizes for every non-IDR slice and flags an
+     * override when either differs from the PPS default (set.c:488-489). */
     sh->b_num_ref_idx_override = 0;                         /* :173 */
-    sh->i_num_ref_idx_l0_active = 1;                        /* :174 */
-    sh->i_num_ref_idx_l1_active = 1;                        /* :175 */
+    sh->i_num_ref_idx_l0_active = frame->i_ref[0] <= 0 ? 1 : frame->i_ref[0]; /* :2639 */
+    sh->i_num_ref_idx_l1_active = frame->i_ref[1] <= 0 ? 1 : frame->i_ref[1]; /* :2640 */
+    if (!frame->b_idr &&
+        (sh->i_num_ref_idx_l0_active != pps->i_num_ref_idx_l0 ||
+         (sh->i_type == PHX_SLICE_B &&
+          sh->i_num_ref_idx_l1_active != pps->i_num_ref_idx_l1)))
+        sh->b_num_ref_idx_override = 1;                     /* :2641-2645 */
 
     sh->b_ref_pic_list_reordering[0] = frame->b_ref_reorder[0]; /* :177 */
     sh->b_ref_pic_list_reordering[1] = frame->b_ref_reorder[1]; /* :178 */
@@ -83,6 +91,14 @@ void phx_slice_header_init(phx_slice_header_t *sh, const phx_param_t *param,
         sh->i_disable_deblocking_filter_idc = 1;            /* :208 */
     sh->i_alpha_c0_offset = alpha * 2;                      /* :209 */
     sh->i_beta_offset     = beta  * 2;                      /* :210 */
+
+    /* encoder.c:2202-2284 fills sh.weight[] from the frame's weight analysis;
+     * pred_weight_table() (:291-321) then writes it.  The explicit context
+     * carries those weights, so copy them verbatim (no byte-faking defaults). */
+    memcpy(sh->weight, frame->weight, sizeof(sh->weight));  /* :2214 */
+    sh->i_mmco_command_count = frame->i_mmco_command_count;  /* :3508/2595 */
+    memcpy(sh->mmco_diff, frame->mmco_diff, sizeof(sh->mmco_diff));
+    memcpy(sh->mmco_poc, frame->mmco_poc, sizeof(sh->mmco_poc));
 
     sh->i_nal_ref_idc = frame->i_nal_ref_idc;               /* :328 */
 }
