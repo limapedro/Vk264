@@ -1599,7 +1599,22 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                                                     h->param.b_cabac ? &h->cabac : NULL,
                                                     mb_x, mb_y, d.i_qp, &d)
                    : phx_macroblock_analyse_slice(&h->param, h->fenc, fref, c,
-                                                  h->param.b_cabac ? &h->cabac : NULL,
+                                                  /* analyse.c:2939-2952 runs
+                                                   * intra_rd() at mbrd>=1 and
+                                                   * x264 RDO always has a live
+                                                   * h->cabac for bit costing
+                                                   * (rdo.c:71-73/:180-190: CAVLC
+                                                   * uses a size-only counter,
+                                                   * CABAC a context copy).
+                                                   * NULL here silently skipped
+                                                   * RD for CAVLC: the IDR MB0
+                                                   * SATD fallback chose I_4x4
+                                                   * instead of x264 RD I_8x8,
+                                                   * making slice byte 4 0xFE
+                                                   * instead of 0xFF.
+                                                   * phx_analysis.c:229 treats
+                                                   * cb as read-only. */
+                                                  &h->cabac,
                                                   mb_x, mb_y, d.i_qp,
                                                   fc.i_type, &d); /* :2861 */
             /* P_L0/D_16x16 with cbp=0 is a real inter decision: its MV comes

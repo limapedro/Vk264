@@ -559,6 +559,60 @@ static void test_interleave_8x8_golden(void)
     }
 }
 
+/* ===========================================================================
+ * Real-stream IDR MB0 golden (320x180 clip2229_320x180.yuv, qp28, medium,
+ * --no-cabac).  Instrumented x264 (build/make_cavlc_dump_x264.py, patches
+ * encoder/cavlc.c:305-335/:550-552) dumps MB0 as:
+ *   type=I_8x8, i_mb_i_offset=0, b_transform_8x8_mode=1, b_transform_8x8=1,
+ *   cbp_luma=5, cbp_chroma=1, chroma_pred=6->0,
+ *   I8 pred modes (raw) = {11,8,10,1}, four predictors all DC(2),
+ *   cbp_to_golomb[420][intra][0x15] = 22.
+ * x264's emitted bits after the byte-exact 30-bit slice header are
+ *   "1" ue(0)  "1" b8x8  "1" "0111" "1" "0001" (four pred modes)
+ *   "1" chroma ue(0)  "000010111" CBP ue(22)  = 22 bits;
+ * the first NAL bytes are 65 88 84 00 FF BC 61 (x264 ref stream).  Phoenix
+ * used to emit 65 88 84 00 FE ... because a CAVLC encode passed NULL for the
+ * analysis CABAC state and skipped x264's mbrd>=1 intra RD
+ * (analyse.c:2939-2952, rdo.c:180-190), selecting I_4x4 instead of the
+ * x264 RD winner I_8x8.  SHADER: C -- serial Exp-Golomb header writer.
+ * ========================================================================= */
+static void test_idr_mb0_cavlc_golden(void)
+{
+    phx_bs_t s; uint8_t buf[64]; phx_mb_cache_t cache; phx_cavlc_mb_t mb;
+    int bits;
+
+    setup(&mb, &s, buf, &cache, PHX_SLICE_TYPE_I, PHX_I_8x8);
+    /* Top 30 bits of the x264 byte-exact slice header bytes 88 84 00 FF.
+     * Written AFTER setup(), which bs_init()s the buffer. */
+    phx_bs_write(&s, 30, 0x2221003Fu);                    /* bitstream.h:125 */
+    mb.chroma = 1;
+    mb.b_transform_8x8_mode = 1;
+    mb.b_transform_8x8 = 1;
+    mb.i_chroma_pred_mode = 6;                            /* fixc -> ue(0) */
+    /* x264 cache.intra4x4_pred_mode after analyse.c:3744-3746: one raw
+     * predictor per 8x8 block, repeated into its four 4x4 slots.  All other
+     * slots stay -1 (flat_cache), so every i_pred is DC(2) as in the dump. */
+    cache.intra4x4_pred_mode[phx_scan8[0]]  = 11;
+    cache.intra4x4_pred_mode[phx_scan8[4]]  = 8;
+    cache.intra4x4_pred_mode[phx_scan8[8]]  = 10;
+    cache.intra4x4_pred_mode[phx_scan8[12]] = 1;
+    bits = phx_cavlc_mb_header(&mb);                      /* cavlc.c:305-335 */
+    CHECK(bits == 13, "IDR MB0 I8 header: bits=%d expected 13", bits);
+    phx_bs_write_ue(&s, (unsigned)phx_cavlc_cbp_to_golomb[1][1]
+                                 [(1 << 4) | 5]);         /* cavlc.c:550-552 */
+    CHECK(phx_bs_pos(&s) == 52, "IDR MB0 header+CBP pos=%d expected 52",
+          phx_bs_pos(&s));
+    check_bits("IDR MB0 header+CBP", &s,
+        "100010001000010000000000111111" /* byte-exact 30-bit slice header */
+        "1110111100011"                  /* mb_type/b8x8/4 preds/chroma */
+        "000010111");                    /* CBP ue(22) */
+    CHECK(buf[0]==0x88 && buf[1]==0x84 && buf[2]==0x00 &&
+          buf[3]==0xFF && buf[4]==0xBC && buf[5]==0x61,
+          "IDR MB0 bytes %02X %02X %02X %02X %02X %02X "
+          "expected 88 84 00 FF BC 61",
+          buf[0], buf[1], buf[2], buf[3], buf[4], buf[5]);
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -573,6 +627,7 @@ int main(void)
     test_skip_run_golden();
     test_p_l0_golden();
     test_interleave_8x8_golden();
+    test_idr_mb0_cavlc_golden();
     printf("%s: %d checks, %d failed\n", n_failed ? "FAIL" : "PASS", n_tests, n_failed);
     return n_failed ? 1 : 0;
 }
