@@ -239,4 +239,23 @@ x264 `encoder/macroblock.c:948-950` sets the CBP high bits from `nnz[LUMA_DC=48]
 
 No `phx_rdo` defect; `ctest -R phx_rdo` 1/1 PASS.
 
+## F23 — chroma predictor cache, I16 mode MB4, and ±1 reconstruction
+
+The CABAC chroma-pred context stayed at 64 because `phx_cabac_mb_t`'s
+`chroma_pred_mode_left/top` were never populated. x264 stores a fixed chroma
+predictor per MB (`common/macroblock.c:1835`) and reads it through the left/top
+neighbours (`cabac.c:104-107`). Added `phx_mb_state_t.chroma_pred_mode` +
+`phx_mb_cache_t.i_chroma_pred_mode`, saved with x264's fix table, and wired the
+CABAC neighbour fields. Real-clip bin 1167 → 2250; 8/8 ctest PASS.
+
+M8 classified bin 809 on the other real fixture as an I16 **mode decision**:
+MB4 x264 raw I16 mode 0 (V) vs Phoenix raw 5 (DC_TOP → fix16 2); writer and
+coder state are exact. Owner: Z1, `analyse.c:688-742` / `phx_search_i16()`.
+
+M4 proved `phx_me_refine_subpel_mv()` is byte-exact: fed x264's exact REF it
+returns x264's (7,0)/298/50. Phoenix's DPB REF has 14 pixels off by ±1 in the
+16x16 block and 748 differing pixels in the refine neighbourhood (borders
+e.g. 128 vs 124), so refine cannot improve (8,0) → (7,0). Owner: reconstruction
+/ deblock / border expansion, not ME.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
