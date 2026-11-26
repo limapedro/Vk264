@@ -11,6 +11,7 @@
 #include "phx_me.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -194,6 +195,80 @@ static const uint16_t *phx_resolve_cost_mv(const phx_cost_tables_t *cost,
         if (cost->cost_mv[qp] && phx_lambda_tab[qp] == (uint16_t)lambda)
             return cost->cost_mv[qp];
     return NULL;
+}
+
+/* SHADER: C (diagnostic only, opt-in via PHX_ME_TRACE=1).  Dump the exact
+ * x264_me_search_ref() inputs at the phx_me16_core() boundary (analyse.c:1935-
+ * 1938 / me.c:187-212) — pointers, strides, ranges, lambda/method/subme,
+ * predictors, mvc[] and the cost table — plus the fenc/fref pixel windows
+ * including their padded borders.  When the variable is unset this is a
+ * single getenv() call and produces no output and no state change. */
+int phx_me_trace_requested = 0;              /* SHADER: C — one-shot trace */
+static void phx_me_trace_args(int x, int y, const phx_frame_t *fenc,
+                              const phx_frame_t *fref,
+                              const phx_cost_tables_t *cost, int mv_range,
+                              int i_mv_range, int lambda, int method, int subme,
+                              const int16_t pred[2],
+                              const int16_t (*mvc)[2], int i_mvc,
+                              int mv_x_min, int mv_x_max,
+                              int mv_y_min, int mv_y_max)
+{
+    if (!phx_me_trace_requested) return;
+    phx_me_trace_requested = 0;
+    fprintf(stderr, "PHX_ME_TRACE call x=%d y=%d fenc=%p fref=%p "
+            "enc(base=%p plane=%p w=%d h=%d stride=%d) "
+            "ref(base=%p plane=%p w=%d h=%d stride=%d) "
+            "mv_range=%d i_mv_range=%d lambda=%d method=%d subme=%d "
+            "pred=(%d,%d) i_mvc=%d mvc=",
+            x, y, (const void*)fenc, (const void*)fref,
+            fenc ? (void*)fenc->base : NULL,
+            fenc ? (void*)fenc->plane : NULL,
+            fenc ? fenc->i_width : -1, fenc ? fenc->i_height : -1,
+            fenc ? fenc->i_stride : -1,
+            fref ? (void*)fref->base : NULL,
+            fref ? (void*)fref->plane : NULL,
+            fref ? fref->i_width : -1, fref ? fref->i_height : -1,
+            fref ? fref->i_stride : -1,
+            mv_range, i_mv_range, lambda, method, subme,
+            pred ? pred[0] : 0, pred ? pred[1] : 0, i_mvc);
+    for (int i = 0; i < i_mvc; i++)
+        fprintf(stderr, "(%d,%d)%s", mvc[i][0], mvc[i][1],
+                i + 1 == i_mvc ? "" : " ");
+    fprintf(stderr, "\n");
+    if (cost) {
+        const uint16_t *p = phx_resolve_cost_mv(cost, lambda);
+        fprintf(stderr, "PHX_ME_TRACE cost=%p p_cost_mv=%p lambda_tab[qp]=",
+                (const void*)cost, (const void*)p);
+        for (int qp = 0; qp <= PHX_QP_MAX_SPEC; qp++)
+            if (cost->cost_mv[qp] && phx_lambda_tab[qp] == (uint16_t)lambda)
+                fprintf(stderr, "%d ", qp);
+        fprintf(stderr, "table[-8..8]=");
+        if (p) for (int i = -8; i <= 8; i++) fprintf(stderr, "%u ", p[i]);
+        fprintf(stderr, "\n");
+    }
+    fprintf(stderr, "PHX_ME_TRACE range x=[%d,%d] y=[%d,%d] "
+            "fenc_window=%p fref_window=%p\n",
+            mv_x_min, mv_x_max, mv_y_min, mv_y_max,
+            fenc ? (const void*)(fenc->plane + (size_t)y*fenc->i_stride + x) : NULL,
+            fref ? (const void*)(fref->plane + (size_t)y*fref->i_stride + x) : NULL);
+    if (fenc && fref && fenc->plane && fref->plane) {
+        const uint8_t *fe = fenc->plane + (size_t)y*fenc->i_stride + x;
+        const uint8_t *rf = fref->plane + (size_t)y*fref->i_stride + x;
+        fprintf(stderr, "PHX_ME_TRACE fenc rows y=-4..19 (x=-4..19):\n");
+        for (int r = -4; r < 20; r++) {
+            fprintf(stderr, "PHX_ME_TRACE F%3d", r);
+            for (int cc = -4; cc < 20; cc++)
+                fprintf(stderr, " %3u", fe[r*fenc->i_stride + cc]);
+            fprintf(stderr, "\n");
+        }
+        fprintf(stderr, "PHX_ME_TRACE fref rows y=-4..19 (x=-4..19):\n");
+        for (int r = -4; r < 20; r++) {
+            fprintf(stderr, "PHX_ME_TRACE R%3d", r);
+            for (int cc = -4; cc < 20; cc++)
+                fprintf(stderr, " %3u", rf[r*fref->i_stride + cc]);
+            fprintf(stderr, "\n");
+        }
+    }
 }
 
 /* x264 encoder/me.c:209 — CHECK_MVRANGE() as a function (bit-identical). */
@@ -436,6 +511,9 @@ static int phx_me16_core(int x, int y, const phx_frame_t *fenc,
         mv_y_max = fref->i_height + PHX_PADV - y - 16;
     if (mv_x_min > mv_x_max) mv_x_min = mv_x_max = 0;
     if (mv_y_min > mv_y_max) mv_y_min = mv_y_max = 0;
+    phx_me_trace_args(x, y, fenc, fref, cost, mv_range, i_mv_range, lambda,
+                      method, subme, pred, mvc, i_mvc,
+                      mv_x_min, mv_x_max, mv_y_min, mv_y_max);
     uint32_t mv_min = PHX_PACK16TO32_MASK2(-mv_x_min, -mv_y_min); /* me.c:205 */
     uint32_t mv_max = PHX_PACK16TO32_MASK2( mv_x_max,  mv_y_max) | 0x8000u;
                                                                    /* me.c:206 */

@@ -111,6 +111,13 @@ typedef struct {
     int i_stride;
 } phx_me_refplanes_t;
 
+/* SHADER: C — diagnostic only.  phx_analysis arms this one-shot flag for the
+ * diag.yuv POC4 MB0/MB1 B per-list searches when PHX_ME_TRACE=1 is set; the
+ * ME core then dumps every x264_me_search_ref() input (pointers, strides,
+ * ranges, lambda/method/subme, mvc[] and the cost table) plus the fenc/fref
+ * windows.  Never set by the encoder: no stream state is affected. */
+extern int phx_me_trace_requested;
+
 /* Additive API: the same fullpel search with x264's extra MV-candidate list.
  *
  * x264's encoder/analyse.c:1937 calls x264_mb_predict_mv_ref16x16()
