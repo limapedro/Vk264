@@ -172,7 +172,9 @@ void phx_cabac_encode_ue_bypass(phx_cabac_t *cb, int exp_bits, int val)
 #endif
     uint32_t v = (uint32_t)(val + (1<<exp_bits));       /* :144 */
     int k = 31 - phx_clz(v);                            /* :145 */
-    uint32_t x = (uint32_t)(bypass_lut[k-exp_bits] << exp_bits) + v; /* :146 */
+    /* x264 casts to uint32_t BEFORE shifting: bypass_lut[0] is -1 and
+     * shifting a negative int is undefined (cabac.c:146). */
+    uint32_t x = ((uint32_t)bypass_lut[k-exp_bits] << exp_bits) + v;  /* :146 */
     k = 2*k+1-exp_bits;                                 /* :147 */
 #ifdef PHX_CABAC_BIN_TRACE
     int t_nbins = k;
