@@ -262,4 +262,8 @@ e.g. 128 vs 124), so refine cannot improve (8,0) → (7,0). Owner: reconstructio
 
 After the chroma-predictor fix, the scaled-clip first divergent bin moved 1167 → 2250. M8's instrumented trace shows it is the **same** root cause as the earlier bin 809 on the other fixture: MB4 I_16x16, x264 raw prediction mode 0 (V, fix16 0) vs Phoenix raw mode 5 (DC_TOP, fix16 2), at identical coder state (`low/range 816/360`, `ctx 9 b 0` vs `b 1`). The two bits are `i_pred>>1` and `i_pred&1` (`cabac.c:64-65`); the writer and context are exact. It also explains the byte divergence in CAVLC (`cavlc.c:310` uses the same fix table). Owner remains Z1's `phx_search_i16()` (`analyse.c:688-742`). No new work item.
 
+## F25 — I16 MB4 mode is a consequence of DC reconstruction
+
+Z1 instrumented the real fixture: x264's I16 MB4 search sees a reconstructed top border of 203,203 and picks mode 0 (V, cost 6752) over mode 5 (DC_TOP, 7160). Phoenix sees 110,110 and picks mode 5 (18310 vs 18382). The quantized luma DC already matches x264 (`dc=102`, `nnz=1`, `pred16=6`), and SAD mbcmp, bit costs and tie-break order are source-aligned — so forcing mode 0 would be a fixture-specific approximation. The wrong border comes from the I16 DC dequant/IDCT reconstruction helpers (`phx_dct.c`/`phx_quant.c` vs `common/dct.c`/`common/quant.c`), now delegated with a full-16x16 golden requirement.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
