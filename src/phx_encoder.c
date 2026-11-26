@@ -942,6 +942,40 @@ static void phx_encoder_cabac_block(phx_t *h, phx_cabac_mb_t *mb, int cat,
                                   b_intra, b_dc, 0);
 }
 
+/* encoder/macroblock.h:112-117 — STORE_8x8_NNZ(p=0, idx, nz).  x264 writes
+ * the same nnz value into all four 4x4 slots of the 8x8 block; the CBF at
+ * cabac.c:896 reads the first one and the cbf context (:634-635) reads the
+ * left/top ones.  The 64-coefficient handoff's `nnz` is authoritative for I8
+ * (phx_mbencode.c:785-789/:795).  SHADER: C — four explicit cache writes. */
+static void phx_encoder_store_8x8_nnz(phx_t *h, int idx, int nz)
+{
+    for (int j = 0; j < 4; j++)
+        h->mb_cache.non_zero_count[phx_scan8[idx*4 + j]] = (uint8_t)(nz ? 1 : 0);
+}
+
+/* cabac.c:1012-1036 — truth values of MUNGE_8x8_NNZ's three conditions for
+ * the luma plane.  x264 munges when the neighbour exists, did not use an 8x8
+ * transform, and did not code an I16x16 luma DC flag (cbp & 0x1000, set at
+ * encoder/macroblock.c:948).  SHADER: C — read-only neighbour lookup. */
+static void phx_encoder_8x8_nnz_munge_flags(phx_t *h, const phx_mb_cache_t *c,
+                                            int *left0, int *left1, int *top)
+{
+    const phx_mb_state_t *s = h->mb_state;
+    *left0 = 0; *left1 = 0; *top = 0;
+    if ((c->i_neighbour & PHX_MB_LEFT) && c->left[0] >= 0) {
+        int n = c->left[0];
+        *left0 = !s->mb_transform_size[n] && !(s->cbp[n] & 0x1000);
+    }
+    if ((c->i_neighbour & PHX_MB_LEFT) && c->left[1] >= 0) {
+        int n = c->left[1];
+        *left1 = !s->mb_transform_size[n] && !(s->cbp[n] & 0x1000);
+    }
+    if ((c->i_neighbour & PHX_MB_TOP) && c->top >= 0) {
+        int n = c->top;
+        *top = !s->mb_transform_size[n] && !(s->cbp[n] & 0x1000);
+    }
+}
+
 /* common/macroblock.h:432-442 + cavlc.c:198 — nC prediction and its VLC index.
   * SHADER: C — serial coefficient-context lookup. */
 static int phx_encoder_cavlc_nc(const phx_mb_cache_t *c, int idx)
@@ -1220,7 +1254,8 @@ static void phx_encoder_write_cavlc_mb(phx_t *h, const phx_mb_decision_t *d,
   * SHADER: C — strictly serial CABAC bin writer. */
 static void phx_encoder_write_cabac_mb(phx_t *h, phx_cabac_mb_t *mb,
                                        const phx_mb_decision_t *d,
-                                       int mb_xy)
+                                       int mb_xy,
+                                       const phx_mb_i8x8_block_t i8x8[4])
 {
     phx_cabac_t *cb = &h->cabac;
     int mt = d->mb_type;
@@ -1267,6 +1302,33 @@ static void phx_encoder_write_cabac_mb(phx_t *h, phx_cabac_mb_t *mb,
                     l = phx_encoder_block(d, PHX_BLK_LUMA_AC, i, &n);
                     phx_encoder_cabac_block(h, mb, PHX_DCT_LUMA_AC, i, l, n, 1, 0);
                 }
+        } else if (mb->cache->b_transform_8x8 && i8x8) {
+            /* cabac.c:997-1050 — 8x8dct luma residual: FOUR 64-coefficient
+             * blocks with no per-8x8 CBF in 4:2:0 (the four luma CBP bits
+             * were already written at :968).  I8 decisions carry h->dct.luma8x8[] through
+             * phx_macroblock_encode_ex2()'s explicit handoff; writing 16
+             * 4x4 blocks here would use sig ctx 96.. instead of 402.. and
+             * desync the stream at the first residual bin.  The MUNGE_8x8_NNZ
+             * backup/restore reproduces cabac.c:1038/:1044 exactly.
+             * SHADER: C — strictly serial bin order. */
+            uint8_t nnzbak[8];
+            int left0, left1, top;
+            phx_encoder_8x8_nnz_munge_flags(h, mb->cache,
+                                             &left0, &left1, &top);
+            phx_cabac_munge_8x8_nnz(mb, nnzbak, left0, left1, top, 0);
+            for (int i = 0; i < 4; i++)                 /* :207/:210 */
+                phx_encoder_store_8x8_nnz(h, i,
+                    (d->cbp_luma & (1 << i)) ? i8x8[i].nnz : 0);
+            for (int i = 0; i < 4; i++) {                /* :1048-1049 */
+                if (!(d->cbp_luma & (1 << i))) continue; /* FOREACH_BIT */
+                /* 4:2:0 (plane_count==1) takes cabac.c:1046-1049: NO per-8x8
+                 * CBF bin — the four luma CBP bits were already written at
+                 * :968.  The `cabac_block_residual_8x8_cbf` macro at :1042
+                 * belongs to the plane_count==3 (:999-1042) branch only. */
+                phx_cabac_block_residual_8x8(cb, mb, PHX_DCT_LUMA_8x8,
+                                             i8x8[i].coef);       /* :1049 */
+            }
+            phx_cabac_munge_8x8_nnz(mb, nnzbak, left0, left1, top, 1);
         } else {
             for (int i8 = 0; i8 < 4; i8++) {
                 if (!(d->cbp_luma & (1 << i8))) continue; /* :1055 */
@@ -1471,6 +1533,13 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
         for (int mb_x = 0; mb_x < h->i_mb_width; mb_x++) {
             int mb_xy = mb_y * h->i_mb_width + mb_x;   /* encoder.c:2814 */
             phx_mb_cache_t *c = &h->mb_cache;
+            /* Row 19: x264's h->dct.luma8x8[4] (64 zigzag coefficients each)
+             * has no slot in phx_mb_decision_t.  phx_macroblock_encode_ex2()
+             * publishes it here; the CABAC entropy stage then writes four 8x8
+             * residuals instead of sixteen 4x4 ones (cabac.c:1046-1049).
+             * SHADER: B/C — explicit per-MB handoff, no hidden state. */
+            phx_mb_i8x8_block_t i8x8[4];
+            memset(i8x8, 0, sizeof(i8x8));
             /* macroblock.c:533 — p_fdec = fdec_buf + 2*FDEC_STRIDE.  Phoenix's
              * scratch uses the extra +1 left-border column that the analysis
              * and mbencode windows already assume (phx_analysis.c:1842).
@@ -1577,9 +1646,10 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                          &h->param, h->fenc, fref, fref1, c, mb_x, mb_y, &d,
                          h->param.b_cabac ? &h->cabac : NULL, 32);
             } else {
-                rc = phx_macroblock_encode_ex(&h->param, h->fenc, fref, c,
-                                              mb_x, mb_y, &d,
-                                              h->param.b_cabac ? &h->cabac : NULL); /* :2865 */
+                rc = phx_macroblock_encode_ex2(&h->param, h->fenc, fref, c,
+                                               mb_x, mb_y, &d,
+                                               h->param.b_cabac ? &h->cabac : NULL,
+                                               i8x8); /* :2865 / mbencode.h:117-121 */
             }
             if (rc < 0) {
                 /* Last resort: an empty I_16x16 MB keeps the slice parseable
@@ -1700,7 +1770,7 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                      * before their header; I slices suppress it entirely. */
                     if (fc.i_type == PHX_SLICE_P || fc.i_type == PHX_SLICE_B)
                         phx_cabac_mb_skip(&h->cabac, &mb, 0); /* :2877 */
-                    phx_encoder_write_cabac_mb(h, &mb, &d, mb_xy); /* :2878 */
+                    phx_encoder_write_cabac_mb(h, &mb, &d, mb_xy, i8x8); /* :2878 */
                     last_dqp = mb.i_qp - last_qp;      /* macroblock.c:1756 */
                     last_qp = mb.i_qp;                 /* macroblock.c:1757 */
                 }

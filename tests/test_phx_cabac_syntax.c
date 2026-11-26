@@ -227,6 +227,65 @@ int main(void)
               (const uint8_t[]){0xF1,0x71,0x57,0x7F,0x9B,0x29}, 6);
     }
 
+    /* Row 19 golden: fixed 64-coefficient 8x8 arrays through the real x264
+     * writer.  Temporary harness (outside the repo) #includes
+     * reference/x264/encoder/cabac.c, patches reference/x264/common/cabac.c
+     * with the ordered-bin hook, zero-initialises x264_t, runs
+     * x264_quant_init (quant.c:437-441), sets all 1024 cb.state[] = 0x40,
+     * calls cabac_block_residual_8x8() (:769 = alias of :664-748) and
+     * cabac_block_residual_8x8_cbf() (:911-912/:892-903) on the array below,
+     * then x264_cabac_encode_flush(h,cb).  Both cases emit 197 ordered bins
+     * and the bytes below; Phoenix matched every bin and byte.
+     * SHADER: C — strictly serial bin order. */
+    {
+        static const phx_dctcoef_t d[64] = {
+             1, -2, 0, 0, 0, 0, 0,  5,
+             0, 0, 0, 0, 0, 0, 0,  1,
+             0, 0, 0, 0, 0, 0, 0,  0,
+             0, 0, 0, 0, 0, 0, 0, -16,
+             0, 0, 0, 0, 0, 0, 0,  0,
+             0, 0, 0, 0, 0, 0, 0,  3,
+             0, 0, 0, 0, 0, 0, 0,  1
+        };
+        setup(&cb, PHX_SLICE_I, 26);
+        phx_cabac_block_residual_8x8(&cb, &mb, PHX_DCT_LUMA_8x8, d);
+        check("block_residual_8x8_fixed", &cb,
+              (const uint8_t[]){0xFB,0x57,0x7B,0x33,0xE3,0xF5,0xF7,
+                                0xFF,0xFD,0x2D,0x6F,0x1C,0x2D}, 13);
+
+        setup(&cb, PHX_SLICE_I, 26);
+        cache.non_zero_count[phx_scan8[0]] = 1;
+        cache.non_zero_count[phx_scan8[0] - 1] = 1;
+        cache.non_zero_count[phx_scan8[0] - 8] = 0;
+        phx_cabac_block_residual_8x8_cbf(&cb, &mb, PHX_DCT_LUMA_8x8, 0, d, 1);
+        check("block_residual_8x8_cbf_fixed", &cb,
+              (const uint8_t[]){0xFE,0x9D,0x49,0x4D,0x29,0xC9,0xA2,
+                                0x7F,0xFF,0xD2,0xD6,0xF1,0xC2,0xC1}, 14);
+    }
+
+    /* cabac.c:1012-1044 — MUNGE_8x8_NNZ backup zeroes and restores the six
+     * left (scan8 11,19,27,35) and four top (scan8 4..7) luma nnz bytes.
+     * SHADER: C — explicit cache boundary, no coder state. */
+    {
+        uint8_t bak[8];
+        static const int pos[4] = { 11, 19, 27, 35 };
+        setup(&cb, PHX_SLICE_I, 26);
+        for (int k = 0; k < 4; k++) cache.non_zero_count[4+k] = (uint8_t)(k+1);
+        for (int k = 0; k < 4; k++) cache.non_zero_count[pos[k]] = (uint8_t)(10+k);
+        phx_cabac_munge_8x8_nnz(&mb, bak, 1, 1, 1, 0);
+        int zeroed = 1;
+        for (int k = 0; k < 4; k++) zeroed &= cache.non_zero_count[pos[k]] == 0;
+        for (int k = 0; k < 4; k++) zeroed &= cache.non_zero_count[4+k] == 0;
+        CHECK(zeroed, "munge_8x8_nnz_backup");
+        phx_cabac_munge_8x8_nnz(&mb, bak, 1, 1, 1, 1);
+        int restored = 1;
+        for (int k = 0; k < 4; k++)
+            restored &= cache.non_zero_count[pos[k]] == (uint8_t)(10+k);
+        for (int k = 0; k < 4; k++)   /* top M32 (4..7) uses backup[4..7] */
+            restored &= cache.non_zero_count[4+k] == (uint8_t)(k+1);
+        CHECK(restored, "munge_8x8_nnz_restore");
+    }
+
     /* CBF bin + residual wrapper (4x4 luma). */
     {
         static const phx_dctcoef_t d[16] = { 1, 0, 0, 4 };
