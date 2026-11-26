@@ -23,6 +23,13 @@
  *                           rd_cost_mb, rd_cost_i4x4
  *   reference/x264/common/pixel.c:55-73/:242-288/:311-332 SAD / SATD kernels
  *   reference/x264/encoder/analyse.c:2918  x264_macroblock_analyse()
+ *   reference/x264/encoder/analyse.c:2735-2770 mb_analyse_transform()
+ *   reference/x264/encoder/analyse.c:2773-2800 mb_analyse_transform_rd() [TODO:
+ *                           needs rd_cost_mb() from the RDO stage]
+ *   reference/x264/encoder/analyse.c:2904-2912 QP-change transform toggle [TODO]
+ *   reference/x264/encoder/analyse.c:3718-3719 transform decision call site
+ *   reference/x264/common/macroblock.h:454-461 transform-allowed predicate
+ *   reference/x264/encoder/macroblock.c:713-737 I8x8 transform flag at encode
  *   reference/x264/encoder/analyse.c:1255-1332 mb_analyse_inter_p16x16()
  *   reference/x264/encoder/analyse.c:3334-3359 B-direct / B_SKIP gate
  *   reference/x264/encoder/analyse.c:2953-3024 P_SKIP fast-skip / b_try_skip
@@ -156,6 +163,37 @@ typedef struct {
 } phx_mbdiag_rec_t;
 extern phx_mbdiag_rec_t phx_g_mbdiag[4096];
 extern int phx_g_mbdiag_count, phx_g_mbdiag_enable;
+
+/* x264 common/macroblock.h:444-461 — x264_mb_transform_8x8_allowed() with its
+ * inputs passed explicitly (no h->mb state).  `pps_mode` is
+ * pps->b_transform_8x8_mode (encoder/set.c:502).  SHADER: A — pure predicate. */
+int phx_mb_transform_8x8_allowed_ex(int pps_mode, int mb_type, int i_partition);
+
+/* x264 encoder/analyse.c:2757-2768 — the luma cost pair of
+ * mb_analyse_transform() on a source window and an already-MC'd prediction:
+ * pixf.sa8d[16x16] (four unscaled sa8d_8x8 tiles, pixel.c:374-381) and
+ * pixf.satd[16x16] (pixel.c:311-332).  `*b8` is the source-aligned
+ * `i_cost8 < i_cost4` decision, valid for the mbrd==0 call site
+ * (analyse.c:3718-3719).  SHADER: A — pure kernels, no state. */
+void phx_mb_transform_costs(const uint8_t *fenc, int fence_stride,
+                            const uint8_t *pred, int pred_stride,
+                            int *cost8, int *cost4, int *b8);
+
+/* Per-MB transform-size decision capture, used by the byte-exact golden
+ * tests and by the diagnostic harness.  `i_cost8` is x264's
+ * pixf.sa8d[PIXEL_16x16] (analyse.c:2761/:376-381, four unscaled sa8d_8x8
+ * tiles with one final (sum+2)>>2), `i_cost4` is pixf.satd[PIXEL_16x16]
+ * (analyse.c:2763).  `allowed` is the exact x264_mb_transform_8x8_allowed()
+ * predicate (common/macroblock.h:454-461).  No entropy state is touched.
+ * SHADER: B/C — read-only observation of the analysis decision boundary. */
+typedef struct {
+    int mb_x, mb_y, mb_type, i_partition;
+    int allowed, mbrd, pps_mode;
+    int i_cost8, i_cost4;
+    int b_transform_8x8;
+} phx_transform_diag_rec_t;
+extern phx_transform_diag_rec_t phx_g_transform_diag[4096];
+extern int phx_g_transform_diag_count, phx_g_transform_diag_enable;
 
 /* Additive B-frame entry point: same ABI as phx_macroblock_analyse_slice()
  * plus the list-1/colocated bundle above.  For B slices it calls B1's
