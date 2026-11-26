@@ -1475,9 +1475,13 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 is_skip = 0;
             }
             if (is_skip) {
-                /* Restore x264's published type for the neighbour cache and
-                 * the entropy stage (macroblock.c:1303-1305 skip neighbour). */
+                /* Restore x264's published type AND skip flag for the neighbour
+                 * cache and the entropy stage (encoder.c:2883 IS_SKIP).  The
+                 * B-stage encode resets d->skip to 0; leaving it that way sent
+                 * a P_SKIP mb_type through the coded-MB writer and desynced
+                 * CAVLC at the following MB. */
                 d.mb_type = PHX_P_SKIP;
+                d.skip = 1;
             }
             if (!inter) {
                 /* encoder/macroblock.c:925-941/259-498 — intra chroma DC+AC. */

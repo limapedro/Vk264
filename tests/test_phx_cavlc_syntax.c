@@ -424,6 +424,60 @@ static void test_skip_run_golden(void)
       check_bits("golden B mixed skip runs", &s, "010011"); }
 }
 
+/* Instrumented x264 golden: real x264_macroblock_write_cavlc() with a fixed
+ * P_L0/D_16x16 MB (cbp=0/0, one list-0 ref, all neighbour MVs zero), preceded
+ * by bs_write_ue(0) for the skip run (encoder.c:2889).  Captured bytes:
+ *   MV (8,0)   -> C2 18       (16 bits)
+ *   MV (8,-4)  -> C2 02 60    (24 bits)
+ *   MV (0,-20) -> E0 A6       (16 bits)
+ *   MV (0,0)   -> F8          (8 bits)
+ * Phoenix's phx_cavlc_mb_skip + phx_cavlc_mb_header + CBP ue reproduces all
+ * four exactly: the CAVLC writer is not the source of the frame-21 decoder
+ * error.  SHADER: C. */
+static void p_l0_golden(const char *name, int mvx, int mvy,
+                        int bits, uint8_t b0, uint8_t b1, uint8_t b2,
+                        const char *golden)
+{
+    phx_bs_t s; uint8_t buf[64];
+    phx_mb_cache_t cache; phx_cavlc_mb_t mb; int run = 0;
+    memset(buf, 0, sizeof(buf));
+    flat_cache(&cache);
+    for (int i = 0; i < 40; i++) {
+        cache.ref[0][i] = 0;
+        cache.mv[0][i][0] = 0; cache.mv[0][i][1] = 0;
+    }
+    cache.mv[0][phx_scan8[0]][0] = (int16_t)mvx;
+    cache.mv[0][phx_scan8[0]][1] = (int16_t)mvy;
+    phx_bs_init(&s, buf, sizeof(buf));
+    phx_cavlc_mb_init(&mb, &s, &cache);
+    mb.slice_type = PHX_SLICE_TYPE_P;
+    mb.i_type = PHX_P_L0;
+    mb.i_partition = PHX_D_16x16;
+    mb.i_cbp_luma = mb.i_cbp_chroma = 0;
+    mb.i_fref[0] = 1; mb.i_fref[1] = 0;
+    mb.chroma = 1;
+    phx_cavlc_mb_skip(&s, &run, 0, 0);          /* encoder.c:2889 */
+    phx_cavlc_mb_header(&mb);                   /* cavlc.c:340-349 */
+    phx_bs_write_ue(&s, phx_cavlc_cbp_to_golomb[1][0][0]); /* cavlc.c:548 */
+    phx_bs_align_0(&s);
+    CHECK(phx_bs_pos(&s) == bits, "%s: pos=%d expected %d", name, phx_bs_pos(&s), bits);
+    CHECK(buf[0] == b0 && buf[1] == b1 && buf[2] == b2,
+          "%s: bytes %02X %02X %02X", name, buf[0], buf[1], buf[2]);
+    check_bits(name, &s, golden);
+}
+
+static void test_p_l0_golden(void)
+{
+    p_l0_golden("golden P_L0 mv(8,0)",    8,  0, 16, 0xC2,0x18,0x00,
+                "1100001000011000");
+    p_l0_golden("golden P_L0 mv(8,-4)",   8, -4, 24, 0xC2,0x02,0x60,
+                "110000100000001001100000");
+    p_l0_golden("golden P_L0 mv(0,-20)",  0,-20, 16, 0xE0,0xA6,0x00,
+                "1110000010100110");
+    p_l0_golden("golden P_L0 mv(0,0)",    0,  0,  8, 0xF8,0x00,0x00,
+                "11111000");
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -436,6 +490,7 @@ int main(void)
     test_header_b();
     test_skip_and_pcm();
     test_skip_run_golden();
+    test_p_l0_golden();
     printf("%s: %d checks, %d failed\n", n_failed ? "FAIL" : "PASS", n_tests, n_failed);
     return n_failed ? 1 : 0;
 }
