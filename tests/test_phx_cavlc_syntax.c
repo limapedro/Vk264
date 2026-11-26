@@ -1,6 +1,8 @@
 /* Golden bit-vector tests for the CAVLC MB header / MVD port.
  *
  * Every expected bit string below was derived by hand from the x264 source:
+ *   common/dct.c:936-948     (zigzag_interleave_8x8_cavlc, golden vectors)
+ *   encoder/cavlc.c:276-293  (I8 luma interleave call + 4x4 residual loop)
  *   encoder/cavlc.c:36-63    (syntax mapping tables, checked verbatim in test_tables)
  *   encoder/cavlc.c:305-482  (writer call order / branch selection)
  *   common/bitstream.h:169,241,246,264 (bs_write1/ue/se/te)
@@ -478,6 +480,85 @@ static void test_p_l0_golden(void)
                 "11111000");
 }
 
+/* ===========================================================================
+ * CAVLC I8 interleave golden -- instrumented x264 common/dct.c:936-948.
+ *
+ * A temporary harness (build/cavlc_i8/make_interleave_golden.py, gitignored)
+ * extracts zigzag_interleave_8x8_cavlc() VERBATIM from
+ * reference/x264/common/dct.c:936-948 and runs it on the four fixed 4x64
+ * coefficient arrays below.  The x264 function's 4*16 outputs and its four
+ * nnz bytes (at scan8 offsets 0,1,8,9) are copied into dst_gold/nnz_gold;
+ * this test asserts Phoenix is byte-identical to those numbers.  The call
+ * site is encoder/cavlc.c:276-284, followed by the 4x4 residual loop at
+ * :290-293, so a contiguous 16-coefficient memcpy is NOT a substitute:
+ * the source must be read at stride 4 (src[i+j*4]).
+ * SHADER: C -- pure coefficient permutation, no entropy state.
+ * ========================================================================= */
+static void test_interleave_8x8_golden(void)
+{
+    static const int16_t src[4][64] = {
+        /* block 0: dense stride-4 pattern, alternating signs */
+        {  1,0,0,0, -2,0,0,0,  3,0,0,0, -4,0,0,0,
+           5,0,0,0, -6,0,0,0,  7,0,0,0, -8,0,0,0,
+           9,0,0,0,-10,0,0,0, 11,0,0,0,-12,0,0,0,
+          13,0,0,0,-14,0,0,0, 15,0,0,0,-16,0,0,0 },
+        /* block 1: only i=1 stride-4 coefficients -> nnz 0,1,0,0 */
+        { 0,9,0,0, 0,0,0,0, 0,-5,0,0, 0,0,0,0,
+          0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+          0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+          0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 },
+        /* block 2: all zero -> nnz 0,0,0,0 */
+        { 0 },
+        /* block 3: i=2,i=3 stride-4 coefficients -> nnz 0,0,1,1 */
+        { 0,0,2,0, 0,0,0,-3, 0,0,4,0, 0,0,0,-5,
+          0,0,6,0, 0,0,0,-7, 0,0,8,0, 0,0,0,-9,
+          0,0,10,0, 0,0,0,-11, 0,0,12,0, 0,0,0,-13,
+          0,0,14,0, 0,0,0,-15, 0,0,16,0, 0,0,0,-17 }
+    };
+    static const int16_t dst_gold[4][64] = {
+        {  1,-2,3,-4,5,-6,7,-8,9,-10,11,-12,13,-14,15,-16,
+           0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+           0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+           0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+        {  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+           9,0,-5,0,0,0,0,0,0,0,0,0,0,0,0,0,
+           0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+           0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+        {  0 },
+        {  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+           0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+           2,0,4,0,6,0,8,0,10,0,12,0,14,0,16,0,
+           0,-3,0,-5,0,-7,0,-9,0,-11,0,-13,0,-15,0,-17 }
+    };
+    /* in scan8 order: offsets 0,1,8,9 for i=0,1,2,3 */
+    static const uint8_t nnz_gold[4][4] = {
+        { 1,0,0,0 }, { 0,1,0,0 }, { 0,0,0,0 }, { 0,0,1,1 }
+    };
+
+    for (int b = 0; b < 4; b++) {
+        int16_t dst[64];
+        uint8_t nnz[16];
+        memset(dst, 0, sizeof(dst));
+        memset(nnz, 0, sizeof(nnz));
+        phx_cavlc_interleave_8x8(dst, src[b], nnz);
+        for (int k = 0; k < 64; k++)
+            CHECK(dst[k] == dst_gold[b][k],
+                  "interleave dst block %d coeff %d: %d != %d",
+                  b, k, dst[k], dst_gold[b][k]);
+        for (int i = 0; i < 4; i++) {
+            int off = (i&1) + (i>>1)*8;
+            CHECK(nnz[off] == nnz_gold[b][i],
+                  "interleave nnz block %d offset %d: %d != %d",
+                  b, off, nnz[off], nnz_gold[b][i]);
+        }
+        /* x264 writes ONLY the four scan8 offsets; every other byte of the
+         * borrowed cache slice must stay untouched. */
+        for (int k = 0; k < 16; k++)
+            if (k != 0 && k != 1 && k != 8 && k != 9)
+                CHECK(nnz[k] == 0, "interleave wrote nnz[%d]", k);
+    }
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -491,6 +572,7 @@ int main(void)
     test_skip_and_pcm();
     test_skip_run_golden();
     test_p_l0_golden();
+    test_interleave_8x8_golden();
     printf("%s: %d checks, %d failed\n", n_failed ? "FAIL" : "PASS", n_tests, n_failed);
     return n_failed ? 1 : 0;
 }

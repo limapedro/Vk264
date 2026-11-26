@@ -73,6 +73,25 @@ void phx_cavlc_mb_init(phx_cavlc_mb_t *mb, phx_bs_t *bs, phx_mb_cache_t *cache)
     mb->cache = cache;
 }
 
+/* common/dct.c:936-948 -- zigzag_interleave_8x8_cavlc.  Verbatim C path:
+ *   for i in 0..3: nz |= src[i+j*4]; dst[i*16+j] = src[i+j*4]; j=0..15
+ *   nnz[(i&1) + (i>>1)*8] = !!nz
+ * Called by encoder/cavlc.c:282 for every non-zero 8x8 luma block BEFORE the
+ * four 4x4 residual writes at :290-293.  SHADER: C -- pure permutation. */
+void phx_cavlc_interleave_8x8(int16_t *dst, const int16_t *src, uint8_t *nnz)
+{
+    for (int i = 0; i < 4; i++)
+    {
+        int nz = 0;
+        for (int j = 0; j < 16; j++)
+        {
+            nz |= src[i+j*4];                            /* dct.c:941 */
+            dst[i*16+j] = src[i+j*4];                    /* dct.c:942 */
+        }
+        nnz[(i&1) + (i>>1)*8] = !!nz;                    /* dct.c:945 */
+    }
+}
+
 /* mvpred.c:30-127 — x264_mb_predict_mv(), progressive path.  The MBAFF
  * topright_mv/topright_ref override at mvpred.c:47-66 is deliberately not
  * ported (phx_mbcache.c is progressive only).  SHADER: C. */
