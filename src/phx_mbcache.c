@@ -586,9 +586,11 @@ void phx_macroblock_cache_save(phx_mb_state_t *s, phx_mb_cache_t *c, int b_mbaff
          * cabac_cbf_ctxidxinc() (cabac.c:621). */
         int cbp = (c->i_cbp_chroma << 4) | c->i_cbp_luma;
         if (s->b_cabac)
+            /* encoder/macroblock.c:948-950 — LUMA_DC=48, CHROMA_DC+0=49,
+             * CHROMA_DC+1=50 (scan8 slots), not the luma 4x4 slots 16/32. */
             cbp |= (c->non_zero_count[phx_scan8[48]] << 8)
-                 | (c->non_zero_count[phx_scan8[16]] << 9)
-                 | (c->non_zero_count[phx_scan8[32]] << 10);
+                 | (c->non_zero_count[phx_scan8[49]] << 9)
+                 | (c->non_zero_count[phx_scan8[50]] << 10);
         s->cbp[xy] = (int16_t)cbp;
     }
 
