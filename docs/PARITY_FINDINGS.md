@@ -126,4 +126,20 @@ Non-mod16 crop was double-shifted: `phx_encoder.c` stored `(width - display_widt
 
 Current first divergent CABAC bin on the real clip (instrumented x264, ultrafast) is **396**, ctx 152 `significant_coeff_flag`, with matching coder state — i.e. an upstream coefficient difference; downstream CABAC desync then produces decoder errors such as `intra4x4 mode -1`.
 
+## F12 — real-clip bin 396 was a one-pointer chroma AC offset
+
+M10 instrumented both encoders on the real 64×64 clip and matched residual blocks by coder state. At expanded bin 396 the state was identical (`low/range 85896/256`), but x264 fed `DCT_CHROMA_AC` array `[-1,0,0,…]` while Phoenix fed `[0,-1,0,0,…]`.
+
+Cause: x264 `cabac.c:1078` / `cavlc.c:588` pass `h->dct.luma4x4[j]+1` — a 4×4 chroma AC block's zigzag index 0 is its own DC, coded separately in the 2×2 DC block. `phx_chroma.c:296` stores the full 16-sample scan and `phx_encoder_block()` returned it without `+1`. Fixed in `phx_encoder.c`; instrumented CABAC writer was already byte-exact for both arrays (259 ordered records). Real-clip `cabac_bin_diff`: first divergent bin **396 → 589**, Phoenix bins 11,784 → 11,773.
+
+## F13 — P_SKIP gates are correct; B frames are the dominant size gap
+
+Z1 instrumented x264 at `encoder.c:2865` on a real clip: `analyse.c:2959-3014` (fast gate) and `:1294-1307` (`b_try_skip`) already match x264 at ultrafast/superfast/veryfast/medium (all 16 MB skip flags). Remaining gaps:
+
+- a single inter MB where x264's `x264_me_refine_qpel` (`me.c:801-992`) changes MV (0,0) → (0,2) — subpel API existed but was not called from analysis;
+- B slices: x264 8–16 B (all 16 MBs B_SKIP via `analyse.c:3334-3359` direct MV + `probe_bskip`), Phoenix 225–250 B coded as intra — roughly 8× the remaining stream-size gap;
+- placebo `b_fast_pskip=0` relies solely on `analyse.c:1320-1330` (`rd_cost_mb` → P_SKIP), needing the size-only `macroblock_size_cabac` writer.
+
+Delegated to M4 (public subpel API), M8 (size-only CABAC cost), and a new B1 worker (`x264_mb_predict_mv_direct16x16` + `probe_bskip`).
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
