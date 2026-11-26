@@ -142,6 +142,95 @@ static void check_chroma_dc_golden(const char *name, phx_cabac_t *cb,
     check(ok, name);
 }
 
+/* -------------------------------------------------------------------------
+ * Whole-MB size-only CABAC golden (M8).  Fixed MB decisions fed to both
+ * x264's RDO_SKIP_BS macroblock_size_cabac (encoder/rdo.c:68-69 ->
+ * encoder/cabac.c:917-1086) and phx_rdo_size_macroblock_cabac(); the harness
+ * dumps f8_bits_encoded and every changed context state.  SHADER: C —
+ * serial, read-only live coder, no stream state.
+ * ------------------------------------------------------------------------- */
+/* x264 P-slice initial CABAC state (qp=26, model=0), dumped by
+ * m8_size_golden.py.  Seeded explicitly to isolate the MB cost estimator
+ * from phx_cabac_context_init() (a separate, non-M8 table issue). */
+static const uint8_t m8_p_state[460] = {34,114,99,34,114,99,93,123,86,104,124,115,78,68,20,98,114,125,112,94,126,119,123,101,69,114,94,37,23,19,104,113,119,112,94,126,103,121,102,118,127,113,99,127,99,101,73,116,113,101,124,105,103,79,110,125,121,113,120,118,82,126,126,126,119,71,61,120,124,123,90,113,73,91,104,120,58,72,122,114,107,112,111,113,97,95,95,87,83,82,126,110,99,117,101,107,79,124,117,119,99,92,119,124,105,93,119,109,125,114,116,126,102,102,107,127,126,121,120,111,104,115,124,104,108,86,100,114,103,122,117,121,126,79,121,112,122,114,112,112,82,102,120,126,118,126,122,114,77,119,124,101,122,125,104,116,125,102,114,118,119,104,125,103,120,89,90,86,96,98,92,94,108,94,90,125,110,108,116,122,117,120,123,127,122,127,124,116,123,95,123,109,115,123,91,94,82,96,98,104,108,108,108,122,117,117,111,95,97,61,119,121,93,112,122,127,127,115,105,111,109,95,109,99,71,85,69,123,80,90,104,118,110,126,119,117,107,124,56,84,96,110,98,118,126,117,115,118,48,68,78,92,90,116,127,117,109,115,44,78,106,120,108,121,103,97,116,36,60,80,96,86,116,125,117,111,2,87,95,115,97,95,105,107,113,109,111,115,117,97,105,91,99,116,101,93,109,119,119,113,111,117,117,107,99,93,114,114,98,120,125,110,112,116,124,120,118,122,115,117,109,125,110,97,120,90,124,114,112,108,94,122,118,110,98,113,109,85,66,62,50,80,86,70,74,74,68,80,70,70,92,98,126,98,82,104,124,100,106,114,110,118,114,118,123,123,119,86,90,92,98,126,116,122,111,121,109,105,83,87,73,69,109,111,71,116,114,125,105,119,117,101,113,107,97,81,79,63,49,118,119,93,111,118,120,110,106,102,84,98,88,84,58,78,80,58,60,24,66,88,112,127,103,79,55,21,112,46,60,64,78,72,100,106,106,126,103,113,120,117,104,86,121,123,112,104,118,106,86,118,124,42,78,112,111,87,49,23,9,3};
+
+static void check_mb_size(const char *name, int slice_type, int mb_type,
+                          int partition, int qp, int cbp_l, int cbp_c,
+                          int intra16, int chroma_mode,
+                          int mvd_x, int mvd_y, int dc0, int ac1, int chdc0,
+                          int want_f8, const char *want_delta)
+{
+    phx_cabac_t live;
+    phx_mb_cache_t cache;
+    phx_cabac_mb_t mb;
+    phx_rdo_mb_data_t data;
+    phx_cabac_size_t sz;
+    char delta[2048];
+    int n = 0;
+
+    memset(&live, 0, sizeof(live));
+    phx_cabac_context_init(&live, slice_type, qp, 0);
+    if (slice_type != PHX_SLICE_I)
+        memcpy(live.state, m8_p_state, sizeof(live.state));
+    memset(&cache, 0, sizeof(cache));
+    memset(&data, 0, sizeof(data));
+    for (int i = 0; i < 40; i++) cache.intra4x4_pred_mode[i] = 2; /* I_PRED_4x4_DC */
+    cache.i_neighbour = 0;
+    cache.i_mb_xy = 1;
+    cache.i_cbp_left = cache.i_cbp_top = 0;
+    cache.i_cbp_luma = cbp_l;
+    cache.i_cbp_chroma = cbp_c;
+    cache.b_transform_8x8 = 0;
+    cache.i_neighbour_transform_size = 0;
+    cache.type_left[0] = cache.type_top = PHX_P_L0;
+    data.i_fref[0] = data.i_fref[1] = 1;
+    data.sub_partition[0] = data.sub_partition[1] =
+    data.sub_partition[2] = data.sub_partition[3] = PHX_D_L0_8x8;
+    data.mvd[0][0][0] = (int16_t)mvd_x;
+    data.mvd[0][0][1] = (int16_t)mvd_y;
+    data.luma4x4[0][1] = (int16_t)ac1;
+    data.luma16x16_dc[0] = (int16_t)dc0;
+    data.chroma_dc[0][0] = (int16_t)chdc0;
+    cache.non_zero_count[phx_scan8[0]] = (uint8_t)(ac1 != 0); /* scan8[0]=12 */
+    cache.non_zero_count[phx_scan8[PHX_LUMA_DC]] = (uint8_t)(dc0 != 0);
+    cache.non_zero_count[phx_scan8[PHX_CHROMA_DC]] = (uint8_t)(chdc0 != 0);
+
+    phx_cabac_mb_init(&mb, &cache);
+    mb.i_type = mb_type;
+    mb.i_partition = partition;
+    mb.i_intra16x16_pred_mode = intra16;
+    mb.i_chroma_pred_mode = chroma_mode;
+    mb.chroma_pred_mode_left = mb.chroma_pred_mode_top = 0;
+    mb.i_qp = mb.i_last_qp = qp;
+    mb.i_last_dqp = 0;
+    mb.prev_type = PHX_P_L0;
+    mb.prev_cbp = 0;
+    mb.curr_cbp = cbp_l | (cbp_c << 4);
+    mb.b_transform_8x8_mode = 0;
+    mb.slice_type = slice_type;
+
+    int f8 = phx_rdo_size_macroblock_cabac(&sz, &live, &mb, &data,
+                                           slice_type, qp);
+    delta[0] = 0;
+    for (int i = 0; i < PHX_CABAC_CTX_COUNT; i++)
+        if (live.state[i] != sz.state[i])
+            n += snprintf(delta+n, sizeof(delta)-(size_t)n, " %d:%d->%d",
+                          i, live.state[i], sz.state[i]);
+    int ok = (f8 == want_f8 && strcmp(delta, want_delta) == 0);
+    /* rdo.c:176-185 — rd_cost_mb()'s bit term for the same MB decisions. */
+    const int lambda2 = 10988; /* tab[1][26] */
+    int bits = phx_rdo_macroblock_bits(&live, &mb, &data, slice_type, qp, lambda2);
+    int want_bits = (mb_type == PHX_P_SKIP || mb_type == PHX_B_SKIP ||
+                     mb_type == PHX_B_DIRECT)
+                    ? ((lambda2 + 128) >> 8)
+                    : (int)(((uint64_t)want_f8 * lambda2 + 32768) >> 16);
+    ok = ok && (bits == want_bits);
+    printf("%-14s f8=%d bits=%d delta:%s %s\n", name, f8, bits, delta,
+           ok ? "OK" : "FAIL");
+    if (!ok) printf("  want f8=%d delta:%s\n", want_f8, want_delta);
+    check(ok, name);
+}
+
 int main(void)
 {
     phx_rdo_init();
@@ -387,6 +476,20 @@ int main(void)
         check(nz == 0, "cavlc zero block");
         for (int i = 0; i < 16; i++) check(dct[i] == 0, "cavlc zero block coefs");
     }
+
+
+    /* x264 golden: m8_size_golden.py */
+    check_mb_size("gold_I16", PHX_SLICE_I, PHX_I_16x16, PHX_D_16x16, 26,
+        0, 1, 1, 0, 0, 0, 37, 0, 15, 14764,
+        " 7:123->121 9:104->102 85:65->63 97:111->113 105:93->91 149:77->75 166:78->88 210:84->94 228:64->78 232:116->111 258:102->108 262:127->101");
+    check_mb_size("gold_I4", PHX_SLICE_I, PHX_I_4x4, PHX_D_16x16, 26,
+        1, 0, 0, 0, 0, 0, 0, 9, 0, 12672,
+        " 68:124->99 74:95->101 75:91->97 76:124->126 94:95->101 95:109->113 134:83->91 135:105->103 196:36->62 248:60->76 252:106->126");
+    check_mb_size("gold_P_L0", PHX_SLICE_P, PHX_P_L0, PHX_D_16x16, 26,
+        1, 0, 0, 0, 8, -4, 0, 5, 0, 11455,
+        " 40:127->125 43:127->125 44:99->97 45:101->99 46:73->79 47:116->118 50:124->126 51:105->103 52:103->101 53:79->89 74:104->102 75:120->118 76:58->74 93:117->119 94:101->105 95:107->111 134:121->123 135:112->116 196:82->90 248:48->68 252:90->106");
+    check_mb_size("gold_P_SKIP", PHX_SLICE_P, PHX_P_SKIP, PHX_D_16x16, 26,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 256, "");
 
     printf("%s: %d failures\n", failures ? "FAILED" : "PASSED", failures);
     return failures ? 1 : 0;
