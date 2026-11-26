@@ -195,6 +195,22 @@ typedef struct {
 extern phx_transform_diag_rec_t phx_g_transform_diag[4096];
 extern int phx_g_transform_diag_count, phx_g_transform_diag_enable;
 
+/* mbrd>=1 intra_rd() observation: the three re-costed intra modes
+ * (analyse.c:987-1013) and the winning MB type.  No entropy state.
+ * SHADER: B/C — read-only observation of the A/B boundary. */
+typedef struct {
+    int mb_x, mb_y, qp;
+    int cost[19];                   /* rd_cost[type] after rd_cost_mb() */
+    int satd[19];                   /* pre-RD SATD costs (a->i_satd_iXX) */
+    int ssd[19], bits[19];          /* rdo.c:174/:185 components */
+    int cbp[19], nnz0[19], pred16;  /* candidate diagnostics */
+    int raw[19], psy[19], chr[19];  /* ssd_mb components */
+    int fdec_sum[19];               /* diagnostic: sum of reconstructed luma */
+    int winner;                     /* mb_class_e selected by :2943-2946 */
+} phx_intra_rd_diag_rec_t;
+extern phx_intra_rd_diag_rec_t phx_g_intra_rd_diag[4096];
+extern int phx_g_intra_rd_diag_count, phx_g_intra_rd_diag_enable;
+
 /* Additive B-frame entry point: same ABI as phx_macroblock_analyse_slice()
  * plus the list-1/colocated bundle above.  For B slices it calls B1's
  * phx_mvdirect_predict() and the analyse.c:3334-3359 B_SKIP gate/probe, and
