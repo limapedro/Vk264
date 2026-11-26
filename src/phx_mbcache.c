@@ -578,8 +578,19 @@ void phx_macroblock_cache_save(phx_mb_state_t *s, phx_mb_cache_t *c, int b_mbaff
     if (c->i_cbp_luma == 0 && mb_type != PHX_I_8x8)
         c->b_transform_8x8 = 0;                         /* :1777-1778 */
     s->mb_transform_size[xy] = (uint8_t)c->b_transform_8x8;
-    if (mb_type != PHX_I_PCM)                           /* encoder/macroblock.c cbp store */
-        s->cbp[xy] = (int16_t)((c->i_cbp_chroma << 4) | c->i_cbp_luma | 0x1700);
+    if (mb_type != PHX_I_PCM) {
+        /* encoder/macroblock.c:945-951 — x264 derives the high cbp bits from
+         * actual non-zero counts; only I_PCM uses the constant 0x1700
+         * (common/macroblock.c:1740-1746).  The unconditional OR here forced
+         * the U-DC nnz bit and produced ctx 100 instead of x264's 99 in
+         * cabac_cbf_ctxidxinc() (cabac.c:621). */
+        int cbp = (c->i_cbp_chroma << 4) | c->i_cbp_luma;
+        if (s->b_cabac)
+            cbp |= (c->non_zero_count[phx_scan8[48]] << 8)
+                 | (c->non_zero_count[phx_scan8[16]] << 9)
+                 | (c->non_zero_count[phx_scan8[32]] << 10);
+        s->cbp[xy] = (int16_t)cbp;
+    }
 
     int intra = mb_type == PHX_I_4x4 || mb_type == PHX_I_8x8
              || mb_type == PHX_I_16x16 || mb_type == PHX_I_PCM;
