@@ -343,4 +343,16 @@ Removing phx_encoder's unconditional transform override did not change it, so
 the analysis-side mb_analyse_transform() decision (analyse.c:2735-2770) is
 delegated; ctest remains 30/30 with the override removed.
 
+## F32 — transform-size path exact; bin 1 is an MB-type gap
+
+Ported x264's transform-size decision (analyse.c:2735-2770) with the exact
+transform_allowed[] table (macroblock.h:444-461), unscaled SA8D/SATD 16x16
+costs (pixel.c:311-381), and I_8x8->1 publishing (macroblock.c:713-715). Golden:
+cost8/cost4/b8 byte-identical to instrumented x264 on real-clip P MBs.
+
+Bin 1 did not move because x264 MB0 is I_8x8 (chosen by intra_rd, analyse.c:982-1014
+via :2940-2941 at mbrd>=1) while Phoenix picks I_4x4. Whole-MB RD needs an
+8x8-capable size-only CABAC writer; phx_encoder's I_8x8 rejection was removed
+and the intra_rd port (analysis + RDO) is delegated. ctest 30/30 PASS.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
