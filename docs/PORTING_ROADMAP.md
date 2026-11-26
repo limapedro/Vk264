@@ -105,7 +105,7 @@ review document for the shader backend derived from it.
 |---|---|---|
 | `ctest` (all registered tests) | 27/29 passing (2 stale encoder goldens under repair) | `python tools/run_tests.py` / CMake ctest |
 | Function contract | 19 rows in `docs/BYTE_EXACT_FUNCTIONS.md` + 3 inter/B rows | `docs/BYTE_EXACT_FUNCTIONS.md` |
-| Real-video periodic matrix | 16 clips × 10 presets × 2 entropies = 320 pairs; 0 byte-exact; headers byte-exact in all cases | `tools/video_parity_matrix.py`, `build/oracle_matrix_scaled*/matrix_report.json` |
+| Real-video periodic matrix | 16 clips × 10 presets × 2 entropies = 320 pairs; **0 byte-exact**, 17/320 clean Phoenix decode (up from 6); headers byte-exact in all cases | `tools/video_parity_matrix.py`, `build/oracle_matrix_scaled*/matrix_report.json` |
 | Reconstructed reference DPB | byte-exact deblocked L0 frames vs instrumented x264; wired into encoder | `src/phx_dpb.*`, `docs/PARITY_FINDINGS.md` F16 |
 | Function inventory | **273 PORTED of 1386 (19.7%)**; 1113 MISSING | `docs/FUNCTION_INVENTORY.md` |
 | Header parity | **byte-exact 20/20** SPS+PPS; version SEI byte-exact | `python tests/compare_headers.py`, `tools/cabac_bin_diff.py` |
