@@ -100,6 +100,10 @@ add_executable(phx_test_quant tests/test_phx_quant.c)
 target_link_libraries(phx_test_quant PRIVATE phx)
 add_test(NAME phx_quant_dequant COMMAND phx_test_quant)
 
+add_executable(phx_test_dct tests/test_phx_dct.c)
+target_link_libraries(phx_test_dct PRIVATE phx)
+add_test(NAME phx_dct_i16_dc_recon COMMAND phx_test_dct)
+
 add_executable(phx_test_cavlc tests/test_phx_cavlc.c)
 target_link_libraries(phx_test_cavlc PRIVATE phx)
 add_test(NAME phx_cavlc COMMAND phx_test_cavlc)
