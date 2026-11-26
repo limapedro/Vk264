@@ -119,6 +119,7 @@ static void phx_encoder_release(phx_t *h)
     /* h->fenc borrows from input_frames[] and is freed in the loop above. */
     free(h->rbsp);                                         /* encoder.c:4518 */
     phx_dpb_free(h->recon_dpb);                                  /* encoder.c:4527 */
+    phx_frame_delete(h->recon_frame);                            /* frame.c:312 */
     free(h->recon);                                        /* encoder.c:4527 */
     free(h->bitstream);                                    /* encoder.c:4518 */
     free(h);                                               /* api.c:135 */
@@ -192,9 +193,12 @@ phx_t *phx_encoder_open(const phx_param_t *p)
     }
     /* encoder.c:3454/3882 — reconstructed reference pictures. */
     h->recon_dpb = phx_dpb_create(h->i_width, h->i_height, h->param.i_bframe);
+    /* encoder.c:3978 — full-picture reconstruction assembled from the per-MB
+     * FDEC scratch (common.h:571); x264 stores it in h->fdec->plane. */
+    h->recon_frame = phx_frame_new(h->i_width, h->i_height, 0);
 
     if (!h->lookahead || !h->mb_state || !h->rbsp || !h->bitstream || !h->recon ||
-        !h->recon_dpb ||
+        !h->recon_dpb || !h->recon_frame ||
         phx_analyse_init_costs(&h->cost, h->param.i_me_range,
                                (int)h->param.i_me_method, 0, PHX_QP_MAX)) {
         phx_encoder_release(h);                        /* encoder.c:goto fail */
@@ -1396,7 +1400,6 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     memset(&b_input, 0, sizeof(b_input));
     memset(&b_col, 0, sizeof(b_col));
     int b_slice = (fc.i_type == PHX_SLICE_B && h->recon_dpb);
-            h->recon_dpb ? phx_dpb_count(h->recon_dpb) : -1);
     if (b_slice) {
         phx_dpb_list_cfg_t bcfg;
         memset(&bcfg, 0, sizeof(bcfg));
@@ -1543,6 +1546,27 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                 memset(d.chroma_dct, 0, sizeof(d.chroma_dct));
                 memset(d.chroma_nnz, 0, sizeof(d.chroma_nnz));
             }
+            /* encoder.c:3978 / macroblock.c:632-637 — copy this MB's
+             * reconstructed samples out of the per-MB FDEC scratch into the
+             * full picture (x264's h->fdec->plane).  The scratch stride 32
+             * only holds two MBs per row, so it cannot be used as a frame. */
+            {
+                int fs = h->recon_frame->i_stride;
+                uint8_t *dy = h->recon_frame->plane
+                            + (size_t)(mb_y*16)*fs + mb_x*16;
+                for (int y = 0; y < 16; y++)
+                    memcpy(dy + (size_t)y*fs,
+                           c->p_fdec + y*PHX_FDEC_STRIDE, 16);
+                int cs = h->recon_frame->i_stride_planes[1];
+                int fcs = h->fenc->i_stride_planes[1];
+                uint8_t *dc = h->recon_frame->plane_chroma
+                            + (size_t)(mb_y*8)*cs + mb_x*16;
+                const uint8_t *sc = h->fenc->plane_chroma
+                            + (size_t)(mb_y*8)*fcs + mb_x*16;
+                for (int y = 0; y < 8; y++)
+                    memcpy(dc + (size_t)y*cs, sc + (size_t)y*fcs, 16);
+            }
+
             phx_encoder_apply_decision(h, &d);         /* docs/SHADER_NOTES.md:126 */
 
             if (h->param.b_cabac) {
@@ -1619,10 +1643,10 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     if (fc.i_nal_ref_idc != 0) {
         phx_dpb_store_params_t sp;
         memset(&sp, 0, sizeof(sp));
-        sp.fdec_y = h->recon + 64;                       /* macroblock.c:533 */
-        sp.fdec_y_stride = PHX_FDEC_STRIDE;
-        sp.fdec_uv = h->fenc->plane_chroma;              /* NV12 interleaved */
-        sp.fdec_uv_stride = h->fenc->i_stride_planes[1];
+        sp.fdec_y = h->recon_frame->plane;               /* full reconstructed frame */
+        sp.fdec_y_stride = h->recon_frame->i_stride;
+        sp.fdec_uv = h->recon_frame->plane_chroma;        /* NV12 interleaved */
+        sp.fdec_uv_stride = h->recon_frame->i_stride_planes[1];
         sp.mb_state = h->mb_state;
         sp.qp = fc.i_qp;                                 /* CQP: no AQ offsets */
         sp.b_cabac = h->param.b_cabac;
@@ -1631,12 +1655,7 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
         sp.display_frame = frame_index;
         sp.i_type = fc.i_type;
         sp.b_kept_as_ref = 1;
-                h->mb_state->mb_width, h->mb_state->mb_height,
-                h->mb_state->mb_stride, h->mb_state->b8_stride,
-                h->mb_state->b4_stride, !!h->mb_state->field,
-                !!h->mb_state->ref[0], !!h->mb_state->mv[0]);
-        int src = phx_dpb_store_frame(h->recon_dpb, &sp);      /* encoder.c:3882 */
-                h->i_frame, src, phx_dpb_count(h->recon_dpb));
+        phx_dpb_store_frame(h->recon_dpb, &sp);               /* encoder.c:3882 */
     }
 
     phx_nal_t nal;

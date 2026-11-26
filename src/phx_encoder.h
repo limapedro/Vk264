@@ -115,6 +115,7 @@ typedef struct phx_t {
     uint8_t *rbsp;                  /* slice-header + MB scratch RBSP (encoder.c:1724) */
     uint8_t *recon;                 /* reconstructed plane, FDEC_STRIDE layout */
     phx_dpb_t *recon_dpb;           /* reconstructed/deblocked reference pictures */
+    phx_frame_t *recon_frame;       /* full-picture reconstruction assembled per MB */
     int i_frame;                    /* encoder.c:1563 */
     int b_first_slice_nal;          /* first slice shares the header NAL array */
     int i_frame_num;                /* encoder.c:1564 */
