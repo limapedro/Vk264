@@ -814,6 +814,7 @@ static void phx_encoder_apply_decision(phx_t *h, const phx_mb_decision_t *d)
     phx_mb_cache_t *c = &h->mb_cache;
     c->i_cbp_luma   = d->cbp_luma & 0x0f;               /* encoder.c:2856 */
     c->i_cbp_chroma = d->cbp_chroma & 0x03;             /* macroblock.c:1761 */
+    c->i_chroma_pred_mode = d->chroma_pred_mode;        /* macroblock.c:1835 */
     c->b_transform_8x8 = h->pps.b_transform_8x8_mode
                        ? (d->b_transform_8x8 & 1) : 0; /* cabac.c:973 */
     c->i_qp = d->i_qp;                                 /* macroblock.c:620 */
@@ -1572,6 +1573,12 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
             if (h->param.b_cabac) {
                 phx_cabac_mb_t mb;
                 phx_cabac_mb_init(&mb, c);             /* encoder.c:1669 */
+                /* cabac.c:104-107 — neighbour chroma predictors from x264's
+                 * per-MB chroma_pred_mode[] (common/macroblock.c:1835). */
+                mb.chroma_pred_mode_left = c->left[0] >= 0
+                    ? h->mb_state->chroma_pred_mode[c->left[0]] : 0;
+                mb.chroma_pred_mode_top = c->top >= 0
+                    ? h->mb_state->chroma_pred_mode[c->top] : 0;
                 mb.i_type = d.mb_type;
                 mb.i_partition = d.i_partition;
                 for (int i = 0; i < 4; i++) mb.i_sub_partition[i] = PHX_D_L0_8x8;
