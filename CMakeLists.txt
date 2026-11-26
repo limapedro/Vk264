@@ -35,6 +35,7 @@ add_library(phx STATIC
     src/phx_chroma.c
     src/phx_rdo.c
     src/phx_me.c
+    src/phx_lowres.c
 )
 target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -102,7 +103,7 @@ add_executable(phx_test_analysis tests/test_phx_analysis.c)
 target_link_libraries(phx_test_analysis PRIVATE phx)
 add_test(NAME phx_analysis COMMAND phx_test_analysis)
 
-add_executable(phx_test_lookahead tests/test_phx_lookahead.c)
+add_executable(phx_test_lookahead tests/test_phx_lookahead.c tests/test_phx_lowres.c)
 target_link_libraries(phx_test_lookahead PRIVATE phx)
 add_test(NAME phx_lookahead COMMAND phx_test_lookahead)
 
@@ -121,3 +122,8 @@ add_test(NAME phx_rdo COMMAND phx_test_rdo)
 add_executable(phx_test_me tests/test_phx_me.c)
 target_link_libraries(phx_test_me PRIVATE phx)
 add_test(NAME phx_me COMMAND phx_test_me)
+
+add_executable(phx_test_lowres tests/test_phx_lowres.c)
+target_compile_definitions(phx_test_lowres PRIVATE PHX_LOWRES_STANDALONE)
+target_link_libraries(phx_test_lowres PRIVATE phx)
+add_test(NAME phx_lowres COMMAND phx_test_lowres)

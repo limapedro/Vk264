@@ -25,6 +25,8 @@
 #include "phx_param.h"
 #include "phx_frame.h"
 
+int phx_lowres_run_tests(void);   /* tests/test_phx_lowres.c */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -219,6 +221,7 @@ int main(void)
     test_ultrafast();
     test_scenecut();
     test_keyint_max();
+    fails += phx_lowres_run_tests();
 
     if (fails) {
         printf("phx_lookahead: %d failure(s)\n", fails);

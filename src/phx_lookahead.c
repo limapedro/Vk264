@@ -1,12 +1,17 @@
 /* Phoenix lookahead / slice-type state machine -- serial (SHADER C) port.
  *
  * Every non-trivial function below names the exact x264 lines it follows.
- * The state machine itself is ported function-for-function; the expensive
- * lowres motion search and MB-tree propagation are NOT approximated and are
- * left as explicit TODOs (see phx_lh_frame_cost and
- * phx_lh_slicetype_analyse).  No x264 stream parity is claimed.
+ * The state machine is ported function-for-function; the lowres frame/path
+ * costs now come from src/phx_lowres.c (slicetype.c:514-791, :836-995,
+ * :1288-1327) with a real full/half/quarter-pel search instead of the old
+ * zero-MV placeholder.  MB-tree propagation, trellis B-adapt and VBV lookahead
+ * remain explicit TODOs.  No x264 stream parity is claimed.
+ *
+ * SHADER: A -- the per-8x8 kernels live in phx_lowres.c; this file is the C
+ *              serial scheduler around them.
  */
 #include "phx_lookahead.h"
+#include "phx_lowres.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -37,7 +42,8 @@ static const uint16_t phx_lambda_tab[82] = {
 
 /* The subset of x264_frame_t (common/frame.h:37-140) the slice-type machine
  * touches but which phx_frame.h does not expose.  Kept beside the borrowed
- * phx_frame_t pointer; the cost arrays stay in phx_frame_t. */
+ * phx_frame_t pointer; the cost arrays stay in phx_frame_t and the per-MB MV
+ * caches stay in the phx_lowres_t context (see phx_lowres.h). */
 typedef struct {
     phx_frame_t *f;
     int i_frame;         /* frame.h:56   presentation frame number */
@@ -53,6 +59,7 @@ typedef struct {
 
 struct phx_lookahead {
     phx_param_t p;                       /* private copy of the parameters */
+    phx_lowres_t *lowres;                /* slicetype.c lowres cost caches */
     int mb_width, mb_height;
     int i_frame_counter;                 /* next presentation number */
     int i_last_keyframe;                 /* lookahead.c:116 */
@@ -74,210 +81,37 @@ struct phx_lookahead {
 #define PHX_MIN(a,b) ((a) < (b) ? (a) : (b))
 #define PHX_MAX(a,b) ((a) > (b) ? (a) : (b))
 
-/* ---- lowres cost kernels (SHADER C, serial scalar helpers) -------------- */
+/* ---- lowres cost bridge (SHADER C) -------------------------------------- */
 
-/* 8-point Hadamard butterfly used by SATD.
- * Source: reference/x264/common/pixel.c:265-332 (HADAMARD4 / PIXEL_SATD_C).
- * SHADER: C -- serial scalar reduction; no GPU workgroup is involved. */
-static void phx_lh_hadamard8(int *a)
-{
-    for (int stage = 0; stage < 3; stage++) {
-        int step = 8 >> (stage + 1);
-        for (int base = 0; base < 8; base += step * 2) {
-            for (int i = 0; i < step; i++) {
-                int p = a[base + i];
-                int q = a[base + i + step];
-                a[base + i] = p + q;
-                a[base + i + step] = p - q;
-            }
-        }
-    }
-}
-
-/* x264 common/pixel.c:311-332 -- satd_8x8 (sum of |8x8 Hadamard| >> 1).
- * SHADER: C -- serial scalar SATD of one lowres 8x8 block. */
-static int phx_lh_satd8(const uint8_t *a, int sa, const uint8_t *b, int sb)
-{
-    int d[64];
-    for (int y = 0; y < 8; y++)
-        for (int x = 0; x < 8; x++)
-            d[y*8+x] = (int)a[x + y*sa] - (int)b[x + y*sb];
-
-    for (int y = 0; y < 8; y++) phx_lh_hadamard8(&d[y*8]);      /* rows */
-    int tmp[8];
-    for (int x = 0; x < 8; x++) {
-        for (int y = 0; y < 8; y++) tmp[y] = d[y*8+x];
-        phx_lh_hadamard8(tmp);                                  /* columns */
-        for (int y = 0; y < 8; y++) d[y*8+x] = tmp[y];
-    }
-    int sum = 0;
-    for (int i = 0; i < 64; i++) sum += d[i] < 0 ? -d[i] : d[i];
-    return sum >> 1;                            /* pixel.c:332 */
-}
-
-/* I_PRED_8x8C_DC/H/V for the lowres luma plane.
- * Source: reference/x264/common/predict.c:167-280,
- *         reference/x264/common/pixel.c:542-556 (intra_mbcmp_x3_8x8c).
- * Lowres planes are border-expanded by phx_frame_expand_border_lowres()
- * (phx_frame.c:627), so the neighbours at -1 are always readable.
- * SHADER: C -- serial scalar predictor generation. */
-static void phx_lh_intra_pred(const uint8_t *src, int stride, int mode,
-                              uint8_t pred[64])
-{
-    if (mode == 1) { /* H: predict_8x8c_h_c, predict.c:260-268 */
-        for (int y = 0; y < 8; y++)
-            for (int x = 0; x < 8; x++)
-                pred[y*8+x] = src[y*stride - 1];
-    } else if (mode == 2) { /* V: predict_8x8c_v_c, predict.c:270-280 */
-        for (int y = 0; y < 8; y++)
-            for (int x = 0; x < 8; x++)
-                pred[y*8+x] = src[-stride + x];
-    } else { /* DC: predict_8x8c_dc_c, predict.c:221-258 */
-        int s0 = 0, s1 = 0, s2 = 0, s3 = 0;
-        for (int i = 0; i < 4; i++) {
-            s0 += src[i - stride];
-            s1 += src[i + 4 - stride];
-            s2 += src[-1 + i*stride];
-            s3 += src[-1 + (i+4)*stride];
-        }
-        int dc0 = (s0 + s2 + 4) >> 3;
-        int dc1 = (s1 + 2) >> 2;
-        int dc2 = (s3 + 2) >> 2;
-        int dc3 = (s1 + s3 + 4) >> 3;
-        const int dc[4] = { dc0, dc1, dc2, dc3 };
-        for (int y = 0; y < 8; y++)
-            for (int x = 0; x < 8; x++)
-                pred[y*8+x] = (uint8_t)dc[(y >= 4 ? 2 : 0) + (x >= 4 ? 1 : 0)];
-    }
-}
-
-/* Cost of one lowres 8x8 block.
- * Source: reference/x264/encoder/slicetype.c:514-790 (slicetype_mb_cost),
- *         :729-746 (intra SATD + 5*lambda + lowres_penalty),
- *         :658-665 (zero-MV inter shortcut), :758 (inter + lowres_penalty).
- *
- * TODO: the full x264_me_search()/hpel/bidir lowres search
- * (slicetype.c:560-720, me.c:476) is not ported.  We deliberately use the
- * zero-MV SATD path instead of approximating a motion search; therefore
- * decisions are deterministic but NOT identical to x264's lowres costs.
- * SHADER: C -- serial scalar cost of one lowres block. */
-static void phx_lh_mb_cost(const phx_lookahead_t *l,
-                           const phx_frame_t *fenc, const phx_frame_t *fref,
-                           int mb_x, int mb_y, int *icost, int *pcost)
-{
-    (void)l; /* lambda is read via the module constant below */
-    const int stride = fenc->i_stride_lowres;
-    const uint8_t *cur = fenc->lowres[0] + mb_x*8 + mb_y*8*stride;
-    uint8_t pred[64];
-    int best = PHX_COST_MAX32;
-
-    for (int mode = 0; mode < 3; mode++) {
-        phx_lh_intra_pred(cur, stride, mode, pred);
-        int satd = phx_lh_satd8(pred, 8, cur, stride);  /* pixel.c:556 */
-        if (satd < best) best = satd;                   /* slicetype.c:732 */
-    }
-    /* intra_penalty = 5 * lambda (slicetype.c:723, lowres_context_init:47-48),
-     * lambda_tab[X264_LOOKAHEAD_QP] = 1 (common/tables.c:97-98). */
-    *icost = best + 5 * phx_lambda_tab[PHX_LOOKAHEAD_QP] + PHX_LOWRES_PENALTY;
-
-    if (fref) {
-        /* Zero-MV inter residual; see TODO above. */
-        *pcost = phx_lh_satd8(cur, stride,
-                             fref->lowres[0] + mb_x*8 + mb_y*8*stride, stride)
-                 + PHX_LOWRES_PENALTY;                  /* slicetype.c:758 */
-    } else {
-        *pcost = *icost;
-    }
-}
-
-/* x264 encoder/slicetype.c:836-997 -- slicetype_frame_cost().
- * Caches in phx_frame_t::i_cost_est[b-p0][p1-b] (frame.h:123).  The intra
- * score of `fenc` is cached as a side effect in [0][0]
- * (slicetype.c:990-993), which is what scenecut_internal() reads.
- * The outer edge MBs are skipped exactly as slicetype_slice_cost() does
- * (slicetype.c:814-830) when both dimensions exceed 2.
- * SHADER: C -- serial cost accumulation for one frame in a minigop. */
+/* slicetype.c:836-995 now lives in phx_lowres.c (a real full/hpel/qpel search);
+ * this file only marshals phx_lf_frame_t metadata into a phx_frame_t** array.
+ * SHADER: C -- serial pointer marshalling; kernels are SHADER A there. */
 static int phx_lh_frame_cost(phx_lookahead_t *l, phx_lf_frame_t **frames,
-                             int p0, int p1, int b)
+                              int p0, int p1, int b)
 {
-    phx_frame_t *fenc = frames[b]->f;
-    if (b - p0 < 0 || b - p0 > PHX_BFRAME_MAX+1 ||
-        p1 - b < 0 || p1 - b > PHX_BFRAME_MAX+1)
-        return PHX_COST_MAX32; /* TODO: widen cache indices; x264 never does this */
+    phx_frame_t *lr[PHX_BFRAME_MAX+3] = { NULL };
+    int max_i = PHX_MAX(p0, PHX_MAX(p1, b));
+    if (max_i >= PHX_BFRAME_MAX+3 || !frames[b]) return PHX_COST_MAX32;
+    for (int i = 0; i <= max_i; i++)
+        lr[i] = frames[i] ? frames[i]->f : NULL;
 
-    if (fenc->i_cost_est[b-p0][p1-b] >= 0)     /* slicetype.c:846-850 */
-        return fenc->i_cost_est[b-p0][p1-b];
-
-    const int i_intra = (p0 == p1);
-    int intra_total = 0, inter_total = 0, intra_mbs = 0;
-    const int do_edges = l->mb_width <= 2 || l->mb_height <= 2;
-    const int start = do_edges ? 0 : 1;
-    const int end_x = do_edges ? l->mb_width  : l->mb_width  - 1;
-    const int end_y = do_edges ? l->mb_height : l->mb_height - 1;
-
-    /* slicetype.c:820-830 walks backwards; the sum is order independent. */
-    for (int y = end_y - 1; y >= start; y--) {
-        for (int x = end_x - 1; x >= start; x--) {
-            int ic, pc;
-            const phx_frame_t *fref = (p0 != p1) ? frames[p0]->f : NULL;
-            phx_lh_mb_cost(l, fenc, fref, x, y, &ic, &pc);
-            intra_total += ic;
-            if (pc < ic) intra_mbs++;            /* slicetype.c:776-783 */
-            if (p0 != p1) inter_total += pc;     /* slicetype.c:785-789 */
-        }
-    }
-
-    /* b_intra_calculated lives in the private metadata (frame.h:126), because
-     * phx_frame_t only exposes the cost arrays (phx_frame.h:28-35). */
-    if (!frames[b]->b_intra_calculated) {        /* slicetype.c:960-964 */
-        fenc->i_cost_est[0][0] = intra_total;
-        frames[b]->b_intra_calculated = 1;
-    }
-    frames[b]->i_intra_mbs = intra_mbs;          /* slicetype.c:956-958 */
-
-    int score = i_intra ? intra_total : inter_total;
-    /* slicetype.c:983-987: ONLY B-frame paths (b != p1) get the 100/(120+bias)
-     * discount; a P frame (b == p1) keeps its full inter score and marks the
-     * frame's intra cost as final. */
-    if (b != p1) {
-        score = (int)(((uint64_t)score * 100) / (120 + PHX_BFRAME_BIAS));
-    } else {
-        frames[b]->b_intra_calculated = 1;       /* slicetype.c:986 */
-    }
-    fenc->i_cost_est[b-p0][p1-b] = score;        /* slicetype.c:993 */
+    int score = phx_lowres_frame_cost(l->lowres, lr, p0, p1, b);
+    if (p1 == b && frames[b]) frames[b]->b_intra_calculated = 1; /* :986 */
     return score;
 }
 
-/* x264 encoder/slicetype.c:1288-1331 -- slicetype_path_cost().  `path` is
- * 1-indexed from frames+last_nonb, with path[0] logically prepended.
+
+/* x264 encoder/slicetype.c:1288-1327 -- slicetype_path_cost().  `path` is
+ * 1-indexed from frames+last_nonb.  The real implementation, including the
+ * B-pyramid split at :1310-1318, lives in phx_lowres.c.
  * SHADER: C -- serial prefix-sum over the candidate B/P path. */
 static uint64_t phx_lh_path_cost(phx_lookahead_t *l, phx_lf_frame_t **frames,
-                                 const char *path, uint64_t threshold)
+                                  const char *path, uint64_t threshold)
 {
-    uint64_t cost = 0;
-    int loc = 1, cur_nonb = 0;
-    path--;                                      /* slicetype.c:1292 */
-    while (path[loc]) {
-        int next_nonb = loc;
-        while (path[next_nonb] == 'B') next_nonb++; /* slicetype.c:1297 */
-
-        if (path[next_nonb] == 'P')
-            cost += (uint64_t)phx_lh_frame_cost(l, frames, cur_nonb, next_nonb,
-                                               next_nonb); /* :1300 */
-        else
-            cost += (uint64_t)phx_lh_frame_cost(l, frames, next_nonb, next_nonb,
-                                               next_nonb); /* :1302 */
-        if (cost > threshold) break;             /* slicetype.c:1304 */
-
-        /* B-pyramid costs are unreachable: phx_param_t has no bframe_pyramid.
-         * TODO: expose i_bframe_pyramid and port slicetype.c:1307-1315. */
-        for (int next_b = loc; next_b < next_nonb && cost < threshold; next_b++)
-            cost += (uint64_t)phx_lh_frame_cost(l, frames, cur_nonb, next_nonb,
-                                               next_b);   /* slicetype.c:1318 */
-        loc = next_nonb + 1;
-        cur_nonb = next_nonb;                    /* slicetype.c:1323-1324 */
-    }
-    return cost;
+    phx_frame_t *lr[PHX_LOOKAHEAD_MAX+3] = { NULL };
+    for (int i = 0; i < PHX_LOOKAHEAD_MAX+3 && frames[i]; i++)
+        lr[i] = frames[i]->f;
+    return phx_lowres_path_cost(l->lowres, lr, path, threshold);
 }
 
 /* ---- scenecut (SHADER C) ------------------------------------------------ */
@@ -674,6 +508,23 @@ phx_lookahead_t *phx_lookahead_new(const phx_param_t *p, int mb_width,
     phx_lookahead_t *l = calloc(1, sizeof(*l));  /* lookahead.c:113 */
     if (!l) return NULL;
     l->p = *p;
+    /* B-pyramid normal is x264's medium default (base.c:391); phx_param_t has
+     * no i_bframe_pyramid field, so the cost path uses that default too. */
+    /* x264 resolves param.analyse.i_mv_range from the H.264 level at
+     * encoder.c:1265-1268 (tables.c:29-42): a 64x64 frame selects level 1.0
+     * with mv_range=64, not base.c:443's raw default of 16.  phx_param_t has
+     * no resolved field, so derive it from the macroblock count here.
+     * TODO: expose resolved i_mv_range in phx_param_finalize() and pass it. */
+    int frame_mbs = mb_width * mb_height;
+    int mv_range = frame_mbs <= 99   ? 64   : /* tables.c:31 (level 1.0) */
+                   frame_mbs <= 396 ? 128  : /* tables.c:33 (level 1.1) */
+                   frame_mbs <= 792 ? 256  : /* tables.c:37 (level 2.1) */
+                   frame_mbs <= 1620? 256  : /* tables.c:38 (level 2.2) */
+                                       512;  /* tables.c:40 (level 3.1) */
+    l->lowres = phx_lowres_new(mb_width, mb_height, mv_range,
+                               p->i_bframe, 1, PHX_BFRAME_BIAS);
+    if (!l->lowres) { free(l); return NULL; }  /* slicetype.c:836 cost state */
+    phx_lowres_set_mbtree(l->lowres, p->b_mb_tree); /* slicetype.c:823 */
     l->mb_width = mb_width;
     l->mb_height = mb_height;
     l->i_last_keyframe = -p->i_keyint_max;       /* lookahead.c:116 */
@@ -713,6 +564,9 @@ void phx_lookahead_put_frame(phx_lookahead_t *l, phx_frame_t *f)
     lf->b_last_minigop_bframe = 0;               /* frame.h:66 */
 
     phx_frame_init_lowres(f);                    /* common/mc.c:458 */
+    /* mc.c:473-481 invalidates frame.h:123/126/103 caches; mirror that in the
+     * per-MB lowres caches owned by phx_lowres.c. */
+    phx_lowres_frame_reset(l->lowres, f);
 }
 
 /* lookahead.c:42-57 (lookahead_shift) followed by :59-63
@@ -790,5 +644,6 @@ int phx_lookahead_get_frames(phx_lookahead_t *l, int *frame_types, int n)
 void phx_lookahead_delete(phx_lookahead_t *l)
 {
     if (!l) return;
+    phx_lowres_delete(l->lowres);                /* lookahead.c:177-187 */
     free(l);                                     /* lookahead.c:186 */
 }
