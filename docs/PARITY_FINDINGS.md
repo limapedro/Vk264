@@ -171,4 +171,21 @@ Three upstream input differences remain:
 
 Delegated to M15 (CQP AQ), DPB1 (reconstructed/deblocked reference DPB) and B1 (B-direct/B_SKIP). Fixing the inputs is a prerequisite for real-clip MB-level parity, independent of any further ME work.
 
+## F17 — 320-pair scaled matrix exposed two SPS bugs
+
+`tools/video_parity_matrix.py --frames 12 --width 320 --height 180` over the 16-clip manifest × 10 presets × 2 entropies (320 pairs, all native-clip content rescaled):
+
+```
+byte_exact 0/320  phx_clean_decode 6/320 (all ultrafast/CAVLC)
+first_diff histogram: byte 13 -> 224 pairs, byte 7 -> 64, byte 12 -> 32
+Phoenix/x264 size ratio: 0.93 (ultrafast) .. 5.62 (placebo)
+```
+
+All three early first-diffs were in SPS, not entropy. Field comparison found two source bugs:
+
+1. `phx_sps_write()` emitted `crop_top`/`crop_bottom` verbatim; x264 `set.c:366-371` applies `v_shift=1` for 4:2:0 `frame_mbs_only` (320×180 coded 192: Phoenix 12 vs x264 6).
+2. Auto level checked only MBPS and frame size; x264 also enforces `x264_level_t.dpb` — 16 refs at 320×180 require level 21, not 12 (and MV length 10, not 9).
+
+After both fixes the 320×180 medium and veryslow SPS payloads are byte-identical and first diffs moved **13/7 → 674/677**. A fresh 320-pair matrix is running to measure the new distribution.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
