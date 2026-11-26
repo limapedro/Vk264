@@ -1483,7 +1483,11 @@ int phx_analysis_probe_pskip(const phx_param_t *p, const phx_frame_t *fenc,
  * probe (macroblock.c:993/:1035).  SHADER: A — table lookup, no state. */
 static int phx_chroma_qp_of(const phx_param_t *p, int qp)
 {
-    int idx = phx_clip3(qp + p->i_chroma_qp_index_offset, 0, 75);
+    /* encoder.c:1585 — chroma_qp_table = i_chroma_qp_table + 12 + offset.
+     * The +12 is mandatory; omitting it produced chroma QP 16 instead of 29
+     * at luma QP 30 and made both P_SKIP and B_SKIP probes fail. */
+    int idx = phx_clip3(PHX_CHROMA_QP_BASE_OFFSET +
+                        p->i_chroma_qp_index_offset + qp, 0, 75);
     return phx_chroma_qp_base[idx] + (qp > PHX_QP_MAX_SPEC
                                      ? qp - PHX_QP_MAX_SPEC : 0);
 }
