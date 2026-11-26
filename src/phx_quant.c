@@ -53,7 +53,9 @@ static const int phx_deadzone[4] = {21, 11, 21, 11};
 
 /* set.c:73-205 — x264_cqm_init() restricted to the default flat scaling
  * lists (every entry 16, base.c:462-467). Reproduces the exact integer
- * formulas, including rounded SHIFT and truncation to uint16_t.
+ * formulas, including rounded SHIFT and truncation to uint16_t.  Also fills
+ * the trellis bias0 arrays of set.c:180/200 (common.h:346-347); x264 leaves
+ * them untouched where j == 0, here they are deterministically zero.
  * SHADER: B — table construction once per encode, not a per-block kernel. */
 void phx_quant_tables_init(phx_quant_tables_t *t)
 {
@@ -97,22 +99,34 @@ void phx_quant_tables_init(phx_quant_tables_t *t)
             for (int i = 0; i < 16; i++) {
                 int j = phx_shift(quant4_base[list][qp % 6][i], qp / 6 - 1);
                 t->quant4_mf[list][qp][i] = (uint16_t)j;
-                if (j)
+                if (j) {
                     t->quant4_bias[list][qp][i] =
                         (uint16_t)(phx_div(phx_deadzone[list] << 10, j) < (1 << 15) / j
                                    ? phx_div(phx_deadzone[list] << 10, j)
                                    : (1 << 15) / j);
+                    /* set.c:180 — trellis QNS bias, (1<<15)/j. */
+                    t->quant4_bias0[list][qp][i] = (uint16_t)((1 << 15) / j);
+                } else {
+                    t->quant4_bias[list][qp][i] = 0;
+                    t->quant4_bias0[list][qp][i] = 0;
+                }
             }
         }
         for (int list = 0; list < 2; list++) {
             for (int i = 0; i < 64; i++) {
                 int j = phx_shift(quant8_base[list][qp % 6][i], qp / 6);
                 t->quant8_mf[list][qp][i] = (uint16_t)j;
-                if (j)
+                if (j) {
                     t->quant8_bias[list][qp][i] =
                         (uint16_t)(phx_div(phx_deadzone[list] << 10, j) < (1 << 15) / j
                                    ? phx_div(phx_deadzone[list] << 10, j)
                                    : (1 << 15) / j);
+                    /* set.c:200 — trellis QNS bias, (1<<15)/j. */
+                    t->quant8_bias0[list][qp][i] = (uint16_t)((1 << 15) / j);
+                } else {
+                    t->quant8_bias[list][qp][i] = 0;
+                    t->quant8_bias0[list][qp][i] = 0;
+                }
             }
         }
     }

@@ -4,7 +4,8 @@
  *
  * Source: reference/x264/common/quant.c:50-315;
  *         reference/x264/common/set.c:29-71,73-205;
- *         common.h:93-108 (dctcoef/udctcoef), base.c:456-465 (defaults).
+ *         common.h:93-108 (dctcoef/udctcoef), common.h:342-347 (bias0),
+ *         base.c:456-465 (defaults).
  *
  * SHADER: A — per coefficient, vectorizable; no cross-coefficient state.
  */
@@ -16,8 +17,11 @@
 
 #define PHX_QUANT_QP_MAX_SPEC 51         /* common.h:59, BIT_DEPTH=8 */
 
-/* x264's h->quant4_mf/quant8_mf/quant4_bias/quant8_bias/dequant4_mf/
- * dequant8_mf (common.h:336-347) for the default flat scaling lists. */
+/* x264's h->quant4_mf/quant8_mf/quant4_bias/quant8_bias/
+ * quant4_bias0/quant8_bias0/dequant4_mf/dequant8_mf
+ * (common.h:336-347) for the default flat scaling lists.  bias0 is the
+ * trellis QNS bias of set.c:180/200, NOT the deadzone bias of :179/199.
+ * SHADER: B — table storage, built once per encode. */
 typedef struct {
     uint16_t quant4_mf[4][PHX_QUANT_QP_MAX_SPEC + 1][16];
     uint16_t quant8_mf[2][PHX_QUANT_QP_MAX_SPEC + 1][64];
@@ -25,6 +29,8 @@ typedef struct {
     uint16_t quant8_bias[2][PHX_QUANT_QP_MAX_SPEC + 1][64];
     int dequant4_mf[4][6][16];
     int dequant8_mf[2][6][64];
+    uint16_t quant4_bias0[4][PHX_QUANT_QP_MAX_SPEC + 1][16];
+    uint16_t quant8_bias0[2][PHX_QUANT_QP_MAX_SPEC + 1][64];
 } phx_quant_tables_t;
 
 #ifdef __cplusplus

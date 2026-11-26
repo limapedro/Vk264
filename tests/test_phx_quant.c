@@ -244,6 +244,32 @@ static const uint8_t exp_optdc2[1] = {
     1,
 };
 
+/* R1 golden from x264's own objects (build/x264_ref/obj/common_set.obj and
+ * common_quant.obj) for default flat CQM, i_luma_deadzone={21,11}.
+ * bias0 is set.c:180/200; plain bias is set.c:179/199. */
+static const uint16_t exp_q4bias0[8] = {
+     1, 2, 6, 13, 32, 72, 159, 352,   /* qp = 0,7,14,21,28,35,42,49 */
+};
+static const uint16_t exp_q8bias0[8] = {
+     2, 5, 12, 28, 64, 143, 321, 697,
+};
+
+/* MB0 block0 of the medium/cabac parity fixture: qp=25, CQM_4IY,
+ * mf[0]=1490, deadzone bias[0]=14, bias0[0]=21.  The pre-quant DCT vector
+ * was dumped from x264's encoder/macroblock.h:155 before quant.  x264's
+ * plain quant_4x4 (analysis, b_trellis=0, analyse.c:261) gives -35; its
+ * trellis QNS (final encode, b_trellis=i_trellis, analyse.c:3724 ->
+ * macroblock.h:96-99 -> rdo.c bias0) gives the -36 golden. */
+static const int16_t in_mb0_b0[16] = {
+     -1568, -364, 0, -52, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+};
+static const int16_t exp_mb0_b0_plain[16] = {
+     -35, -5, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+};
+static const int16_t exp_mb0_b0_trellis[16] = {
+     -36, -5, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+};
+
 static const uint8_t exp_optdc4[1] = {
     1,
 };
@@ -481,6 +507,14 @@ int main(void)
     CHECK(t.dequant8_mf[0][5][7] == exp_table_dq8[1], "dq8[0][5][7]");
     CHECK(t.dequant8_mf[0][3][63] == exp_table_dq8[2], "dq8[0][3][63]");
 
+    /* set.c:180/200 — trellis bias0 golden from x264's own tables. */
+    for (int k = 0; k < 8; k++) {
+        const int qp = k * 7;
+        CHECK(t.quant4_bias0[0][qp][0] == exp_q4bias0[k], "q4bias0 golden");
+        CHECK(t.quant8_bias0[0][qp][0] == exp_q8bias0[k], "q8bias0 golden");
+    }
+    CHECK(t.quant4_bias0[0][25][0] == 21, "q4bias0 qp25");
+
     /* dct.c forward transforms */
     phx_sub4x4_dct(c16, p1, 16, p2, 32); check_i("sub4x4_dct", c16, exp_sub4, 16);
     { int16_t b[4][16]; phx_sub8x8_dct(b, p1, 16, p2, 32);
@@ -536,6 +570,24 @@ int main(void)
     memcpy(c16, in_qc16, sizeof(c16));
     CHECK(phx_quant_2x2_dc(c16, t.quant4_mf[2][28][0], t.quant4_bias[2][28][0]) == exp_quant2dcnz[0], "quant_2x2_dc nz");
     check_i("quant_2x2_dc", c16, exp_quant2dc, 4);
+
+    /* R1 MB0 block0 golden (qp=25, CQM_4IY): plain deadzone quant matches
+     * x264's analysis-stage quant_4x4 (-35); the -36 golden of the final
+     * encode is x264's trellis QNS with bias0 (set.c:180, analyse.c:3724).
+     * No constant is fitted: both come from QUANT_ONE (quant.c:50-57). */
+    memcpy(c16, in_mb0_b0, sizeof(c16));
+    CHECK(phx_quant_4x4(c16, t.quant4_mf[0][25], t.quant4_bias[0][25]) == 1,
+          "mb0 b0 plain nz");
+    check_i("mb0 b0 plain (x264 quant_4x4)", c16, exp_mb0_b0_plain, 16);
+    memcpy(c16, in_mb0_b0, sizeof(c16));
+    CHECK(phx_quant_4x4(c16, t.quant4_mf[0][25], t.quant4_bias0[0][25]) == 1,
+          "mb0 b0 bias0 nz");
+    check_i("mb0 b0 trellis bias0 golden (-36)", c16, exp_mb0_b0_trellis, 16);
+    int nz_mb0 = 0;
+    CHECK(phx_quant_one(-1568, t.quant4_mf[0][25][0],
+                        t.quant4_bias0[0][25][0], &nz_mb0) == -36,
+          "mb0 b0 QUANT_ONE bias0 == -36");
+    CHECK(nz_mb0 == -36, "mb0 b0 QUANT_ONE nz");
 
     /* quant.c dequantizers and chroma DC kernels */
     memcpy(c16, in_dq16, sizeof(c16)); phx_dequant_4x4(c16, t.dequant4_mf[1], 28);
