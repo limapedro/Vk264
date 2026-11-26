@@ -123,8 +123,10 @@ def main(argv: list[str] | None = None) -> int:
                 re_, rerr = decode_errors(ref) if ref.exists() else (-1, None)
                 pb = phx.stat().st_size if phx.exists() else None
                 rb = ref.stat().st_size if ref.exists() else None
+                both_exist = (phx.exists() and phx.stat().st_size > 0 and
+                              ref.exists() and ref.stat().st_size > 0)
                 fd = (first_diff(phx.read_bytes(), ref.read_bytes())
-                      if phx.exists() and ref.exists() else None)
+                      if both_exist else None)
                 rec = dict(name=name, preset=preset, entropy=entropy,
                            width=geo['width'], height=geo['height'],
                            frames=frames, phx_rc0=ok_p, x264_rc0=ok_r,
@@ -133,7 +135,8 @@ def main(argv: list[str] | None = None) -> int:
                            phx_first_error=perr, x264_first_error=rerr,
                            phx_nals=nals(phx) if phx.exists() else None,
                            x264_nals=nals(ref) if ref.exists() else None,
-                           first_diff=fd, byte_exact=(fd is None))
+                           first_diff=fd,
+                           byte_exact=bool(both_exist and fd is None))
                 results.append(rec)
                 print(f'{name[:28]:<28} {preset:<10} {entropy:<5} '
                       f'{geo["width"]}x{geo["height"]:<5} '
