@@ -404,17 +404,18 @@ static void phx_test_first_mb_chroma_trellis(void)
           "trellis handoff V DC golden");
     CHECK(d.chroma_nnz[0][0] == 1 && d.chroma_nnz[1][0] == 1,
           "trellis handoff chroma DC nnz");
-    /* x264's instrumented encoder/cabac.c hook reports the 15-bin residual
-     * window (h->dct.luma4x4[j]+1, encoder/cabac.c:1078):
-     *   U scan8 16..19 -> [-2, 0, ...]  (the first sig bin is ctx=152, b=1)
-     *   V scan8 32..35 -> [ 0,-2, ...]  (first sig bin ctx=152 is b=0)
-     * phx_encoder.c:505-508 maps scan8 16..19 to chroma_dct[0][1+i] and
-     * scan8 32..35 to chroma_dct[1][1+i]; store plane ch in slot ch.
-     * SHADER: B — asserts the B->C chroma AC plane/order handoff. */
+    /* x264 stores the FULL 16-coefficient zigzag scan in h->dct.luma4x4[j]
+     * (encoder/macroblock.c:391/402-415) and the entropy stage applies the
+     * single +1 (cabac.c:1078).  Phoenix must do the same: U scan8 16..19
+     * -> [3,-2,0,...] and V -> [3,0,-2,...], so CABAC sees [-2,0,...] and
+     * [0,-2,...].  phx_encoder.c:505-508 maps the scan8 ranges to
+     * chroma_dct[ch][1+i].  SHADER: B — B->C chroma handoff. */
     for (int i = 0; i < 4; i++) {
-        CHECK(d.chroma_dct[0][1+i][0] == -2 && d.chroma_dct[0][1+i][1] == 0,
+        CHECK(d.chroma_dct[0][1+i][0] == 0 && d.chroma_dct[0][1+i][1] == -2
+              && d.chroma_dct[0][1+i][2] == 0,
               "trellis handoff U AC golden (scan8 16..19)");
-        CHECK(d.chroma_dct[1][1+i][0] == 0 && d.chroma_dct[1][1+i][1] == -2,
+        CHECK(d.chroma_dct[1][1+i][0] == 0 && d.chroma_dct[1][1+i][1] == 0
+              && d.chroma_dct[1][1+i][2] == -2,
               "trellis handoff V AC golden (scan8 32..35)");
     }
     CHECK(c.non_zero_count[phx_scan8[49]] == 1 &&
