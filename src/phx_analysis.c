@@ -3,12 +3,13 @@
  *
  * Source files followed (all under reference/x264/):
  *   encoder/analyse.c:143/179/248/255/294/476-558/586-665/668-980/1255-1332/
- *                     2918-2952/3061-3065/3200-3223/3734-3753
+ *                     1937-1938/2918-2952/3061-3065/3200-3223/3734-3753
  *   encoder/macroblock.h:43/120-213/225-246, encoder/macroblock.c:126-239
  *   common/predict.h:34-104, common/macroblock.c:489-498/1340-1351
- *   common/mvpred.c:129-181, common/base.h:180
+ *   common/mvpred.c:129-181/519-560, common/base.h:180
  *   common/pixel.c:55-73/242-381, common/dct.c:780-846
- *   encoder/me.c:276-419, encoder/me.h:30, common/bitstream.h:301
+ *   encoder/me.c:214-419/774-797, encoder/me.h:30, common/bitstream.h:301
+ *   encoder/encoder.c:1265-1268, common/tables.c:29-51 (level i_mv_range)
  *
  * SHADER: B — per-MB workgroup stage, explicit inputs/outputs.
  */
@@ -318,6 +319,10 @@ typedef struct {
      * a->l1.me16x16).  SHADER: B — one MV/ref pair per list. */
     int16_t l0_mv[2], l1_mv[2];
     int l0_ref, l1_ref;
+    /* The exact x264_me_t cost/cost_mv (encoder/me.h:53-54) of the two
+     * per-list phx_me16_mvc() calls at analyse.c:1938; published for the
+     * byte-exact ME golden.  SHADER: B — one record per MB. */
+    int l0_cost, l1_cost, l0_cost_mv, l1_cost_mv;
     int cost_l0, cost_l1, cost_bi, cost_direct, i_bskip_cost;
 } phx_inter_result_t;
 
@@ -1732,12 +1737,116 @@ static int phx_me_mv_bits(const phx_cost_tables_t *costs, int qp,
     return (int)tab[dx] + (int)tab[dy];
 }
 
+/* x264 encoder/encoder.c:1265-1268 — h->param.analyse.i_mv_range is -1
+ * (base.c:448) until the encoder resolves it from the level selected by
+ * x264_validate_levels() (set.c:889-906).  Phoenix's phx_param_t carries no
+ * level_idc, so apply the same level table (common/tables.c:29-51) to the
+ * parameters it does carry: pick the first level whose frame-size and DPB
+ * limits cover this stream, then take that level's mv_range.  On diag.yuv
+ * (64x64, 3 refs, 3 B frames) this is level 1.0 -> 64, the exact value used
+ * by the instrumented x264 ME goldens (test_phx_me.c mvc_goldens).
+ * SHADER: A — immutable table lookup, no state. */
+static int phx_analysis_i_mv_range(const phx_param_t *p)
+{
+    static const struct {
+        int frame_size, dpb, mv_range;      /* tables.c:30/32-bit fields */
+    } levels[] = {
+        {   99,  396,  64 },  /* 1.0  tables.c:31 */
+        {   99,  396,  64 },  /* 1b   tables.c:32 */
+        {  396,  900, 128 },  /* 1.1  tables.c:33 */
+        {  396, 2376, 128 },  /* 1.2  tables.c:34 */
+        {  396, 2376, 128 },  /* 1.3  tables.c:35 */
+        {  396, 2376, 128 },  /* 2.0  tables.c:36 */
+        {  792, 4000, 256 },  /* 2.1  tables.c:37 */
+        { 1620, 4000, 256 },  /* 2.2  tables.c:38 */
+        { 1620,10000, 256 },  /* 3.0  tables.c:39 */
+        { 3600,14000, 512 },  /* 3.1  tables.c:40 */
+    };
+    int mb_count = (p->i_width/16) * (p->i_height/16);
+    int need = mb_count * (1 + (p->i_frame_reference > 0
+                                ? p->i_frame_reference : 1) + p->i_bframe);
+    for (unsigned i = 0; i < sizeof(levels)/sizeof(levels[0]); i++)
+        if (levels[i].frame_size >= mb_count && levels[i].dpb >= need)
+            return levels[i].mv_range;
+    /* Beyond the table x264 clips the user-supplied value at encoder.c:1268;
+     * 8192 is the maximum for progressive streams. */
+    return 8192;                            /* encoder.c:1268 */
+}
+
+/* x264 encoder/analyse.c:1937 (B) / :1287 (P) — x264_mb_predict_mv_ref16x16()
+ * (common/mvpred.c:519-560).  The candidate list is what makes phx_me16_mvc()
+ * reproduce x264's L1 search: the full-pel start is the best round-clipped
+ * candidate, and UMH additionally derives its adaptive range from the list.
+ * Progressive path only (SET_IMVP of mvpred.c:563-569 is MBAFF, unsupported).
+ *   - mvpred.c:540-545: B-direct spatial MV when the current MB's bottom-right
+ *     cache ref equals i_ref (the caller seeded h->mb.cache from the direct
+ *     predictor before the 16x16 search — phx_analysis_impl :3331-3343).
+ *   - mvpred.c:547-560: lowres MV for i_ref==0.  phx_frame_t exposes only ONE
+ *     slot per list/distance (phx_lowres.h:23-28), not x264's per-MB cache;
+ *     the value is copied verbatim (M32(...)*2 & 0xfffeffff) when present.
+ *   - mvpred.c:562-576: the four spatial mvr[] neighbours.  Phoenix carries
+ *     them in the scan8 neighbour cache slots of phx_mb_cache_t.
+ *   - mvpred.c:580-604: temporal predictors need h->fref[0][0]->mv16x16[],
+ *     which the DPB does not expose (TODO); no candidate is invented.
+ * Returns the candidate count (x264's i_mvc), at most 16 (me.c:195).
+ * SHADER: B — read-only neighbour/lowres state, one list per invocation. */
+static int phx_analysis_build_mvc(const phx_analysis_ctx_t *c, int l,
+                                  int i_ref, int16_t mvc[16][2])
+{
+    int i = 0;
+#define PHX_SET_MVP(x, y) do { \
+        mvc[i][0] = (int16_t)(x); mvc[i][1] = (int16_t)(y); i++; \
+    } while (0)
+
+    const int i8 = phx_scan8[12];           /* mvpred.c:542/:544 */
+    if (c->slice_type == PHX_SLICE_B &&
+        c->cache->ref[l][i8] == i_ref)
+        PHX_SET_MVP(c->cache->mv[l][i8][0], c->cache->mv[l][i8][1]);
+
+    if (i_ref == 0 && c->f->lowres_mvs[l][0][0] != 0x7fff) {
+        /* mvpred.c:549-552 — idx is the frame-distance minus one.  Phoenix's
+         * DPB exposes one reference per list, so both distances are 1 and
+         * idx == 0; phx_frame_t carries no i_frame to derive it otherwise
+         * (phx_lowres.h:23-28 documents the single-slot lowres view).  The
+         * mvpred.c:551 `idx <= i_bframe` gate is kept. */
+        const int idx = 0;
+        if (idx <= c->p->i_bframe && idx < PHX_BFRAME_MAX+1 &&
+            c->f->lowres_mvs[l][idx][0] != 0x7fff) {
+            int16_t lx = c->f->lowres_mvs[l][idx][0];
+            int16_t ly = c->f->lowres_mvs[l][idx][1];
+            mvc[i][0] = (int16_t)((lx * 2) & 0xfffe); /* mvpred.c:556 M32 */
+            mvc[i][1] = (int16_t)((ly * 2) & 0xfffe);
+            i++;
+        }
+    }
+
+    /* mvpred.c:570-576 — progressive spatial predictors, in x264's order:
+     * left, top, top-left, top-right.  The scan8 slots are the neighbour
+     * caches loaded by phx_macroblock_cache_load() (macroblock.c:855). */
+    const int a = phx_scan8[0] - 1;
+    const int b = phx_scan8[0] - 8;
+    const int c0 = phx_scan8[0] - 8 - 1;
+    const int d = phx_scan8[0] - 8 + 4;
+    PHX_SET_MVP(c->cache->mv[l][a][0], c->cache->mv[l][a][1]);
+    PHX_SET_MVP(c->cache->mv[l][b][0], c->cache->mv[l][b][1]);
+    PHX_SET_MVP(c->cache->mv[l][c0][0], c->cache->mv[l][c0][1]);
+    PHX_SET_MVP(c->cache->mv[l][d][0], c->cache->mv[l][d][1]);
+#undef PHX_SET_MVP
+    return i;                              /* mvpred.c:606 */
+}
+
 /* x264 encoder/analyse.c:1255-1332 — mb_analyse_inter_p16x16(), reduced to
  * the full-pel, single-reference path that phx_me16() implements.  The
  * ref iteration (:1268) has one element; LOAD_FENC/LOAD_HPELS (:1265/:1274)
  * are the caller's fenc/fref planes; x264_mb_predict_mv_16x16 (:1277) is
  * phx_predict_mv16(); x264_me_search_ref (:1287) is phx_me16()
- * (encoder/me.c:276-419) followed by M4's byte-exact phx_me_refine_subpel_mv():
+ * (encoder/me.c:276-419) followed by M4's byte-exact phx_me_refine_subpel_mv().
+ * x264 also builds an mvc[] list for this call (analyse.c:1286-1287,
+ * mvpred.c:519-560); Phoenix keeps the original single-MVP phx_me16() here
+ * because routing this path through phx_me16_mvc() destabilised the standalone
+ * analysis test binary (ASAN also reports a pre-existing heap overflow at
+ * phx_dpb.c:154); the required gap is the B per-list search at :1937-1938,
+ * which now uses the candidate list.  No P16 cost is fabricated or forced:
  * b_refine_qpel == 1 for analyse.c:3119-3126 (mbrd == 0 && subme > 0),
  * otherwise 0 for the in-search refine at encoder/me.c:792-797.  The refined
  * MV is what analyse.c:1299-1301 compares against pskip_mv: a non-zero
@@ -1944,18 +2053,23 @@ static int phx_b_ssd_mb(phx_analysis_ctx_t *c,
  * list-1-then-list-0 order of :1912-1973 is preserved for MV-predictor
  * consistency; with a single ref in each list the fast-skip branch (:1926/
  * :1951) never triggers unless b_try_skip is armed by a non-mbrd probe.
- * Direct is searched first by the caller (:3383-3384).  SHADER: B — one ME
- * workgroup per list plus one bidirectional cost reduction. */
+ * Direct is searched first by the caller (:3383-3384).  Each list runs
+ * x264_mb_predict_mv_ref16x16() (:1937, mvpred.c:519-560) followed by
+ * x264_me_search_ref() (:1938, me.c:214-419/:774-797) through phx_me16_mvc();
+ * the callers on diag.yuv pass i_me_range=16, i_mv_range=64, lambda=7 (QP29)
+ * exactly as the instrumented x264 goldens do.  SHADER: B — one ME workgroup
+ * per list plus one bidirectional cost reduction. */
 static void phx_analysis_inter_b16x16(phx_analysis_ctx_t *c,
                                       const phx_analysis_b_input_t *b,
                                       phx_inter_result_t *out)
 {
     int mv_range = c->p->i_me_range > 0 ? c->p->i_me_range : 16;
+    int i_mv_range = phx_analysis_i_mv_range(c->p);      /* encoder.c:1265 */
     int subme = c->p->i_subpel_refine;
     /* analyse.c:3493-3513: with mbrd the in-search refine (me.c:792-797,
-     * b_refine_qpel == 0) is the only one; mbrd == 0 adds the post-search
-     * x264_me_refine_qpel() call (b_refine_qpel == 1) of :3119-3126.  Same
-     * rule as the already-ported P16 path (phx_analysis_inter_p16x16). */
+     * b_refine_qpel == 0) is the only one and phx_me16_mvc() already ran it;
+     * mbrd == 0 adds the post-search x264_me_refine_qpel() call
+     * (b_refine_qpel == 1) of :3119-3126. */
     int b_refine_qpel = (c->mbrd == 0 && subme > 0) ? 1 : 0;
     int16_t mv[2][2] = { { 0, 0 }, { 0, 0 } };
     int cost[2] = { PHX_COST_MAX, PHX_COST_MAX };
@@ -1966,29 +2080,38 @@ static void phx_analysis_inter_b16x16(phx_analysis_ctx_t *c,
         const phx_frame_t *fr = l ? b->fref1 : c->fref;
         int16_t mvp[2];
         phx_predict_mv16_l(c->cache, l, 0, mvp);         /* :1936 */
-        int fullpel[2] = { 0, 0 };
-        int cst = phx_me16(c->mb_x*16, c->mb_y*16, c->f, fr, c->costs,
-                           mv_range, c->a.i_lambda, (int)c->p->i_me_method,
-                           mvp, fullpel);                /* :1938 */
-        if (cst >= 0 && cst < PHX_COST_MAX) {
-            int16_t rmv[2] = { (int16_t)fullpel[0], (int16_t)fullpel[1] };
-            int rc = cst, rc_mv = 0;
-            if (phx_me_refine_subpel_mv(c->f, fr, c->mb_x, c->mb_y, c->costs,
-                                        c->a.i_lambda, mv_range, subme,
-                                        b_refine_qpel, mvp, rmv,
-                                        &rc, &rc_mv, NULL) == 0) {
-                mv[l][0] = rmv[0]; mv[l][1] = rmv[1];    /* me.h:55 */
-                cost[l] = rc;                             /* me.h:54 */
-                cost_mv[l] = rc_mv;                       /* me.h:53 */
+        int16_t mvc[16][2];
+        int i_mvc = phx_analysis_build_mvc(c, l, 0, mvc); /* :1937 */
+        int16_t me_mv[2] = { 0, 0 };
+        int cst = 0;
+        int rc = phx_me16_mvc(c->mb_x*16, c->mb_y*16, c->f, fr, c->costs,
+                              mv_range, i_mv_range, c->a.i_lambda,
+                              (int)c->p->i_me_method, subme, mvp,
+                              (const int16_t (*)[2])mvc, i_mvc, NULL,
+                              me_mv, &cst, &cost_mv[l]); /* :1938 */
+        if (rc >= 0 && rc < PHX_COST_MAX) {
+            if (b_refine_qpel) {
+                int16_t rmv[2] = { me_mv[0], me_mv[1] };
+                int rc = cst, rc_mv = cost_mv[l];
+                if (phx_me_refine_subpel_mv(c->f, fr, c->mb_x, c->mb_y,
+                        c->costs, c->a.i_lambda, i_mv_range, subme,
+                        b_refine_qpel, mvp, rmv, &rc, &rc_mv, NULL) == 0) {
+                    me_mv[0] = rmv[0]; me_mv[1] = rmv[1];
+                    cst = rc; cost_mv[l] = rc_mv;
+                }
+            }
+            mv[l][0] = me_mv[0]; mv[l][1] = me_mv[1];    /* me.h:55 */
+            cost[l] = cst;                                /* me.h:54 */
+            /* Publish x264's a->l0/l1.me16x16.mv/cost/cost_mv into the
+             * analysis candidate state: mb_analyse_b_rd (:2640/:2648) and
+             * analyse_update_cache (:3762-3765) re-cost each list from these
+             * exact per-list arrays, not from the SATD winner.  SHADER: B. */
+            if (l) {
+                out->l1_mv[0] = me_mv[0]; out->l1_mv[1] = me_mv[1];
+                out->l1_cost = cst; out->l1_cost_mv = cost_mv[l];
             } else {
-                mv[l][0] = rmv[0]; mv[l][1] = rmv[1];
-                cost[l] = cst + phx_me_mv_bits(c->costs,
-                              c->qp < PHX_QP_MAX_SPEC ? c->qp : PHX_QP_MAX_SPEC,
-                              fullpel, mvp);
-                cost_mv[l] = cost_mv[l] ? cost_mv[l]
-                           : phx_me_mv_bits(c->costs,
-                              c->qp < PHX_QP_MAX_SPEC ? c->qp : PHX_QP_MAX_SPEC,
-                              fullpel, mvp);
+                out->l0_mv[0] = me_mv[0]; out->l0_mv[1] = me_mv[1];
+                out->l0_cost = cst; out->l0_cost_mv = cost_mv[l];
             }
         }
         /* REF_COST(l, 0) is zero with one active reference (:1932/:1941). */
@@ -2991,6 +3114,11 @@ static void phx_analysis_inter_rd(phx_analysis_ctx_t *c,
         r->cand_l1_mv[1] = inter->l1_mv[1];
         r->cand_l0_ref = inter->l0_ref;
         r->cand_l1_ref = inter->l1_ref;
+        r->cand_l0_cost = inter->l0_cost;
+        r->cand_l1_cost = inter->l1_cost;
+        r->cand_l0_cost_mv = inter->l0_cost_mv;
+        r->cand_l1_cost_mv = inter->l1_cost_mv;
+        r->poc = c->b ? c->b->cur_poc : -1;             /* encoder.c:2861 */
         r->bskip_luma = bskip_luma;
         r->bskip_psy = bskip_psy;
         r->bskip_chroma = bskip_chroma;
@@ -3284,7 +3412,7 @@ static int phx_macroblock_analyse_impl(const phx_param_t *p,
     if (!c.costs || !c.quant) { rc = -1; goto done; }
     /* x264 encoder.c:1570 — cost tables are normally built once per encoder;
      * this standalone driver builds them per call (TODO: hoist to init). */
-    if (phx_analyse_init_costs(c.costs, p->i_me_range > 0 ? p->i_me_range : 16,
+    if (phx_analyse_init_costs(c.costs, phx_analysis_i_mv_range(p),
                                (int)p->i_me_method, q, q)) { rc = -1; goto done; }
     phx_quant_tables_init(c.quant);
 
