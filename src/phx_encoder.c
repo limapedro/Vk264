@@ -1543,7 +1543,8 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
                           d.cbp_luma == 0 && d.cbp_chroma == 0) || b_inter);
             if (b_skip) inter = 0;                       /* B_SKIP has its own MC path */
             if (rc < 0 || (!inter && d.mb_type != PHX_I_16x16 &&
-                           d.mb_type != PHX_I_4x4 && d.mb_type != PHX_I_PCM)) {
+                           d.mb_type != PHX_I_4x4 && d.mb_type != PHX_I_8x8 &&
+                           d.mb_type != PHX_I_PCM)) {
                 d.mb_type = PHX_I_16x16;
                 d.i_partition = PHX_D_16x16;
                 d.b_transform_8x8 = 0;
