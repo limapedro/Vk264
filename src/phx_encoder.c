@@ -24,9 +24,25 @@
 #include "phx_mbencode.h"
 #include "phx_chroma.h"
 #include "phx_sei.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+
+/* SHADER: C — opt-in diagnostic (PHX_DPB_TRACE) only; see phx_dpb.c. */
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
+static int phx_encoder_dpb_trace_enabled(void)
+{
+    static int cached = -1;
+    if (cached < 0) cached = getenv("PHX_DPB_TRACE") ? 1 : 0;
+    return cached;
+}
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 /* Byte-exact per-MB decision capture (phx_analysis.h).  Opt-in via the
  * `phx_g_mbdiag_enable` flag; no entropy state is touched.  SHADER: C —
@@ -1448,6 +1464,14 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
      * order picture number, i.e. x264's fenc->i_frame (frame.h:56). */
     phx_slice_frame_t fc;
     phx_encoder_frame_context(h, decided_type, frame_index, &fc);
+    if (getenv("PHX_DPB_TRACE") && h->fenc && h->fenc->plane) {
+        fprintf(stderr, "PHX_DPB_TRACE ENCODE idx=%d type=%d fn=%d poc=%d "
+                "nal_ref_idc=%d fenc_row0=", frame_index, decided_type,
+                fc.i_frame_num, fc.i_poc, fc.i_nal_ref_idc);
+        for (int x = 0; x < 16; x++)
+            fprintf(stderr, "%s%u", x ? " " : "", h->fenc->plane[x]);
+        fprintf(stderr, "\n");
+    }
 
     /* encoder.c:3857 — ratecontrol_start() runs after the slice-type decision
      * and before slice_init()/the slice header, so the QP it returns is the
