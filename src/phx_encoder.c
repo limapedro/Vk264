@@ -43,35 +43,13 @@ static int phx_encoder_validate(const phx_param_t *p)
     return 0;
 }
 
-/* x264 common/tables.c:29-49 (x264_levels): the fields used by x264's auto
-  * level selection (set.c:135-140 / encoder.c validate_parameters).  SHADER:
-  * C — pure lookup. */
-static const struct {
-    int level_idc, max_mbps, max_fs, max_mv_range;
-} phx_enc_levels[] = {
-    { 10,    1485,    99,  64 }, { 11,    3000,   396, 128 },
-    { 12,    6000,   396, 128 }, { 13,   11880,   396, 128 },
-    { 20,   11880,   396, 128 }, { 21,   19800,   792, 256 },
-    { 22,   20250,  1620, 256 }, { 30,   40500,  1620, 256 },
-    { 31,  108000,  3600, 512 }, { 32,  216000,  5120, 512 },
-    { 40,  245760,  8192, 512 }, { 41,  245760,  8192, 512 },
-    { 42,  522240,  8704, 512 }, { 50,  589824, 22080, 512 },
-    { 51,  983040, 36864, 512 }, { 52, 2073600, 36864, 512 }
-};
-
 /* Encoder API: auto level for the aligned picture size at the port's fixed
-  * 25 fps VUI timebase (phx_headers.c:63-67).  phx_sps_init() hardcodes level
-  * 10 for the 64x64 fixtures; this helper is used only for padded pictures,
-  * so the parity streams are untouched.  SHADER: C — serial scalar lookup. */
+  * 25 fps VUI timebase.  The x264 level table now lives once in phx_headers.c
+  * and is shared with phx_sps_init(), so padded and mod16 pictures select the
+  * same level.  SHADER: C — serial scalar lookup. */
 static int phx_encoder_auto_level(int mb_width, int mb_height)
 {
-    int fs = mb_width * mb_height;                       /* tables.c:31 MaxFS */
-    int mbps = fs * 25;                                  /* tables.c:30 MaxMBPS @25 */
-    for (size_t i = 0; i < sizeof(phx_enc_levels)/sizeof(phx_enc_levels[0]); i++)
-        if (mbps <= phx_enc_levels[i].max_mbps &&
-            fs <= phx_enc_levels[i].max_fs)
-            return phx_enc_levels[i].level_idc;
-    return 52;
+    return phx_sps_auto_level(mb_width, mb_height);      /* tables.c:29-49 */
 }
 
 /* Encoder API: SPS/PPS pair for this handle.  For mod16 pictures this calls
@@ -90,13 +68,7 @@ static int phx_encoder_header_pair(phx_t *h, uint8_t *dst, int capacity)
     phx_pps_t pps;
     phx_sps_init(&sps, &h->param, h->i_width, h->i_height); /* encoder.c:1579 */
     sps.i_level_idc = phx_encoder_auto_level(sps.i_mb_width, sps.i_mb_height);
-    for (size_t i = 0; i < sizeof(phx_enc_levels)/sizeof(phx_enc_levels[0]); i++)
-        if (phx_enc_levels[i].level_idc == sps.i_level_idc) {
-            int mv = phx_enc_levels[i].max_mv_range;      /* tables.c:33 */
-            sps.vui_log2_max_mv_length = mv > 256 ? 11 : mv > 128 ? 10 :
-                                         mv > 64 ? 9 : 8; /* set.c:240-241 */
-            break;
-        }
+    sps.vui_log2_max_mv_length = phx_sps_auto_mv_length(sps.i_level_idc); /* set.c:240-241 */
     /* set.c:251-255/:363-371 — frame_crop_* signals the padding.  x264's
      * writer shifts right/left by h_shift=1 and top/bottom by v_shift=1 for
      * 4:2:0 frame_mbs_only; the local phx_sps_write() shifts left/right

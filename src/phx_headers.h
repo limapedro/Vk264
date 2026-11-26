@@ -39,9 +39,15 @@ typedef struct {
     int b_redundant_pic_cnt, b_transform_8x8_mode;
 } phx_pps_t;
 
+/* common/tables.c:29-49 (x264_levels) + encoder/encoder.c:1245-1266 — auto
+ * level selection for the port's fixed 25 fps timebase.  set.c:240-241 maps
+ * the selected level's mv_range to log2_max_mv_length.  SHADER: C — lookup. */
+int phx_sps_auto_level(int mb_width, int mb_height);
+int phx_sps_auto_mv_length(int level_idc);
+
 /* set.c:101 / :479 — derive SPS/PPS from the ported parameter set.
- * width/height are the coded picture size; level is x264's auto-selected
- * level for the fixture (10 for 64x64@25). */
+ * width/height are the coded picture size; the level is auto-selected with
+ * x264's rule (10 for 64x64@25, 30 for 480x480@25). */
 void phx_sps_init(phx_sps_t *sps, const phx_param_t *p, int width, int height);
 void phx_pps_init(phx_pps_t *pps, const phx_sps_t *sps, const phx_param_t *p);
 

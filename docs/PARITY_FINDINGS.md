@@ -88,4 +88,20 @@ syntax/state defects in the emitted streams, not just file-format issues. The
 
 Because all slice headers match, the remaining stream-level failure is entirely in MB decisions and coefficients. The dominant gap is row 17 of `docs/BYTE_EXACT_FUNCTIONS.md`: `phx_encoder.c:1438` hard-codes `d.skip = 0`, so Phoenix never emits P_SKIP; x264's first P frame is all-skip (6 bytes). Rows 18-19 (residual inter and I_8x8) are required as soon as x264 codes a non-skip inter MB.
 
+## F10 — full-resolution encode exposed SPS level/MV-length hardcoding
+
+`tools/oracle_video.py` on the **full** `D:/Videos/ssstwitter.com_1748999992229.mp4` (native 480×480, all 131 frames, `--fps 25 --preset ultrafast --qp 28 --cabac`):
+
+| | before fix | after fix | x264 |
+|---|---|---|---|
+| SPS `level_idc` | 10 (1.0) | 30 (3.0) | 30 |
+| SPS `log2_max_mv_length_h/v` | 8 | 10 | 10 |
+| first stream diff byte | 7 | **597** | — |
+| Phoenix stream size | 1,101,676 B | 464,697 B | 323,174 B |
+| SPS bytes | differ | byte-identical (`67 4d 40 1e … f1 62 ea`) | — |
+
+Cause: `phx_sps_init()` (`src/phx_headers.c:34/:72`) hard-coded level 10 and MV length 8. x264 auto-selects the level with `encoder.c:1245-1252` walking `common/tables.c:29-49`, then derives MV length with `encoder/set.c:240-241`. The dimension-aware helper existed in `phx_encoder.c` but was applied only to padded pictures, not mod16 pictures like 480×480. Fixed by moving the level table into `phx_headers.c` and making both paths use it. The MV length helper initially had an off-by-one (`floor(log2)+2`); corrected to `floor(log2)+1`.
+
+Still open at full resolution: x264 repeats SPS/PPS before each IDR (5 SPS + 5 PPS NALs) while Phoenix emits them only once (1 + 1); NAL counts 142 vs 134. Phoenix streams still carry ffmpeg decode errors (86) vs x264 0.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.

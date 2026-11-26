@@ -7,9 +7,57 @@
 #define PHX_MIN(a,b) ((a)<(b)?(a):(b))
 #define PHX_MAX(a,b) ((a)>(b)?(a):(b))
 
+/* common/tables.c:29-49 — the fields x264's auto-level validation uses:
+ * level_idc, MaxMBPS, MaxFS, MaxMVRange.  SHADER: C — pure lookup. */
+static const struct {
+    int level_idc, max_mbps, max_fs, max_mv_range;
+} phx_levels[] = {
+    { 10,    1485,    99,  64 }, {  9,    1485,    99, 128 },
+    { 11,    3000,   396, 128 }, { 12,    6000,   396, 128 },
+    { 13,   11880,   396, 128 }, { 20,   11880,   396, 128 },
+    { 21,   19800,   792, 256 }, { 22,   20250,  1620, 256 },
+    { 30,   40500,  1620, 256 }, { 31,  108000,  3600, 512 },
+    { 32,  216000,  5120, 512 }, { 40,  245760,  8192, 512 },
+    { 41,  245760,  8192, 512 }, { 42,  522240,  8704, 512 },
+    { 50,  589824, 22080, 512 }, { 51,  983040, 36864, 512 },
+    { 52, 2073600, 36864, 512 }
+};
+
+/* encoder/encoder.c:1245-1252 — x264 walks x264_levels from the first entry
+ * until x264_validate_levels() passes.  With no VBV, the binding constraints
+ * are MaxMBPS >= mb_width*mb_height*fps and MaxFS >= frame size (25 fps in
+ * this port's VUI, phx_headers.c:63-67). */
+int phx_sps_auto_level(int mb_width, int mb_height)
+{
+    int fs = mb_width * mb_height;                       /* tables.c:31 MaxFS */
+    int mbps = fs * 25;                                  /* tables.c:30 MaxMBPS */
+    for (size_t i = 0; i < sizeof(phx_levels)/sizeof(phx_levels[0]); i++)
+        if (mbps <= phx_levels[i].max_mbps &&
+            fs <= phx_levels[i].max_fs)
+            return phx_levels[i].level_idc;
+    return 52;
+}
+
+/* encoder.c:1265-1266 (i_mv_range = level's MaxMVRange) + encoder/set.c:
+ * 240-241 (log2(Max(1, mv_range*4-1)) + 1). */
+int phx_sps_auto_mv_length(int level_idc)
+{
+    int mv = 0;
+    for (size_t i = 0; i < sizeof(phx_levels)/sizeof(phx_levels[0]); i++)
+        if (phx_levels[i].level_idc == level_idc) {
+            mv = phx_levels[i].max_mv_range;
+            break;
+        }
+    int v = mv * 4 - 1;                                  /* set.c:241 */
+    if (v < 1) v = 1;
+    int n = 0;
+    while ((1 << n) <= v) n++;                           /* floor(log2(v))+1 */
+    return n;                                            /* set.c:241 */
+}
+
 /* set.c:101 — x264_sps_init(), restricted to the configurations the Phoenix
  * fixtures use: 8-bit 4:2:0, progressive, flat CQM, no AVC-Intra, no HRD,
- * timebase 1/25 (the parity harness passes --fps 25), auto level 10. */
+ * timebase 1/25 (the parity harness passes --fps 25). */
 void phx_sps_init(phx_sps_t *s, const phx_param_t *p, int width, int height)
 {
     memset(s, 0, sizeof(*s));
@@ -31,7 +79,10 @@ void phx_sps_init(phx_sps_t *s, const phx_param_t *p, int width, int height)
         s->i_profile_idc = 66;
     s->b_constraint_set0 = s->i_profile_idc == 66;      /* :129 */
     s->b_constraint_set1 = s->i_profile_idc <= 77;      /* :132 */
-    s->i_level_idc = 10;                                /* :137 auto for 64x64@25 */
+    /* encoder.c:1245-1252 + set.c:137 — auto level from the coded frame size
+     * and the fixed 25 fps timebase.  Hardcoding 10 was correct only for the
+     * 64x64 fixture; 480x480@25 selects level 30 in x264. */
+    s->i_level_idc = phx_sps_auto_level(s->i_mb_width, s->i_mb_height);
 
     /* x264's default b_pyramid is 2 (normal) whenever B-frames are enabled. */
     int pyramid = p->i_bframe ? 2 : 0;
@@ -67,9 +118,9 @@ void phx_sps_init(phx_sps_t *s, const phx_param_t *p, int width, int height)
     s->vui_fixed_frame_rate = 1;
     s->vui_sar = 0;   /* no SAR in the parity CLI: aspect_info_present = 0 */
     s->vui_bitstream_restriction = 1;                   /* :234 */
-    /* x264 auto-selects level 1.0 whose i_mv_range is 64 (common/tables.c),
-     * overriding the preset's default me_range; log2(64*4-1)+1 = 8. */
-    s->vui_log2_max_mv_length = 8;                       /* :240-241 */
+    /* set.c:240-241 — mv length derives from the auto-selected level's
+     * mv_range (level 1.0 -> 8, level 3.0 -> 10), not a fixed 8. */
+    s->vui_log2_max_mv_length = phx_sps_auto_mv_length(s->i_level_idc);
 }
 
 /* set.c:479 — x264_pps_init(). */
