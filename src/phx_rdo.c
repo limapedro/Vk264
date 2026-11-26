@@ -492,18 +492,28 @@ static void phx_rdo_size_block_residual(phx_cabac_size_t *cb,
     }
 }
 
-void phx_rdo_size_block_residual_cbf(phx_cabac_size_t *cb, phx_cabac_mb_t *mb,
-                                     int ctx_block_cat, int i_idx,
-                                     const phx_dctcoef_t *l, int b_intra)
+void phx_rdo_size_block_residual_cbf_ex(phx_cabac_size_t *cb,
+                                        phx_cabac_mb_t *mb,
+                                        int ctx_block_cat, int i_idx,
+                                        const phx_dctcoef_t *l, int b_intra,
+                                        int b_dc)
 {
     /* cabac.c:892-903. */
     int ctxidxinc = phx_cabac_cbf_ctxidxinc(mb, ctx_block_cat, i_idx,
-                                            b_intra, 0);      /* :895 */
+                                            b_intra, b_dc);    /* :895 */
     if (mb->cache->non_zero_count[phx_scan8[i_idx]]) {       /* :896 */
         phx_rdo_size_decision(cb, ctxidxinc, 1);             /* :898 */
         phx_rdo_size_block_residual(cb, ctx_block_cat, l);   /* :899 */
     } else
         phx_rdo_size_decision(cb, ctxidxinc, 0);             /* :902 */
+}
+
+void phx_rdo_size_block_residual_cbf(phx_cabac_size_t *cb, phx_cabac_mb_t *mb,
+                                     int ctx_block_cat, int i_idx,
+                                     const phx_dctcoef_t *l, int b_intra)
+{
+    phx_rdo_size_block_residual_cbf_ex(cb, mb, ctx_block_cat, i_idx, l,
+                                       b_intra, 0);          /* :905-909 */
 }
 
 int phx_rdo_size_partition_i4x4(const phx_cabac_t *live, phx_cabac_mb_t *mb,
@@ -963,6 +973,406 @@ int phx_rdo_quant_trellis_cabac(phx_cabac_t *cb, int16_t *dct,
         level = level_tree[level].next;                       /* :891 */
     }
     return 1;                                                 /* :894 */
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Whole-MB size-only CABAC: rdo.c:31-69 + encoder/cabac.c:917-1086   */
+/* ------------------------------------------------------------------ */
+
+/* common/predict.h:45, :84-92. */
+static const uint8_t m8_chroma_pred_mode_fix[7] = { 0, 1, 2, 3, 0, 0, 0 };
+static const uint8_t m8_pred_mode16x16_fix[7]   = { 0, 1, 2, 3, 2, 2, 2 };
+
+#define M8_DEC(cb,ctx,b)  phx_rdo_size_decision((cb),(ctx),(b))
+#define M8_NOUP(cb,ctx,b) phx_rdo_size_decision_noup((cb),(ctx),(b))
+#define M8_TERM(c)    phx_rdo_size_terminal((c))
+#define M8_BYP(c)     phx_rdo_size_bypass((c))
+#define M8_UEBYP(c,e,v) phx_rdo_size_ue_bypass((c),(e),(v))
+
+/* common/macroblock.h:420-431 — x264_mb_predict_intra4x4_mode(). */
+static int m8_predict_i4(const phx_cabac_mb_t *mb, int idx)
+{
+    const phx_mb_cache_t *c = mb->cache;
+    int ma = c->intra4x4_pred_mode[phx_scan8[idx] - 1];
+    int mbv = c->intra4x4_pred_mode[phx_scan8[idx] - 8];
+    int m = PHX_MIN(PHX_RDO_FIX4(ma), PHX_RDO_FIX4(mbv));
+    return m < 0 ? 2 : m;                                 /* predict.h:429 */
+}
+
+/* encoder/cabac.c:35-67 — cabac_mb_type_intra(). */
+static void m8_mb_type_intra(phx_cabac_size_t *cb, phx_cabac_mb_t *mb,
+                             int i_mb_type, int c0, int c1, int c2,
+                             int c3, int c4, int c5)
+{
+    if (i_mb_type == PHX_I_4x4 || i_mb_type == PHX_I_8x8) {
+        M8_NOUP(cb, c0, 0);                               /* :40 */
+    } else {
+        int i_pred = m8_pred_mode16x16_fix[mb->i_intra16x16_pred_mode]; /* :51 */
+        M8_NOUP(cb, c0, 1);                               /* :53 */
+        M8_TERM(cb);                                      /* :54 */
+        M8_NOUP(cb, c1, !!mb->cache->i_cbp_luma);         /* :56 */
+        if (mb->cache->i_cbp_chroma == 0)
+            M8_NOUP(cb, c2, 0);                           /* :58 */
+        else {
+            M8_DEC(cb, c2, 1);                            /* :61 */
+            M8_NOUP(cb, c3, mb->cache->i_cbp_chroma >> 1);/* :62 */
+        }
+        M8_DEC(cb, c4, i_pred >> 1);                      /* :64 */
+        M8_NOUP(cb, c5, i_pred & 1);                      /* :65 */
+    }
+}
+
+/* encoder/cabac.c:83-96 — cabac_intra4x4_pred_mode(). */
+static void m8_intra4x4_pred(phx_cabac_size_t *cb, int i_pred, int i_mode)
+{
+    if (i_pred == i_mode) {
+        M8_DEC(cb, 68, 1);                                /* :86 */
+    } else {
+        M8_DEC(cb, 68, 0);                                /* :89 */
+        if (i_mode > i_pred) i_mode--;                     /* :91 */
+        M8_DEC(cb, 69, i_mode & 1);                        /* :92 */
+        M8_DEC(cb, 69, (i_mode >> 1) & 1);                 /* :93 */
+        M8_DEC(cb, 69, i_mode >> 2);                       /* :94 */
+    }
+}
+
+/* encoder/cabac.c:98-116 — cabac_intra_chroma_pred_mode(). */
+static void m8_chroma_pred(phx_cabac_size_t *cb, phx_cabac_mb_t *mb)
+{
+    int i_mode = m8_chroma_pred_mode_fix[mb->i_chroma_pred_mode]; /* :100 */
+    int ctx = 0;
+    if ((mb->cache->i_neighbour & PHX_MB_LEFT) && mb->chroma_pred_mode_left != 0)
+        ctx++;                                            /* :104-105 */
+    if ((mb->cache->i_neighbour & PHX_MB_TOP) && mb->chroma_pred_mode_top != 0)
+        ctx++;                                            /* :106-107 */
+    M8_NOUP(cb, 64 + ctx, i_mode > 0);                    /* :109 */
+    if (i_mode > 0) {
+        M8_DEC(cb, 64 + 3, i_mode > 1);                   /* :112 */
+        if (i_mode > 1)
+            M8_NOUP(cb, 64 + 3, i_mode > 2);              /* :114 */
+    }
+}
+
+/* encoder/cabac.c:118-127 — cabac_cbp_luma(). */
+static void m8_cbp_luma(phx_cabac_size_t *cb, phx_cabac_mb_t *mb)
+{
+    int cbp = mb->cache->i_cbp_luma;
+    int cbp_l = mb->cache->i_cbp_left;
+    int cbp_t = mb->cache->i_cbp_top;
+    M8_DEC(cb, 76 - ((cbp_l >> 1) & 1) - ((cbp_t >> 1) & 2), (cbp >> 0) & 1); /* :123 */
+    M8_DEC(cb, 76 - ((cbp   >> 0) & 1) - ((cbp_t >> 2) & 2), (cbp >> 1) & 1); /* :124 */
+    M8_DEC(cb, 76 - ((cbp_l >> 3) & 1) - ((cbp   << 1) & 2), (cbp >> 2) & 1); /* :125 */
+    M8_NOUP(cb, 76 - ((cbp >> 2) & 1) - ((cbp >> 0) & 2), (cbp >> 3) & 1);    /* :126 */
+}
+
+/* encoder/cabac.c:129-148 — cabac_cbp_chroma(). */
+static void m8_cbp_chroma(phx_cabac_size_t *cb, phx_cabac_mb_t *mb)
+{
+    int cbp_a = mb->cache->i_cbp_left & 0x30;
+    int cbp_b = mb->cache->i_cbp_top  & 0x30;
+    int ctx = 0;
+    if (cbp_a && mb->cache->i_cbp_left != -1) ctx++;       /* :135 */
+    if (cbp_b && mb->cache->i_cbp_top  != -1) ctx += 2;    /* :136 */
+    if (mb->cache->i_cbp_chroma == 0) {
+        M8_NOUP(cb, 77 + ctx, 0);                          /* :138 */
+    } else {
+        M8_NOUP(cb, 77 + ctx, 1);                          /* :141 */
+        ctx = 4;
+        if (cbp_a == 0x20) ctx++;                          /* :144 */
+        if (cbp_b == 0x20) ctx += 2;                       /* :145 */
+        M8_NOUP(cb, 77 + ctx, mb->cache->i_cbp_chroma >> 1); /* :146 */
+    }
+}
+
+/* encoder/cabac.c:235-239 — cabac_transform_size(). */
+static void m8_transform_size(phx_cabac_size_t *cb, phx_cabac_mb_t *mb)
+{
+    M8_NOUP(cb, 399 + mb->cache->i_neighbour_transform_size,
+            mb->cache->b_transform_8x8);                   /* :237-238 */
+}
+
+/* encoder/cabac.c:150-186 — cabac_qp_delta(). */
+static void m8_qp_delta(phx_cabac_size_t *cb, phx_cabac_mb_t *mb)
+{
+    int i_dqp = mb->i_qp - mb->i_last_qp;                   /* :152 */
+    if (mb->i_type == PHX_I_16x16 && !mb->curr_cbp && mb->i_qp > mb->i_last_qp)
+        i_dqp = 0;                                          /* :158-163 */
+    int ctx = mb->i_last_dqp &&
+              (mb->prev_type == PHX_I_16x16 || (mb->prev_cbp & 0x3f)); /* :166 */
+    if (i_dqp != 0) {
+        i_dqp *= 2;                                         /* :172 */
+        int val = 1 - i_dqp;
+        if (val < 0) val = i_dqp;                           /* :174 */
+        val--;                                              /* :175 */
+        if (val >= PHX_QUANT_QP_MAX_SPEC && val != PHX_QUANT_QP_MAX_SPEC+1)
+            val = 2*PHX_QUANT_QP_MAX_SPEC + 1 - val;        /* :177-178 */
+        do {
+            M8_DEC(cb, 60 + ctx, 1);                        /* :181 */
+            ctx = 2 + (ctx >> 1);                           /* :182 */
+        } while (--val);
+    }
+    M8_NOUP(cb, 60 + ctx, 0);                              /* :185 */
+}
+
+/* encoder/cabac.c:241-268 — cabac_ref_internal().  bframe==0 for P. */
+static void m8_ref(phx_cabac_size_t *cb, phx_cabac_mb_t *mb,
+                   int i_list, int idx, int bframe)
+{
+    const phx_mb_cache_t *c = mb->cache;
+    int i_refa = c->ref[i_list][phx_scan8[idx] - 1];        /* :244 */
+    int i_refb = c->ref[i_list][phx_scan8[idx] - 8];        /* :245 */
+    int ctx = 0;
+    if (i_refa > 0 && (!bframe || !mb->skip[phx_scan8[idx] - 1])) ctx++;    /* :248 */
+    if (i_refb > 0 && (!bframe || !mb->skip[phx_scan8[idx] - 8])) ctx += 2; /* :250 */
+    for (int i_ref = c->ref[i_list][phx_scan8[idx]]; i_ref > 0; i_ref--) { /* :253 */
+        M8_DEC(cb, 54 + ctx, 1);                            /* :255 */
+        ctx = (ctx >> 2) + 4;                               /* :256 */
+    }
+    M8_DEC(cb, 54 + ctx, 0);                                /* :258 */
+}
+
+/* encoder/cabac.c:270-327 — cabac_mvd_cpn(), RDO_SKIP_BS branch.
+ * Returns the clipped absolute MVD (base.h:X264_MIN(i_abs,66), :324-326). */
+static int m8_mvd_cpn(phx_cabac_size_t *cb, phx_cabac_mb_t *mb,
+                      int i_list, int idx, int l, int mvd, int ctx)
+{
+    (void)mb;
+    int ctxbase = l ? 47 : 40;                              /* :272 */
+    if (mvd == 0) {
+        M8_DEC(cb, ctxbase + ctx, 0);                       /* :276 */
+        return 0;
+    }
+    int i_abs = abs(mvd);
+    M8_DEC(cb, ctxbase + ctx, 1);                           /* :281 */
+    if (i_abs <= 3) {                                       /* :283 */
+        for (int i = 1; i < i_abs; i++)
+            M8_DEC(cb, ctxbase + i + 2, 1);                 /* :286 */
+        M8_DEC(cb, ctxbase + i_abs + 2, 0);                 /* :287 */
+        M8_BYP(cb);                                         /* :288 */
+    } else {
+        M8_DEC(cb, ctxbase + 3, 1);                         /* :292 */
+        M8_DEC(cb, ctxbase + 4, 1);                         /* :293 */
+        M8_DEC(cb, ctxbase + 5, 1);                         /* :294 */
+        if (i_abs < 9) {
+            cb->f8_bits_encoded += phx_size_unary[i_abs-3][cb->state[ctxbase+6]]; /* :297 */
+            cb->state[ctxbase+6] = phx_transition_unary[i_abs-3][cb->state[ctxbase+6]]; /* :298 */
+        } else {
+            cb->f8_bits_encoded += phx_size_5ones[cb->state[ctxbase+6]]; /* :302 */
+            cb->state[ctxbase+6] = phx_transition_5ones[cb->state[ctxbase+6]]; /* :303 */
+            M8_UEBYP(cb, 3, i_abs - 9);                     /* :304 */
+        }
+    }
+    return PHX_MIN(i_abs, 66);                              /* :326 */
+}
+
+/* common/base.h:259-266 — x264_cabac_mvd_sum(). */
+static int m8_mvd_sum(const int16_t *left, const int16_t *top)
+{
+    int a0 = left[0] + top[0];
+    int a1 = left[1] + top[1];
+    return ((a0 > 2) + (a0 > 32)) + (((a1 > 2) + (a1 > 32)) << 8);
+}
+
+/* encoder/cabac.c:329-353 — cabac_mvd(), with precomputed MVD input. */
+static void m8_mvd(phx_cabac_size_t *cb, phx_cabac_mb_t *mb,
+                   const phx_rdo_mb_data_t *data, int i_list, int idx)
+{
+    phx_mb_cache_t *c = mb->cache;
+    const int s8 = phx_scan8[idx];
+    int amvd = m8_mvd_sum(c->mvd[i_list][s8 - 1], c->mvd[i_list][s8 - 8]); /* :338 */
+    int mdx = m8_mvd_cpn(cb, mb, i_list, idx, 0, data->mvd[i_list][idx/4][0],
+                         amvd & 0xff);                        /* :342 */
+    int mdy = m8_mvd_cpn(cb, mb, i_list, idx, 1, data->mvd[i_list][idx/4][1],
+                         amvd >> 8);                          /* :343 */
+    /* encoder/macroblock.c:1150 — x264_macroblock_cache_mvd(). */
+    c->mvd[i_list][s8][0] = (int16_t)mdx;
+    c->mvd[i_list][s8][1] = (int16_t)mdy;
+}
+
+/* encoder/cabac.c:198-213 — cabac_subpartition_p(). */
+static void m8_subpart_p(phx_cabac_size_t *cb, int i_sub)
+{
+    if (i_sub == PHX_D_L0_8x8) {
+        M8_DEC(cb, 21, 1); return;                          /* :202 */
+    }
+    M8_DEC(cb, 21, 0);                                      /* :205 */
+    if (i_sub == PHX_D_L0_8x4)
+        M8_DEC(cb, 22, 0);                                  /* :207 */
+    else {
+        M8_DEC(cb, 22, 1);                                  /* :210 */
+        M8_DEC(cb, 23, i_sub == PHX_D_L0_4x8);              /* :211 */
+    }
+}
+
+/* encoder/cabac.c:381-433 — cabac_mb_header_i(). */
+static void m8_header_i(phx_cabac_size_t *cb, phx_cabac_mb_t *mb,
+                        int i_mb_type, int slice_type)
+{
+    if (slice_type == PHX_SLICE_I) {
+        int ctx = 0;
+        if ((mb->cache->i_neighbour & PHX_MB_LEFT) &&
+            mb->cache->type_left[0] != PHX_I_4x4) ctx++;    /* :386-387 */
+        if ((mb->cache->i_neighbour & PHX_MB_TOP) &&
+            mb->cache->type_top != PHX_I_4x4) ctx++;        /* :388-389 */
+        m8_mb_type_intra(cb, mb, i_mb_type, 3+ctx, 3+3, 3+4, 3+5, 3+6, 3+7); /* :391 */
+    } else if (slice_type == PHX_SLICE_P) {
+        M8_NOUP(cb, 14, 1);                                 /* :396 */
+        m8_mb_type_intra(cb, mb, i_mb_type, 17, 18, 19, 19, 20, 20); /* :399 */
+    } else {
+        /* B slice: cabac.c:401-412. */
+        M8_NOUP(cb, 27+3, 1); M8_NOUP(cb, 27+4, 1);         /* :404-405 */
+        M8_DEC(cb, 27+5, 1); M8_DEC(cb, 27+5, 0);
+        M8_DEC(cb, 27+5, 1);                                /* :406-408 */
+        m8_mb_type_intra(cb, mb, i_mb_type, 32, 33, 34, 34, 35, 35); /* :411 */
+    }
+    if (i_mb_type != PHX_I_16x16) {
+        if (mb->b_transform_8x8_mode)
+            m8_transform_size(cb, mb);                      /* :419-420 */
+        int di = mb->cache->b_transform_8x8 ? 4 : 1;        /* :422 */
+        for (int i = 0; i < 16; i += di) {
+            int i_pred = m8_predict_i4(mb, i);              /* :425 */
+            int i_mode = PHX_RDO_FIX4(mb->cache->intra4x4_pred_mode[phx_scan8[i]]); /* :426 */
+            m8_intra4x4_pred(cb, i_pred, i_mode);           /* :427 */
+        }
+    }
+    m8_chroma_pred(cb, mb);                                 /* :432 */
+}
+
+/* encoder/cabac.c:435-497 — cabac_mb_header_p(). */
+static void m8_header_p(phx_cabac_size_t *cb, phx_cabac_mb_t *mb,
+                        const phx_rdo_mb_data_t *data, int i_mb_type)
+{
+    if (i_mb_type == PHX_P_L0) {
+        M8_NOUP(cb, 14, 0);                                 /* :439 */
+        if (mb->i_partition == PHX_D_16x16) {
+            M8_NOUP(cb, 15, 0); M8_NOUP(cb, 16, 0);         /* :442-443 */
+            if (data->i_fref[0] > 1) m8_ref(cb, mb, 0, 0, 0);/* :445 */
+            m8_mvd(cb, mb, data, 0, 0);                     /* :446 */
+        } else if (mb->i_partition == PHX_D_16x8) {
+            M8_NOUP(cb, 15, 1); M8_NOUP(cb, 17, 1);         /* :450-451 */
+            if (data->i_fref[0] > 1) {
+                m8_ref(cb, mb, 0, 0, 0); m8_ref(cb, mb, 0, 8, 0); /* :454-455 */
+            }
+            m8_mvd(cb, mb, data, 0, 0); m8_mvd(cb, mb, data, 0, 8); /* :457-458 */
+        } else { /* D_8x16 */
+            M8_NOUP(cb, 15, 1); M8_NOUP(cb, 17, 0);         /* :462-463 */
+            if (data->i_fref[0] > 1) {
+                m8_ref(cb, mb, 0, 0, 0); m8_ref(cb, mb, 0, 4, 0); /* :466-467 */
+            }
+            m8_mvd(cb, mb, data, 0, 0); m8_mvd(cb, mb, data, 0, 4); /* :469-470 */
+        }
+    } else if (i_mb_type == PHX_P_8x8) {
+        M8_NOUP(cb, 14, 0); M8_NOUP(cb, 15, 0); M8_NOUP(cb, 16, 1); /* :475-477 */
+        for (int i = 0; i < 4; i++)
+            m8_subpart_p(cb, data->sub_partition[i]);       /* :481 */
+        if (data->i_fref[0] > 1)
+            for (int i = 0; i < 4; i++)
+                m8_ref(cb, mb, 0, 4*i, 0);                  /* :486-489 */
+        for (int i = 0; i < 4; i++) {
+            int sub = data->sub_partition[i];
+            int n = (sub == PHX_D_L0_8x8) ? 1 :
+                    ((sub == PHX_D_L0_8x4 || sub == PHX_D_L0_4x8) ? 2 : 4);
+            for (int k = 0; k < n; k++)
+                m8_mvd(cb, mb, data, 0, 4*i + (n == 2 ? k*2 : k)); /* :493, cabac.c:355-379 */
+        }
+    } else
+        m8_header_i(cb, mb, i_mb_type, PHX_SLICE_P);         /* :496 */
+}
+
+/* encoder/cabac.c:917-1086 — macroblock_write_cabac_internal(),
+ * 4:2:0 frame with b_transform_8x8 == 0 (RDO_SKIP_BS bin costs). */
+static int m8_macroblock_size_internal(phx_cabac_size_t *cb,
+                                       phx_cabac_mb_t *mb,
+                                       const phx_rdo_mb_data_t *data,
+                                       int slice_type)
+{
+    const int i_mb_type = mb->i_type;                        /* :919 */
+    if (slice_type == PHX_SLICE_P)
+        m8_header_p(cb, mb, data, i_mb_type);                /* :933 */
+    else if (slice_type == PHX_SLICE_I)
+        m8_header_i(cb, mb, i_mb_type, PHX_SLICE_I);         /* :937 */
+
+    if (i_mb_type != PHX_I_16x16) {                          /* :966 */
+        m8_cbp_luma(cb, mb);                                /* :968 */
+        m8_cbp_chroma(cb, mb);                              /* :970 */
+    }
+    if (mb->b_transform_8x8_mode && mb->cache->i_cbp_luma)
+        m8_transform_size(cb, mb);                          /* :973-976 */
+
+    if (mb->cache->i_cbp_luma || mb->cache->i_cbp_chroma ||
+        i_mb_type == PHX_I_16x16) {                          /* :978 */
+        const int b_intra = (i_mb_type == PHX_I_16x16 ||
+                             i_mb_type == PHX_I_4x4 ||
+                             i_mb_type == PHX_I_8x8 ||
+                             i_mb_type == PHX_I_PCM);       /* :980 */
+        m8_qp_delta(cb, mb);                                /* :981 */
+
+        if (i_mb_type == PHX_I_16x16) {                     /* :984 */
+            phx_rdo_size_block_residual_cbf_ex(cb, mb, PHX_DCT_LUMA_DC,
+                PHX_LUMA_DC, data->luma16x16_dc, b_intra, 1);  /* :989 */
+            if (mb->cache->i_cbp_luma)
+                for (int i = 0; i < 16; i++)
+                    phx_rdo_size_block_residual_cbf(cb, mb, PHX_DCT_LUMA_AC,
+                        i, data->luma4x4[i]+1, b_intra);    /* :994 */
+        } else {
+            for (int i8x8 = 0; i8x8 < 4; i8x8++)
+                if (mb->cache->i_cbp_luma & (1 << i8x8))
+                    for (int i = 0; i < 4; i++) {
+                        int idx = i + i8x8*4;
+                        phx_rdo_size_block_residual_cbf(cb, mb,
+                            PHX_DCT_LUMA_4x4, idx, data->luma4x4[idx], b_intra); /* :1057 */
+                    }
+        }
+        if (mb->cache->i_cbp_chroma) {                      /* :1060 */
+            for (int ch = 0; ch < 2; ch++)
+                phx_rdo_size_block_residual_cbf_ex(cb, mb, PHX_DCT_CHROMA_DC,
+                    PHX_CHROMA_DC + ch, data->chroma_dc[ch], b_intra, 1); /* :1069-1070 */
+            if (mb->cache->i_cbp_chroma == 2)               /* :1073 */
+                for (int j = 16; j < 32; j++)
+                    phx_rdo_size_block_residual_cbf(cb, mb, PHX_DCT_CHROMA_AC,
+                        j, data->luma4x4[j]+1, b_intra);    /* :1078 */
+        }
+    }
+    return cb->f8_bits_encoded;                             /* rdo.c:184 */
+}
+
+int phx_rdo_size_macroblock_cabac(phx_cabac_size_t *out,
+                                  const phx_cabac_t *live,
+                                  phx_cabac_mb_t *mb,
+                                  const phx_rdo_mb_data_t *data,
+                                  int slice_type, int qp)
+{
+    if (!out || !mb || !data || !mb->cache)
+        return 0;
+    phx_rdo_size_init(out, live, slice_type, qp);           /* rdo.c:71-73 */
+    if (mb->i_type == PHX_P_SKIP || mb->i_type == PHX_B_SKIP ||
+        mb->i_type == PHX_B_DIRECT) {
+        out->f8_bits_encoded = 256;                         /* one bit, FIX8 */
+        return out->f8_bits_encoded;                        /* rdo.c:176-179 */
+    }
+    phx_cabac_mb_t local = *mb;
+    phx_mb_cache_t cache = *mb->cache;
+    local.cache = &cache;
+    for (int l = 0; l < 2; l++)
+        for (int i = 0; i < 4; i++)
+            cache.ref[l][phx_scan8[8*i]] = (int8_t)data->ref[l][i];
+    local.i_fref[0] = data->i_fref[0];
+    local.i_fref[1] = data->i_fref[1];
+    return m8_macroblock_size_internal(out, &local, data, slice_type);
+}
+
+int phx_rdo_macroblock_bits(const phx_cabac_t *live,
+                            phx_cabac_mb_t *mb,
+                            const phx_rdo_mb_data_t *data,
+                            int slice_type, int qp, int lambda2)
+{
+    phx_cabac_size_t cb;
+    int f8 = phx_rdo_size_macroblock_cabac(&cb, live, mb, data, slice_type, qp);
+    if (mb && (mb->i_type == PHX_P_SKIP || mb->i_type == PHX_B_SKIP ||
+               mb->i_type == PHX_B_DIRECT))
+        return (lambda2 + 128) >> 8;                        /* rdo.c:178 */
+    return (int)(((uint64_t)f8 * (uint64_t)lambda2 + 32768) >> 16); /* :185 */
 }
 
 void phx_rdo_get_trellis_trace(phx_rdo_trellis_trace_t *out)
