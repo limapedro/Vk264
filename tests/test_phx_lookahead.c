@@ -224,7 +224,7 @@ static void test_keyint_max(void)
  * Phoenix.  Change PHX_LOOKAHEAD_STRICT_GOLDEN to 1 to make these hard gates;
  * it is 0 while the shared lowres cost engine (src/phx_lowres.c:234-273,
  * :590-601) still diverges from x264. */
-#define PHX_LOOKAHEAD_STRICT_GOLDEN 0
+#define PHX_LOOKAHEAD_STRICT_GOLDEN 1
 
 #define SYN_MBW 4
 #define SYN_MBH 4
