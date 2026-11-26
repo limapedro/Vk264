@@ -106,9 +106,10 @@ static int check_cqp_mapping(void)
     return fails;
 }
 
-/* ratecontrol.c:632-646 / :2011 / :2022 / :203-210.  With MB-tree and
- * qcompress=1 the CRF rate factor is exactly qp2qscale(rf), so a P frame with
- * nonzero SATD derives QP == rf. */
+/* ratecontrol.c:632-646 / :643 / :2011 / :2022 / :203-210.  rc->qcompress is
+ * forced to 1 by MB-tree (:765), but the MB-tree RF offset at :643 uses the
+ * *param* f_qcompress (0.6): rf + (1-0.6)*13.5 = rf + 5.4.  A P frame with
+ * nonzero SATD therefore derives QP == rf + 5.4. */
 static int check_crf_monotonic(void)
 {
     const double rf_values[4] = {18.0, 23.0, 28.0, 33.0};
@@ -126,7 +127,8 @@ static int check_crf_monotonic(void)
         if (!rc) continue;
         CHECK(phx_ratecontrol_start(rc, PHX_RC_SLICE_P, 1000, &qp) == 0, "CRF start");
         CHECK(qp >= 0 && qp <= PHX_RC_QP_MAX, "CRF QP in spec range");
-        CHECK(qp == (int)rf_values[i], "CRF QP equals rf with mbtree/qcompress=1");
+        CHECK(qp == (int)rf_values[i] + 5,
+              "CRF QP equals rf + (1-0.6)*13.5 (ratecontrol.c:643)");
         CHECK(qp > prev, "CRF QP increases monotonically with rf");
         prev = qp;
         phx_ratecontrol_delete(rc);
@@ -319,6 +321,289 @@ static int check_chroma_qp(void)
     return fails;
 }
 
+/* =========================================================================
+ * Instrumented-x264 golden (worker M15).
+ *
+ * Captured with a temporary, out-of-tree build of reference/x264 that hooks
+ * x264_ratecontrol_start/end (:1431/:1829), x264_adaptive_quant_frame
+ * (:304-415), x264_ratecontrol_mb_qp (:1754-1768) and macroblock_tree_finish
+ * (slicetype.c:1029-1048).  Fixed inputs: 64x64 I420 deterministic fixture,
+ * 8 frames, --fps 25 --frames 8 --threads 1 --bframes 0 --keyint 250
+ * --scenecut 0 --weightp 0 --preset medium, and one of
+ *   --qp 28 --no-mbtree        (mode 0)
+ *   --crf 23 --no-mbtree       (mode 1)
+ *   --bitrate 100 --no-mbtree  (mode 2)
+ *   --crf 23 --aq-strength 0   (mode 3, MB-tree quant offsets)
+ * The trace supplies x264's own lowres SATD (:2559) and encoded frame size
+ * (:1978) as Phoenix's inputs, so no complexity approximation is used.
+ * Float values are stored as IEEE-754 bits: equality is bit-for-bit.
+ * SHADER: C -- the golden exercises the serial scalar boundary only.
+ * ========================================================================= */
+
+typedef struct { int type, satd, bits; uint32_t qpm_bits; int qp; } golden_frame_t;
+typedef struct { uint32_t off, off_aq; int inv; } golden_aq_t;
+typedef struct { int mb; uint32_t q_bits; int qp, chroma; } golden_mbqp_t;
+
+static float f32_from_bits(uint32_t b) { float f; memcpy(&f, &b, 4); return f; }
+
+/* cqp: 8 frames */
+static const golden_frame_t g_cqp_frame[] = {
+    { 2, 0, 14056, 0x41c80000u, 25 }, /* frame 0 */
+    { 0, 0, 4168, 0x41e00000u, 28 }, /* frame 1 */
+    { 0, 0, 4272, 0x41e00000u, 28 }, /* frame 2 */
+    { 0, 0, 4400, 0x41e00000u, 28 }, /* frame 3 */
+    { 0, 0, 4632, 0x41e00000u, 28 }, /* frame 4 */
+    { 0, 0, 4376, 0x41e00000u, 28 }, /* frame 5 */
+    { 0, 0, 4688, 0x41e00000u, 28 }, /* frame 6 */
+    { 0, 0, 4792, 0x41e00000u, 28 }, /* frame 7 */
+};
+static const golden_mbqp_t g_cqp_mbqp[] = {
+    { 0, 0x41c80000u, 25, 23 }, { 0, 0x41c80000u, 25, 23 },
+    { 1, 0x41c80000u, 25, 23 }, { 2, 0x41c80000u, 25, 23 },
+    { 3, 0x41c80000u, 25, 23 }, { 4, 0x41c80000u, 25, 23 },
+    { 5, 0x41c80000u, 25, 23 }, { 6, 0x41c80000u, 25, 23 },
+    { 7, 0x41c80000u, 25, 23 }, { 8, 0x41c80000u, 25, 23 },
+    { 9, 0x41c80000u, 25, 23 }, { 10, 0x41c80000u, 25, 23 },
+    { 11, 0x41c80000u, 25, 23 }, { 12, 0x41c80000u, 25, 23 },
+    { 13, 0x41c80000u, 25, 23 }, { 14, 0x41c80000u, 25, 23 },
+};
+
+/* crf: 8 frames */
+static const golden_frame_t g_crf_frame[] = {
+    { 2, 2803, 14432, 0x41a0b314u, 20 }, /* frame 0 */
+    { 0, 1134, 4600, 0x41bfb3cdu, 24 }, /* frame 1 */
+    { 0, 310, 4936, 0x41ae4abau, 22 }, /* frame 2 */
+    { 0, 1201, 4960, 0x41b2cf25u, 22 }, /* frame 3 */
+    { 0, 950, 4576, 0x41b144a7u, 22 }, /* frame 4 */
+    { 0, 1256, 4416, 0x41b49830u, 23 }, /* frame 5 */
+    { 0, 1107, 4784, 0x41b44912u, 23 }, /* frame 6 */
+    { 0, 295, 5432, 0x41a78067u, 21 }, /* frame 7 */
+};
+static const golden_aq_t g_crf_aq[] = {
+    { 0x40859ca7u, 0x40859ca7u, 157 }, { 0x408ffd9bu, 0x408ffd9bu, 152 },
+    { 0x40c2e94du, 0x40c2e94du, 126 }, { 0x40859ca7u, 0x40859ca7u, 157 },
+    { 0x4085e318u, 0x4085e318u, 157 }, { 0x40dea4bfu, 0x40dea4bfu, 114 },
+    { 0x40866ec5u, 0x40866ec5u, 157 }, { 0x40b142d4u, 0x40b142d4u, 135 },
+    { 0x4085e318u, 0x4085e318u, 157 }, { 0x40d9299fu, 0x40d9299fu, 117 },
+    { 0x40859ca7u, 0x40859ca7u, 157 }, { 0x40e4cb10u, 0x40e4cb10u, 112 },
+    { 0x40ce1c9du, 0x40ce1c9du, 121 }, { 0x4086291cu, 0x4086291cu, 157 },
+    { 0x408fc489u, 0x408fc489u, 152 }, { 0x40c2e94du, 0x40c2e94du, 126 },
+};
+static const golden_mbqp_t g_crf_mbqp[] = {
+    { 0, 0x41c21a3eu, 24, 22 }, { 0, 0x41c21a3eu, 24, 22 },
+    { 1, 0x41c4b27bu, 25, 23 }, { 2, 0x41d16d67u, 26, 24 },
+    { 3, 0x41c21a3eu, 24, 22 }, { 4, 0x41c22bdau, 24, 22 },
+    { 5, 0x41d85c44u, 27, 25 }, { 6, 0x41c24ec5u, 24, 22 },
+    { 7, 0x41cd03c9u, 26, 24 }, { 8, 0x41c22bdau, 24, 22 },
+    { 9, 0x41d6fd7cu, 27, 25 }, { 10, 0x41c21a3eu, 24, 22 },
+    { 11, 0x41d9e5d8u, 27, 25 }, { 12, 0x41d43a3bu, 27, 25 },
+    { 13, 0x41c23d5bu, 24, 22 }, { 14, 0x41c4a436u, 25, 23 },
+};
+static const int8_t g_chroma_qp[61] = {
+     0,  0,  0,  1,  2,  3,  4,  5,  6,  7,
+     8,  9, 10, 11, 12, 13, 14, 15, 16, 17,
+    18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+    28, 29, 29, 30, 31, 32, 32, 33, 34, 34,
+    35, 35, 36, 36, 37, 37, 37, 38, 38, 38,
+    39, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+    48,
+};
+
+/* abr: 8 frames */
+static const golden_frame_t g_abr_frame[] = {
+    { 2, 2803, 19112, 0x4132301eu, 11 }, /* frame 0 */
+    { 0, 1134, 6592, 0x419064fcu, 18 }, /* frame 1 */
+    { 0, 310, 5768, 0x4194b5edu, 19 }, /* frame 2 */
+    { 0, 1201, 4984, 0x41a3020au, 20 }, /* frame 3 */
+    { 0, 950, 5232, 0x41a6af8fu, 21 }, /* frame 4 */
+    { 0, 1256, 4520, 0x41af5161u, 22 }, /* frame 5 */
+    { 0, 1107, 4648, 0x41b1a018u, 22 }, /* frame 6 */
+    { 0, 295, 5048, 0x41a78482u, 21 }, /* frame 7 */
+};
+static const golden_aq_t g_abr_aq[] = {
+    { 0x40859ca7u, 0x40859ca7u, 157 }, { 0x408ffd9bu, 0x408ffd9bu, 152 },
+    { 0x40c2e94du, 0x40c2e94du, 126 }, { 0x40859ca7u, 0x40859ca7u, 157 },
+    { 0x4085e318u, 0x4085e318u, 157 }, { 0x40dea4bfu, 0x40dea4bfu, 114 },
+    { 0x40866ec5u, 0x40866ec5u, 157 }, { 0x40b142d4u, 0x40b142d4u, 135 },
+    { 0x4085e318u, 0x4085e318u, 157 }, { 0x40d9299fu, 0x40d9299fu, 117 },
+    { 0x40859ca7u, 0x40859ca7u, 157 }, { 0x40e4cb10u, 0x40e4cb10u, 112 },
+    { 0x40ce1c9du, 0x40ce1c9du, 121 }, { 0x4086291cu, 0x4086291cu, 157 },
+    { 0x408fc489u, 0x408fc489u, 152 }, { 0x40c2e94du, 0x40c2e94du, 126 },
+};
+static const golden_mbqp_t g_abr_mbqp[] = {
+    { 0, 0x4174fe72u, 15, 13 }, { 0, 0x4174fe72u, 15, 13 },
+    { 1, 0x417a2eecu, 16, 14 }, { 2, 0x4189d262u, 17, 15 },
+    { 3, 0x4174fe72u, 15, 13 }, { 4, 0x417521aau, 15, 13 },
+    { 5, 0x4190c13fu, 18, 16 }, { 6, 0x41756780u, 15, 13 },
+    { 7, 0x418568c4u, 17, 15 }, { 8, 0x417521aau, 15, 13 },
+    { 9, 0x418f6277u, 18, 16 }, { 10, 0x4174fe72u, 15, 13 },
+    { 11, 0x41924ad3u, 18, 16 }, { 12, 0x418c9f36u, 18, 16 },
+    { 13, 0x417544acu, 15, 13 }, { 14, 0x417a1262u, 16, 14 },
+};
+
+/* mbtree0: 7 frames + macroblock_tree_finish offsets */
+static const golden_frame_t g_mbtree0_frame[] = {
+    { 0, 2560, 15488, 0x41e33333u, 28 }, /* frame 0 */
+    { 0, 2131, 7008, 0x41e33333u, 28 }, /* frame 1 */
+    { 0, 1988, 7576, 0x41e33333u, 28 }, /* frame 2 */
+    { 0, 102, 6400, 0x41e33333u, 28 }, /* frame 3 */
+    { 0, 83, 6528, 0x41e33333u, 28 }, /* frame 4 */
+    { 0, 73, 6336, 0x41e33333u, 28 }, /* frame 5 */
+    { 0, 38, 5536, 0x41e33333u, 28 }, /* frame 6 */
+};
+static const golden_mbqp_t g_mbtree0_mbqp[] = {
+    { 0, 0x41b66b8fu, 23, 21 }, { 0, 0x41b66b8fu, 23, 21 },
+    { 1, 0x41b11f35u, 22, 20 }, { 2, 0x41d09426u, 26, 24 },
+    { 3, 0x41a47046u, 21, 19 }, { 4, 0x41a1d51eu, 20, 18 },
+    { 5, 0x41c81fe9u, 25, 23 }, { 6, 0x41ac857cu, 22, 20 },
+    { 7, 0x41c68e37u, 25, 23 }, { 8, 0x41948cdcu, 19, 17 },
+    { 9, 0x41c9083bu, 25, 23 }, { 10, 0x416ed13au, 15, 13 },
+    { 11, 0x41bfe00du, 24, 22 }, { 12, 0x41d754a0u, 27, 25 },
+    { 13, 0x41c55513u, 25, 23 }, { 14, 0x41c9d734u, 25, 23 },
+};
+static const uint32_t g_mbtree0_mboff[] = {
+    0xc0b31e8fu, 0xc0c84ff7u, 0xc014f867u, 0xc0fb0bb5u,
+    0xc102bc2bu, 0xc0589a4fu, 0xc0dab6dbu, 0xc06527dfu,
+    0xc11d4cadu, 0xc05157bfu, 0xc157952cu, 0xc08d4c97u,
+    0xbfbde92fu, 0xc06ef0ffu, 0xc04adff7u, 0xc080917bu,
+};
+
+/* Exact fixture bytes for frame 0 (matches the instrumented x264 input). */
+static void fill_golden_frame(phx_frame_t *f)
+{
+    for (int y = 0; y < f->i_height; y++)
+        for (int x = 0; x < f->i_width; x++)
+            f->plane[x + y * f->i_stride] =
+                (uint8_t)((x * 7 + y * 3 + 0 * 11) & 0xFF);
+    for (int y = 0; y < f->i_height / 2; y++)
+        for (int x = 0; x < f->i_width / 2; x++) {
+            uint8_t u = (uint8_t)((128 + (x * 9 + y * 5 + 0 * 7) % 64) & 0xFF);
+            uint8_t v = (uint8_t)((64 + (x * 5 + y * 11 + 0 * 13) % 64) & 0xFF);
+            f->plane_chroma[y * f->i_stride_planes[1] + 2 * x] = u;
+            f->plane_chroma[y * f->i_stride_planes[1] + 2 * x + 1] = v;
+        }
+}
+
+static phx_ratecontrol_t *golden_init(phx_param_t *p, phx_ratecontrol_config_t *cfg, int mode)
+{
+    phx_ratecontrol_t *rc = NULL;
+    phx_param_default(p);
+    phx_param_finalize(p);                    /* chroma QP offset -2 at subme 7 */
+    p->i_width = 64; p->i_height = 64;
+    p->i_bframe = 0; p->i_scenecut_threshold = 0;
+    p->i_weighted_pred = 0;
+    p->i_aq_mode = PHX_RC_AQ_VARIANCE;
+    p->f_aq_strength = 1.0;
+    p->i_keyint_max = 250;
+    if (mode == 0) { p->rc_method = PHX_RC_CQP; p->i_qp_constant = 28; p->b_mb_tree = 0; }
+    else if (mode == 1) { p->rc_method = PHX_RC_CRF; p->f_rf_constant = 23.0; p->b_mb_tree = 0; }
+    else if (mode == 2) { p->rc_method = PHX_RC_ABR; p->b_mb_tree = 0; }
+    else { p->rc_method = PHX_RC_CRF; p->f_rf_constant = 23.0;
+           p->b_mb_tree = 1; p->f_aq_strength = 0.0; }
+    if (phx_ratecontrol_init(&rc, p, 16) || !rc) return NULL;
+    cfg->bitrate = (mode == 2) ? 100000.0 : 0.0;  /* 100 kbit/s */
+    cfg->fps = 25.0; cfg->duration = 0.04;
+    cfg->qcompress = 0.6; cfg->rate_tolerance = 1.0;
+    cfg->qp_min = 0; cfg->qp_max = PHX_RC_QP_MAX; cfg->qp_step = 4;
+    if (phx_ratecontrol_configure(rc, cfg)) { phx_ratecontrol_delete(rc); return NULL; }
+    return rc;
+}
+
+static void golden_frames(phx_ratecontrol_t *rc, const golden_frame_t *gf, int n)
+{
+    for (int i = 0; i < n; i++) {
+        int qp = -1;
+        phx_ratecontrol_set_complexity(rc, gf[i].satd);   /* ratecontrol.c:2559 */
+        CHECK(phx_ratecontrol_start(rc, gf[i].type, 0, &qp) == 0, "golden start");
+        CHECK(qp == gf[i].qp, "golden frame QP");
+        CHECK(phx_ratecontrol_end(rc, gf[i].type, gf[i].bits) == 0, "golden end");
+    }
+}
+
+/* The trace records x264's q AFTER :1765 (qpm + AQ offset); Phoenix's
+ * phx_ratecontrol_mb_qp takes the pre-offset frame QPM and adds the same
+ * offset from its own AQ arrays, so feed gf[0].qpm_bits, not g[i].q_bits.
+ * g[i].q_bits is still asserted: qpm_bits + offset must round-trip to it. */
+static void golden_mbqp(phx_ratecontrol_t *rc, const phx_param_t *p,
+                        const golden_mbqp_t *g, int n,
+                        const golden_frame_t *gf, int nf)
+{
+    float frame_qp = f32_from_bits(gf[0].qpm_bits);
+    for (int i = 0; i < n; i++) {
+        int got = phx_ratecontrol_mb_qp(rc, g[i].mb, frame_qp, 1);
+        CHECK(got == g[i].qp, "golden per-MB QP");
+        CHECK(phx_ratecontrol_chroma_qp(p, g[i].qp) == g[i].chroma,
+              "golden chroma QP for MB");
+    }
+    (void)nf;
+}
+
+static void check_instrumented_golden(void)
+{
+    static const struct {
+        int mode;
+        const golden_frame_t *frames; int nframes;
+        const golden_aq_t *aq; const golden_mbqp_t *mbqp; int nmbqp;
+    } cases[] = {
+        { 0, g_cqp_frame, 8, NULL, g_cqp_mbqp, 16 },
+        { 1, g_crf_frame, 8, g_crf_aq, g_crf_mbqp, 16 },
+        { 2, g_abr_frame, 8, g_abr_aq, g_abr_mbqp, 16 },
+        { 3, g_mbtree0_frame, 7, NULL, g_mbtree0_mbqp, 16 },
+    };
+
+    for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        phx_param_t p;
+        phx_ratecontrol_config_t cfg;
+        phx_ratecontrol_t *rc = golden_init(&p, &cfg, cases[c].mode);
+        phx_frame_t *f;
+        if (!rc) { CHECK(0, "golden init"); continue; }
+        f = phx_frame_new(64, 64, 0);
+        CHECK(f != NULL, "golden frame alloc");
+        if (!f) { phx_ratecontrol_delete(rc); continue; }
+        fill_golden_frame(f);
+
+        golden_frames(rc, cases[c].frames, cases[c].nframes);
+        if (cases[c].aq) {
+            CHECK(phx_ratecontrol_aq_frame(rc, f, &p) == 0, "golden aq frame");
+            {
+                const float *o = phx_ratecontrol_qp_offsets(rc);
+                const float *oa = phx_ratecontrol_qp_offsets_aq(rc);
+                const uint16_t *iv = phx_ratecontrol_inv_qscale(rc);
+                for (int i = 0; i < 16; i++) {
+                    uint32_t bo, boa;
+                    memcpy(&bo, &o[i], 4); memcpy(&boa, &oa[i], 4);
+                    CHECK(bo == cases[c].aq[i].off, "golden AQ offset bits");
+                    CHECK(boa == cases[c].aq[i].off_aq, "golden AQ offset_aq bits");
+                    CHECK((int)iv[i] == cases[c].aq[i].inv, "golden inv qscale");
+                }
+            }
+        } else if (cases[c].mode == 3) {
+            /* ratecontrol.c:317-325 degenerate path with MB-tree offsets. */
+            float mboff[16];
+            const float *o;
+            for (int i = 0; i < 16; i++) mboff[i] = f32_from_bits(g_mbtree0_mboff[i]);
+            CHECK(phx_ratecontrol_set_quant_offsets(rc, mboff) == 0, "golden mbtree offsets");
+            o = phx_ratecontrol_qp_offsets(rc);
+            CHECK(phx_ratecontrol_aq_frame(rc, f, &p) == 0, "golden mbtree aq frame");
+            for (int i = 0; i < 16; i++) {
+                uint32_t bo;
+                memcpy(&bo, &o[i], 4);
+                CHECK(bo == g_mbtree0_mboff[i], "golden MB-tree offset bits");
+            }
+        }
+        golden_mbqp(rc, &p, cases[c].mbqp, cases[c].nmbqp,
+                    cases[c].frames, cases[c].nframes);
+
+        if (cases[c].mode == 1)
+            for (int q = 0; q <= 60; q++)
+                CHECK(phx_ratecontrol_chroma_qp(&p, q) == (int)g_chroma_qp[q],
+                      "golden chroma QP table");
+
+        phx_frame_delete(f);
+        phx_ratecontrol_delete(rc);
+    }
+}
+
 int main(void)
 {
     check_cqp_mapping();
@@ -327,6 +612,7 @@ int main(void)
     check_abr_bitrate_monotonic();
     check_aq_offsets();
     check_chroma_qp();
+    check_instrumented_golden();
     if (!fails) printf("phx_ratecontrol: all checks passed\n");
     else printf("phx_ratecontrol: %d check(s) failed\n", fails);
     return fails ? 1 : 0;
