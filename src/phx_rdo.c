@@ -198,6 +198,11 @@ static phx_rdo_qtab_t phx_qtab;
 static phx_rdo_config_t phx_cfg = { 0, 0, 0, 0, NULL, NULL };
 static int phx_ready = 0;
 
+/* Golden-test trace (rdo.c:695/747-752/789-808/862-891).  Written by the
+ * serial entropy-stage state machine only; never consulted by the encoder.
+ * SHADER: C — one writer per MB, no stream state. */
+static phx_rdo_trellis_trace_t phx_trellis_trace;
+
 /* common/cabac.h:108-113 — bit-cost decision that advances a local state. */
 static int phx_cabac_size_decision2(uint8_t *state, int b)
 {
@@ -792,6 +797,11 @@ static int phx_trellis_coefn_1(int abs_level, uint64_t ssd0, uint64_t ssd1,
                 cost_siglast[2] = phx_cabac_size_decision_noup2(&cabac_state_last[lastindex], 1) + cost_sig1; /* :804 */ \
         } else \
             cost_siglast[0] = cost_siglast[1] = cost_siglast[2] = 0; /* :808 */ \
+        if (!ctx_hi && i == last_nnz) {                       /* golden trace */ \
+            phx_trellis_trace.cost_siglast[0] = cost_siglast[0]; \
+            phx_trellis_trace.cost_siglast[1] = cost_siglast[1]; \
+            phx_trellis_trace.cost_siglast[2] = cost_siglast[2]; \
+        } \
         uint64_t ssd0[2], ssd1[2];                            /* :815 */ \
         for (int k = 0; k < 2; k++) { \
             int abs_level = q-1+k;                            /* :818 */ \
@@ -843,6 +853,7 @@ int phx_rdo_quant_trellis_cabac(phx_cabac_t *cb, int16_t *dct,
                                 int b_interlaced)
 {
     phx_dctcoef orig_coefs[64], quant_coefs[64];              /* rdo.c:647-648 */
+    memset(&phx_trellis_trace, 0, sizeof(phx_trellis_trace));  /* golden trace */
     const uint32_t *coef_weight1 = num_coefs == 64 ? phx_dct8_weight_tab : phx_dct4_weight_tab; /* :649 */
     const uint32_t *coef_weight2 = num_coefs == 64 ? phx_dct8_weight2_tab : phx_dct4_weight2_tab; /* :650 */
     uint8_t *cabac_state_sig = &cb->state[phx_sig_off[b_interlaced][ctx_block_cat]]; /* :652 */
@@ -881,6 +892,7 @@ int phx_rdo_quant_trellis_cabac(phx_cabac_t *cb, int16_t *dct,
     }
 
     int last_nnz = phx_coeff_last(ctx_block_cat, quant_coefs+b_ac) + b_ac; /* :695 */
+    phx_trellis_trace.last_nnz = last_nnz;                    /* golden trace */
     uint8_t *cabac_state = &cb->state[phx_level_m1_off[ctx_block_cat]];    /* :696 */
 
     /* rdo.c:698-706 — shortcut for DC-only blocks (no AC coefficients). */
@@ -910,6 +922,7 @@ int phx_rdo_quant_trellis_cabac(phx_cabac_t *cb, int16_t *dct,
     level_state[13] = cabac_state[4];                         /* :750 */
     level_state[14] = cabac_state[8];                         /* :751 */
     level_state[15] = cabac_state[9];                         /* :752 */
+    memcpy(phx_trellis_trace.level_state, level_state, 16);   /* golden trace */
 
     idx &= num_coefs == 64 ? 3 : 15;                          /* :754 */
     (void)idx; /* psy_fenc is already selected by the caller */
@@ -939,12 +952,23 @@ int phx_rdo_quant_trellis_cabac(phx_cabac_t *cb, int16_t *dct,
                 bnode = &nodes_cur[j];
     }
 
+    /* Golden trace: rdo.c:862-891, the best node's score and level path. */
+    phx_trellis_trace.best_score = bnode->score;              /* :863-866 */
+    phx_trellis_trace.levels_used = levels_used;              /* :735+ */
     int level = bnode->level_idx;                             /* :887 */
     for (i = b_ac; i <= last_nnz; i++) {                      /* :888 */
+        phx_trellis_trace.best_levels[phx_trellis_trace.best_count++] =
+            (int16_t)level_tree[level].abs_level;              /* golden trace */
         dct[zigzag[i]] = (int16_t)PHX_SIGN(level_tree[level].abs_level, dct[zigzag[i]]); /* :890 */
         level = level_tree[level].next;                       /* :891 */
     }
     return 1;                                                 /* :894 */
+}
+
+void phx_rdo_get_trellis_trace(phx_rdo_trellis_trace_t *out)
+{
+    if (out)
+        *out = phx_trellis_trace;
 }
 
 /* ------------------------------------------------------------------ */

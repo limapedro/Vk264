@@ -31,6 +31,13 @@
  * (`x264_encoder_open_164` returns an x264_api_t wrapper; take its first
  *  pointer field to obtain the real x264_t*, then call
  *  x264_8_quant_4x4_trellis / x264_8_cabac_context_init directly.)
+ *
+ * Rows 8/9 golden (M8): rdo.c was instrumented through encoder/analyse.c's
+ * `#include "rdo.c"` (analyse.c:33) to print, for each chroma-DC call, the
+ * raw DCT, quant tables, lambda2, the sig/last/level CABAC states, the
+ * quantized array, cost_siglast[], the best node score/level path and the
+ * final coefficient array.  The `gold_mb*_q23` vectors below use those exact
+ * values from the 64x64 synth fixture (qp=28 slice, chroma qp=23).
  */
 #include <stdio.h>
 #include <string.h>
@@ -83,6 +90,56 @@ static int chroma_dc_wrapper(phx_cabac_t *cb, int16_t *dct, int quant_cat,
 {
     (void)quant_cat;
     return phx_quant_chroma_dc_trellis(cb, dct, qp, cat, intra);
+}
+
+/* x264's live CABAC states at DCT_CHROMA_DC (cat=3), read from an
+ * instrumented encoder/rdo.c build.  Offsets are x264_significant_coeff_
+ * flag_offset[0][3]=105+44=149, x264_last_coeff_flag_offset[0][3]=166+44=210
+ * and x264_coeff_abs_level_m1_offset[3]=227+30=257
+ * (common/tables.c:1758-1792).  SHADER: C — serial state copy, no stream. */
+typedef struct {
+    uint8_t level[10], sig[4], last[4];
+} phx_golden_state_t;
+
+static void set_chroma_dc_state(phx_cabac_t *cb, const phx_golden_state_t *g)
+{
+    for (int i = 0; i < 10; i++) cb->state[257+i] = g->level[i];
+    for (int i = 0; i < 4; i++)  cb->state[149+i] = g->sig[i];
+    for (int i = 0; i < 4; i++)  cb->state[210+i] = g->last[i];
+}
+
+static void check_chroma_dc_golden(const char *name, phx_cabac_t *cb,
+                                   const phx_golden_state_t *g,
+                                   int16_t dct[4], int qp,
+                                   int want_nz, const int16_t want[4],
+                                   int want_last_nnz, uint64_t want_score,
+                                   const int16_t *want_path, int want_path_n,
+                                   const int want_siglast[3])
+{
+    phx_rdo_trellis_trace_t tr;
+    uint8_t before[sizeof(cb->state)];
+    set_chroma_dc_state(cb, g);
+    memcpy(before, cb->state, sizeof(before));
+
+    int nz = phx_quant_chroma_dc_trellis(cb, dct, qp, PHX_DCT_CHROMA_DC, 1);
+    phx_rdo_get_trellis_trace(&tr);
+
+    int ok = (nz == want_nz && tr.last_nnz == want_last_nnz &&
+              tr.best_score == want_score && tr.best_count == want_path_n &&
+              memcmp(before, cb->state, sizeof(before)) == 0 &&
+              memcmp(tr.level_state, g->level, sizeof(g->level)) == 0);
+    for (int i = 0; i < 3; i++) ok = ok && tr.cost_siglast[i] == want_siglast[i];
+    for (int i = 0; i < want_path_n; i++)
+        ok = ok && tr.best_levels[i] == want_path[i];
+    for (int i = 0; i < 4; i++) ok = ok && dct[i] == want[i];
+
+    printf("%-24s nz=%d score=%llu path=", name, nz,
+           (unsigned long long)tr.best_score);
+    for (int i = 0; i < tr.best_count; i++) printf("%d,", tr.best_levels[i]);
+    printf(" siglast=%d,%d,%d dct=%d,%d,%d,%d %s\n", tr.cost_siglast[0],
+           tr.cost_siglast[1], tr.cost_siglast[2], dct[0], dct[1], dct[2],
+           dct[3], ok ? "OK" : "FAIL");
+    check(ok, name);
 }
 
 int main(void)
@@ -207,6 +264,43 @@ int main(void)
         static const int16_t want[4] = { 15,0,-9,0 };
         check_vector_n("chroma_dc_mb0_q23", chroma_dc_wrapper, &cb, dct, 4,
                        2, 23, PHX_DCT_CHROMA_DC, 1, 1, want);
+    }
+    /* Byte-exact golden from instrumented x264 rdo.c (medium, 64x64 synth
+     * fixture, qp=28 slice / chroma qp=23).  Both the coefficient array and
+     * the trellis internals (last_nnz, best-node score, level path, copied
+     * level states and cost_siglast[]) are asserted against x264's dump.
+     * SHADER: C — serial, no stream state. */
+    {
+        static const phx_golden_state_t mb0 = {
+            { 97,104,122,126,121,125,105,97,81,125 },
+            { 77,103,65,119 }, { 80,90,124,82 }
+        };
+        static const phx_golden_state_t mb1 = {
+            { 93,112,122,126,121,105,53,97,81,125 },
+            { 73,105,63,125 }, { 76,96,126,108 }
+        };
+        static const int16_t path0[3] = { 15, 0, 9 };
+        static const int16_t path1[3] = { 22, 0, 9 };
+        static const int siglast0[3] = { 853, 277, 314 };
+        static const int siglast1[3] = { 872, 293, 293 };
+        static const int16_t want0[4] = { 15, 0, -9, 0 };
+        static const int16_t want1[4] = { 22, 0, -9, 0 };
+        int16_t d[4] = { 1120, 0, -640, 0 };
+        check_chroma_dc_golden("gold_mb0_u_q23", &cb, &mb0, d, 23, 1, want0,
+                               2, 1152921504608876520ULL, path0, 3, siglast0);
+        d[0] = 1568; d[1] = 0; d[2] = -640; d[3] = 0;
+        check_chroma_dc_golden("gold_mb1_u_q23", &cb, &mb1, d, 23, 1, want1,
+                               2, 1152921504608563703ULL, path1, 3, siglast1);
+        /* Row 9 symptom: ue_bypass val must be 7 (|coeff|=22), never 14
+         * (|29|).  The escape value is computed by
+         * phx_cabac_encode_ue_bypass(cb, 0, abs_coeff-15)
+         * (encoder/cabac.c:727-736, common/cabac.c:142-157). */
+        check(phx_rdo_bs_size_ue_big((unsigned)(want1[0] - 15)) == 7,
+              "gold mb1 ue val=7");
+        /* val=14 has the same 7-bin length, so the first divergent bypass
+         * bin (index 1663) is a value difference, not an insertion. */
+        check(phx_rdo_bs_size_ue_big(14) == 7,
+              "wrong ue val=14 has same length");
     }
     /* MB0 chroma 4x4 AC block of the synth fixture (qp=23 chroma).  Golden
      * from an instrumented x264 build with lambda2[1][1] = tab[1][23]. */
