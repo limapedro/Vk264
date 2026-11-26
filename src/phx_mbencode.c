@@ -623,12 +623,14 @@ int phx_mb_encode_chroma_trellis(const phx_param_t *p, phx_frame_t *f,
                  * chroma AC residual starts at coefficient 1 (cabac.c:1078,
                  * h->dct.luma4x4[j]+1); the C-stage exposes the same 15-bin
                  * window (phx_encoder.c:505-506), so skip scan[0] here. */
-                /* phx_encoder.c:505-506 maps x264's U blocks (16..19) to
-                 * chroma_dct[1][1..4]; store U there so CABAC sees the same
-                 * plane as x264.  V blocks still hit that writer's out-of-range
-                 * ch=2 slot (outside this worker's files), so keep V's decoded
-                 * values in the otherwise unused chroma_dct[0][1..4] slots. */
-                const int dest = ch == 0 ? 1 : 0;
+                /* encoder/cabac.c:1074 writes U blocks (scan8 16..19) before
+                 * V blocks (32..35).  phx_encoder.c:505-508 maps those scan8
+                 * ranges to chroma_dct[0][1+i] and chroma_dct[1][1+i]
+                 * respectively, so plane ch must be stored in slot ch.  A
+                 * ch==0?1:0 swap here made U/V arrive at the C stage in the
+                 * wrong order (first divergent CABAC bin: chroma AC U sig flag
+                 * ctx=152).  SHADER: B — one serial store per block. */
+                const int dest = ch;
                 for (int k = 0; k < 15; k++)
                     d->chroma_dct[dest][1+i][k] = ac[ch][i][phx_zigzag4[k+1]];
                 d->chroma_dct[dest][1+i][15] = 0;

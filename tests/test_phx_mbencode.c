@@ -312,8 +312,9 @@ static void phx_test_first_mb_chroma_trellis(void)
         {182,189,196,203,210,217,224,231,238,245,252,3,10,17,24,31},
         {195,202,209,216,223,230,237,244,251,2,9,16,23,30,37,44}
     };
-    /* I420 planes of the synth fixture's first MB, before NV12 interleave:
-     * U = 128+5x, V = (29+7x+13y) & 0xff (tools/make_video_fixtures.py). */
+    /* I420 planes of the real synth fixture's first MB
+     * (tools/parity_harness.py:73-76): U = 128+5*x, V = 128+5*y.
+     * These are the exact samples the x264 golden CABAC trace used. */
     static const uint8_t uv0[8][8] = {
         {128,133,138,143,148,153,158,163},
         {128,133,138,143,148,153,158,163},
@@ -324,16 +325,10 @@ static void phx_test_first_mb_chroma_trellis(void)
         {128,133,138,143,148,153,158,163},
         {128,133,138,143,148,153,158,163}
     };
-    static const uint8_t vv0[8][8] = {
-        {29,36,43,50,57,64,71,78},
-        {42,49,56,63,70,77,84,91},
-        {55,62,69,76,83,90,97,104},
-        {68,75,82,89,96,103,110,117},
-        {81,88,95,102,109,116,123,130},
-        {94,101,108,115,122,129,136,143},
-        {107,114,121,128,135,142,149,156},
-        {120,127,134,141,148,155,162,169}
-    };
+    static uint8_t vv0[8][8];
+    for (int y = 0; y < 8; y++)
+        for (int x = 0; x < 8; x++)
+            vv0[y][x] = (uint8_t)(128 + 5 * y);
     phx_param_t p;
     phx_param_default(&p);
     phx_param_apply_preset(&p, "medium");
@@ -379,25 +374,38 @@ static void phx_test_first_mb_chroma_trellis(void)
     CHECK(phx_macroblock_encode_chroma(&p, f, &c, 0, 0, &d) == 0,
           "trellis handoff chroma encode");
 
+    /* x264 instrumented encoder/cabac.c L1DC hook on this fixture:
+     * U = {15,-9,0,0}, V = {15,0,-9,0} (zigzag_scan_2x2_dc, macroblock.c:35). */
     static const int16_t want_u[4] = { 15, -9, 0, 0 };
-    static const int16_t want_v[4] = { -26, -12, -23, 0 };
+    static const int16_t want_v[4] = { 15, 0, -9, 0 };
     CHECK(memcmp(d.chroma_dct[0][0], want_u, sizeof(want_u)) == 0,
           "trellis handoff U DC golden");
     CHECK(memcmp(d.chroma_dct[1][0], want_v, sizeof(want_v)) == 0,
           "trellis handoff V DC golden");
     CHECK(d.chroma_nnz[0][0] == 1 && d.chroma_nnz[1][0] == 1,
           "trellis handoff chroma DC nnz");
-    /* x264 L1BLK cat=4 idx=16..19 (the 15-bin window after +1): U's four
-     * trellis AC blocks each reduce to a single coeff at scan index 1. */
-    for (int i = 0; i < 4; i++)
-        CHECK(d.chroma_dct[1][1+i][0] == -2 && d.chroma_dct[1][1+i][1] == 0,
-              "trellis handoff U AC golden");
+    /* x264's instrumented encoder/cabac.c hook reports the 15-bin residual
+     * window (h->dct.luma4x4[j]+1, encoder/cabac.c:1078):
+     *   U scan8 16..19 -> [-2, 0, ...]  (the first sig bin is ctx=152, b=1)
+     *   V scan8 32..35 -> [ 0,-2, ...]  (first sig bin ctx=152 is b=0)
+     * phx_encoder.c:505-508 maps scan8 16..19 to chroma_dct[0][1+i] and
+     * scan8 32..35 to chroma_dct[1][1+i]; store plane ch in slot ch.
+     * SHADER: B — asserts the B->C chroma AC plane/order handoff. */
+    for (int i = 0; i < 4; i++) {
+        CHECK(d.chroma_dct[0][1+i][0] == -2 && d.chroma_dct[0][1+i][1] == 0,
+              "trellis handoff U AC golden (scan8 16..19)");
+        CHECK(d.chroma_dct[1][1+i][0] == 0 && d.chroma_dct[1][1+i][1] == -2,
+              "trellis handoff V AC golden (scan8 32..35)");
+    }
     CHECK(c.non_zero_count[phx_scan8[49]] == 1 &&
           c.non_zero_count[phx_scan8[50]] == 1,
           "trellis handoff cache DC nnz");
-    printf("trellis handoff: U=%d,%d V=%d,%d cbp=%d\n",
+    printf("trellis handoff: U=%d,%d V=%d,%d cbp=%d "
+           "UAC=%d,%d,%d VAC=%d,%d,%d\n",
            d.chroma_dct[0][0][0], d.chroma_dct[0][0][1],
-           d.chroma_dct[1][0][0], d.chroma_dct[1][0][1], d.cbp_chroma);
+           d.chroma_dct[1][0][0], d.chroma_dct[1][0][1], d.cbp_chroma,
+           d.chroma_dct[0][1][0], d.chroma_dct[0][1][1], d.chroma_dct[0][1][2],
+           d.chroma_dct[1][1][0], d.chroma_dct[1][1][1], d.chroma_dct[1][1][2]);
     phx_mb_state_delete(st);
     phx_frame_delete(f);
 }
