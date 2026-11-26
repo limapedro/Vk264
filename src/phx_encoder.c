@@ -48,9 +48,9 @@ static int phx_encoder_validate(const phx_param_t *p)
   * 25 fps VUI timebase.  The x264 level table now lives once in phx_headers.c
   * and is shared with phx_sps_init(), so padded and mod16 pictures select the
   * same level.  SHADER: C — serial scalar lookup. */
-static int phx_encoder_auto_level(int mb_width, int mb_height)
+static int phx_encoder_auto_level(int mb_width, int mb_height, int refs)
 {
-    return phx_sps_auto_level(mb_width, mb_height);      /* tables.c:29-49 */
+    return phx_sps_auto_level(mb_width, mb_height, refs); /* tables.c:29-49 */
 }
 
 /* Encoder API: SPS/PPS pair for this handle.  For mod16 pictures this calls
@@ -68,7 +68,8 @@ static int phx_encoder_header_pair(phx_t *h, uint8_t *dst, int capacity)
     phx_sps_t sps;
     phx_pps_t pps;
     phx_sps_init(&sps, &h->param, h->i_width, h->i_height); /* encoder.c:1579 */
-    sps.i_level_idc = phx_encoder_auto_level(sps.i_mb_width, sps.i_mb_height);
+    sps.i_level_idc = phx_encoder_auto_level(sps.i_mb_width, sps.i_mb_height,
+                                             sps.i_num_ref_frames);
     sps.vui_log2_max_mv_length = phx_sps_auto_mv_length(sps.i_level_idc); /* set.c:240-241 */
     /* set.c:251-255/:363-371 — store the RAW padding; phx_sps_write() applies
      * h_shift=1 / v_shift=1 exactly like x264.  Pre-shifting here would shift
@@ -152,7 +153,8 @@ phx_t *phx_encoder_open(const phx_param_t *p)
         h->sps.b_crop = 1;
         h->sps.crop_right = h->i_width - h->i_width_display;
         h->sps.crop_bottom = h->i_height - h->i_height_display;
-        h->sps.i_level_idc = phx_encoder_auto_level(h->i_mb_width, h->i_mb_height);
+        h->sps.i_level_idc = phx_encoder_auto_level(h->i_mb_width, h->i_mb_height,
+                                                    h->sps.i_num_ref_frames);
     }
     phx_pps_init(&h->pps, &h->sps, &h->param);                 /* encoder.c:1581 */
 

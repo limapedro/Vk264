@@ -42,7 +42,7 @@ typedef struct {
 /* common/tables.c:29-49 (x264_levels) + encoder/encoder.c:1245-1266 — auto
  * level selection for the port's fixed 25 fps timebase.  set.c:240-241 maps
  * the selected level's mv_range to log2_max_mv_length.  SHADER: C — lookup. */
-int phx_sps_auto_level(int mb_width, int mb_height);
+int phx_sps_auto_level(int mb_width, int mb_height, int num_ref_frames);
 int phx_sps_auto_mv_length(int level_idc);
 
 /* set.c:101 / :479 — derive SPS/PPS from the ported parameter set.
