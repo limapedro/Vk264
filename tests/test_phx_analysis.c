@@ -1191,6 +1191,15 @@ static const int16_t x264_mb0_chroma_ac[2][4][16] = {
       {0,-1,-2,-10,-2,0,0,0,-1,-2,0,0,0,0,0,0},
       {0,0,3,-7,0,0,0,0,0,-1,0,0,0,0,0,0} }
 };
+/* Instrumented x264 (encoder/rdo.c:162-197 -> rd_cost_mb's
+ * x264_macroblock_encode at :169; encoder/macroblock.c:395/:415 AC nnz,
+ * :429 DC nnz) on this exact 64x64 fixture, medium/QP28/CABAC:
+ *   CHROMANNZ dc 1,1 ac0 1,1,1,1 ac1 0,1,1,1; cbp_chroma 2.
+ * V AC block 0 is legitimately zero/nnz=0 (trellis killed every coefficient);
+ * the other seven AC blocks and both DC blocks are nonzero.  SHADER: B/C. */
+static const uint8_t x264_mb0_chroma_nnz[2][5] = {
+    { 1, 1, 1, 1, 1 }, { 1, 0, 1, 1, 1 }
+};
 
 static const char *mb0_fixture(void)
 {
@@ -1286,7 +1295,11 @@ static void check_mb0_i8_candidate_chroma(const char *path)
     pic.i_width = 64; pic.i_height = 64;
     pic.plane[0] = frame; pic.i_stride[0] = 64;
     pic.plane[1] = frame + 64*64; pic.i_stride[1] = 32;
-    pic.plane[2] = frame + 64*64 + 32*64; pic.i_stride[2] = 32;
+    /* I420: V starts after height/2 rows of width/2 bytes (frame.c:89-99/
+     * :239-243), i.e. +32*32 here.  +32*64 pointed one chroma plane past the
+     * 64*64*3/2 fixture and fed heap garbage into the V DCT, so its AC nnz
+     * bytes varied per run instead of reproducing x264's candidate. */
+    pic.plane[2] = frame + 64*64 + 32*32; pic.i_stride[2] = 32;
     phx_nal_t *hn = NULL; int hnn = 0;
     phx_headers(enc, &hn, &hnn);
     phx_g_intra_rd_diag_enable = 1; phx_g_intra_rd_diag_count = 0;
@@ -1305,24 +1318,25 @@ static void check_mb0_i8_candidate_chroma(const char *path)
             CHECKF(r->pred8[i] == x264_mb0_i8_pred[i],
                    "candidate chroma: I8 pred[%d] %d != %d",
                    i, r->pred8[i], x264_mb0_i8_pred[i]);
-        /* V-plane DC is owned by phx_chroma.c (outside this handoff); U DC and
-         * all eight chroma AC blocks are asserted byte-exact. */
+        /* Both planes' DC, all eight AC blocks and every nnz flag are now
+         * byte-exact against instrumented x264 (x264_mb0_chroma_nnz above). */
         for (int ch = 0; ch < 2; ch++) {
-            CHECKF(ch == 1 || memcmp(r->cand_chroma_dct[ch][0], x264_mb0_chroma_dc[ch],
+            CHECKF(memcmp(r->cand_chroma_dct[ch][0], x264_mb0_chroma_dc[ch],
                           4*sizeof(int16_t)) == 0,
-                   "candidate chroma: DC plane %d byte-identical", ch); /* V DC: phx_chroma.c TODO */
+                   "candidate chroma: DC plane %d byte-identical", ch);
             for (int i = 0; i < 4; i++) {
-                CHECKF(ch == 1 || memcmp(r->cand_chroma_dct[ch][1+i],
+                CHECKF(memcmp(r->cand_chroma_dct[ch][1+i],
                               x264_mb0_chroma_ac[ch][i],
                               16*sizeof(int16_t)) == 0,
                        "candidate chroma: AC %d/%d byte-identical", ch, i);
-                CHECKF(r->cand_chroma_nnz[ch][1+i] == 1,
-                       "candidate chroma: AC nnz %d/%d %d != 1",
-                       ch, i, r->cand_chroma_nnz[ch][1+i]);
+                CHECKF(r->cand_chroma_nnz[ch][1+i] == x264_mb0_chroma_nnz[ch][1+i],
+                       "candidate chroma: AC nnz %d/%d %d != %d",
+                       ch, i, r->cand_chroma_nnz[ch][1+i],
+                       x264_mb0_chroma_nnz[ch][1+i]);
             }
-            CHECKF(r->cand_chroma_nnz[ch][0] == 1,
-                   "candidate chroma: DC nnz %d %d != 1",
-                   ch, r->cand_chroma_nnz[ch][0]);
+            CHECKF(r->cand_chroma_nnz[ch][0] == x264_mb0_chroma_nnz[ch][0],
+                   "candidate chroma: DC nnz %d %d != %d",
+                   ch, r->cand_chroma_nnz[ch][0], x264_mb0_chroma_nnz[ch][0]);
         }
         for (int i = 0; i < 4; i++)
             CHECKF(memcmp(r->cand_dct8[i], x264_mb0_i8_dct[4*i],
@@ -1342,6 +1356,21 @@ static void check_mb0_candidate_handoff_golden(void)
 }
 
 /* ---------------------------------------------------------------------------
+ * mbrd>=1 inter-RD chroma handoff observation (rdo.c:169 calls
+ * x264_macroblock_encode, macroblock.c:259-498 publishes chroma_dct/nnz/CBP).
+ * Instrumented x264 (build/make_chroma_instr.py, CHROMADIAG/CHROMANNZ/CHROMADCT
+ * hooks at rdo.c:169) on build/oracle_full/diag.yuv, first B frame (POC 4):
+ *   MB0 B_DIRECT/B_L0_L0: cbp_chroma=1, nnz dc=0,1, U/V AC nnz all 0;
+ *     U DC {1,-1,0,0}, V DC {-1,0,0,0}; U AC0 {0,-1,0,...}, AC2 {0,-1,0,...};
+ *     V AC0 {0,-1,0,...}, AC1 {0,0,0,1,...}, AC2 {0,-1,0,...},
+ *     AC3 {0,0,-1,0,...}.  macroblock.c:431-440 decimates the AC nnz flags
+ *     but leaves h->dct.luma4x4[16..47] coefficients published (rdo.c:184).
+ *   MB1 B_DIRECT/B_L1_L1: cbp_chroma=0, nnz dc=0,0, U/V AC nnz all 0, with
+ *     the same coefficient arrays as MB0 (DC-only reconstruction).
+ * These are read-only observation constants: Phoenix's inter RD cost path
+ * currently costs only zero-residual candidates (phx_analysis.c TODO).
+ * SHADER: B/C — read-only observation of the A/B chroma boundary.
+ *
  * mbrd>=1 inter RD golden (encoder/analyse.c:2547-2617/:2622-2690/:3576-3589).
  * x264's per-candidate rd_cost_mb() results on build/oracle_full/diag.yuv
  * (64x64 I420, medium, QP28, CABAC, --keyint 30 --scenecut 0 --threads 1)
