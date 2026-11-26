@@ -104,4 +104,26 @@ Cause: `phx_sps_init()` (`src/phx_headers.c:34/:72`) hard-coded level 10 and MV 
 
 Still open at full resolution: x264 repeats SPS/PPS before each IDR (5 SPS + 5 PPS NALs) while Phoenix emits them only once (1 + 1); NAL counts 142 vs 134. Phoenix streams still carry ffmpeg decode errors (86) vs x264 0.
 
+## F11 — P_SKIP wiring and non-mod16 crop
+
+Z1 published x264's P_SKIP decision (`phx_analysis_probe_pskip`, `analyse.c:2953-3024/1294-1307/1320-1330`), and the encoder now honours it (`phx_encoder.c`):
+
+- P_SKIP is sent through the P_L0/D_16x16 MC path (`macroblock.c:654-681`), then restored to `PHX_P_SKIP` for the neighbour cache and entropy writers.
+- CABAC writes `mb_skip_flag` for skip (`cabac.c:2873`) and for coded P/B MBs (`:2877`).
+- CAVLC uses the byte-exact skip-run writer (`encoder.c:2883-2890`, `:3087-3088`).
+
+Measured on a real 64×64/30f clip, ultrafast/QP28:
+
+| | before | after | x264 |
+|---|---:|---:|---:|
+| CABAC stream | 9,469 B | **2,035 B** | 2,475 B |
+| CAVLC stream | 10,812 B | **2,192 B** | 2,621 B |
+| CAVLC decode errors | 66 | **0** | 0 |
+
+Higher presets still code most P MBs as intra (medium 7,048 B vs x264 2,317 B); investigating the `subme>=2` skip gates.
+
+Non-mod16 crop was double-shifted: `phx_encoder.c` stored `(width - display_width) >> 1` and `phx_sps_write()` shifted again, so 806 px produced crop 2 instead of x264's 5 (`set.c:363-371`). Now stores raw padding; the 806×720 SPS is byte-identical and first diff moved 12 → 598.
+
+Current first divergent CABAC bin on the real clip (instrumented x264, ultrafast) is **396**, ctx 152 `significant_coeff_flag`, with matching coder state — i.e. an upstream coefficient difference; downstream CABAC desync then produces decoder errors such as `intra4x4 mode -1`.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
