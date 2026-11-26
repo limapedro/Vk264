@@ -44,6 +44,7 @@ add_library(phx STATIC
     src/phx_cavlc_dec.c
     src/phx_decode.c
     src/phx_mvdirect.c
+    src/phx_dpb.c
 )
 target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -167,3 +168,7 @@ add_test(NAME phx_decode COMMAND phx_test_decode)
 add_executable(phx_test_mvdirect tests/test_phx_mvdirect.c)
 target_link_libraries(phx_test_mvdirect PRIVATE phx)
 add_test(NAME phx_mvdirect COMMAND phx_test_mvdirect)
+
+add_executable(phx_test_dpb tests/test_phx_dpb.c)
+target_link_libraries(phx_test_dpb PRIVATE phx)
+add_test(NAME phx_dpb COMMAND phx_test_dpb)
