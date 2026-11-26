@@ -209,6 +209,43 @@ static void check_interpolation(const phx_cost_tables_t *cost)
     phx_frame_delete(fref);
 }
 
+/* ---- real-clip input comparison (build/oracle_full/diag.yuv) ------------ */
+/* Instrumented x264 (real encoder objects, encoder/me.c:796 and :809) and a
+ * traced Phoenix encode of the same 64x64 clip (--qp 28 --keyint 30
+ * --min-keyint 30 --scenecut 0 --cabac) were compared at the two reported
+ * over-skip MBs.  Replaying x264's EXACT inputs through phx_me_refine_subpel_mv
+ * reproduces x264's refined MV/cost byte-for-byte, so the divergence is in
+ * the inputs supplied by the caller, not in this file:
+ *
+ *   medium frame=1 MB(1,1), site me.c:796 (subme=7, hpel=2, qpel=2, br=0):
+ *     x264: mv=(0,0) cost=368 mvp=(0,0) qp=30 lambda=8,
+ *           cost_mv[-8..8]=[64,62,59,55,51,46,39,30,6,30,39,46,51,55,59,62,64]
+ *           -> refined (0,0)/599, cost_mv=12.
+ *     Phoenix replayer with those exact bytes -> (0,0)/599, cost_mv=12 (exact).
+ *     The real Phoenix trial at its MB(1,1) instead had mv=(12,-52),
+ *     cost=1071, mvp=(11,-47), lambda=6 (qp=28), table [48,46,...,4,...].
+ *
+ *   veryfast frame=3 MB(0,0), site me.c:809 (subme=2, hpel=0, qpel=1, br=1):
+ *     x264: mv=(0,20) cost=507 mvp=(0,0) i_ref_cost=0 qp=30 lambda=8
+ *           -> refined (1,20)/485, cost_mv=114.
+ *     Phoenix replayer with those exact bytes -> (1,20)/485, cost_mv=114.
+ *
+ * Derived upstream differences (all outside M4's owned files):
+ *   1. QP/lambda: x264's per-MB qp at these sites is 30 (lambda=8,
+ *      tables.c:97-104), Phoenix passes the CQP qp=28 (lambda=6).
+ *   2. Frame pairing: Phoenix's first analysed P frame has the exact luma of
+ *      x264's DISPLAY frame 4 (16x16 ENC bytes match); x264's frames 1-3 are
+ *      B frames (analyse.c:2953-3733), so the reported frame 1/3 trials are
+ *      not the same source pictures in the two encoders.
+ *   3. Reference contents: x264's p_fref[] is the reconstructed/deblocked
+ *      frame (macroblock.c:1438-1622), Phoenix's fref is the raw source frame
+ *      (its 4x4 sample block equals x264's frame-1 ENC, not x264's REF).
+ *   4. MVP/fullpel MV/cost follow from (1)-(3): e.g. x264 mvp=(0,0)/mv=(0,0)
+ *      vs Phoenix mvp=(11,-47)/mv=(12,-52) at the matched MB.
+ * hpel-filtered planes (mc.c:173-196/704-726) produced from x264's own fref
+ * bytes give byte-identical refinement, so the refplanes state is not at fault.
+ * SHADER: C — observation only; no approximation in the golden values above. */
+
 /* ---- public one-call refinement API (x264_me_refine_qpel analogue) ------ */
 
 /* tools/parity_harness.py:64-77 fixture frame N luma is
