@@ -109,6 +109,8 @@ review document for the shader backend derived from it.
 | MB0 CABAC bin trace | **715/715 bins exact**; first divergence bin 715 (MB1 mode) | `python tools/cabac_bin_diff.py --all` |
 | Lookahead | B/BREF emitted from real lowres frame/path costs | `tests/test_phx_lookahead.c`, `tests/test_phx_lowres.c` |
 | Encoder robustness | **100/100** cases `rc=0`, 0 crashes (frame_num/MMCO fix) | `python tools/parity_harness.py` |
+| Decoder modules | CABAC arithmetic + CAVLC primitives + slice/MB driver ported, 3 new CTest targets | `src/phx_cabac_dec.*`, `src/phx_cavlc_dec.*`, `src/phx_decode.*` |
+| Real-video encoding | 2 videos decoded to 640x360/60f, x264 6000 kbps 40/40 streams; Phoenix 640x360 opens and encodes all 10 presets | `build/video_encode_test/`, `build/video_parity/` |
 | Full-stream parity | **byte-exact 0/100** ? NOT achieved | `build/parity/parity_report.json` |
 
 - WP0?WP2 are complete: x264 reference, parameters/cost tables/frame plumbing,
@@ -136,5 +138,6 @@ review document for the shader backend derived from it.
   `compare_streams.py`) and `tools/` (`parity_harness.py`, `first_frame_probe.py`,
   `cabac_bin_diff.py`, `nightly_gates.py`, `extended_video_probe.py`).
 - Evidence-first rule: a work package is complete only with a golden test and
+- All ten preset audits are in `docs/preset_audit/`; their synthesis is `docs/PARITY_GAP_MATRIX.md` (I4 modes, I16 luma DC, chroma-DC trellis, P/B headers, high-preset ME/RD).
   a byte-exact gate, never with a metric-driven approximation. Only the
   byte-exact count is a parity claim (`docs/NIGHTLY_STATUS.md`).
