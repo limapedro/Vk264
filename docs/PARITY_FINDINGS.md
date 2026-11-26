@@ -432,4 +432,12 @@ mb.mvr + lowres MVs (analyse.c:1937, mvpred.c:519-560), while phx_me16 receives
 one MVP; x264 L1 MVs (-1,24)/(-8,39) vs Phoenix (0,10)/(-1,37). phx_me extension
 delegated. CAVLC first diff moved byte 4 -> 5 (I8 predictor); ctest 30/30.
 
+## F40 — mvc[] API lands; one L1 golden exact
+
+Added phx_me16_mvc() with x264's mvc[] candidate loop (me.c:214-317/468-519/774-797)
+and predictor clip/roundclip. On diag.yuv POC4 MB0 L1, MV/cost/cost_mv
+(-1,24)/797/103 is byte-identical to x264. MB1 L1 remains open with identical
+inputs: x264 evaluates fullpel (-2,10)/452 and ends (-8,39)/654; Phoenix's HEX
+walk stops at (-1,10)/637. ctest -R phx_me 1/1 PASS; HEX-walk fix delegated.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
