@@ -188,4 +188,18 @@ All three early first-diffs were in SPS, not entropy. Field comparison found two
 
 After both fixes the 320×180 medium and veryslow SPS payloads are byte-identical and first diffs moved **13/7 → 674/677**. A fresh 320-pair matrix is running to measure the new distribution.
 
+## F18 — CQP AQ hypothesis disproven; QP 30 is x264's B-frame offset
+
+M15 instrumented `reference/x264` with the exact parity-harness flags and showed that for **every** CQP encode x264 sets `i_aq_mode=0`, `b_mb_tree=0` (`encoder.c:951-966`) with zero AQ offsets and `inv_qscale=256` (`ratecontrol.c:329-333`). M4's observed QP 30 / λ=8 is the B-frame QP offset (`qp_constant[B]=clip(28+6·log2(1.3)+.5)=30`, `ratecontrol.c:825`), not AQ. Enabling AQ in Phoenix would break CQP parity; it stays off.
+
+Instrumented CQP goldens (ultrafast / veryfast / medium):
+
+```
+frame QP   I=25, P=28, B=30, BREF=(30+28)/2=29   (ratecontrol.c:823-825/1508-1511)
+lambda     x264_lambda_tab: 4/6/7/8 for QP 25/28/29/30  (tables.c:97-109)
+per-MB QP  frame1 B qp=30 lambda=8; frame2 BREF qp=29 lambda=7  (bit-identical)
+```
+
+Added `phx_ratecontrol_set_kept_as_ref()` (BREF midpoint) and `phx_ratecontrol_lambda()`; wired the former into `phx_encoder.c` before `phx_ratecontrol_start()`. The residual M4 gap is now definitively frame type (Phoenix P where x264 codes B) and raw-vs-reconstructed references, not rate control.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
