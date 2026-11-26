@@ -156,3 +156,22 @@ because of the crash cases. The two largest clusters contain 8 and 6 cases.
 Again: **0/100 byte-exact is NOT success** — use these numbers to choose the
 next fix, then re-run `tools/parity_harness.py` to regenerate the authoritative
 report.
+
+## 6000 kbps real-video test (separate from the 100-case corpus)
+
+A separate encode set lives in `build/video_encode_test/`: two `D:\Videos` MP4s
+decoded to 640x360 I420 / 60 frames, encoded with the authoritative x264 at
+`--bitrate 6000` for all 10 presets x `--cabac`/`--no-cabac`. All **40/40**
+streams succeeded; results are in `build/video_encode_test/x264_results.json`.
+
+These are *rate-targeted* streams, not the fixed-QP corpus above. On a 60-frame
+clip x264's ABR controller has not converged, so the achieved average is far
+below 6000 kbps (e.g. ultrafast/cabac ~678 kbps, superfast/cabac ~469 kbps).
+Do not report those as 6000 kbps output; 6000 is the requested target, not
+the measured average.
+
+Phoenix currently fails to open at 640x360 (`encoder open failed`) and has no
+bitrate CLI mode, so there is no Phoenix stream in this directory yet. Once
+that gap is closed the same command set should be run for `phx_cli` and the
+outputs compared byte-for-byte. This is an integration gap, not a parity claim.
+

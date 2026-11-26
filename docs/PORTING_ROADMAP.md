@@ -99,37 +99,42 @@ For every ported function, ensure the `SHADER: A/B/C` annotation exists and
 Gate: a generated index of all functions with their shader class; a design
 review document for the shader backend derived from it.
 
-## Current state (for reviewers, measured on this working tree)
-
-**Measured gates (no approximations):**
+## Current state (measured)
 
 | Gate | Measured result | Evidence |
 |---|---|---|
-| `ctest` (all registered tests) | **20/20 passing** | `python tools/run_tests.py` / CMake ctest |
-| Function inventory | **231 PORTED of 1386 (16.7%)**; 1155 MISSING | `docs/FUNCTION_INVENTORY.md` (regenerate with `tools/gen_function_inventory.py`) |
-| Header parity | **byte-exact 20/20** SPS+PPS NALs (PPS tail/stop bit 20/20) | `tests/compare_headers.py`, `docs/NIGHTLY_STATUS.md:32` |
-| MB0 CABAC bin trace | **715/715 bins exact** | instrumented x264 golden vs `-DPHX_CABAC_BIN_TRACE` Phoenix (`tools/cabac_bin_diff.py`) |
-| Lookahead decision | **emits B/BREF**, frame-type agreement retained | `src/phx_lookahead.c` (`phx_lh_slicetype_decide`, `phx_lookahead_get_frames_ex`) |
-| Full-stream parity | **byte-exact 0/100** | `tests/parity_report.md:7–10` — 100 reference streams, 100 mismatches |
+| `ctest` (all registered tests) | **24/24 passing** | `python tools/run_tests.py` / CMake ctest |
+| Function inventory | **273 PORTED of 1386 (19.7%)**; 1113 MISSING | `docs/FUNCTION_INVENTORY.md` |
+| Header parity | **byte-exact 20/20** SPS+PPS; version SEI byte-exact | `python tests/compare_headers.py`, `tools/cabac_bin_diff.py` |
+| MB0 CABAC bin trace | **715/715 bins exact**; first divergence bin 715 (MB1 mode) | `python tools/cabac_bin_diff.py --all` |
+| Lookahead | B/BREF emitted from real lowres frame/path costs | `tests/test_phx_lookahead.c`, `tests/test_phx_lowres.c` |
+| Encoder robustness | **100/100** cases `rc=0`, 0 crashes (frame_num/MMCO fix) | `python tools/parity_harness.py` |
+| Full-stream parity | **byte-exact 0/100** ? NOT achieved | `build/parity/parity_report.json` |
 
-- WP0, WP1 and WP2 are complete (progressive + MBAFF neighbour caches,
-  SPS/PPS, CABAC/CAVLC primitives). The 8-worker parallel port added the
-  predictor, DCT, quant, entropy and slice modules; the overnight batch added
-  `phx_me` (full-pel DIA/HEX), `phx_lowres` (slicetype frame/path costs,
-  SATD/hpel search), `phx_rdo` (trellis QNS + size-only RDO API), `phx_chroma`
-  (4:2:0 DC/AC), `phx_sei` (version SEI), `phx_lookahead` (B/BREF) and the
-  `phx_encoder` frame loop. `src/*.c` now defines 505 functions across all 27
-  scanned C files; see `docs/FUNCTION_PORTS.md` for the exact per-function index.
-- **Full-stream parity is not achieved.** `0/100` means zero of the 100
-  reference streams are byte-identical; it is a divergence, not a success
-  metric. The encoder frame loop runs and emits NALs, but coefficient,
-  rate-control and remaining x264 path differences still change bytes.
-  715/715 exact MB0 bins and 20/20 exact headers are necessary but not
-  sufficient gates for WP7.
+- WP0?WP2 are complete: x264 reference, parameters/cost tables/frame plumbing,
+  progressive + MBAFF neighbour caches, SPS/PPS/SEI, CABAC/CAVLC primitives.
+  The parallel-worker batches added ME (`phx_me`), lowres slicetype costs
+  (`phx_lowres`), trellis QNS + size-only RDO (`phx_rdo`), chroma DC/AC
+  (`phx_chroma`), version SEI, B/BREF lookahead, deblocking (`phx_deblock`),
+  CAVLC inter syntax (`phx_cavlc_syntax`), CRF/AQ rate control
+  (`phx_ratecontrol`) and subpel/chroma MC (`phx_mc`). `src/*.c` defines 27
+  modules; `docs/FUNCTION_PORTS.md` is the per-function register and
+  `docs/SHADER_NOTES.md` the shader-stage/SSBO design.
+- **Full-stream parity is not achieved.** 0/100 means zero of the 100 saved
+  x264 streams are byte-identical; it is a divergence, not a success metric.
+  First divergences: IDR slice payload byte 76 (MB1 intra4x4 mode decisions /
+  analysis-vs-encode reconstruction), stream bytes 35?39 across the corpus.
+  715/715 exact MB0 bins and 20/20 exact headers are necessary, not sufficient.
+- Two real `D:\Videos` MP4s were decoded to 640x360/60f and encoded by x264 at
+  `--bitrate 6000` for all 10 presets x CABAC/CAVLC: **40/40 streams** in
+  `build/video_encode_test/`. Phoenix currently fails to open at 640x360 and
+  has no bitrate CLI mode yet; on the 60-frame clips x264's achieved average is
+  far below 6000 kbps because ABR has not converged. Both gaps are being worked.
 - Historical baseline from the discarded incremental oracle: 12/120 short,
   0/240 extended, first-diff 84/30/41/42. Its harnesses are no longer in this
-  repository; parity gates are rebuilt under `tests/` (`compare_headers.py`,
-  `compare_streams.py`, `parity_harness.py`) and `tools/nightly_gates.py`.
-- Keep evidence-first: a work package is complete only with a golden test and
-  a byte-exact gate, never with a metric-driven approximation. `docs/NIGHTLY_STATUS.md:41–50`
-  is explicit that only the parity gate's byte-exact count is a parity claim.
+  repository; parity gates were rebuilt under `tests/` (`compare_headers.py`,
+  `compare_streams.py`) and `tools/` (`parity_harness.py`, `first_frame_probe.py`,
+  `cabac_bin_diff.py`, `nightly_gates.py`, `extended_video_probe.py`).
+- Evidence-first rule: a work package is complete only with a golden test and
+  a byte-exact gate, never with a metric-driven approximation. Only the
+  byte-exact count is a parity claim (`docs/NIGHTLY_STATUS.md`).

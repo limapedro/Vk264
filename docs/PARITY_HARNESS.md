@@ -68,15 +68,20 @@ lowercase label `cabac` or `cavlc` (the harness maps `--no-cabac` to `cavlc`).
 ```
 python tools/build_reference_x264.py   -> built build/x264_ref/x264.exe
 python tools/make_video_fixtures.py    -> 4 real-video 64x64/60f YUV fixtures
-python tools/parity_harness.py         -> 100 reference streams, all x264 rc=0
-                                          byte-exact 0/100 (encoder not available)
+python tools/parity_harness.py         -> 100 reference streams, x264 rc=0 100/100
+                                          phx rc=0 100/100 (crashes fixed)
+                                          byte-exact 0/100  <-- NOT success
 ```
 
 The 100 cases are 5 fixtures (synthetic + four `D:\Videos` crops) × 10
-presets × 2 explicit entropies. No Phoenix encoder has produced streams yet,
-so 0/100 is a corpus-generation result, **not** a Phoenix parity result. The
-historical baseline from the discarded oracle was 12/120 short-clip and 0/240
-extended; Phoenix starts from zero and must earn every case back.
+presets × 2 explicit entropies. `phx_cli` is auto-detected and now encodes all
+100 cases without crashing; the two earlier crash regressions (stale lookahead
+slot, wrapped `frame_num`) were found by `first_frame_probe.py` and ASAN and
+fixed source-aligned. `tests/compare_headers.py` reports SPS 20/20, PPS 20/20
+and the version SEI byte-exact; MB0 is 715/715 CABAC bins exact. Zero
+byte-exact streams is still a failure inventory, not a parity result. The
+historical baseline from the discarded oracle was 12/120 short and 0/240
+extended; Phoenix must earn every case back.
 
 Raw source lists and MSVC defines for the reference build are in
 `tools/build_reference_x264.py` — do not compile by globbing all `.c` files:
