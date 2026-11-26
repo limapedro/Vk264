@@ -40,6 +40,9 @@ add_library(phx STATIC
     src/phx_mc.c
     src/phx_ratecontrol.c
     src/phx_deblock.c
+    src/phx_cabac_dec.c
+    src/phx_cavlc_dec.c
+    src/phx_decode.c
 )
 target_include_directories(phx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -147,3 +150,15 @@ add_test(NAME phx_ratecontrol COMMAND phx_test_ratecontrol)
 add_executable(phx_test_deblock tests/test_phx_deblock.c)
 target_link_libraries(phx_test_deblock PRIVATE phx)
 add_test(NAME phx_deblock COMMAND phx_test_deblock)
+
+add_executable(phx_test_cabac_dec tests/test_phx_cabac_dec.c)
+target_link_libraries(phx_test_cabac_dec PRIVATE phx)
+add_test(NAME phx_cabac_dec COMMAND phx_test_cabac_dec)
+
+add_executable(phx_test_cavlc_dec tests/test_phx_cavlc_dec.c)
+target_link_libraries(phx_test_cavlc_dec PRIVATE phx)
+add_test(NAME phx_cavlc_dec COMMAND phx_test_cavlc_dec)
+
+add_executable(phx_test_decode tests/test_phx_decode.c)
+target_link_libraries(phx_test_decode PRIVATE phx)
+add_test(NAME phx_decode COMMAND phx_test_decode)
