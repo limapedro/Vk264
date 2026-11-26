@@ -909,11 +909,16 @@ static int check_mb0_sequence(void)
 
 /* ---- P-slice P_L0 MB syntax golden ------------------------------------- */
 /* The reference picture is a smooth ramp; the current picture is that ramp
- * shifted by a known integer MV (+2,0).  x264's full-pel ME (encoder/me.c:
- * 276-419) must find that MV and analyse.c:3056-3058/3221-3223 must choose
- * P_L0/D_16x16 over every intra candidate.  The CABAC bins decoded below are
- * the mb_type/sub-partition/MVD bins of cabac.c:439-446 in write order.
- * SHADER: C — serial decode of one P MB header. */
+ * shifted by a known integer MV (+2,0).  x264 instrumented on the SAME 64x64
+ * I420 fixture with the same flags (--qp 28 --cabac --bframes 0 --keyint 30
+ * --min-keyint 30 --scenecut 0 --weightp 0 --aq-mode 0 --no-mbtree --threads 1)
+ * encodes the first P MB as mb_skip_flag=0, P_L0 (type 4), D_16x16
+ * (partition 16), mv=(0,0) and mvd=(0,0) qpel at slice_qp=28.  That is the
+ * golden below.  encoder.c:2869-2878 writes mb_skip_flag before the MB header,
+ * so that bin must be consumed first or every later context is shifted by one.
+ * The bins decoded below are the skip/mb_type/sub-partition/MVD bins of
+ * cabac.c:189-195/439-446 in write order.  SHADER: C — serial decode of one
+ * P MB header. */
 
 /* Decode the complete slice header of a P slice so the first CABAC byte is
  * known.  Field order: encoder.c:213-364 / phx_slice.c:90-243. */
@@ -1044,7 +1049,8 @@ static int check_p_slice_mb(void)
     /* The B-stage reconstruction is verified deterministically in
      * tests/test_phx_mbencode.c; the shared h->recon plane is also analysis
      * scratch, so sampling it here would not isolate the MC output.  This
-     * test checks that the emitted syntax is P_L0/D_16x16 with the real MV. */
+     * test checks that the emitted syntax is P_L0/D_16x16 with the zero MVD
+     * that x264 produces on this fixture. */
     phx_encoder_close(h);                               /* api.c:130 */
 
     phx_sps_t sps;
@@ -1076,6 +1082,12 @@ static int check_p_slice_mb(void)
     phx_test_cabac_t d;
     tc_init(&d, rbsp, cabac_start, 28, PHX_SLICE_P);     /* P slice QP = 28 */
 
+    /* encoder.c:2869-2878 / phx_encoder.c:1519-1528 — mb_skip_flag comes
+     * before the MB header.  x264 sets this bin to 0 on this fixture; phx
+     * must do the same for the header bins below to be aligned. */
+    if (tc_dec(&d, 11) != 0) {                          /* cabac.c:189-195 */
+        printf("FAIL p-mb: mb_skip_flag is not 0\n"); fails++;
+    }
     if (tc_dec(&d, 14) != 0) {                          /* cabac.c:439 P_L0 */
         printf("FAIL p-mb: mb_type is not P_L0\n"); fails++;
     }
@@ -1084,12 +1096,12 @@ static int check_p_slice_mb(void)
     }
     int mvd_x = tc_mvd_prefix(&d, 40);                  /* cabac.c:446/272 */
     int mvd_y = tc_mvd_prefix(&d, 47);                  /* cabac.c:446/272 */
-    if (mvd_x != 8 || mvd_y != 0) {                     /* +2 full-pel = 8 qpel */
-        printf("FAIL p-mb: MVD (%d,%d), want (8,0)\n", mvd_x, mvd_y);
+    if (mvd_x != 0 || mvd_y != 0) {                     /* x264 instrumented: 0/0 */
+        printf("FAIL p-mb: MVD (%d,%d), want (0,0)\n", mvd_x, mvd_y);
         fails++;
     }
     if (!fails)
-        printf("  p-mb: P_L0 / D_16x16, MVD 8/0 qpel from real full-pel ME\n");
+        printf("  p-mb: P_L0 / D_16x16, MVD 0/0 qpel (x264 golden)\n");
     return fails;
 }
 
@@ -1329,10 +1341,13 @@ static int check_bitrate_mode(void)
 }
 
 /* ---- non-mod16 / large picture ------------------------------------------ */
-/* x264 codes 640x360 as 640x368 with frame_crop_bottom=8/2=4 in 4:2:0
- * (set.c:251-255/:363-371).  The old phx_encoder_validate() rejected the
- * non-mod16 height, so a real 640x360 encode could not open.  This test also
- * exercises the wide-frame intra_border_backup guard in phx_encode().
+/* x264 codes 640x360 as 640x368: set.c:254 stores crop.i_bottom = 368-360 = 8
+ * luma lines in the SPS struct, and set.c:371 writes frame_crop_bottom_offset
+ * = crop.i_bottom >> v_shift = 8 >> 1 = 4 for 4:2:0.  phx mirrors both: the
+ * handle keeps crop_bottom=8 (luma-line domain) while phx_sps_write emits 4.
+ * The old phx_encoder_validate() rejected the non-mod16 height, so a real
+ * 640x360 encode could not open.  This test also exercises the wide-frame
+ * intra_border_backup guard in phx_encode().
  * SHADER: C — serial host fixture and open/encode/close. */
 #define LW 640
 #define LH 360
@@ -1362,7 +1377,8 @@ static int check_large_dimensions(void)
     if (!h) { printf("FAIL 640x360: open\n"); return 1; }
     if (h->i_width != 640 || h->i_height != 368 ||
         h->i_width_display != 640 || h->i_height_display != 360 ||
-        !h->sps.b_crop || h->sps.crop_bottom != 4) {
+        !h->sps.b_crop || h->sps.crop_top != 0 || h->sps.crop_right != 0 ||
+        h->sps.crop_bottom != 8) {                     /* x264 set.c:254 */
         printf("FAIL 640x360: geometry %dx%d display %dx%d crop=%d/%d\n",
                h->i_width, h->i_height, h->i_width_display,
                h->i_height_display, h->sps.b_crop, h->sps.crop_bottom);
@@ -1426,7 +1442,8 @@ static int check_large_dimensions(void)
                nn, used, stream[0], stream[1], stream[2], stream[3]);
         ++fails;
     } else if (!fails) {
-        printf("  large: 640x360 -> coded 640x368 crop_bottom=4, "
+        printf("  large: 640x360 -> coded 640x368 crop_bottom=8 "
+               "(SPS field 4 after v_shift), "
                "%d-byte Annex-B stream, %d NALs\n", used, nn);
     }
     return fails;
