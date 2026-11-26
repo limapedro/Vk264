@@ -140,6 +140,46 @@ int phx_me_refine_subpel(int mb_x, int mb_y, int mb_width, int mb_height,
                          const int16_t mvp[2],
                          int mv[2], int *cost_out, int *cost_mv_out);
 
+/* One-call public refinement for a single 16x16 inter trial — the direct
+ * analogue of x264_me_refine_qpel(h, m) (encoder/me.c:801-810, which calls
+ * refine_subpel() at :865-992).  All x264_me_t state is explicit; `mv[2]` and
+ * `*cost_io` are in/out exactly like m->mv (me.h:55) and m->cost (me.h:54),
+ * and `*cost_mv_out` receives m->cost_mv (me.h:53, computed at me.c:991).
+ *
+ *   fenc/fref     : current/reference luma planes (fref's padded border must
+ *                   be prepared by the caller, as for phx_me16).
+ *   mb_x, mb_y    : MB position in the frame; supplies the spel MV limits of
+ *                   analyse.c:330-339/391-396 and the get_ref origin.
+ *   cost, lambda  : the MV-bit table (analyse.c:143-188) and its lambda.
+ *   i_mv_range    : h->param.analyse.i_mv_range (table half-width :151).
+ *   subme         : h->mb.i_subpel_refine; hpel/qpel iteration counts are
+ *                   subpel_iterations[subme][0..1] (:38-50, :803-804) when
+ *                   b_refine_qpel == 1, else columns [2..3] (:794-795).
+ *   b_refine_qpel : 1 = analyse.c:3125 x264_me_refine_qpel() call site;
+ *                   0 = encoder/me.c:792-797 call from x264_me_search_ref()
+ *                   (additionally re-seeds bcost with SATD at :925-929).
+ *   mvp[2]        : m->mvp in quarter-pel units (me.h:50, me.c:869-870).
+ *   refplanes     : hpel-filtered reference planes.  NULL makes this function
+ *                   prepare them from `fref` with x264_frame_filter()
+ *                   (mc.c:704-726) and free them before returning; pass a
+ *                   phx_me_refplanes_t prepared once per frame with
+ *                   phx_me_refplanes_init() to avoid re-filtering per MB.
+ *
+ * Returns 0 on success, -1 on invalid arguments / allocation failure.
+ * `phx_me16`'s ABI is unchanged: call it first for the fullpel MV/cost, then
+ * pass those values here (this is the byte-exact replacement for the missing
+ * x264_me_refine_qpel call in the inter path).  SHADER: A — pure, state-free
+ * given its explicit inputs; deterministic and seek-safe. */
+int phx_me_refine_subpel_mv(const phx_frame_t *fenc,
+                            const phx_frame_t *fref,
+                            int mb_x, int mb_y,
+                            const phx_cost_tables_t *cost,
+                            int lambda, int i_mv_range, int subme,
+                            int b_refine_qpel,
+                            const int16_t mvp[2],
+                            int16_t mv[2], int *cost_io, int *cost_mv_out,
+                            const phx_me_refplanes_t *refplanes);
+
 #ifdef __cplusplus
 }
 #endif

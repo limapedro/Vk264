@@ -938,3 +938,46 @@ int phx_me_refine_subpel(int mb_x, int mb_y, int mb_width, int mb_height,
     *cost_mv_out = phx_bits_qpel(&c, c.bmx, c.bmy);      /* me.c:991 */
     return 0;
 }
+
+/* Public one-call wrapper for x264_me_refine_qpel() (encoder/me.c:801-810).
+ * Mirrors the x264 call: x264_me_t.mv/cost/cost_mv/mvp are the explicit
+ * in/out state here.  See phx_me.h for the full contract. */
+int phx_me_refine_subpel_mv(const phx_frame_t *fenc,
+                            const phx_frame_t *fref,
+                            int mb_x, int mb_y,
+                            const phx_cost_tables_t *cost,
+                            int lambda, int i_mv_range, int subme,
+                            int b_refine_qpel,
+                            const int16_t mvp[2],
+                            int16_t mv[2], int *cost_io, int *cost_mv_out,
+                            const phx_me_refplanes_t *refplanes)
+{
+    if (!fenc || !fenc->plane || !fref || !fref->plane || !mv ||
+        !cost_io || !cost_mv_out || i_mv_range < 0)
+        return -1;
+    if (fref->i_width <= 0 || fref->i_height <= 0 ||
+        fref->i_width % 16 || fref->i_height % 16 ||
+        mb_x < 0 || mb_y < 0 ||
+        mb_x >= fref->i_width/16 || mb_y >= fref->i_height/16)
+        return -1;
+
+    phx_me_refplanes_t local;
+    const phx_me_refplanes_t *rp = refplanes;
+    if (!rp) {
+        if (phx_me_refplanes_init(fref, &local)) return -1;
+        rp = &local;
+    }
+
+    int imv[2] = { mv[0], mv[1] };
+    int irc = phx_me_refine_subpel(mb_x, mb_y,
+                                  fref->i_width/16, fref->i_height/16,
+                                  fenc, rp, cost, i_mv_range, lambda,
+                                  subme, b_refine_qpel, mvp,
+                                  imv, cost_io, cost_mv_out);
+    if (!irc) {
+        mv[0] = (int16_t)imv[0];
+        mv[1] = (int16_t)imv[1];
+    }
+    if (!refplanes) phx_me_refplanes_free(&local);
+    return irc;
+}
