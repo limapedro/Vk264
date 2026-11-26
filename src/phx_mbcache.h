@@ -3,7 +3,10 @@
  *
  * Source: common/base.h:180 (x264_scan8),
  *         common/macroblock.c:662 (left_indices), :673 (neighbours),
- *         :855 (macroblock_cache_load), :1680 (macroblock_cache_save),
+ *         :855 (macroblock_cache_load), :1262-1306 (skip/field flags),
+ *         :1354/:1359 (progressive/interlaced entry points),
+ *         :1638 (macroblock_backup_intra), :1680 (macroblock_cache_save),
+ *         common/common.h:646-647 (topright_mv/topright_ref),
  *         encoder/macroblock.h:112 (STORE_8x8_NNZ).
  *
  * SHADER: B — per-MB state with left/top neighbours; load/save is ordered,
@@ -50,10 +53,16 @@ typedef struct {
     int16_t (*mvd[2])[8][2];        /* [mb_count] CABAC MVDs */
     uint8_t *slice_table;
     uint8_t *field;                 /* MBAFF field flags, frame.c/macroblock.c */
-    uint8_t intra_border_backup[3][3][16]; /* macroblock.c:1645-1675 */
+    /* common.h:734 / macroblock.c:357-362 / :1645-1675: x264 keeps five sets
+     * of row pointers (not fixed 16-byte arrays), each row sized
+     * mb_width*16+32 with a +16 emulated-edge offset. */
+    uint8_t *intra_border_backup[5][3];
+    uint8_t *intra_border_backup_base[5][3]; /* owned allocations */
     int threadslice_start;          /* x264 h->i_threadslice_start */
     int first_mb;
     int b_constrained_intra, b_cabac;
+    int b_interlaced;               /* x264 MB_INTERLACED (macroblock.c:675) */
+    int b_transform_8x8_mode;       /* x264 pps->b_transform_8x8_mode (:987) */
     int slice_type;                 /* x264 enum: 0=P, 1=B, 2=I */
 } phx_mb_state_t;
 
@@ -62,7 +71,7 @@ typedef struct {
     int i_mb_x, i_mb_y, i_mb_xy, i_b8_xy, i_b4_xy;
     int top, top_y, left[2], topleft, topright;
     int type_top, type_left[2], type_topleft, type_topright;
-    int i_neighbour, i_neighbour_intra;
+    int i_neighbour, i_neighbour_intra, i_neighbour_frame;
     int i_mb_top_mbpair_xy, i_mb_topleft_y, i_mb_topright_y, topleft_partition;
     int left_b8[2], left_b4[2];
     const phx_left_table_t *left_index;
@@ -76,6 +85,9 @@ typedef struct {
     int8_t  ref[2][40];
     int16_t mv[2][40][2];
     int16_t mvd[2][40][2];
+    /* common/common.h:646-647 / macroblock.c:1150-1171,1226-1228. */
+    int8_t  topright_ref[2][3];
+    int16_t topright_mv[2][3][2];
 } phx_mb_cache_t;
 
 /* Allocate/zero the per-frame MB state arrays. */
