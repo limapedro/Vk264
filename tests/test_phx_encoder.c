@@ -912,13 +912,16 @@ static int check_mb0_sequence(void)
  * shifted by a known integer MV (+2,0).  x264 instrumented on the SAME 64x64
  * I420 fixture with the same flags (--qp 28 --cabac --bframes 0 --keyint 30
  * --min-keyint 30 --scenecut 0 --weightp 0 --aq-mode 0 --no-mbtree --threads 1)
- * encodes the first P MB as mb_skip_flag=0, P_L0 (type 4), D_16x16
- * (partition 16), mv=(0,0) and mvd=(0,0) qpel at slice_qp=28.  That is the
- * golden below.  encoder.c:2869-2878 writes mb_skip_flag before the MB header,
- * so that bin must be consumed first or every later context is shifted by one.
- * The bins decoded below are the skip/mb_type/sub-partition/MVD bins of
- * cabac.c:189-195/439-446 in write order.  SHADER: C — serial decode of one
- * P MB header. */
+ * encodes the first P MB (after x264_macroblock_cache_save) as mb_skip_flag=0,
+ * P_L0 (type 4), D_16x16 (partition 16), mv=mvd=(7,0) qpel at slice_qp=28:
+ * ME finds fullpel (8,0) with cost 308 into refine and subme 7 refines it to
+ * (7,0) (cost 298, cost_mv 50).  That (7,0) is the golden below.  Note the MV
+ * must be read after cache_save; before it h->mb.mv/mvd still hold the prior
+ * IDR frame's zero values.  encoder.c:2869-2878 writes mb_skip_flag before the
+ * MB header, so that bin must be consumed first or every later context is
+ * shifted by one.  The bins decoded below are the skip/mb_type/sub-partition/
+ * MVD bins of cabac.c:189-195/439-446 in write order.
+ * SHADER: C — serial decode of one P MB header. */
 
 /* Decode the complete slice header of a P slice so the first CABAC byte is
  * known.  Field order: encoder.c:213-364 / phx_slice.c:90-243. */
@@ -1049,8 +1052,8 @@ static int check_p_slice_mb(void)
     /* The B-stage reconstruction is verified deterministically in
      * tests/test_phx_mbencode.c; the shared h->recon plane is also analysis
      * scratch, so sampling it here would not isolate the MC output.  This
-     * test checks that the emitted syntax is P_L0/D_16x16 with the zero MVD
-     * that x264 produces on this fixture. */
+     * test checks that the emitted syntax is P_L0/D_16x16 with the (7,0) qpel
+     * MVD that x264 produces on this fixture. */
     phx_encoder_close(h);                               /* api.c:130 */
 
     phx_sps_t sps;
@@ -1096,12 +1099,12 @@ static int check_p_slice_mb(void)
     }
     int mvd_x = tc_mvd_prefix(&d, 40);                  /* cabac.c:446/272 */
     int mvd_y = tc_mvd_prefix(&d, 47);                  /* cabac.c:446/272 */
-    if (mvd_x != 0 || mvd_y != 0) {                     /* x264 instrumented: 0/0 */
-        printf("FAIL p-mb: MVD (%d,%d), want (0,0)\n", mvd_x, mvd_y);
+    if (mvd_x != 7 || mvd_y != 0) {                     /* x264 instrumented: (7,0) */
+        printf("FAIL p-mb: MVD (%d,%d), want (7,0)\n", mvd_x, mvd_y);
         fails++;
     }
     if (!fails)
-        printf("  p-mb: P_L0 / D_16x16, MVD 0/0 qpel (x264 golden)\n");
+        printf("  p-mb: P_L0 / D_16x16, MVD 7/0 qpel (x264 golden)\n");
     return fails;
 }
 
