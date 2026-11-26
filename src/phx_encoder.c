@@ -186,6 +186,7 @@ phx_t *phx_encoder_open(const phx_param_t *p)
     phx_pps_init(&h->pps, &h->sps, &h->param);                 /* encoder.c:1581 */
 
     h->i_frame = -1;                                   /* encoder.c:1563 */
+    h->b_first_slice_nal = 1;                          /* headers + first slice */
     h->i_frame_num = 0;                                /* encoder.c:1564 */
     h->i_poc = 0;                                      /* encoder.c:3513 */
     h->i_last_idr = -h->param.i_keyint_max;            /* encoder.c:1628 */
@@ -1552,11 +1553,13 @@ int phx_encode(phx_t *h, const phx_picture_t *pic,
     nal.i_payload = (int)(bs.p - h->rbsp);
     nal.i_ref_idc = fc.i_nal_ref_idc;                  /* encoder.c:328 */
     nal.i_type = fc.b_idr ? 5 : 1;                     /* encoder.c:236 */
-    /* encoder.c:2082-2083: the first frame's IDR slice follows SPS/PPS/SEI
-     * in the same NAL array (index 3), so it uses a short start code; slices
-     * of later frames start their own NAL array at index 0 and use long. */
-    nal.b_long_startcode = !(fc.b_idr && h->i_frame == 0);
+    /* encoder.c:2082-2083: SPS/PPS/SEI and the first slice share one NAL
+     * array, so that slice (index 3) uses a 3-byte start code. Every later
+     * frame starts its own NAL array at index 0 and uses a 4-byte code.
+     * Track this explicitly: lookahead delay can emit the IDR when i_frame>0. */
+    nal.b_long_startcode = !h->b_first_slice_nal;
     phx_nal_encode(h->bitstream, &nal, 1);             /* encoder.c:2124 */
+    h->b_first_slice_nal = 0;
     h->nal[0] = nal;                                   /* encoder.c:2130 */
     *out = h->nal;                                     /* api.c:169 */
     *nnal = 1;                                         /* api.c:170 */
