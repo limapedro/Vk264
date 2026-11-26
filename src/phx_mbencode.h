@@ -46,10 +46,24 @@
 #include "phx_mbcache.h"
 #include "phx_mb_decision.h"
 #include "phx_cabac.h"
+#include "phx_dct.h"      /* phx_dctcoef for the 64-coefficient I8x8 slot */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Row 19: x264's I_8x8 / inter-8x8 residual lives in h->dct.luma8x8[4]
+ * (encoder/macroblock.h:168-211, macroblock.c:779-838), i.e. 64 coefficients
+ * per 8x8 block.  phx_mb_decision_t::dct[48][16] has no such slot, so the
+ * B stage publishes the four zigzag-scanned blocks through this explicit
+ * array (order: 8x8 block 0..3, common/macroblock.h:188-194).  `nnz` is
+ * x264's STORE_8x8_NNZ value (encoder/macroblock.h:112-117), also mirrored
+ * into d->nnz[]/cache->non_zero_count[] for neighbour contexts.
+ * SHADER: B — 64 coefficients per block, no cross-block coefficient state. */
+typedef struct {
+    phx_dctcoef coef[64];
+    uint8_t nnz;
+} phx_mb_i8x8_block_t;
 
 /* Reconstruct one macroblock from d and write the result back into f->plane
  * at (mb_x*16, mb_y*16).  Mirrors x264_macroblock_encode
@@ -75,15 +89,33 @@ int phx_macroblock_encode(const phx_param_t *p, phx_frame_t *f,
 /* Same entry point with the live CABAC coder passed in so trellis QNS can use
  * x264's context state (rdo.c:1142-1157).  NULL keeps the plain deadzone path.
  * fref is the caller's list-0 reference 0 (h->fref[0][0], macroblock.c:666):
- * it is required only for the accepted no-residual PHX_P_L0/D_16x16 decision,
- * whose motion-compensated luma/chroma reconstruction follows
- * macroblock.c:654-667/:669-681/:769-775, common/macroblock.c:61-64 and
- * common/mc.c:162-219/:252-283.  NULL rejects that mode.
+ * it is required for any PHX_P_L0 decision (D_16x16/16x8/8x16/8x8), whose
+ * motion-compensated luma/chroma reconstruction follows macroblock.c:654-667/
+ * :669-681/:769-775, common/macroblock.c:34-72/:200-244 and
+ * common/mc.c:162-219/:252-283.  NULL rejects every inter mode.
  * SHADER: B — serial per-MB reconstruction; fref is read-only. */
 int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
                              const phx_frame_t *fref,
                              phx_mb_cache_t *cache, int mb_x, int mb_y,
                              phx_mb_decision_t *d, phx_cabac_t *cb);
+
+/* Full entry point, including the two rows that need storage beyond the
+ * 48x16 decision arrays:
+ *  - inter P_L0 residual (encoder/macroblock.c:768-914): MC for every L0
+ *    partition, 4x4 or 8x8 residual quant, dequant and FDEC reconstruction;
+ *  - I_8x8 / inter transform-8x8 residual (macroblock.c:713-737/:801-838,
+ *    encoder/macroblock.h:168-211): 64 coefficients per block in i8x8_out.
+ * `i8x8_out` may be NULL when the caller does not need the 64-coefficient
+ * arrays (the 4x4 paths still publish their coefficients in d->dct[]).
+ * A P_L0 decision with cbp_luma == cbp_chroma == 0 keeps the established
+ * no-residual handoff; any residual-carrying decision takes the full path.
+ * Plain phx_macroblock_encode_ex() forwards here with i8x8_out == NULL.
+ * SHADER: B — one serial invocation per MB; fref/i8x8_out are explicit. */
+int phx_macroblock_encode_ex2(const phx_param_t *p, phx_frame_t *f,
+                              const phx_frame_t *fref,
+                              phx_mb_cache_t *cache, int mb_x, int mb_y,
+                              phx_mb_decision_t *d, phx_cabac_t *cb,
+                              phx_mb_i8x8_block_t i8x8_out[4]);
 
 /* x264's chroma DC path uses x264_quant_chroma_dc_trellis() (macroblock.c:420,
  * rdo.c:1114-1140) whenever trellis is enabled, and zigzag_scan_2x2_dc()

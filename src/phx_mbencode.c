@@ -22,6 +22,11 @@
 /* common/base.h:206 — x264_clip3(); defined with the chroma helpers below and
  * needed earlier by the inter MV clip.  SHADER: B — scalar clamp. */
 static int phx_mb_clip3i(int v, int lo, int hi);
+/* Forward declarations of the chroma helpers used by rows 18-19; their
+ * definitions are further down in this file.  SHADER: B — no static state. */
+static int phx_mb_chroma_qp(const phx_param_t *p, int qp);
+static void phx_mb_zigzag2_dc(phx_dctcoef level[4], const phx_dctcoef dct[4]);
+static void phx_mb_dct2x2dc(phx_dctcoef d[4], phx_dctcoef dct4x4[4][16]);
 
 /* phx_mbencode.h routes external callers of the phase-B chroma entry point
  * through phx_mb_encode_chroma_trellis().  Keep the plain phx_chroma.c symbol
@@ -36,10 +41,11 @@ extern int phx_macroblock_encode_chroma(const phx_param_t *p, phx_frame_t *f,
  * SHADER: C — one serial encoder instance, one MB at a time. */
 static phx_cabac_t *phx_mb_active_cabac = NULL;
 
-/* common/set.h:32 — CQM_4IY == CQM_8IY == 0 (flat intra luma lists). */
+/* common/set.h:29-42 — flat CQM list indices. */
 #define PHX_CQM_4IY 0
-/* common/set.h:34 — CQM_4IC (flat intra chroma list). */
+#define PHX_CQM_4PY 1
 #define PHX_CQM_4IC 2
+#define PHX_CQM_4PC 3
 /* common/base.h:177 — LUMA_DC = 48; CHROMA_DC = 49 is not addressable in
  * phx_mb_decision_t's 48-entry coefficient arrays (see header). */
 #define PHX_LUMA_DC 48
@@ -53,9 +59,10 @@ static const uint8_t phx_zigzag4[16] = {
      0,  4,  1,  2,  5,  8, 12,  9,  6,  3,  7, 10, 13, 14, 11, 15
 };
 
-/* common/macroblock.h:188-194 — x264_zigzag_scan8[0] (frame).  Kept for the
- * documented I8x8 path; I8x8 is still a TODO (64 coefficients do not fit in
- * phx_mb_decision_t::dct[48][16]).
+/* common/macroblock.h:188-194 — x264_zigzag_scan8[0] (frame).  Used by the
+ * I_8x8 / inter-8x8 paths; the 64 coefficients are published through
+ * phx_mb_i8x8_block_t (phx_mbencode.h) because phx_mb_decision_t::dct[48][16]
+ * cannot hold them.
  * SHADER: B — constant coefficient order for the B->C handoff. */
 static const uint8_t phx_zigzag8[64] = {
      0,  8,  1,  2,  9, 16, 24, 17, 10,  3,  4, 11, 18, 25, 32, 40,
@@ -465,17 +472,522 @@ static void phx_mb_mc_chroma_l0(const phx_frame_t *fref, phx_frame_t *f,
         }
 }
 
+/* -------------------------------------------------------------------------
+ * Rows 18-19: residual-carrying inter MBs and the 64-coefficient I_8x8 path.
+ * Every helper below cites the exact x264 source it mirrors; no coefficient
+ * is copied from an x264 binary.  SHADER: B — one serial invocation per MB.
+ * ------------------------------------------------------------------------- */
+
+/* common/tables.c:373-380 — decimation score lookup tables. */
+static const uint8_t phx_decimate4[16] = {
+    3,2,2,1,1,1,0,0,0,0,0,0,0,0,0,0
+};
+static const uint8_t phx_decimate8[64] = {
+    3,3,3,3,2,2,2,2,2,2,2,2,1,1,1,1,
+    1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+};
+
+/* common/quant.c:326-363 — decimate_score15/16/64.  A score below 4 (8x8)
+ * or 6 (whole MB) lets x264 zero the nnz flags without touching the DCT
+ * buffers; the B->C handoff mirrors that exactly. */
+static int phx_mb_decimate_score(const phx_dctcoef *dct, int n)
+{
+    const uint8_t *tab = (n == 64) ? phx_decimate8 : phx_decimate4;
+    int score = 0, idx = n - 1;
+    while (idx >= 0 && dct[idx] == 0) idx--;
+    while (idx >= 0) {
+        int run;
+        if ((unsigned)(dct[idx--] + 1) > 2) return 9;
+        run = 0;
+        while (idx >= 0 && dct[idx] == 0) { idx--; run++; }
+        score += tab[run];
+    }
+    return score;
+}
+
+/* macroblock.c:54-68 — idct_dequant_2x2_dc() / _dconly() (4:2:0 chroma DC
+ * reconstruction).  dmf = dequant_mf[i_qp%6][0] << i_qp/6. */
+static void phx_mb_idct_dequant_2x2_dc(phx_dctcoef dst[4][16],
+                                        const phx_dctcoef dct[4],
+                                        const int dequant_mf[6][16], int i_qp)
+{
+    int d0 = dct[0] + dct[1], d1 = dct[2] + dct[3];
+    int d2 = dct[0] - dct[1], d3 = dct[2] - dct[3];
+    int dmf = dequant_mf[i_qp % 6][0] << (i_qp / 6);
+    dst[0][0] = (phx_dctcoef)((d0 + d1) * dmf >> 5);
+    dst[1][0] = (phx_dctcoef)((d0 - d1) * dmf >> 5);
+    dst[2][0] = (phx_dctcoef)((d2 + d3) * dmf >> 5);
+    dst[3][0] = (phx_dctcoef)((d2 - d3) * dmf >> 5);
+}
+static void phx_mb_idct_dequant_2x2_dconly(phx_dctcoef dct[4],
+                                            const int dequant_mf[6][16], int i_qp)
+{
+    int d0 = dct[0] + dct[1], d1 = dct[2] + dct[3];
+    int d2 = dct[0] - dct[1], d3 = dct[2] - dct[3];
+    int dmf = dequant_mf[i_qp % 6][0] << (i_qp / 6);
+    dct[0] = (phx_dctcoef)((d0 + d1) * dmf >> 5);
+    dct[1] = (phx_dctcoef)((d0 - d1) * dmf >> 5);
+    dct[2] = (phx_dctcoef)((d2 + d3) * dmf >> 5);
+    dct[3] = (phx_dctcoef)((d2 - d3) * dmf >> 5);
+}
+
+/* macroblock.c:261-269 — b_decimate early-termination pixel variance. */
+static int phx_mb_var2_8x8(const uint8_t *fenc0, const uint8_t *fenc1,
+                           const uint8_t *fdec0, const uint8_t *fdec1,
+                           int ssd[2])
+{
+    int su = 0, sv = 0, qu = 0, qv = 0;
+    for (int y = 0; y < 8; y++) {
+        for (int x = 0; x < 8; x++) {
+            int du = (int)fenc0[y*PHX_FENC_STRIDE+x] - fdec0[y*PHX_FDEC_STRIDE+x];
+            int dv = (int)fenc1[y*PHX_FENC_STRIDE+x] - fdec1[y*PHX_FDEC_STRIDE+x];
+            su += du; sv += dv; qu += du*du; qv += dv*dv;
+        }
+    }
+    ssd[0] = qu; ssd[1] = qv;
+    return qu - (int)(((int64_t)su*su) >> 6)
+         + qv - (int)(((int64_t)sv*sv) >> 6);
+}
+
+/* macroblock.c:221-228 — mb_optimize_chroma_dc(), dmf>32*64 shortcut. */
+static int phx_mb_optimize_chroma_dc(const phx_quant_tables_t *qt,
+                                      phx_dctcoef dct[4], int i_qp)
+{
+    int dmf = qt->dequant4_mf[PHX_CQM_4PC][i_qp % 6][0] << (i_qp / 6);
+    if (dmf > 32 * 64) return 1;
+    return phx_optimize_chroma_2x2_dc(dct, dmf);
+}
+
+/* macroblock.c:112-117 — STORE_8x8_NNZ(): four 4x4 nnz bytes per 8x8 block. */
+static void phx_mb_store_8x8_nnz(phx_mb_decision_t *d, phx_mb_cache_t *c,
+                                  int idx, int nz)
+{
+    const int base[4] = { 0, 2, 8, 10 };             /* macroblock.h:113-116 */
+    for (int j = 0; j < 4; j++) {
+        const int slot = phx_scan8[base[idx] + j];
+        d->nnz[slot] = (uint8_t)(nz ? 1 : 0);
+        c->non_zero_count[slot] = d->nnz[slot];
+    }
+}
+
+/* Deinterleave / interleave the NV12 chroma plane into planar 8x8 windows
+ * (frame.c:45-57/:240).  SHADER: B — one 8x8 window per plane. */
+static void phx_mb_chroma_window(const phx_frame_t *f, int mb_x, int mb_y,
+                                 uint8_t *out[2], int stride, int store)
+{
+    const int x0 = mb_x * 8, y0 = mb_y * 8, s = f->i_stride_planes[1];
+    uint8_t *plane = f->plane_chroma;
+    for (int c = 0; c < 2; c++)
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 8; x++) {
+                uint8_t *p = &plane[(y0+y)*s + 2*(x0+x) + c];
+                uint8_t *w = &out[c][y*stride + x];
+                if (store) *p = *w; else *w = *p;
+            }
+}
+
+/* x264_mb_encode_chroma() with b_inter == 1 — encoder/macroblock.c:259-498,
+ * :492-498, called from macroblock_encode_internal's inter branch (:940-943).
+ * Unlike phx_chroma.c (intra only), the prediction is the MC'd FDEC already
+ * in f->plane_chroma and the quant category is CQM_4PC (set.h:33), not CQM_4IC.
+ * SHADER: B — one serial inter-chroma encode per MB. */
+static void phx_mb_encode_inter_chroma(const phx_param_t *p,
+                                        const phx_quant_tables_t *qt,
+                                        phx_frame_t *f, int mb_x, int mb_y,
+                                        uint8_t *fenc[2], uint8_t *p_dst[2],
+                                        int i_qp, phx_mb_decision_t *d,
+                                        phx_mb_cache_t *c, phx_cabac_t *cb)
+{
+    const int cat = 3;                                  /* CQM_4PC, set.h:33 */
+    const int chroma_qp = phx_mb_chroma_qp(p, i_qp);    /* encoder.c:1585 */
+    const int b_decimate = p->b_dct_decimate;           /* macroblock.c:261 */
+    const int b_trellis = cb && p->i_trellis > 0 && i_qp <= PHX_QP_MAX_SPEC;
+
+    for (int ch = 0; ch < 2; ch++)
+        for (int i = 0; i < 4; i++) {
+            const int idx = 16 + ch*16 + i;
+            d->chroma_nnz[ch][1+i] = 0;
+            d->nnz[idx] = 0;
+            c->non_zero_count[phx_scan8[idx]] = 0;
+        }
+
+    /* macroblock.c:278-335 — early termination on residual variance. */
+    if (b_decimate && chroma_qp >= (b_trellis ? 12 : 18)) {
+        int ssd[2];
+        int thresh = (phx_lambda2_tab[chroma_qp < 0 ? 0 :
+                      (chroma_qp > PHX_QUANT_QP_MAX_SPEC ? PHX_QUANT_QP_MAX_SPEC : chroma_qp)] + 32) >> 6;
+        if (phx_mb_var2_8x8(fenc[0], fenc[1], p_dst[0], p_dst[1], ssd) < thresh*4) {
+            int dc_nnz = 0;
+            for (int ch = 0; ch < 2; ch++) {
+                d->chroma_nnz[ch][0] = 0;
+                c->non_zero_count[phx_scan8[PHX_CHROMA_DC+ch]] = 0;
+                memset(d->chroma_dct[ch][0], 0, 16*sizeof(phx_dctcoef));
+                if (ssd[ch] <= thresh) continue;
+                phx_dctcoef dct_dc[4];
+                phx_sub8x8_dct_dc(dct_dc, fenc[ch], PHX_FENC_STRIDE,
+                                   p_dst[ch], PHX_FDEC_STRIDE); /* :303-305 */
+                int nz_dc = b_trellis
+                    ? phx_quant_chroma_dc_trellis(cb, dct_dc, chroma_qp,
+                                                  PHX_DCT_CHROMA_DC, 0)
+                    : phx_quant_2x2_dc(dct_dc,
+                          qt->quant4_mf[cat][chroma_qp][0] >> 1,
+                          qt->quant4_bias[cat][chroma_qp][0] << 1); /* :315 */
+                if (!nz_dc) continue;
+                if (!phx_mb_optimize_chroma_dc(qt, dct_dc, chroma_qp)) continue;
+                phx_dctcoef level[4];
+                phx_mb_zigzag2_dc(level, dct_dc);          /* :322 */
+                memcpy(d->chroma_dct[ch][0], level, 4*sizeof(phx_dctcoef));
+                d->chroma_nnz[ch][0] = 1;
+                c->non_zero_count[phx_scan8[PHX_CHROMA_DC+ch]] = 1;
+                phx_dctcoef block[4][16];
+                memset(block, 0, sizeof(block));
+                phx_mb_idct_dequant_2x2_dconly(dct_dc,
+                    qt->dequant4_mf[cat], chroma_qp);       /* :326 */
+                for (int k = 0; k < 4; k++) block[k][0] = dct_dc[k];
+                phx_add8x8_idct_dc(p_dst[ch], PHX_FDEC_STRIDE, dct_dc); /* :331 */
+                dc_nnz = 1;
+            }
+            d->cbp_chroma = dc_nnz;                         /* :334 */
+            phx_mb_chroma_window(f, mb_x, mb_y, p_dst, PHX_FDEC_STRIDE, 1);
+            return;
+        }
+    }
+
+    int cbp_chroma = 0, dc_any = 0;
+    for (int ch = 0; ch < 2; ch++) {
+        phx_dctcoef dct4x4[4][16], dct_dc[4];
+        phx_sub8x8_dct(dct4x4, fenc[ch], PHX_FENC_STRIDE,
+                        p_dst[ch], PHX_FDEC_STRIDE);        /* :369-370 */
+        phx_mb_dct2x2dc(dct_dc, dct4x4);                    /* :379 */
+        for (int i = 0; i < 4; i++) dct4x4[i][0] = 0;       /* macroblock.c:92 */
+
+        int i_decimate_score = b_decimate ? 0 : 7;          /* :347 */
+        int nz_ac = 0;
+        for (int i = 0; i < 4; i++) {
+            int nz;
+            if (b_trellis) {
+                nz = phx_quant_4x4_trellis(cb, dct4x4[i], cat, chroma_qp,
+                                           PHX_DCT_CHROMA_AC, 0); /* :388 */
+                for (int k = 0; k < 16; k++)
+                    d->chroma_dct[ch][1+i][k] = dct4x4[i][phx_zigzag4[k]];
+            } else {
+                nz = phx_quant_4x4(dct4x4[i], qt->quant4_mf[cat][chroma_qp],
+                                    qt->quant4_bias[cat][chroma_qp]); /* :402 */
+                for (int k = 0; k < 16; k++)
+                    d->chroma_dct[ch][1+i][k] = dct4x4[i][phx_zigzag4[k]];
+            }
+            if (!nz) continue;
+            nz_ac = 1;
+            const int idx = 16 + ch*16 + i;                 /* :390/:408 */
+            phx_dequant_4x4(dct4x4[i], qt->dequant4_mf[cat], chroma_qp);
+            d->chroma_nnz[ch][1+i] = 1;
+            d->nnz[idx] = 1;
+            c->non_zero_count[phx_scan8[idx]] = 1;          /* :414-415 */
+            if (i_decimate_score < 7)
+                i_decimate_score += phx_mb_decimate_score(d->chroma_dct[ch][1+i], 16);
+        }
+
+        int nz_dc;
+        if (b_trellis)
+            nz_dc = phx_quant_chroma_dc_trellis(cb, dct_dc, chroma_qp,
+                                                PHX_DCT_CHROMA_DC, 0); /* :420 */
+        else
+            nz_dc = phx_quant_2x2_dc(dct_dc,
+                     qt->quant4_mf[cat][chroma_qp][0] >> 1,
+                     qt->quant4_bias[cat][chroma_qp][0] << 1); /* :425-426 */
+        phx_dctcoef level[4];
+        phx_mb_zigzag2_dc(level, dct_dc);                   /* :457/:477 */
+        memcpy(d->chroma_dct[ch][0], level, 4*sizeof(phx_dctcoef));
+        d->chroma_nnz[ch][0] = (uint8_t)nz_dc;
+        c->non_zero_count[phx_scan8[PHX_CHROMA_DC+ch]] = (uint8_t)nz_dc;
+        dc_any |= nz_dc;
+
+        if (i_decimate_score < 7 || !nz_ac) {              /* :431 */
+            for (int i = 0; i < 4; i++) {
+                const int idx = 16 + ch*16 + i;
+                d->chroma_nnz[ch][1+i] = 0;
+                d->nnz[idx] = 0;
+                c->non_zero_count[phx_scan8[idx]] = 0;
+                memset(d->chroma_dct[ch][1+i], 0, 16*sizeof(phx_dctcoef));
+            }
+            if (!nz_dc) continue;                          /* :440 */
+            if (!phx_mb_optimize_chroma_dc(qt, dct_dc, chroma_qp)) {
+                d->chroma_nnz[ch][0] = 0;
+                c->non_zero_count[phx_scan8[PHX_CHROMA_DC+ch]] = 0;
+                dc_any = 0;
+                continue;
+            }
+            phx_mb_idct_dequant_2x2_dconly(dct_dc, qt->dequant4_mf[cat], chroma_qp);
+            phx_add8x8_idct_dc(p_dst[ch], PHX_FDEC_STRIDE, dct_dc); /* :462 */
+        } else {
+            cbp_chroma |= 1;                               /* :470 */
+            if (nz_dc)
+                phx_mb_idct_dequant_2x2_dc(dct4x4, dct_dc, qt->dequant4_mf[cat], chroma_qp);
+            phx_add8x8_idct(p_dst[ch], PHX_FDEC_STRIDE, dct4x4); /* :483 */
+        }
+    }
+    d->cbp_chroma = cbp_chroma + (dc_any || cbp_chroma);   /* :487-489 */
+    phx_mb_chroma_window(f, mb_x, mb_y, p_dst, PHX_FDEC_STRIDE, 1);
+}
+
+/* x264_mb_encode_i8x8 — encoder/macroblock.h:168-211, called from
+ * macroblock_encode_internal's I_8x8 branch (macroblock.c:713-737).
+ * h->dct.luma8x8[4] is published through i8x8_out (64 coefficients each).
+ * SHADER: B — one invocation per 8x8 block. */
+static void phx_mb_encode_i8x8(const phx_quant_tables_t *qt,
+                                const uint8_t *fenc, uint8_t *p_dst,
+                                int i_qp, int mode, int neighbour8,
+                                int idx, phx_mb_decision_t *d,
+                                phx_mb_cache_t *c, phx_cabac_t *cb,
+                                const phx_param_t *p,
+                                phx_mb_i8x8_block_t i8x8_out[4])
+{
+    static const uint8_t pred_neighbours[12] = {          /* macroblock.h:43 */
+        PHX_MB_TOP, PHX_MB_LEFT, PHX_MB_LEFT|PHX_MB_TOP,
+        PHX_MB_TOP|PHX_MB_TOPRIGHT,
+        PHX_MB_LEFT|PHX_MB_TOPLEFT|PHX_MB_TOP,
+        PHX_MB_LEFT|PHX_MB_TOPLEFT|PHX_MB_TOP,
+        PHX_MB_LEFT|PHX_MB_TOPLEFT|PHX_MB_TOP,
+        PHX_MB_TOP|PHX_MB_TOPRIGHT, PHX_MB_LEFT, PHX_MB_LEFT,
+        PHX_MB_TOP, 0
+    };
+    /* phx_predict.c:857-859 installs DC at slot 0 and V at slot 2, while
+     * x264's I_PRED_4x4 enum (common/predict.h:75-88, reused by I8x8) has
+     * V=0 and DC=2.  Remap here instead of editing the unowned predictor
+     * module.  SHADER: B — constant mode mapping. */
+    static const uint8_t pf_index[12] = { 2, 1, 0, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+    phx_predict8x8_t pred8[12];
+    void (*filter)(uint8_t *, uint8_t *, int, int, int);
+    uint8_t edge[36];
+    phx_dctcoef dct8[64];
+    const int x = (idx & 1) * 8, y = (idx >> 1) * 8;
+    uint8_t *dst = p_dst + y * PHX_FDEC_STRIDE + x;
+    const uint8_t *src = fenc + y * PHX_FENC_STRIDE + x;
+
+    phx_predict_8x8_init(pred8, &filter);                 /* predict.c:977 */
+    filter(dst, edge, PHX_FDEC_STRIDE, neighbour8,
+           pred_neighbours[mode & 15]);                   /* macroblock.h:180 */
+    pred8[pf_index[mode & 15]](dst, edge, PHX_FDEC_STRIDE); /* :184 */
+
+    phx_sub8x8_dct8(dct8, src, PHX_FENC_STRIDE, dst, PHX_FDEC_STRIDE); /* :199 */
+    int nz;
+    if (cb && p && p->i_trellis > 0 && i_qp <= PHX_QP_MAX_SPEC) {
+        /* rdo.c:1159-1184; M8 documents that the 64-coefficient trellis is
+         * not bit-exact yet (phx_rdo.h Unsupported #1), so the golden path
+         * for row 19 is the deadzone quantizer below. */
+        nz = phx_quant_8x8_trellis(cb, dct8, 0, i_qp, PHX_DCT_LUMA_8x8, 1);
+    } else {
+        nz = phx_quant_8x8(dct8, qt->quant8_mf[0][i_qp],
+                            qt->quant8_bias[0][i_qp]);    /* macroblock.h:206 */
+    }
+    if (i8x8_out) {
+        for (int k = 0; k < 64; k++)
+            i8x8_out[idx].coef[k] = dct8[phx_zigzag8[k]];  /* :204 */
+        i8x8_out[idx].nnz = (uint8_t)(nz ? 1 : 0);
+    }
+    if (nz) {
+        d->cbp_luma |= 1 << idx;                           /* :202 */
+        phx_dequant_8x8(dct8, qt->dequant8_mf[0], i_qp);   /* :205 */
+        phx_add8x8_idct8(dst, PHX_FDEC_STRIDE, dct8);      /* :206 */
+    }
+    phx_mb_store_8x8_nnz(d, c, idx, nz);                   /* :207/:210 */
+}
+
+/* Inter luma residual — macroblock_encode_internal's inter branch,
+ * encoder/macroblock.c:801-914.  `b8` selects the 8x8 transform (:801-838)
+ * or the 4x4x4 path (:843-914); both feed FDEC through x264's IDCT.
+ * SHADER: B — one serial residual encode per MB. */
+static void phx_mb_encode_inter_luma(const phx_param_t *p,
+                                      const phx_quant_tables_t *qt,
+                                      const uint8_t *fenc, uint8_t *p_dst,
+                                      int i_qp, int b8,
+                                      phx_mb_decision_t *d, phx_mb_cache_t *c,
+                                      phx_cabac_t *cb,
+                                      phx_mb_i8x8_block_t i8x8_out[4])
+{
+    const int b_trellis = cb && p->i_trellis > 0 && i_qp <= PHX_QP_MAX_SPEC;
+    int decimate = p->b_dct_decimate;
+    int decimate_mb = 0;
+
+    if (b8) {
+        /* macroblock.c:801-838 — quant_cat CQM_8PY (set.h:38), stored in
+         * phx_quant_tables_t's luma 8x8 list index 1. */
+        phx_dctcoef dct8x8[4][64];
+        decimate &= !(b_trellis && p->b_cabac);            /* :804 */
+        phx_sub16x16_dct8(dct8x8, fenc, PHX_FENC_STRIDE,
+                           p_dst, PHX_FDEC_STRIDE);         /* :810 */
+        int plane_cbp = 0;
+        for (int idx = 0; idx < 4; idx++) {
+            int nz = b_trellis
+                ? phx_quant_8x8_trellis(cb, dct8x8[idx], 1, i_qp,
+                                        PHX_DCT_LUMA_8x8, 0)
+                : phx_quant_8x8(dct8x8[idx], qt->quant8_mf[1][i_qp],
+                                 qt->quant8_bias[1][i_qp]); /* :816 */
+            if (!nz) continue;
+            if (i8x8_out)
+                for (int k = 0; k < 64; k++)
+                    i8x8_out[idx].coef[k] = dct8x8[idx][phx_zigzag8[k]]; /* :820 */
+            if (decimate) {
+                int s = phx_mb_decimate_score(
+                    i8x8_out ? i8x8_out[idx].coef : dct8x8[idx], 64); /* :823 */
+                decimate_mb += s;
+                if (s >= 4) plane_cbp |= 1 << idx;
+            } else {
+                plane_cbp |= 1 << idx;
+            }
+        }
+        if (decimate_mb >= 6 || !decimate) {
+            d->cbp_luma |= plane_cbp;                      /* :832 */
+            for (int idx = 0; idx < 4; idx++) {
+                if (!(plane_cbp & (1 << idx))) continue;
+                phx_dequant_8x8(dct8x8[idx], qt->dequant8_mf[1], i_qp); /* :834 */
+                phx_add8x8_idct8(p_dst + (idx&1)*8 + (idx>>1)*8*PHX_FDEC_STRIDE,
+                                  PHX_FDEC_STRIDE, dct8x8[idx]);       /* :835 */
+                phx_mb_store_8x8_nnz(d, c, idx, 1);        /* :836 */
+            }
+        }
+    } else {
+        /* macroblock.c:843-914 — quant_cat CQM_4PY (set.h:31). */
+        phx_dctcoef dct4x4[16][16];
+        phx_sub16x16_dct(dct4x4, fenc, PHX_FENC_STRIDE,
+                          p_dst, PHX_FDEC_STRIDE);          /* :849 */
+        int plane_cbp = 0;
+        for (int i8 = 0; i8 < 4; i8++) {
+            int i_decimate_8x8 = decimate ? 0 : 6;          /* :855 */
+            int nnz8x8 = 0;
+            if (b_trellis) {
+                for (int j = 0; j < 4; j++) {
+                    const int idx = i8*4 + j;
+                    int nz = phx_quant_4x4_trellis(cb, dct4x4[idx], 1, i_qp,
+                                                   PHX_DCT_LUMA_4x4, 0);
+                    if (!nz) continue;
+                    phx_dctcoef scan[16];
+                    for (int k = 0; k < 16; k++) scan[k] = dct4x4[idx][phx_zigzag4[k]];
+                    phx_mb_store_block(d, c, idx, scan, 1);  /* :866 */
+                    phx_dequant_4x4(dct4x4[idx], qt->dequant4_mf[1], i_qp);
+                    if (i_decimate_8x8 < 6)
+                        i_decimate_8x8 += phx_mb_decimate_score(scan, 16);
+                    nnz8x8 = 1;
+                }
+            } else {
+                int nz = phx_quant_4x4x4(&dct4x4[i8*4], qt->quant4_mf[1][i_qp],
+                                          qt->quant4_bias[1][i_qp]); /* :887 */
+                nnz8x8 = nz;
+                for (int j = 0; j < 4; j++) {
+                    if (!(nz & (1 << j))) continue;
+                    const int idx = i8*4 + j;
+                    phx_dctcoef scan[16];
+                    for (int k = 0; k < 16; k++) scan[k] = dct4x4[idx][phx_zigzag4[k]];
+                    phx_mb_store_block(d, c, idx, scan, 1);  /* :892 */
+                    phx_dequant_4x4(dct4x4[idx], qt->dequant4_mf[1], i_qp);
+                    if (i_decimate_8x8 < 6)
+                        i_decimate_8x8 += phx_mb_decimate_score(scan, 16);
+                }
+            }
+            if (nnz8x8) {
+                decimate_mb += i_decimate_8x8;
+                if (i_decimate_8x8 >= 4) plane_cbp |= 1 << i8; /* :900-903 */
+                else phx_mb_store_8x8_nnz(d, c, i8, 0);        /* :901 */
+            }
+        }
+        if (decimate_mb < 6) {
+            for (int i = 0; i < 16; i++) {                    /* :907 */
+                const int slot = phx_scan8[i];
+                d->nnz[slot] = 0;
+                c->non_zero_count[slot] = 0;
+            }
+        } else {
+            d->cbp_luma |= plane_cbp;                          /* :911 */
+            for (int i8 = 0; i8 < 4; i8++)
+                if (plane_cbp & (1 << i8))
+                    phx_add8x8_idct(p_dst + (i8&1)*8 + (i8>>1)*8*PHX_FDEC_STRIDE,
+                                     PHX_FDEC_STRIDE, &dct4x4[i8*4]); /* :913 */
+        }
+    }
+}
+
+/* x264_mb_mc() for P_L0 with a single L0 reference — common/macroblock.c:
+ * 200-244 and :34-72 (mb_mc_0xywh).  Every partition's MV is clipped first
+ * (analyse.c:336-337) and then offset by 16*x / 16*y qpel, exactly as x264
+ * does when it points mc_luma at the MB origin.  SHADER: B — serial MC per
+ * partition, read-only fref. */
+static int phx_mb_mc_l0_part(const phx_param_t *p, const phx_frame_t *fref,
+                              phx_frame_t *f, uint8_t *p_dst, int mb_x, int mb_y,
+                              const phx_mb_decision_t *d)
+{
+    (void)p;
+    if (!fref || !fref->plane || fref->i_width != f->i_width ||
+        fref->i_height != f->i_height || f->i_width <= 0 || f->i_height <= 0)
+        return -1;
+    const int mb_w = f->i_width / 16, mb_h = f->i_height / 16;
+    const int mv_min_x = 4 * (-16 * mb_x - 24);
+    const int mv_max_x = 4 * (16 * (mb_w - mb_x - 1) + 24);
+    const int mv_min_y = 4 * (-16 * mb_y - 24);
+    const int mv_max_y = 4 * (16 * (mb_h - mb_y - 1) + 24);
+    /* (x,y,w,h) in 4x4-block units + the 4x4 MV cache index, per
+     * x264_mb_mc()'s mb_mc_0xywh() calls. */
+    static const int d1616[1][5] = { {0,0,4,4,0} };
+    static const int d168[2][5]  = { {0,0,4,2,0}, {0,2,4,2,8} };
+    static const int d816[2][5]  = { {0,0,2,4,0}, {2,0,2,4,2} };
+    static const int d88[4][5]   = { {0,0,2,2,0}, {2,0,2,2,2},
+                                     {0,2,2,2,8}, {2,2,2,2,10} };
+    const int (*part)[5];
+    int n;
+    if (d->i_partition == PHX_D_16x16)      { part = d1616; n = 1; }
+    else if (d->i_partition == PHX_D_16x8)  { part = d168;  n = 2; }
+    else if (d->i_partition == PHX_D_8x16)  { part = d816;  n = 2; }
+    else if (d->i_partition == PHX_D_8x8)   { part = d88;   n = 4; }
+    else return -1;
+
+    for (int i = 0; i < n; i++) {
+        const int x = part[i][0], y = part[i][1];
+        const int w = part[i][2], h = part[i][3], blk = part[i][4];
+        if (d->ref[0][blk] != 0) return -1;    /* only L0 ref 0 is supplied */
+        const int mvx = phx_mb_clip3i(d->mv[0][blk][0], mv_min_x, mv_max_x)
+                      + 16 * x;                /* macroblock.c:37 */
+        const int mvy = phx_mb_clip3i(d->mv[0][blk][1], mv_min_y, mv_max_y)
+                      + 16 * y;                /* macroblock.c:38 */
+        if (phx_mc_luma_mb(fref, p_dst + y*4*PHX_FDEC_STRIDE + x*4,
+                            PHX_FDEC_STRIDE, mb_x, mb_y, mvx, mvy,
+                            4*w, 4*h) < 0) return -1;
+        /* common/macroblock.c:61-64 — 4:2:0 chroma MC, v_shift == 1. */
+        const int cs = f->i_stride_planes[1];
+        const size_t c_off = (size_t)((mb_y*16 + y*4)/2)*cs
+                           + (size_t)((mb_x*16 + x*4)/2)*2;
+        const size_t r_off = (size_t)((mb_y*16 + y*4)/2)*fref->i_stride_planes[1]
+                           + (size_t)((mb_x*16 + x*4)/2)*2;
+        uint8_t cu[16*16], cv[16*16];
+        if (mvx | mvy)
+            phx_mc_chroma(cu, 16, cv, 16, fref->plane_chroma + r_off,
+                          fref->i_stride_planes[1], mvx, 2*mvy >> 1,
+                          2*w, 2*h);
+        else
+            phx_mc_deinterleave_chroma(cu, 16, cv, 16,
+                                        fref->plane_chroma + r_off,
+                                        fref->i_stride_planes[1], 2*w, 2*h);
+        for (int cy = 0; cy < 2*h; cy++)
+            for (int cx = 0; cx < 2*w; cx++) {
+                f->plane_chroma[c_off + (size_t)cy*cs + 2*cx]   = cu[cy*16+cx];
+                f->plane_chroma[c_off + (size_t)cy*cs + 2*cx+1] = cv[cy*16+cx];
+            }
+    }
+    return 0;
+}
+
 /* x264_macroblock_encode — reference/x264/encoder/macroblock.c:974-982,
  * dispatching macroblock_encode_internal (:618-972).  Cache-nnz and cbp
  * stores mirror common/macroblock.c:1680/1761-1779; reconstructed pixels are
  * written into f->plane (or the caller's cache->p_fdec) because phx_frame_t
- * has no separate fdec plane (common/frame.h:37-140).  The inter branch is
- * macroblock.c:654-667/:769-775 with mc_copy (common/mc.c:162-171).
+ * has no separate fdec plane (common/frame.h:37-140).  Rows 18-19 add the
+ * residual-carrying P_L0 and I_8x8 branches (macroblock.c:713-737/:768-914).
  * SHADER: B — the single B-stage entry point for one macroblock. */
-int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
-                             const phx_frame_t *fref,
-                             phx_mb_cache_t *cache, int mb_x, int mb_y,
-                             phx_mb_decision_t *d, phx_cabac_t *cb)
+int phx_macroblock_encode_ex2(const phx_param_t *p, phx_frame_t *f,
+                              const phx_frame_t *fref,
+                              phx_mb_cache_t *cache, int mb_x, int mb_y,
+                              phx_mb_decision_t *d, phx_cabac_t *cb,
+                              phx_mb_i8x8_block_t i8x8_out[4])
 {
     if (!p || !f || !cache || !d || !f->plane) return -1;
 
@@ -487,30 +999,27 @@ int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
     if (mb_x < 0 || mb_x >= mb_w || mb_y < 0 || mb_y >= mb_h) return -1;
     if (d->i_qp < 0 || d->i_qp > PHX_QUANT_QP_MAX_SPEC) return -1;
 
-    (void)phx_zigzag8; /* retained for the I8x8 TODO below */
-
-    /* TODO (B): I8x8 needs 64 coefficients per block, but
-     * phx_mb_decision_t::dct[] has only 16 per slot.
-     * TODO (B): chroma prediction/DCT/quant/IDCT (encoder/macroblock.c:259)
-     * needs chroma planes that phx_frame_t does not expose.
-     * TODO (B): P_8x8/B_*, *_SKIP and residual-carrying inter modes need the
-     * full MC + residual path of encoder/macroblock.c:654-704/769-922.
-     * Do not approximate any of these: reject them explicitly.
-     * The supported inter mode is analysis's no-residual P_L0/D_16x16
-     * (phx_analysis.c:1075-1126): ref[0][0] == 0, qpel MV in mv[0][0], cbp 0. */
     const int inter_l0 = (d->mb_type == PHX_P_L0 &&
-                          d->i_partition == PHX_D_16x16 &&
-                          d->cbp_luma == 0 && d->cbp_chroma == 0);
+                          (d->i_partition == PHX_D_16x16 ||
+                           d->i_partition == PHX_D_16x8 ||
+                           d->i_partition == PHX_D_8x16 ||
+                           d->i_partition == PHX_D_8x8));
     if (d->mb_type != PHX_I_16x16 && d->mb_type != PHX_I_4x4
-        && d->mb_type != PHX_I_PCM && !inter_l0)
+        && d->mb_type != PHX_I_8x8 && d->mb_type != PHX_I_PCM && !inter_l0)
         return -1;
     if (inter_l0) {
-        /* macroblock.c:666 reads p_fref[0][0]; the caller must supply that
-         * frame with the same geometry as the current picture. */
-        if (!fref || !fref->plane || fref->i_width != f->i_width ||
-            fref->i_height != f->i_height || d->ref[0][0] != 0)
+        /* macroblock.c:666 reads p_fref[0][0]; only list-0 reference 0 is
+         * supplied.  Inter chroma MC/residual needs both NV12 planes. */
+        if (!fref || !fref->plane || !fref->plane_chroma ||
+            !f->plane_chroma || fref->i_width != f->i_width ||
+            fref->i_height != f->i_height ||
+            fref->i_stride_planes[1] <= 0 || f->i_stride_planes[1] <= 0)
             return -1;
     }
+    if (d->mb_type == PHX_I_8x8)
+        for (int i = 0; i < 4; i++)
+            if (d->intra8x8_pred_mode[i] < 0 || d->intra8x8_pred_mode[i] > 11)
+                return -1;
     if (d->mb_type == PHX_I_16x16 && (d->intra16_pred_mode < 0 || d->intra16_pred_mode > 6))
         return -1;
     if (d->mb_type == PHX_I_4x4)
@@ -531,6 +1040,18 @@ int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
     for (int y = 0; y < 16; y++)
         memcpy(fenc + y * PHX_FENC_STRIDE, plane_mb + y * f->i_stride, 16);
 
+    /* x264 keeps fenc/fdec separate (common/common.h:570-571).  Stage the
+     * inter chroma source before MC overwrites f->plane_chroma. */
+    uint8_t chroma_fenc[2][8*PHX_FENC_STRIDE];
+    uint8_t *chroma_src[2] = { chroma_fenc[0], chroma_fenc[1] };
+    uint8_t chroma_fdec_buf[2][PHX_FDEC_STRIDE*10 + PHX_FDEC_STRIDE];
+    uint8_t *chroma_fdec[2] = { chroma_fdec_buf[0] + PHX_FDEC_STRIDE + 1,
+                                chroma_fdec_buf[1] + PHX_FDEC_STRIDE + 1 };
+    if (inter_l0) {
+        phx_mb_chroma_window(f, mb_x, mb_y, chroma_src, PHX_FENC_STRIDE, 0);
+        memset(chroma_fdec_buf, 0, sizeof(chroma_fdec_buf));
+    }
+
     phx_mb_load_fdec_neighbours(f, mb_x, mb_y, p_dst, PHX_FDEC_STRIDE, cache);
 
     /* common/macroblock.c:1683/1722/1779 — keep the caller's p_fdec (the
@@ -539,24 +1060,46 @@ int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
      * without an FDEC keep the legacy f->plane target. */
     uint8_t *fdec_target = cache->p_fdec ? cache->p_fdec : plane_mb;
     int fdec_target_stride = cache->p_fdec ? cache->fdec_stride : f->i_stride;
-    cache->b_transform_8x8 = 0;                              /* macroblock.c:708/740 */
+    cache->b_transform_8x8 = (d->mb_type == PHX_I_8x8 ||
+                              (inter_l0 && d->b_transform_8x8)) ? 1 : 0; /* :715/:779 */
     cache->i_cbp_luma = 0;                                   /* macroblock.c:624 */
     cache->i_cbp_chroma = 0;                                 /* macroblock.c:265 */
     cache->i_qp = d->i_qp;                                   /* macroblock.c:620 */
+    /* Capture the analysis record's residual decision before the B stage
+     * recomputes cbp from the quantized coefficients (macroblock.c:624/946). */
+    const int dec_cbp_luma = d->cbp_luma, dec_cbp_chroma = d->cbp_chroma;
     d->cbp_luma = 0;
     d->cbp_chroma = 0;
     d->skip = 0;
-    d->b_transform_8x8 = 0;
+    d->b_transform_8x8 = cache->b_transform_8x8;
 
     if (inter_l0) {
-        /* macroblock.c:654-667/:769-775 + common/macroblock.c:61-64 — luma
-         * and chroma MC from the caller's L0 reference 0, then no residual
-         * (cbp == 0).  Both planes use the same clipped qpel MV. */
-        int mvx = 0, mvy = 0;
-        if (phx_mb_mc_l0_16x16(fref, p_dst, mb_x, mb_y, d, &mvx, &mvy) < 0)
-            return -1;
-        phx_mb_mc_chroma_l0(fref, f, mb_x, mb_y, mvx, mvy);
-        phx_mb_clear_inter_residual(d, cache);  /* macroblock.c:624-626 */
+        /* macroblock.c:654-667/:769-775 + common/macroblock.c:200-244/:34-72.
+         * The analysis record decides whether a residual is coded: cbp == 0
+         * keeps the established no-residual inter handoff (macroblock.c:
+         * 624-626/946-951); any residual-carrying decision takes the full
+         * inter encode (macroblock.c:801-914/:259-498/:940-943). */
+        const int no_residual = (dec_cbp_luma == 0 && dec_cbp_chroma == 0);
+        if (phx_mb_mc_l0_part(p, fref, f, p_dst, mb_x, mb_y, d) < 0) return -1;
+        if (no_residual) {
+            phx_mb_clear_inter_residual(d, cache);
+        } else {
+            phx_mb_chroma_window(f, mb_x, mb_y, chroma_fdec, PHX_FDEC_STRIDE, 0);
+            phx_mb_encode_inter_luma(p, &qt, fenc, p_dst, d->i_qp,
+                                      cache->b_transform_8x8, d, cache, cb, i8x8_out);
+            phx_mb_encode_inter_chroma(p, &qt, f, mb_x, mb_y,
+                                        chroma_src, chroma_fdec, d->i_qp, d, cache, cb);
+        }
+    } else if (d->mb_type == PHX_I_8x8) {
+        /* macroblock.c:713-737 + macroblock.h:168-211. */
+        int n8[4] = { phx_mb_neighbour4(cache, 0),
+                      phx_mb_neighbour4(cache, 5),
+                      phx_mb_neighbour4(cache, 2),
+                      PHX_MB_LEFT | PHX_MB_TOP | PHX_MB_TOPLEFT }; /* :489-498 */
+        for (int i = 0; i < 4; i++)
+            phx_mb_encode_i8x8(&qt, fenc, p_dst, d->i_qp,
+                                d->intra8x8_pred_mode[i], n8[i], i,
+                                d, cache, cb, p, i8x8_out);
     } else if (d->mb_type == PHX_I_16x16) {
         phx_mb_encode_i16x16(&qt, fenc, p_dst, d->i_qp,
                              d->intra16_pred_mode, d, cache);
@@ -574,10 +1117,25 @@ int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
     cache->i_cbp_luma = d->cbp_luma;
     cache->i_cbp_chroma = d->cbp_chroma;
 
-    for (int y = 0; y < 16; y++)                             /* macroblock.c:632 */
+    /* encoder/macroblock.c:632 — copy the 16 reconstructed rows back to the
+     * caller's FDEC window.  The braces are required: without them the memcpy
+     * ran once after the loop with y == 16 and wrote past the destination.
+     * SHADER: B — one invocation per MB. */
+    for (int y = 0; y < 16; y++) {                           /* macroblock.c:632 */
         memcpy(fdec_target + y * fdec_target_stride,
                p_dst + y * PHX_FDEC_STRIDE, 16);
+    }
     return 0;
+}
+
+/* Backward-compatible entry point: callers that do not need the 64-coefficient
+ * arrays (all existing C-stage writers) keep using this symbol. */
+int phx_macroblock_encode_ex(const phx_param_t *p, phx_frame_t *f,
+                             const phx_frame_t *fref,
+                             phx_mb_cache_t *cache, int mb_x, int mb_y,
+                             phx_mb_decision_t *d, phx_cabac_t *cb)
+{
+    return phx_macroblock_encode_ex2(p, f, fref, cache, mb_x, mb_y, d, cb, NULL);
 }
 
 /* Plain-deadzone wrapper: unit tests and CAVLC call this path. */
