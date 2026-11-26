@@ -155,4 +155,8 @@ cost(1,2,2) 3643 -> 2102   cost(0,2,2) 5008 -> 3008
 
 All four now byte-identical; FAST slice types `I P P P BREF B B P`, frame_num and POC match the oracle, so `PHX_LOOKAHEAD_STRICT_GOLDEN` is now 1. The previously reported `cost(1,3,3)=3246` was not reproducible and the real third gap was the ME/HEX+subpel defects above. The encoder test's frame_num assertion was corrected for x264's legal non-reference-B reuse (`encoder.c:3882`).
 
+## F15 — suspected P-slice CABAC init table mismatch disproven
+
+M8 reported that `phx_cabac_context_init_PB` in `src/phx_tables.c` differed from x264 `common/tables.c:768` (e.g. ctx 40: 125 vs 127). Direct comparison after stripping comments shows **all 6,144 int8 values are identical**, and `phx_cabac_context_init()` uses the same formula and table index as x264 `cabac.c:37-43` (`PB[model+1]`, `clip3((m*qp)>>4 + b, 1, 126)`, `(min(state,127-state)<<1)|(state>>6)`). For qp=26/model=0, ctx 40/43/46 all encode to the same states on both sides. No source change was made — this is a reported-and-disproven finding, not a bug to chase.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
