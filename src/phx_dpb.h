@@ -27,9 +27,24 @@
  * inner MB work is SHADER B (phx_frame_deblock_ex); the copied planes are the
  * explicit SSBO-style edge handed to that work.  No threads are introduced.
  *
+ * B-slice list construction (encoder.c:2295-2411, 2282-2288, 2137-2154):
+ *   - split the DPB by POC around the current picture: i_poc < current -> L0,
+ *     i_poc > current -> L1 (encoder.c:2308-2313);
+ *   - order each list by ascending |current.i_frame - ref.i_frame|
+ *     (reference_distance(), encoder.c:2282-2288; the stable bubble pass at
+ *     :2343-2358); L0's nearest is the highest-POC past picture and L1's
+ *     nearest the lowest-POC future picture (:2348-2351);
+ *   - flag a non-default list order with the standard rules at :2144-2154:
+ *     P uses descending frame_num, B L0 descending POC, B L1 ascending POC;
+ *   - apply the i_max_ref0/i_max_ref1/i_frame_reference caps (:2365-2366).
+ *   slicetype.c:1988-1989 supplies the B POC midpoint used by direct MV.
+ *
  * Boundaries: progressive 4:2:0 NV12 only.  No MBAFF, no MMCO commands and no
  * long-term references yet; IDR reset and short-term overflow eviction are the
- * only DPB management operations implemented here.
+ * only DPB management operations implemented here.  Weightp duplicates
+ * (encoder.c:2380-2406) and bluray minigop clipping (:2370-2371) are out of
+ * scope: the caller passes the already-computed fc.i_ref[]/ref_frame_num[][] if
+ * those features are active.
  */
 #ifndef PHX_DPB_H
 #define PHX_DPB_H
@@ -38,12 +53,14 @@
 #include "phx_frame.h"
 #include "phx_mbcache.h"
 #include "phx_deblock.h"
+#include "phx_slice.h"           /* PHX_SLICE_{I,P,B}, PHX_SLICE_REF_MAX */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define PHX_DPB_MAX_PICTURES 16   /* base.h:137 X264_REF_MAX */
+#define PHX_DPB_REF_MAX PHX_SLICE_REF_MAX /* same 16-entry slice ref arrays */
 
 /* One decoded picture.  `frame` owns its planes (phx_frame_new/delete); the
  * metadata mirrors the x264_frame_t fields read by reference_build_list()
@@ -127,6 +144,66 @@ const phx_frame_t *phx_dpb_get_ref(const phx_dpb_t *dpb, int frame_num);
  * reference, 1 the one before it, etc.  Mirrors h->fref[0][ref_idx] for the
  * common IPPP case (and is what phx_encoder.c:1335-1339 needs today). */
 const phx_frame_t *phx_dpb_get_ref_l0(const phx_dpb_t *dpb, int ref_idx);
+
+/* encoder.c:2295-2411 — list-1 equivalent of phx_dpb_get_ref(): the kept
+ * picture with this frame_num, regardless of its past/future POC.  A B slice
+ * should normally use phx_dpb_init_ref_lists()/phx_dpb_get_ref_l1_at() so the
+ * entry really belongs to L1 for the current picture. */
+const phx_frame_t *phx_dpb_get_ref_l1(const phx_dpb_t *dpb, int frame_num);
+
+/* Cap inputs for phx_dpb_init_ref_lists(): encoder.c:2365-2366.  A value <= 0
+ * means "no cap" (useful for tests and for the small-PBBP fixture).  Weightp
+ * duplicates and the Blu-ray minigop rule are not reproduced. */
+typedef struct {
+    int max_ref0;                /* h->frames.i_max_ref0 */
+    int max_ref1;                /* h->frames.i_max_ref1 */
+    int frame_reference;         /* h->param.i_frame_reference */
+} phx_dpb_list_cfg_t;
+
+/* x264's h->fref[][]/h->i_ref[]/h->b_ref_reorder[] mirrored as plain arrays.
+ * `frame[list][i]` points at the owned reconstructed picture (NULL when the
+ * caller built a metadata-only DPB for tests).  `fref_nearest[list]` mirrors
+ * encoder.c:2348-2351.  SHADER: C — one serial list build per slice. */
+typedef struct {
+    int i_ref[2];
+    int ref_frame_num[2][PHX_DPB_REF_MAX]; /* encoder.c:188/2309-2312 */
+    int ref_poc[2][PHX_DPB_REF_MAX];       /* x264_frame_t.i_poc */
+    int ref_frame[2][PHX_DPB_REF_MAX];     /* x264_frame_t.i_frame */
+    int ref_type[2][PHX_DPB_REF_MAX];      /* x264_frame_t.i_type */
+    const phx_frame_t *frame[2][PHX_DPB_REF_MAX];
+    /* Sorted entry copies: the SSBO-style edge passed to list consumers.
+     * `fref_nearest[]` points into these arrays and stays valid as long as
+     * the phx_dpb_ref_lists_t does. */
+    phx_dpb_entry_t frame_entry[2][PHX_DPB_REF_MAX];
+    int nearest_index[2];                  /* index into frame_entry[list] */
+    int b_ref_reorder[2];                  /* encoder.c:177-178/2144-2154 */
+    const phx_dpb_entry_t *fref_nearest[2];/* encoder.c:2348-2351 */
+    int i_current_poc, i_current_frame;    /* h->fdec->i_poc, h->fenc->i_frame */
+    int slice_type;                        /* PHX_SLICE_{I,P,B} */
+} phx_dpb_ref_lists_t;
+
+/* encoder.c:2295-2411 — fill `out` for a slice at (current_poc,
+ * current_frame).  Past pictures go to list 0, future pictures to list 1;
+ * within each list the bubble sort by |i_frame - current_frame| is stable for
+ * equal distances.  I slices return two empty lists.  `cfg == NULL` disables
+ * the count caps.  Returns 0, or -1 for invalid arguments. */
+int phx_dpb_init_ref_lists(const phx_dpb_t *dpb, phx_dpb_ref_lists_t *out,
+                           int current_poc, int current_frame, int slice_type,
+                           const phx_dpb_list_cfg_t *cfg);
+
+/* Direct accessors into a built list.  Out-of-range indices return NULL/-1. */
+const phx_frame_t *phx_dpb_ref_frame(const phx_dpb_ref_lists_t *lists,
+                                     int list, int ref_idx);
+int phx_dpb_ref_frame_num(const phx_dpb_ref_lists_t *lists, int list, int ref_idx);
+int phx_dpb_ref_poc(const phx_dpb_ref_lists_t *lists, int list, int ref_idx);
+
+/* Convenience POC-driven accessors: build the two lists for a B slice and
+ * return L0/L1[ref_idx].  Useful for B1's phx_mvdirect_predict() before the
+ * orchestrator threads an explicit phx_dpb_ref_lists_t through the B stage. */
+const phx_frame_t *phx_dpb_get_ref_l0_at(const phx_dpb_t *dpb, int current_poc,
+                                         int current_frame, int ref_idx);
+const phx_frame_t *phx_dpb_get_ref_l1_at(const phx_dpb_t *dpb, int current_poc,
+                                         int current_frame, int ref_idx);
 
 /* encoder.c:2563 — clear all short-term references on an IDR. */
 void phx_dpb_reset(phx_dpb_t *dpb);

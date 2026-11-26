@@ -198,3 +198,167 @@ const phx_frame_t *phx_dpb_get_ref_l0(const phx_dpb_t *dpb, int ref_idx)
             return dpb->pictures[i].frame;
     return NULL;
 }
+
+const phx_frame_t *phx_dpb_get_ref_l1(const phx_dpb_t *dpb, int frame_num)
+{
+    return phx_dpb_get_ref(dpb, frame_num);  /* same short-term lookup, :124 */
+}
+
+/* encoder.c:2282-2288 — reference_distance(): display-order distance from
+ * the current picture (field-packing case 5 is out of scope, no MBAFF). */
+static int phx_dpb_distance(int current_frame, const phx_dpb_entry_t *e)
+{
+    int d = current_frame - e->i_frame;
+    return d < 0 ? -d : d;
+}
+
+/* encoder.c:2343-2358 — the stable bubble sort by reference_distance. */
+static void phx_dpb_sort_list(phx_dpb_ref_lists_t *out, int list,
+                              int current_frame)
+{
+    int n = out->i_ref[list];
+    int b_ok;
+    do {
+        b_ok = 1;
+        for (int i = 0; i < n - 1; i++) {
+            int da = phx_dpb_distance(current_frame,
+                                      &out->frame_entry[list][i]);
+            int db = phx_dpb_distance(current_frame,
+                                      &out->frame_entry[list][i+1]);
+            if (da > db) {
+                phx_dpb_entry_t t = out->frame_entry[list][i];
+                out->frame_entry[list][i] = out->frame_entry[list][i+1];
+                out->frame_entry[list][i+1] = t;
+                b_ok = 0;
+            }
+        }
+    } while (!b_ok);
+}
+
+/* encoder.c:2348-2351 — nearest past/future picture.  The source starts with
+ * fref[list][0] and considers indices 1..n-1, so an empty list leaves NULL. */
+static void phx_dpb_set_nearest(phx_dpb_ref_lists_t *out, int list)
+{
+    int n = out->i_ref[list];
+    out->nearest_index[list] = 0;
+    for (int i = 0; i < n - 1; i++)
+        if (list ? out->frame_entry[list][i+1].i_poc
+                   < out->frame_entry[list][out->nearest_index[list]].i_poc
+                 : out->frame_entry[list][i+1].i_poc
+                   > out->frame_entry[list][out->nearest_index[list]].i_poc)
+            out->nearest_index[list] = i + 1;
+}
+
+/* encoder.c:2137-2154 — standard default-order check (P: descending
+ * frame_num; B L0: descending POC; B L1: ascending POC). */
+static void phx_dpb_check_reorder(phx_dpb_ref_lists_t *out)
+{
+    for (int list = 0; list <= (out->slice_type == PHX_SLICE_B); list++)
+        for (int i = 0; i < out->i_ref[list] - 1; i++) {
+            const phx_dpb_entry_t *a = &out->frame_entry[list][i];
+            const phx_dpb_entry_t *b = &out->frame_entry[list][i+1];
+            int dfn = b->i_frame_num - a->i_frame_num;
+            int dpoc = b->i_poc - a->i_poc;
+            if (out->slice_type == PHX_SLICE_P ? dfn > 0
+                : list == 1 ? dpoc < 0 : dpoc > 0) {
+                out->b_ref_reorder[list] = 1;
+                return;
+            }
+        }
+}
+
+int phx_dpb_init_ref_lists(const phx_dpb_t *dpb, phx_dpb_ref_lists_t *out,
+                           int current_poc, int current_frame, int slice_type,
+                           const phx_dpb_list_cfg_t *cfg)
+{
+    if (!dpb || !out) return -1;
+    if (slice_type != PHX_SLICE_I && slice_type != PHX_SLICE_P &&
+        slice_type != PHX_SLICE_B) return -1;
+    memset(out, 0, sizeof(*out));
+    out->i_current_poc = current_poc;
+    out->i_current_frame = current_frame;
+    out->slice_type = slice_type;
+    if (slice_type == PHX_SLICE_I) return 0;      /* encoder.c:2297-2298 */
+
+    for (int i = 0; i < dpb->n_pictures; i++) {
+        const phx_dpb_entry_t *e = &dpb->pictures[i];
+        if (!e->b_kept_as_ref) continue;         /* encoder.c:2470 */
+        if (e->i_poc < current_poc) {
+            if (out->i_ref[0] < PHX_DPB_REF_MAX)
+                out->frame_entry[0][out->i_ref[0]++] = *e;
+        } else if (e->i_poc > current_poc) {
+            if (out->i_ref[1] < PHX_DPB_REF_MAX)
+                out->frame_entry[1][out->i_ref[1]++] = *e;
+        }                                        /* encoder.c:2308-2313 */
+    }
+
+    for (int list = 0; list < 2; list++) {
+        phx_dpb_sort_list(out, list, current_frame);
+        phx_dpb_set_nearest(out, list);
+    }
+    phx_dpb_check_reorder(out);                  /* encoder.c:2360 */
+
+    if (cfg) {
+        if (cfg->max_ref1 > 0 && out->i_ref[1] > cfg->max_ref1)
+            out->i_ref[1] = cfg->max_ref1;       /* encoder.c:2365 */
+        if (cfg->max_ref0 > 0 && out->i_ref[0] > cfg->max_ref0)
+            out->i_ref[0] = cfg->max_ref0;
+        if (cfg->frame_reference > 0 &&
+            out->i_ref[0] > cfg->frame_reference) /* encoder.c:2366 */
+            out->i_ref[0] = cfg->frame_reference;
+    }
+
+    for (int list = 0; list < 2; list++)
+        for (int i = 0; i < out->i_ref[list]; i++) {
+            const phx_dpb_entry_t *e = &out->frame_entry[list][i];
+            out->ref_frame_num[list][i] = e->i_frame_num;
+            out->ref_poc[list][i] = e->i_poc;
+            out->ref_frame[list][i] = e->i_frame;
+            out->ref_type[list][i] = e->i_type;
+            out->frame[list][i] = e->frame;
+        }
+    for (int list = 0; list < 2; list++)
+        out->fref_nearest[list] = out->i_ref[list] > 0
+            ? &out->frame_entry[list][out->nearest_index[list]] : NULL;
+    return 0;
+}
+
+const phx_frame_t *phx_dpb_ref_frame(const phx_dpb_ref_lists_t *lists,
+                                     int list, int ref_idx)
+{
+    if (!lists || list < 0 || list > 1 || ref_idx < 0 ||
+        ref_idx >= lists->i_ref[list]) return NULL;
+    return lists->frame[list][ref_idx];
+}
+
+int phx_dpb_ref_frame_num(const phx_dpb_ref_lists_t *lists, int list, int ref_idx)
+{
+    if (!lists || list < 0 || list > 1 || ref_idx < 0 ||
+        ref_idx >= lists->i_ref[list]) return -1;
+    return lists->ref_frame_num[list][ref_idx];
+}
+
+int phx_dpb_ref_poc(const phx_dpb_ref_lists_t *lists, int list, int ref_idx)
+{
+    if (!lists || list < 0 || list > 1 || ref_idx < 0 ||
+        ref_idx >= lists->i_ref[list]) return -1;
+    return lists->ref_poc[list][ref_idx];
+}
+
+const phx_frame_t *phx_dpb_get_ref_l0_at(const phx_dpb_t *dpb, int current_poc,
+                                         int current_frame, int ref_idx)
+{
+    phx_dpb_ref_lists_t lists;
+    if (phx_dpb_init_ref_lists(dpb, &lists, current_poc, current_frame,
+                               PHX_SLICE_B, NULL) < 0) return NULL;
+    return phx_dpb_ref_frame(&lists, 0, ref_idx);
+}
+
+const phx_frame_t *phx_dpb_get_ref_l1_at(const phx_dpb_t *dpb, int current_poc,
+                                         int current_frame, int ref_idx)
+{
+    phx_dpb_ref_lists_t lists;
+    if (phx_dpb_init_ref_lists(dpb, &lists, current_poc, current_frame,
+                               PHX_SLICE_B, NULL) < 0) return NULL;
+    return phx_dpb_ref_frame(&lists, 1, ref_idx);
+}
