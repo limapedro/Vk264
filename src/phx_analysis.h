@@ -5,19 +5,39 @@
  *
  * Source followed:
  *   reference/x264/encoder/analyse.c:294   mb_analyse_init()
+ *   reference/x264/encoder/analyse.c:303   b_early_terminate (subme < 11)
+ *   reference/x264/encoder/analyse.c:569-584 mb_init_fenc_cache()
  *   reference/x264/encoder/analyse.c:668   mb_analyse_intra()
+ *   reference/x264/encoder/analyse.c:673-683 intra_analysis_shortcut[][][][]
+ *   reference/x264/encoder/analyse.c:688-979 I16/I8/I4 searches (x3 :700/:771/
+ *                           :784/:903, shortcut :800/:916, bonus :817/:935,
+ *                           early-out :740/:825/:860/:868/:951)
+ *   reference/x264/encoder/analyse.c:982-1014 intra_rd() [TODO: needs
+ *                           macroblock_size_cabac from the RDO stage]
+ *   reference/x264/encoder/analyse.c:1016-1135 intra_rd_refine() (I4 :1086-1135)
  *   reference/x264/encoder/analyse.c:586   mb_analyse_intra_chroma()
  *   reference/x264/encoder/analyse.c:3734  analyse_update_cache()
+ *   reference/x264/encoder/encoder.c:1409-1422 mbcmp_init() (SAD subme<2,
+ *                           SATD otherwise)
+ *   reference/x264/encoder/rdo.c:71-73/:162-197/:315-347 COPY_CABAC,
+ *                           rd_cost_mb, rd_cost_i4x4
+ *   reference/x264/common/pixel.c:55-73/:242-288/:311-332 SAD / SATD kernels
  *   reference/x264/encoder/analyse.c:2918  x264_macroblock_analyse()
  *   reference/x264/encoder/analyse.c:1255-1332 mb_analyse_inter_p16x16()
+ *   reference/x264/encoder/analyse.c:2953-3024 P_SKIP fast-skip / b_try_skip
+ *   reference/x264/encoder/macroblock.c:988-1139 probe_skip (4:2:0)
+ *   reference/x264/encoder/macroblock.c:953-964 P_L0 -> P_SKIP promotion
  *   reference/x264/common/mvpred.c:129-163  x264_mb_predict_mv_16x16()
  *   reference/x264/encoder/me.c:276-419      full-pel x264_me_search_ref()
  *   reference/x264/encoder/macroblock.h:132/168 i4x4/i8x8 encode
  *   reference/x264/encoder/macroblock.c:126  mb_encode_i16x16()
  *   reference/x264/common/pixel.c:55-73/265/290/334 SAD / SATD / SA8D
  *
- * TODO (see phx_analysis.c): sub-pel ME, chroma ME, RD refinement and
- * trellis QNS are not representable with the inputs exposed by phx_frame_t.
+ * TODO (see phx_analysis.c): sub-pel ME, chroma ME, whole-MB intra_rd()
+ * (needs the size-only macroblock_size_cabac writer of the RDO stage) and
+ * the I16/chroma/I8 branches of intra_rd_refine() are not representable with
+ * the interfaces exposed by phx_frame_t / phx_rdo.h.  The rd_cost_i4x4()
+ * path and the I4 branch of intra_rd_refine() are ported and golden-tested.
  *
  * SHADER: B — per-MB workgroup stage; reads neighbour caches, writes one
  *              phx_mb_decision_t, no hidden state beyond the caller's cache.
@@ -71,6 +91,18 @@ extern "C" {
 int phx_macroblock_analyse(const phx_param_t *p, const phx_frame_t *f,
                            phx_mb_cache_t *cache, int mb_x, int mb_y,
                            int qp, phx_mb_decision_t *d);
+
+/* x264 encoder/macroblock.h:38-39 + encoder/macroblock.c:988-1139 —
+ * x264_macroblock_probe_pskip().  Returns 1 when the MB can be coded as
+ * P_SKIP (zero residual after MC with the cached pskip MV), 0 otherwise.
+ * `fref` is list-0 reference 0; `cache` supplies pskip_mv and the neighbour
+ * motion/ref state; qp/chroma_qp are the MB's luma/chroma QPs (analyse.c:993/
+ * :1035).  No live CABAC or entropy state is touched.
+ * SHADER: B — explicit fenc/fref/neighbour inputs, deterministic output. */
+int phx_analysis_probe_pskip(const phx_param_t *p, const phx_frame_t *fenc,
+                             const phx_frame_t *fref,
+                             const phx_mb_cache_t *cache,
+                             int mb_x, int mb_y, int qp, int chroma_qp);
 
 /* Slice-aware driver used by phx_encode().  `slice_type` is the decoded
  * PHX_SLICE_* value (encoder.c:3522/3530/3539); `fref` is list-0 reference 0
