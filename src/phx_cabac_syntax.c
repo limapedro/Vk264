@@ -163,11 +163,16 @@ void phx_cabac_mb_init(phx_cabac_mb_t *mb, phx_mb_cache_t *cache)
     mb->coeff_last[PHX_DCT_CHROMA_DC] = phx_coeff_last4;
     mb->coeff_last[PHX_DCT_CHROMA_AC] = phx_coeff_last15;
     mb->coeff_last[PHX_DCT_LUMA_8x8] = phx_coeff_last64;
-    mb->coeff_last[PHX_DCT_CHROMAU_DC] = phx_coeff_last4;
+    /* quant.c:878-879 aliases DCT_LUMA_DC / DCT_CHROMAU_DC / DCT_CHROMAV_DC
+     * to coeff_last16 (via DCT_LUMA_4x4).  Only DCT_CHROMA_DC is overridden
+     * to coeff_last4, and only for 4:2:0 (encoder.c:1438-1447).  Using
+     * coeff_last4 for the U/V DC categories truncated a 4:4:4 block whose
+     * last nonzero sat at index 15.  SHADER: C — table selection only. */
+    mb->coeff_last[PHX_DCT_CHROMAU_DC] = phx_coeff_last16;
     mb->coeff_last[PHX_DCT_CHROMAU_AC] = phx_coeff_last15;
     mb->coeff_last[PHX_DCT_CHROMAU_4x4] = phx_coeff_last16;
     mb->coeff_last[PHX_DCT_CHROMAU_8x8] = phx_coeff_last64;
-    mb->coeff_last[PHX_DCT_CHROMAV_DC] = phx_coeff_last4;
+    mb->coeff_last[PHX_DCT_CHROMAV_DC] = phx_coeff_last16;
     mb->coeff_last[PHX_DCT_CHROMAV_AC] = phx_coeff_last15;
     mb->coeff_last[PHX_DCT_CHROMAV_4x4] = phx_coeff_last16;
     mb->coeff_last[PHX_DCT_CHROMAV_8x8] = phx_coeff_last64;
