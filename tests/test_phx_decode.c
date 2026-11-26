@@ -44,6 +44,28 @@ static uint8_t *read_stream(const char *path, int *len)
     return buf;
 }
 
+/* Locate the saved x264 reference stream.  ctest runs this binary from
+ * build/tests, while a standalone run normally starts at the repo root, so
+ * try both spellings (plus an explicit argv[1]).  SHADER: C — path probe. */
+static const char *find_ref(const char *arg)
+{
+    static const char *candidates[] = {
+        "build/parity/synth-ultrafast-cavlc.ref.h264",
+        "../../build/parity/synth-ultrafast-cavlc.ref.h264",
+        "../build/parity/synth-ultrafast-cavlc.ref.h264",
+    };
+    if (arg && *arg) {
+        FILE *f = fopen(arg, "rb");
+        if (f) { fclose(f); return arg; }
+        printf("note: explicit ref '%s' not found; trying defaults\n", arg);
+    }
+    for (size_t i = 0; i < sizeof(candidates)/sizeof(candidates[0]); i++) {
+        FILE *f = fopen(candidates[i], "rb");
+        if (f) { fclose(f); return candidates[i]; }
+    }
+    return NULL;
+}
+
 static uint32_t hash_bytes(const uint8_t *p, int n)
 {
     uint32_t h = 2166136261u;
@@ -221,8 +243,13 @@ static void check_single_mb_reconstruction(void)
 
 int main(int argc, char **argv)
 {
-    check_reference(argc > 1 ? argv[1]
-                             : "build/parity/synth-ultrafast-cavlc.ref.h264");
+    const char *ref = find_ref(argc > 1 ? argv[1] : NULL);
+    if (ref) check_reference(ref);
+    else {
+        printf("FAIL cannot find build/parity/synth-ultrafast-cavlc.ref.h264 "
+               "(from repo root or build/tests)\n");
+        ++fails;
+    }
     check_single_mb_reconstruction();
     printf("decoder: known limitations — CABAC MB syntax, B-direct/weighted "
            "prediction, MBAFF, ref-list modification and the reference "
