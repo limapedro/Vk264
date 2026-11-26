@@ -1843,8 +1843,12 @@ static int phx_b_ssd_pred(const phx_analysis_ctx_t *c,
 {
     static const uint8_t zero[16] = { 0 };
     int ssd = 0;
+    /* rdo.c:127-133 — p_fenc[0] has FENC_STRIDE=16 in x264; Phoenix's fenc
+     * pointer lives in the full picture and must be indexed with fenc_stride.
+     * Treating it as a contiguous 16x16 block mixed rows of the source frame. */
     for (int i = 0; i < 256; i++) {                       /* PIXEL_16x16 SSD */
-        int d = (int)c->fenc[i] - (int)pred[i];
+        int d = (int)c->fenc[(size_t)(i >> 4)*c->fenc_stride + (i & 15)]
+              - (int)pred[i];
         ssd += d * d;
     }
     int psy_rd = c->p->b_psy && c->p->i_subpel_refine >= 6 ? 256 : 0;
