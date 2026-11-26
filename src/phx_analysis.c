@@ -1505,9 +1505,11 @@ static int phx_me_mv_bits(const phx_cost_tables_t *costs, int qp,
  * ref iteration (:1268) has one element; LOAD_FENC/LOAD_HPELS (:1265/:1274)
  * are the caller's fenc/fref planes; x264_mb_predict_mv_16x16 (:1277) is
  * phx_predict_mv16(); x264_me_search_ref (:1287) is phx_me16()
- * (encoder/me.c:276-419).  QPEL refinement (:3125) and the multi-ref
- * P_SKIP probe (:1279-1301) are TODO; the skip test below is the strict
- * integer-MV subset of :1296-1301 (zero residual + exact pskip MV).
+ * (encoder/me.c:276-419) followed by M4's byte-exact phx_me_refine_subpel_mv():
+ * b_refine_qpel == 1 for analyse.c:3119-3126 (mbrd == 0 && subme > 0),
+ * otherwise 0 for the in-search refine at encoder/me.c:792-797.  The refined
+ * MV is what analyse.c:1299-1301 compares against pskip_mv: a non-zero
+ * refined MV keeps P_L0 instead of promoting to P_SKIP.
  * SHADER: B — one ME workgroup invocation, explicit inputs/outputs. */
 static int phx_analysis_inter_p16x16(phx_analysis_ctx_t *c,
                                      phx_inter_result_t *out)
@@ -1529,6 +1531,23 @@ static int phx_analysis_inter_p16x16(phx_analysis_ctx_t *c,
                         mvp, mv);
     if (cost < 0 || cost >= PHX_COST_MAX) return -1;
 
+    /* M4's byte-exact refine: analyse.c:3119-3126 uses x264_me_refine_qpel()
+     * (b_refine_qpel == 1) only when mbrd == 0 && subme > 0; the in-search
+     * call of me.c:792-797 (b_refine_qpel == 0) is what mbrd > 0 presets use.
+     * phx_me16() supplies the fullpel MV/cost; subme comes from the preset. */
+    int subme = c->p->i_subpel_refine;
+    int b_refine_qpel = (c->mbrd == 0 && subme > 0) ? 1 : 0;
+    int16_t refined_mv[2] = { (int16_t)mv[0], (int16_t)mv[1] };
+    int refined_cost = cost, refined_cost_mv = 0;
+    if (phx_me_refine_subpel_mv(c->f, c->fref, c->mb_x, c->mb_y, c->costs,
+                                c->a.i_lambda, mv_range, subme,
+                                b_refine_qpel, mvp, refined_mv,
+                                &refined_cost, &refined_cost_mv, NULL) == 0) {
+        mv[0] = refined_mv[0];
+        mv[1] = refined_mv[1];
+        cost = refined_cost;                              /* me.h:54 m->cost */
+    }
+
     int sad = phx_inter_sad(c, mv);                       /* :1298 residual */
     out->found = 1;
     out->cost = cost;                                     /* :1312 comparison */
@@ -1542,8 +1561,11 @@ static int phx_analysis_inter_p16x16(phx_analysis_ctx_t *c,
     if (c->b_try_skip) {
         int16_t pskip[2];
         phx_predict_mv_pskip(c->cache, pskip);            /* mvpred.c:166-181 */
+        /* me.h:53 / me.c:991 — m->cost_mv after the refine; the table-based
+         * helper is only a fallback if M4's refine rejected the inputs. */
         int q = c->qp < PHX_QP_MAX_SPEC ? c->qp : PHX_QP_MAX_SPEC;
-        int mv_bits = phx_me_mv_bits(c->costs, q, mv, mvp); /* :1298 m.cost_mv */
+        int mv_bits = refined_cost_mv ? refined_cost_mv
+                    : phx_me_mv_bits(c->costs, q, mv, mvp);
         if (cost - mv_bits < 300*c->a.i_lambda &&         /* :1298 */
             abs(mv[0] - pskip[0]) + abs(mv[1] - pskip[1]) <= 1 && /* :1299-1300 */
             phx_analysis_probe_pskip(c->p, c->f, c->fref, c->cache,
