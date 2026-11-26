@@ -660,12 +660,12 @@ static const uint8_t z1_pskip_golden[16] = {
 /* Analyse one complete static P frame through the real per-MB driver,
  * publishing MB types into the neighbour state exactly as the encoder does.
  * SHADER: B — per-MB decision boundary golden (skip flag + MB type). */
-static int check_pskip_decision_golden(void)
+static int check_pskip_decision_golden(const char *preset)
 {
     phx_param_t p;
     phx_param_default(&p);
     p.i_width = 64; p.i_height = 64;
-    if (phx_param_apply_preset(&p, "ultrafast")) {
+    if (phx_param_apply_preset(&p, preset)) {
         printf("FAIL pskip-golden: bad preset\n");
         return 1;
     }
@@ -848,7 +848,14 @@ int main(void)
     fails += check_mb1_medium_golden();
 
     /* Row 17 — P_SKIP decision golden vs x264's own probe/fast-skip path. */
-    fails += check_pskip_decision_golden();
+    /* Row 17 gates at subme 0..7: instrumented x264 skip flags are 1 for all
+     * 16 MBs of the first static P frame (verified at superfast, veryfast,
+     * medium and ultrafast).  Placebo's mbrd>=2 rd_cost_mb promotion is a
+     * separate, still-missing gate (phx_rdo owner). */
+    fails += check_pskip_decision_golden("ultrafast");
+    fails += check_pskip_decision_golden("superfast");
+    fails += check_pskip_decision_golden("veryfast");
+    fails += check_pskip_decision_golden("medium");
 
     /* Bad arguments must fail cleanly without touching the decision. */
     CHECK(phx_macroblock_analyse(NULL, f, &cache, 0, 0, 26, &d2) == -1,
