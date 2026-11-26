@@ -421,4 +421,15 @@ slice payload diverges at byte 4 — the first MB's mb_type (x264 0xFF vs Phoeni
 and is delegated with a bit-level golden requirement. The CABAC path's first
 divergent bin remains 395 (chroma AC coefficient handoff).
 
+## F39 — inter RD remains input-gated; L1 ME candidates next
+
+Published per-list L0/L1 ME MV/ref, exact psy-RD scale, four ssd_mb terms and
+I8 cache slots (rectangle.h:157-159). Candidate chroma assertions now pass.
+Costs still diverge (x264 MB0 bskip 13115/direct 6157/L0 2365 vs Phoenix
+14541/14587/2514; MB1 bskip 10721 vs 11172), so the decision gate stays OFF.
+Root cause of the L1 gate failure: x264 uses an mvc[] candidate list built from
+mb.mvr + lowres MVs (analyse.c:1937, mvpred.c:519-560), while phx_me16 receives
+one MVP; x264 L1 MVs (-1,24)/(-8,39) vs Phoenix (0,10)/(-1,37). phx_me extension
+delegated. CAVLC first diff moved byte 4 -> 5 (I8 predictor); ctest 30/30.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
