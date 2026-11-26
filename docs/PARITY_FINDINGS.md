@@ -387,4 +387,16 @@ byte-identical to instrumented x264 MB0. Real-clip first divergent bin moved
 Phoenix's 4x4 context 96 — phx_encoder writes I8 luma residual as 16 4x4 blocks
 instead of x264's four 8x8 blocks (cabac.c:1046-1057). Delegated; ctest 30/30.
 
+## F36 — I8 residual writers exact in both entropies
+
+CABAC I8 luma residual now uses four 8x8 residuals (cabac.c:1046-1049) with
+byte-exact phx_cabac_block_residual_8x8 (197/197 bins and bytes). CAVLC I8 now
+uses x264's zigzag_interleave_8x8_cavlc() (common/dct.c:936-948, call site
+cavlc.c:276-284) with byte-exact 4x16 output and nnz goldens (474 checks).
+
+Canonical medium/CABAC bin diff moved 17 -> 395 (bins 17-394 match). On the
+real CAVLC I8 stream the first changed residual byte is 707, but the overall
+first byte diff remains 672 — an earlier MB-header gap, not residual. The
+mbrd inter-RD work for high presets is still in flight.
+
 Rule: only a byte-exact stream counts. A moving first-diff is progress, not parity.
