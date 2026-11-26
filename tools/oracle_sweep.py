@@ -40,6 +40,20 @@ def run(args: list[str]) -> tuple[int, str]:
     return p.returncode, (p.stdout + p.stderr).strip()
 
 
+def decode_errors(path: pathlib.Path) -> tuple[int, list[str]]:
+    """Count real ffmpeg decode errors; exit status alone is not sufficient.
+
+    ffmpeg returns 0 even when the H.264 decoder logs errors and conceals them.
+    oracle_video.py's 'verify: OK' only checks the status, so it can pass a
+    stream that is not actually decodable without error.  SHADER: C.
+    """
+    ff = pathlib.Path(r'C:/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffmpeg.EXE')
+    p = subprocess.run([str(ff), '-v', 'error', '-i', str(path), '-f', 'null', '-'],
+                       capture_output=True, text=True, timeout=1800)
+    errs = [line.strip() for line in p.stderr.splitlines() if line.strip()]
+    return len(errs), errs[:3]
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--video', default='D:/Videos/ssstwitter.com_1748999992229.mp4')
@@ -73,15 +87,20 @@ def main(argv: list[str] | None = None) -> int:
             fd = None
             if phx.exists() and ref.exists():
                 fd = first_diff(phx.read_bytes(), ref.read_bytes())
+            pe, pex = decode_errors(phx) if phx.exists() else (-1, [])
+            re_, rex = decode_errors(ref) if ref.exists() else (-1, [])
             rec = dict(preset=preset, entropy=entropy, phx_decode_ok=ok_phx,
                        x264_decode_ok=ok_ref,
+                       phx_decode_errors=pe, x264_decode_errors=re_,
+                       phx_first_decode_error=pex[0] if pex else None,
+                       x264_first_decode_error=rex[0] if rex else None,
                        phx_bytes=phx.stat().st_size if phx.exists() else None,
                        x264_bytes=ref.stat().st_size if ref.exists() else None,
                        phx_nals=nal_count(phx) if phx.exists() else None,
                        x264_nals=nal_count(ref) if ref.exists() else None,
                        first_diff=fd)
             results.append(rec)
-            print(f'{tag:<22} decode {str(ok_phx):>5}/{str(ok_ref):<5} '
+            print(f'{tag:<22} ffmpeg-errors {pe:>3}/{re_:<3} '
                   f'bytes {rec["phx_bytes"]!s:>6}/{rec["x264_bytes"]!s:<6} '
                   f'first_diff={fd}')
 
