@@ -396,7 +396,7 @@ static void phx_hex2_search(phx_me_ctx_t *c, int mv_range,
 static int phx_me16_core(int x, int y, const phx_frame_t *fenc,
                          const phx_frame_t *fref,
                          const phx_cost_tables_t *cost, int mv_range,
-                         int lambda, int method, int subme,
+                         int i_mv_range, int lambda, int method, int subme,
                          const int16_t pred[2],
                          const int16_t (*mvc)[2], int i_mvc,
                          const phx_me_refplanes_t *refplanes,
@@ -416,7 +416,7 @@ static int phx_me16_core(int x, int y, const phx_frame_t *fenc,
      * Progressive, single-thread build: thread_mvy_range = i_fmv_range (:353). */
     int mb_x = x / 16, mb_y = y / 16;
     int mb_w = fref->i_width / 16, mb_h = fref->i_height / 16;
-    int i_fmv_range = 4 * mv_range;                   /* analyse.c:330 */
+    int i_fmv_range = 4 * i_mv_range;                 /* analyse.c:330 */
     int min_x_s = PHX_MAX(4*(-16*mb_x - 24), -i_fmv_range); /* :336/:338 */
     int max_x_s = PHX_MIN(4*(16*(mb_w - mb_x - 1) + 24), i_fmv_range-1); /* :337/:339 */
     int min_y_s = PHX_MAX(4*(-16*mb_y - 24), -i_fmv_range); /* :391/:393 */
@@ -448,7 +448,7 @@ static int phx_me16_core(int x, int y, const phx_frame_t *fenc,
     c.stride = fref->i_stride;                       /* me.c:187 */
     c.p_cost_mv = phx_resolve_cost_mv(cost, lambda); /* me.c:211 */
     c.lambda = lambda;                               /* analyse.c:149 */
-    c.mv_range = mv_range;
+    c.mv_range = i_mv_range;                         /* table half-width :151 */
     c.mvp_x = pred ? pred[0] : 0;                    /* me.h:50, me.c:211 */
     c.mvp_y = pred ? pred[1] : 0;
     c.ox = x * 4; c.oy = y * 4;                       /* plane origin in qpel */
@@ -802,7 +802,7 @@ static int phx_me16_core(int x, int y, const phx_frame_t *fenc,
     if (subme >= 2 && rp) {
         int imv[2] = { out_mv[0], out_mv[1] };
         if (phx_me_refine_subpel(mb_x, mb_y, mb_w, mb_h, fenc, rp, cost,
-                                 mv_range, lambda, subme, 0, pred,
+                                 i_mv_range, lambda, subme, 0, pred,
                                  imv, &final_cost, &cost_mv)) return -1;
         out_mv[0] = (int16_t)imv[0];
         out_mv[1] = (int16_t)imv[1];
@@ -821,8 +821,8 @@ int phx_me16(int x, int y, const phx_frame_t *fenc, const phx_frame_t *fref,
              const phx_cost_tables_t *cost, int mv_range, int lambda,
              int method, const int16_t pred[2], int *out_mv)
 {
-    return phx_me16_core(x, y, fenc, fref, cost, mv_range, lambda, method,
-                         0, pred, NULL, 0, NULL, out_mv, NULL, NULL);
+    return phx_me16_core(x, y, fenc, fref, cost, mv_range, mv_range, lambda,
+                         method, 0, pred, NULL, 0, NULL, out_mv, NULL, NULL);
 }
 
 /* Additive ABI: x264's mvc[] candidate list (mvpred.c:519-560) with the
@@ -830,14 +830,15 @@ int phx_me16(int x, int y, const phx_frame_t *fenc, const phx_frame_t *fref,
  * UMH adaptive range (me.c:468-519) and in-search refine (me.c:791-797). */
 int phx_me16_mvc(int x, int y, const phx_frame_t *fenc,
                  const phx_frame_t *fref, const phx_cost_tables_t *cost,
-                 int mv_range, int lambda, int method, int subme,
-                 const int16_t pred[2], const int16_t (*mvc)[2], int i_mvc,
+                 int mv_range, int i_mv_range, int lambda, int method,
+                 int subme, const int16_t pred[2],
+                 const int16_t (*mvc)[2], int i_mvc,
                  const phx_me_refplanes_t *refplanes,
                  int *out_mv, int *out_cost, int *out_cost_mv)
 {
     if (i_mvc < 0 || i_mvc > 16 || (i_mvc > 0 && !mvc)) return -1;
-    return phx_me16_core(x, y, fenc, fref, cost, mv_range, lambda, method,
-                         subme, pred, mvc, i_mvc, refplanes,
+    return phx_me16_core(x, y, fenc, fref, cost, mv_range, i_mv_range, lambda,
+                         method, subme, pred, mvc, i_mvc, refplanes,
                          out_mv, out_cost, out_cost_mv);
 }
 

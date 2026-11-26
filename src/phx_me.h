@@ -126,6 +126,11 @@ typedef struct {
  * `i_mvc` is their count (x264 allows up to 16).  Passing mvc == NULL or
  * i_mvc == 0 reproduces phx_me16() exactly.
  *
+ * `mv_range` is h->param.analyse.i_me_range (search radius); `i_mv_range` is
+ * h->param.analyse.i_mv_range (MV limits, analyse.c:330-396, and table width).
+ * x264 uses different values (e.g. 16 and 64 on diag.yuv) — passing one value
+ * for both restricts the HEX walk incorrectly.
+ *
  * `subme` is h->mb.i_subpel_refine.  For subme >= 3 this API also implements
  * the qpel-predictor branch (me.c:214-275: COST_MV_HPEL at :72-79,
  * x264_predictor_clip at common/common.h:790-805) and the final choice at
@@ -143,7 +148,7 @@ typedef struct {
  * SHADER: A — pure, state-free given its explicit candidate list. */
 int phx_me16_mvc(int x, int y, const phx_frame_t *fenc,
                  const phx_frame_t *fref, const phx_cost_tables_t *cost,
-                 int mv_range, int lambda, int method, int subme,
+                 int mv_range, int i_mv_range, int lambda, int method, int subme,
                  const int16_t pred[2], const int16_t (*mvc)[2], int i_mvc,
                  const phx_me_refplanes_t *refplanes,
                  int *out_mv, int *out_cost, int *out_cost_mv);
