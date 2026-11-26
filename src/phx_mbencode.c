@@ -1144,6 +1144,119 @@ int phx_macroblock_encode_b(const phx_param_t *p, phx_frame_t *f,
     return 0;
 }
 
+/* x264_macroblock_encode_internal's B-inter branch
+ * (encoder/macroblock.c:697-703 + :801-914/:259-498): bidirectional MC followed
+ * by the same row-18 residual path used by P_L0.  The B_SKIP/DIRECT no-residual
+ * entry point above is left byte-identical; this function is additive and only
+ * called for a *coded* B 16x16 decision (PHX_B_L0_L0/L1_L1/BI_BI/DIRECT with a
+ * nonzero residual).  All four cost/MC paths come from the explicit decision,
+ * never from an invented motion vector.  SHADER: B — one serial per-MB encode.
+ */
+int phx_macroblock_encode_b_residual(const phx_param_t *p, phx_frame_t *f,
+                                     const phx_frame_t *fref0,
+                                     const phx_frame_t *fref1,
+                                     phx_mb_cache_t *cache, int mb_x, int mb_y,
+                                     phx_mb_decision_t *d, phx_cabac_t *cb,
+                                     int bipred_weight)
+{
+    if (!p || !f || !cache || !d || !f->plane || !f->plane_chroma) return -1;
+    if (!(d->mb_type >= PHX_B_DIRECT && d->mb_type <= PHX_B_BI_BI)) return -1;
+    if (d->i_partition != PHX_D_16x16) return -1;          /* row-18 D_16x16 */
+    if (d->i_qp < 0 || d->i_qp > PHX_QUANT_QP_MAX_SPEC) return -1;
+    if (bipred_weight < 1 || bipred_weight > 63) return -1;
+    if (!fref0 || !fref1 || !fref0->plane || !fref1->plane ||
+        !fref0->plane_chroma || !fref1->plane_chroma ||
+        fref0->i_width != f->i_width || fref0->i_height != f->i_height ||
+        fref1->i_width != f->i_width || fref1->i_height != f->i_height)
+        return -1;
+
+    phx_quant_tables_t qt;
+    phx_quant_tables_init(&qt);                              /* set.c:73-205 */
+    phx_mb_active_cabac = cb;             /* chroma-DC trellis handoff, SHADER C */
+
+    const int x0 = mb_x * 16, y0 = mb_y * 16;
+    uint8_t fenc[16 * PHX_FENC_STRIDE];
+    uint8_t *plane_mb = f->plane + (size_t)y0 * f->i_stride + x0;
+    for (int y = 0; y < 16; y++)
+        memcpy(fenc + y * PHX_FENC_STRIDE, plane_mb + y * f->i_stride, 16);
+
+    uint8_t fdec[PHX_FDEC_STRIDE * PHX_FDEC_WINDOW_ROWS + PHX_FDEC_STRIDE];
+    uint8_t *p_dst = fdec + PHX_FDEC_STRIDE + 1;             /* common.h:571 */
+    memset(fdec, 0, sizeof(fdec));
+    phx_mb_load_fdec_neighbours(f, mb_x, mb_y, p_dst, PHX_FDEC_STRIDE, cache);
+
+    uint8_t chroma_fenc[2][8*PHX_FENC_STRIDE];
+    uint8_t *chroma_src[2] = { chroma_fenc[0], chroma_fenc[1] };
+    uint8_t chroma_fdec_buf[2][PHX_FDEC_STRIDE*10 + PHX_FDEC_STRIDE];
+    uint8_t *chroma_dst[2] = { chroma_fdec_buf[0] + PHX_FDEC_STRIDE + 1,
+                               chroma_fdec_buf[1] + PHX_FDEC_STRIDE + 1 };
+    memset(chroma_fdec_buf, 0, sizeof(chroma_fdec_buf));
+    phx_mb_chroma_window(f, mb_x, mb_y, chroma_src, PHX_FENC_STRIDE, 0);
+
+    /* macroblock.c:620/624/265 + :946-951 — fresh cbp/nnz before the residual
+     * encoder recomputes them from the quantized coefficients. */
+    uint8_t *fdec_target = cache->p_fdec ? cache->p_fdec : plane_mb;
+    int fdec_stride = cache->fdec_stride > 0 ? cache->fdec_stride : f->i_stride;
+    cache->i_qp = d->i_qp;
+    cache->b_transform_8x8 = 0;                              /* D_16x16, no 8x8 */
+    cache->i_cbp_luma = cache->i_cbp_chroma = 0;
+    const int dec_cbp_luma = d->cbp_luma, dec_cbp_chroma = d->cbp_chroma;
+    d->cbp_luma = d->cbp_chroma = 0;
+    d->skip = 0;
+
+    /* macroblock.c:697-703 + common/macroblock.c:37-153 — the D_16x16 B MC.
+     * The decision carries one MV/ref pair per list on all 16 4x4 blocks. */
+    int blk = 0;
+    int r0 = d->ref[0][blk], r1 = d->ref[1][blk];
+    int mvx0 = 0, mvy0 = 0, mvx1 = 0, mvy1 = 0;
+    if (r0 >= 0) phx_mb_b_mv(d, 0, blk, 0, 0, mb_x, mb_y, f, &mvx0, &mvy0);
+    if (r1 >= 0) phx_mb_b_mv(d, 1, blk, 0, 0, mb_x, mb_y, f, &mvx1, &mvy1);
+    if (r0 >= 0 && r1 >= 0) {
+        uint8_t t0[16*16], t1[16*16], c0[16*16], c1[16*16], d0[16*16], d1[16*16];
+        phx_mc_luma_mb(fref0, t0, 16, mb_x, mb_y, mvx0, mvy0, 16, 16);
+        phx_mc_luma_mb(fref1, t1, 16, mb_x, mb_y, mvx1, mvy1, 16, 16);
+        phx_mb_avg(p_dst, PHX_FDEC_STRIDE, t0, 16, t1, 16, 16, 16,
+                   bipred_weight);                          /* mc.c:49-75 */
+        phx_mb_b_chroma_mc(fref0, mb_x, mb_y, 0, 0, 4, 4, mvx0, mvy0, c0, d0);
+        phx_mb_b_chroma_mc(fref1, mb_x, mb_y, 0, 0, 4, 4, mvx1, mvy1, c1, d1);
+        phx_mb_avg(chroma_dst[0], PHX_FDEC_STRIDE, c0, 16, c1, 16, 8, 8,
+                   bipred_weight);
+        phx_mb_avg(chroma_dst[1], PHX_FDEC_STRIDE, d0, 16, d1, 16, 8, 8,
+                   bipred_weight);
+    } else {
+        const phx_frame_t *rf = r0 >= 0 ? fref0 : fref1;
+        int mvx = r0 >= 0 ? mvx0 : mvx1, mvy = r0 >= 0 ? mvy0 : mvy1;
+        if (mvx | mvy)
+            phx_mc_luma_mb(rf, p_dst, PHX_FDEC_STRIDE, mb_x, mb_y,
+                           mvx, mvy, 16, 16);
+        else
+            for (int y = 0; y < 16; y++)
+                memcpy(p_dst + y*PHX_FDEC_STRIDE,
+                       rf->plane + (size_t)(mb_y*16+y)*rf->i_stride + mb_x*16, 16);
+        phx_mb_b_chroma_mc(rf, mb_x, mb_y, 0, 0, 4, 4, mvx, mvy,
+                           chroma_dst[0], chroma_dst[1]);
+    }
+
+    if (dec_cbp_luma || dec_cbp_chroma) {
+        /* macroblock.c:801-914/:259-498 — the row-18 residual path, now on
+         * top of the bidirectional prediction instead of the P_L0 one. */
+        phx_mb_encode_inter_luma(p, &qt, fenc, p_dst, d->i_qp, 0,
+                                 d, cache, cb, NULL);
+        phx_mb_encode_inter_chroma(p, &qt, f, mb_x, mb_y,
+                                   chroma_src, chroma_dst, d->i_qp, d, cache, cb);
+    } else {
+        phx_mb_clear_inter_residual(d, cache);              /* macroblock.c:624-626 */
+    }
+
+    d->i_cbp = (d->cbp_chroma << 4) | d->cbp_luma;           /* macroblock.c:946 */
+    cache->i_cbp_luma = d->cbp_luma;
+    cache->i_cbp_chroma = d->cbp_chroma;
+    for (int y = 0; y < 16; y++)                             /* macroblock.c:632 */
+        memcpy(fdec_target + y*fdec_stride, p_dst + y*PHX_FDEC_STRIDE, 16);
+    phx_mb_chroma_window(f, mb_x, mb_y, chroma_dst, PHX_FDEC_STRIDE, 1);
+    return 0;
+}
+
 /* x264_macroblock_encode — reference/x264/encoder/macroblock.c:974-982,
  * dispatching macroblock_encode_internal (:618-972).  Cache-nnz and cbp
  * stores mirror common/macroblock.c:1680/1761-1779; reconstructed pixels are

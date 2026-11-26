@@ -144,6 +144,19 @@ typedef struct {
     int bipred_weight;                  /* h->bipred_weight[r0][r1], 32 default */
 } phx_analysis_b_input_t;
 
+/* Per-MB decision capture used by the byte-exact B golden tests (and by the
+ * diagnostic harness).  phx_encode() appends one record per coded MB when
+ * `phx_g_mbdiag_enable` is nonzero; the arrays are caller-readable and hold no
+ * entropy state.  SHADER: B/C — read-only observation of the decision boundary.
+ */
+typedef struct {
+    int frame_index, mb_x, mb_y, mb_type, skip, partition;
+    int8_t  ref[2][16];
+    int16_t mv[2][16][2];
+} phx_mbdiag_rec_t;
+extern phx_mbdiag_rec_t phx_g_mbdiag[4096];
+extern int phx_g_mbdiag_count, phx_g_mbdiag_enable;
+
 /* Additive B-frame entry point: same ABI as phx_macroblock_analyse_slice()
  * plus the list-1/colocated bundle above.  For B slices it calls B1's
  * phx_mvdirect_predict() and the analyse.c:3334-3359 B_SKIP gate/probe, and
