@@ -865,7 +865,9 @@ static const int16_t *phx_encoder_block(const phx_mb_decision_t *d, int kind,
                                         int idx, int *ncoeff)
 {
     switch (kind) {
-    case PHX_BLK_LUMA16_DC: *ncoeff = 4;  return d->dct[0]; /* scan8[48] == 0 */
+    /* I16 luma DC is a 16-coefficient block (x264 tables.c:1792 count_m1=15,
+     * cabac.c:989); the 4-coefficient case is chroma DC only. */
+    case PHX_BLK_LUMA16_DC: *ncoeff = 16; return d->dct[0]; /* scan8[48] == 0 */
     case PHX_BLK_LUMA_AC:   *ncoeff = 15; return d->dct[phx_scan8[idx]] + 1; /* cavlc.c:570 */
     case PHX_BLK_LUMA4:     *ncoeff = 16; return d->dct[phx_scan8[idx]];     /* phx_mbencode.c:73 */
     /* 4:2:0 chroma is carried explicitly in phx_mb_decision_t (K2 handoff):

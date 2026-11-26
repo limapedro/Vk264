@@ -154,7 +154,10 @@ void phx_cabac_mb_init(phx_cabac_mb_t *mb, phx_mb_cache_t *cache)
     mb->chroma = 1;
     /* quant.c:437-441,878-882; encoder.c:1446 (4:2:0 chroma DC = last4). */
     for (int i = 0; i < 14; i++) mb->coeff_last[i] = phx_coeff_last16;
-    mb->coeff_last[PHX_DCT_LUMA_DC] = phx_coeff_last4;
+    /* x264 quant.c:878-879 maps DCT_LUMA_DC to coeff_last16 (16 coefficients),
+     * not coeff_last4. Using last4 emitted last=1 at coefficient 3 and caused
+     * the ultrafast CABAC bin-17 divergence. */
+    mb->coeff_last[PHX_DCT_LUMA_DC] = phx_coeff_last16;
     mb->coeff_last[PHX_DCT_LUMA_AC] = phx_coeff_last15;
     mb->coeff_last[PHX_DCT_LUMA_4x4] = phx_coeff_last16;
     mb->coeff_last[PHX_DCT_CHROMA_DC] = phx_coeff_last4;

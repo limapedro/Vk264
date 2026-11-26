@@ -211,11 +211,19 @@ static void phx_test_case(int mb_type, const char *name)
 /* End-to-end B-stage handoff for the medium/cabac first MB: analyse writes
  * the real chroma_pred_mode, encode writes luma, encode_chroma writes the
  * chroma coefficients/nnz/CBP.  Golden state: mode 6, cbp_chroma 2, DC arrays
- * [15,0,-9,0] for U and V (encoder/macroblock.c:425-426/:457/:477/:487-489).
- * SHADER: B — verifies the explicit analysis -> encode -> chroma handoff. */
+ * U=V={15,-9,0,0} after macroblock.c:35-41's zigzag_scan_2x2_dc() (this
+ * fixture uses identical U/V samples; see the distinct-V golden below).
+ * (encoder/macroblock.c:425-426/:457/:477/:487-489).  SHADER: B — verifies the
+ * explicit analysis -> encode -> chroma handoff. */
 static void phx_test_first_mb_handoff(void)
 {
-    static const int16_t golden_dc[4] = { 15, 0, -9, 0 };
+    /* This fixture fills U and V with the SAME samples
+     * (v = 128 + 5*(x&7) into both interleaved bytes above), so both planes
+     * quantize to the same zigzag DC array {15,-9,0,0}.  The distinct
+     * V={15,0,-9,0} golden belongs to phx_test_first_mb_chroma_trellis(),
+     * whose fixture uses V = 128+5*y. */
+    static const int16_t golden_dc_u[4] = { 15, -9, 0, 0 };
+    static const int16_t golden_dc_v[4] = { 15, -9, 0, 0 };
     phx_mb_decision_t d1, d2;
     phx_mb_cache_t c1, c2;
 
@@ -267,10 +275,10 @@ static void phx_test_first_mb_handoff(void)
 
         CHECK(d->chroma_pred_mode == 6, "handoff retains mode 6");
         CHECK(d->cbp_chroma == 2, "handoff cbp_chroma == 2");
-        for (int ch = 0; ch < 2; ch++)
-            CHECK(memcmp(d->chroma_dct[ch][0], golden_dc,
-                         sizeof(golden_dc)) == 0,
-                  ch ? "handoff V DC golden" : "handoff U DC golden");
+        CHECK(memcmp(d->chroma_dct[0][0], golden_dc_u,
+                     sizeof(golden_dc_u)) == 0, "handoff U DC golden");
+        CHECK(memcmp(d->chroma_dct[1][0], golden_dc_v,
+                     sizeof(golden_dc_v)) == 0, "handoff V DC golden");
         CHECK((d->i_cbp & 0x30) == 0x20, "handoff i_cbp chroma bits");
         CHECK((d->i_cbp & 0x600) == 0x600, "handoff CABAC DC flags");
         phx_mb_state_delete(st);

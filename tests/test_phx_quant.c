@@ -4,6 +4,7 @@
  * chroma DC optimizations against deterministic input vectors.
  */
 #include "phx_quant.h"
+#include "phx_cabac_syntax.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -476,6 +477,80 @@ static void check_u(const char *name, const uint8_t *got, const uint8_t *exp, in
         }
 }
 
+/* ---- I16 luma DC golden (ultrafast MB0, build/parity/fixture.yuv frame 0) ----
+ *
+ * Source-aligned with x264's encoder/macroblock.c:168-172 (DC extraction),
+ * :215 (dct4x4dc, common/dct.c:47-76), :219 (quant_4x4_dc with
+ * quant4_mf>>1 / quant4_bias<<1, common/quant.c:50-57/:88-94), :224
+ * (zigzag_scan_4x4, common/macroblock.h:181-184), and the instrumented
+ * encoder/cabac.c:989 L1BLK dump for this fixture:
+ *   L1BLK 0 48 88: 9 -17 -52 -23 -23 -11 -9 11 23 -14 -23 -11 -11 11 11 -11
+ * Fixture source samples (tools/parity_harness.py:69-71) are
+ * fenc(x,y) = (x*7 + y*13) & 255; x264's analysis picks I_PRED_16x16_DC_128
+ * (mode 6) for MB0, so the prediction plane is the constant 128.
+ * SHADER: A/B — source-formula golden over the owned quant/DCT port.
+ */
+static void phx_test_i16_luma_dc_golden(void)
+{
+    static const int idx_1d[16] = {
+        0,1,4,5,2,3,6,7,8,9,12,13,10,11,14,15
+    }; /* common/macroblock.h:217-220 block_idx_xy_1d */
+    static const int zig4[16] = {
+        0,4,1,2,5,8,12,9,6,3,7,10,13,14,11,15
+    }; /* common/macroblock.h:181-184 x264_zigzag_scan4[0] */
+    static const int16_t golden_hadamard[16] = {
+        768, -4608, -2048, -1280, -1536, -2048, 2048, -2048,
+        -1024, 1024, -1024, 1024, -768, -1024, 1024, -1024
+    };
+    static const int16_t golden_dc[16] = {
+        9, -17, -52, -23, -23, -11, -9, 11, 23, -14, -23, -11, -11, 11, 11, -11
+    };
+    uint8_t fenc[16 * 16], pred[16 * 16];
+    phx_dctcoef dct4x4[16][16], dc[16], scan[16];
+    phx_quant_tables_t t;
+    int x, y;
+
+    phx_quant_tables_init(&t);
+    /* set.c:164-180 at QP 25, flat CQM_4IY = 0. */
+    CHECK(t.quant4_mf[0][25][0] == 1490, "I16 DC q4mf QP25");
+    CHECK(t.quant4_bias[0][25][0] == 14, "I16 DC q4bias QP25");
+
+    for (y = 0; y < 16; y++)
+        for (x = 0; x < 16; x++) {
+            fenc[y * 16 + x] = (uint8_t)((x * 7 + y * 13) & 255);
+            pred[y * 16 + x] = 128;             /* I_PRED_16x16_DC_128 */
+        }
+    phx_sub16x16_dct(dct4x4, fenc, 16, pred, 16);   /* macroblock.c:162 */
+    for (int i = 0; i < 16; i++) {                  /* macroblock.c:168-172 */
+        dc[idx_1d[i]] = dct4x4[i][0];
+    }
+    phx_dct4x4dc(dc);                               /* macroblock.c:215 */
+    check_i("I16 DC Hadamard", dc, golden_hadamard, 16);
+    phx_quant_4x4_dc(dc, t.quant4_mf[0][25][0] >> 1,
+                     t.quant4_bias[0][25][0] << 1); /* macroblock.c:219 */
+    for (int k = 0; k < 16; k++)                    /* macroblock.c:224 */
+        scan[k] = dc[zig4[k]];
+    check_i("I16 luma DC golden (x264 L1BLK 0 48)", scan, golden_dc, 16);
+    printf("I16 luma DC golden: 16/16 coefficients, last index 15\n");
+}
+
+/* x264's quant.c:878-882 assigns coeff_last[DCT_LUMA_DC] = coeff_last16
+ * (the I16 luma DC block carries 16 zigzag coefficients, tables.c:1792).
+ * This golden catches the entropy-side mapping that determines when the
+ * last_significant_coeff_flag bin is emitted (cabac.c:675-717). */
+static void phx_test_i16_luma_dc_coeff_last(void)
+{
+    static const int16_t golden_dc[16] = {
+        9, -17, -52, -23, -23, -11, -9, 11, 23, -14, -23, -11, -11, 11, 11, -11
+    };
+    phx_cabac_mb_t mb;
+    phx_cabac_mb_init(&mb, NULL);
+    CHECK(mb.coeff_last[PHX_DCT_LUMA_DC](golden_dc) == 15,
+          "x264 quant.c:878 coeff_last[DCT_LUMA_DC] == coeff_last16");
+    printf("coeff_last[DCT_LUMA_DC]: %d (x264 golden 15)\n",
+           mb.coeff_last[PHX_DCT_LUMA_DC](golden_dc));
+}
+
 int main(void)
 {
     phx_quant_tables_t t;
@@ -616,6 +691,9 @@ int main(void)
     check_i("optimize_chroma_2x2_dc", c16, exp_optdc2d, 4);
     memcpy(c16, in_dc8, sizeof(c16)); CHECK(phx_optimize_chroma_2x4_dc(c16, exp_dmf[0]) == exp_optdc4[0], "optimize_chroma_2x4_dc nz");
     check_i("optimize_chroma_2x4_dc", c16, exp_optdc4d, 8);
+
+    phx_test_i16_luma_dc_golden();
+    phx_test_i16_luma_dc_coeff_last();
 
     printf("%s: %s and %s, %d failures\n", fails ? "FAILED" : "OK",
            "DCT/Hadamard/IDCT", "quant/dequant", fails);
