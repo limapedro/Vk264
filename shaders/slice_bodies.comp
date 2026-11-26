@@ -1,0 +1,28 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "layout.glsl"
+#include "parallel_entropy.glsl"
+
+layout(local_size_x=64) in;
+
+// One invocation per macroblock.  Emit the optional mb_skip_run and the body
+// produced by mb_entropy into the shared raw RBSP at the precomputed bit
+// offset.  rawEmit uses atomicOr so adjacent macroblocks may share the word
+// at their boundary; the leading and trailing bits occupy disjoint fields.
+void main() {
+    uint mb = gl_GlobalInvocationID.x;
+    if (mb >= pc.mbWidth * pc.mbHeight) return;
+    uint slot = parallelSlotForMb(mb);
+    if (!parallelActive(slot) || parallelOverflow(slot)) return;
+    uint length = mbSyntax[mb].y;
+    if (length == 0u) return; // skipped macroblock; its run is written by its successor
+    rawWordBase = parallelRawBase(slot);
+    rawPos = scratchWords[parallelOffsetBase() + mb];
+    // The body already begins with its mb_skip_run (mb_entropy emits it for
+    // every non-skipped MB, including ue(0)); append it verbatim.
+    uint base = mb * mbBodyWords;
+    uint words = length / 32u;
+    for (uint n = 0u; n < words; ++n) rawEmit(mbBody[base + n], 32);
+    uint tail = length & 31u;
+    if (tail != 0u) rawEmit(mbBody[base + words] >> (32u - tail), int(tail));
+}

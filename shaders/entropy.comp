@@ -3,6 +3,7 @@
 #include "layout.glsl"
 #include "bitstream.glsl"
 #include "macroblock_syntax.glsl"
+#include "parallel_entropy.glsl"
 
 layout(local_size_x=8) in;
 
@@ -33,6 +34,24 @@ void main() {
     wordCount = packedWord = packedBytes = accumulator = pendingBits = zeroBytes = 0u;
     overflow = false;
     bool intra = idr();
+    // SHADER: parallel CAVLC assembly.  The slice header is written into the
+    // raw RBSP region; mb_entropy bodies are concatenated by later passes.
+    // Non-paired inter slices (8x8 partitions) keep the original inline path.
+    if (writeSlot != 0u && parallelCapable() && (pairedRows() || idrWholeFrame())) {
+        uint slice = writeSlot - 1u;
+        uint first = firstMb(slice), count = sliceLength(slice);
+        uint activeRefs = pairedRows() ? slices[writeSlot].y & 31u : 1u;
+        uint meta = parallelMetaBase(writeSlot);
+        scratchWords[meta] = first;
+        scratchWords[meta + 1u] = count;
+        scratchWords[meta + 4u] = parallelFlagActive | (intra ? parallelFlagIntra : 0u);
+        rawWordBase = parallelRawBase(writeSlot);
+        rawPos = 0u;
+        rawSliceHeader(first, intra, activeRefs);
+        scratchWords[meta + 2u] = rawPos; // header bits
+        slices[writeSlot].x = 0u; // finalized by the emulation-prevention index pass
+        return;
+    }
     if (writeSlot == 0u) {
         prefix(intra);
     } else {

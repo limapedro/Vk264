@@ -1,0 +1,47 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "layout.glsl"
+#include "parallel_entropy.glsl"
+
+layout(local_size_x=1) in;
+
+// One invocation per slice: scan body lengths, assign each macroblock its bit
+// offset in the raw RBSP, then append the trailing skip run and rbsp trailing
+// bits.  This is only a handful of integer adds per macroblock; the expensive
+// bit emission is done in parallel by slice_bodies.comp.
+void main() {
+    uint slot = gl_GlobalInvocationID.x;
+    if (!parallelActive(slot)) return;
+    uint meta = parallelMetaBase(slot);
+    uint first = scratchWords[meta], count = scratchWords[meta + 1u];
+    rawWordBase = parallelRawBase(slot);
+    rawPos = scratchWords[meta + 2u];
+    uint skipRun = 0u;
+    bool overflow = false;
+    for (uint i = 0u; i < count; ++i) {
+        uint mb = first + i, length = mbSyntax[mb].y;
+        if (length == 0u) { ++skipRun; continue; }
+        if (length == 0xffffffffu || rawPos + length > pc.slotWords * 32u) { overflow = true; break; }
+        // mb_entropy already embedded ue(skipRun) (including ue(0)) in each
+        // non-skipped body, exactly as appendBodies does.  Do not add it here.
+        if (rawPos + length > pc.slotWords * 32u) { overflow = true; break; }
+        scratchWords[parallelOffsetBase() + mb] = rawPos;
+        rawPos += length;
+        skipRun = 0u;
+    }
+    if (overflow) {
+        scratchWords[meta + 4u] |= parallelFlagOverflow;
+        return;
+    }
+    scratchWords[meta + 5u] = skipRun; // trailing mb_skip_run
+    if (skipRun != 0u) rawUe(skipRun);
+    rawFinish();
+    uint bytes = rawPos / 8u;
+    if (bytes > pc.slotWords * 4u) {
+        scratchWords[meta + 4u] |= parallelFlagOverflow;
+        return;
+    }
+    scratchWords[meta + 3u] = rawPos - scratchWords[meta + 2u];
+    scratchWords[meta + 6u] = bytes;
+    scratchWords[meta + 7u] = (bytes + parallelChunkBytes - 1u) / parallelChunkBytes;
+}

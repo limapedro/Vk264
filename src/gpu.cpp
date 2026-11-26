@@ -54,6 +54,20 @@ std::uint32_t pairedSlotWords(const FrameConfig& c) {
 std::uint32_t idrSlotWords(const FrameConfig& c) {
     return macroblockSlotWords * c.mbWidth * c.mbHeight;
 }
+
+constexpr std::uint32_t parallelMetaWords = 12;
+std::uint32_t parallelSummaryWords(std::uint32_t slotWords) { return (slotWords + 15) / 16; }
+
+// Extra Slices-buffer regions used by the parallel CAVLC assembly: raw RBSP,
+// chunk summaries, per-slice metadata and per-macroblock bit offsets.
+VkDeviceSize parallelBytes(const FrameConfig& c, std::uint32_t slotWords, std::uint32_t sliceCount) {
+    std::uint64_t records = std::uint64_t(sliceCount) + 1u;
+    std::uint64_t finalBytes = std::uint64_t(slotWords) * 4u * records;
+    std::uint64_t extra = (std::uint64_t(parallelSummaryWords(slotWords)) * records +
+                           std::uint64_t(parallelMetaWords) * records +
+                           std::uint64_t(c.mbWidth) * c.mbHeight) * 4u;
+    return 2u * finalBytes + extra;
+}
 }
 
 struct EncoderGpu::Impl {
@@ -71,6 +85,8 @@ struct EncoderGpu::Impl {
     VkDeviceSize frameBytes{}, referenceStride{};
     std::array<VkPipeline, StageCount> pipelines{};
     VkPipeline frameDeblock{};
+    VkPipeline sliceOffsets{}, sliceBodies{}, sliceEpb[3]{};
+    bool parallelCapable{};
     VkCommandPool commandPool{};
     VkCommandBuffer commands{};
     VkFence fence{};
@@ -87,6 +103,9 @@ struct EncoderGpu::Impl {
             if (timestamps) vkDestroyQueryPool(device, timestamps, nullptr);
             if (commandPool) vkDestroyCommandPool(device, commandPool, nullptr);
             for (auto pipeline : pipelines) if (pipeline) vkDestroyPipeline(device, pipeline, nullptr);
+            if (sliceOffsets) vkDestroyPipeline(device, sliceOffsets, nullptr);
+            if (sliceBodies) vkDestroyPipeline(device, sliceBodies, nullptr);
+            for (auto pipeline : sliceEpb) if (pipeline) vkDestroyPipeline(device, pipeline, nullptr);
             if (frameDeblock) vkDestroyPipeline(device, frameDeblock, nullptr);
             if (descriptorPool) vkDestroyDescriptorPool(device, descriptorPool, nullptr);
             if (pipelineLayout) vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -215,6 +234,7 @@ struct EncoderGpu::Impl {
         VkDeviceSize mbCount = VkDeviceSize(c.mbWidth) * c.mbHeight;
         VkDeviceSize scratchSize = VkDeviceSize(c.slotWords) * 4 * (c.sliceCount + 1);
         bool paired = c.sliceRows == 2 && c.partitions == 0 && c.gop > 1;
+        parallelCapable = paired;
         if (paired)
             scratchSize = std::max(scratchSize, VkDeviceSize(pairedSlotWords(c)) * 4 * ((c.mbHeight + 1) / 2 + 1));
         // SHADER-ABI: IDR frames collapse to one slice; reserve enough scratch
@@ -222,6 +242,12 @@ struct EncoderGpu::Impl {
         // plus the picture slice).
         if (c.gop > 1u)
             scratchSize = std::max(scratchSize, VkDeviceSize(idrSlotWords(c)) * 4 * 2);
+        if (parallelCapable) {
+            scratchSize = std::max(scratchSize, parallelBytes(c, c.slotWords, c.sliceCount));
+            if (paired)
+                scratchSize = std::max(scratchSize, parallelBytes(c, pairedSlotWords(c), (c.mbHeight + 1) / 2));
+            if (c.gop > 1u) scratchSize = std::max(scratchSize, parallelBytes(c, idrSlotWords(c), 1));
+        }
         createBuffer(Upload, sourceSize, transferSrc, hostMemory);
         createBuffer(Source, sourceSize, storage | transferDst, deviceMemory);
         frameBytes = mbCount * 384;
@@ -232,7 +258,7 @@ struct EncoderGpu::Impl {
             throw std::runtime_error("The requested reference pool exceeds this GPU's storage-buffer range");
         createBuffer(Recon, referenceBytes, storage | transferSrc, deviceMemory);
         createBuffer(Coefficients, mbCount * 432 * 4, storage, deviceMemory);
-        createBuffer(Slices, scratchSize, storage, deviceMemory);
+        createBuffer(Slices, scratchSize, storage | transferDst, deviceMemory);
         createBuffer(Records, 8 * (c.sliceCount + 1), storage, deviceMemory);
         createBuffer(Output, scratchSize + 16, storage, hostMemory);
         createBuffer(Rate, 12, storage | transferDst, deviceMemory);
@@ -280,6 +306,14 @@ struct EncoderGpu::Impl {
             pipelines[i] = makePipeline(shaderNames[i]);
         }
         if (c.deblock == 2) frameDeblock = makePipeline("deblock_frame");
+        if (parallelCapable) {
+            sliceOffsets = makePipeline("slice_offsets");
+            sliceBodies = makePipeline("slice_bodies");
+            for (int i = 0; i < 3; ++i) {
+                auto name = "slice_epb" + std::to_string(i);
+                sliceEpb[i] = makePipeline(name.c_str());
+            }
+        }
 
         auto commandPoolInfo = info<VkCommandPoolCreateInfo>(VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO);
         commandPoolInfo.queueFamilyIndex = queueFamily;
@@ -330,12 +364,19 @@ struct EncoderGpu::Impl {
         vkCmdPipelineBarrier(commands, before, after, 0, 1, &m, 0, nullptr, 0, nullptr);
     }
 
-    void dispatch(Stage stage, std::uint32_t groups, std::uint32_t rows = 1) {
+    void dispatch(Stage stage, std::uint32_t groups, std::uint32_t rows = 1, bool stamp = true) {
         if (groups) {
             vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[stage]);
             vkCmdDispatch(commands, groups, rows, 1);
         }
-        if (timestamps) vkCmdWriteTimestamp(commands, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestamps, stage + 1);
+        if (timestamps && stamp) vkCmdWriteTimestamp(commands, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestamps, stage + 1);
+    }
+
+    void dispatchPipeline(VkPipeline pipeline, std::uint32_t groups, std::uint32_t rows = 1) {
+        if (groups) {
+            vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+            vkCmdDispatch(commands, groups, rows, 1);
+        }
     }
 
     void dispatchDeblock(const FrameConfig& c) {
@@ -371,6 +412,7 @@ struct EncoderGpu::Impl {
         constexpr auto read = VK_ACCESS_SHADER_READ_BIT;
         bool intra = c.frameIndex % c.gop == 0;
         bool paired = !intra && c.sliceRows == 2 && c.partitions == 0;
+        bool parallelSlices = parallelCapable && (paired || (intra && c.gop > 1u));
         // SHADER-ABI: see layout.glsl::idrWholeFrame().  One whole-frame slice
         // keeps intra prediction within the slice boundary (H.264 8.3.1).
         if (intra && c.gop > 1u) {
@@ -388,6 +430,9 @@ struct EncoderGpu::Impl {
         check(vkBeginCommandBuffer(commands, &begin), "vkBeginCommandBuffer");
         barrier(compute | transfer, write | VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
                 compute | transfer, read | write | VK_ACCESS_TRANSFER_WRITE_BIT);
+        // The parallel assembly uses atomic word ORs into the Slices buffer;
+        // clear all regions (final NAL, raw RBSP, summaries, metadata, offsets).
+        if (parallelCapable) vkCmdFillBuffer(commands, buffers[Slices].handle, 0, VK_WHOLE_SIZE, 0);
         copy(Upload, Source);
         if (c.frameIndex == 0) vkCmdFillBuffer(commands, buffers[Rate].handle, 0, VK_WHOLE_SIZE, 0);
         barrier(transfer, VK_ACCESS_TRANSFER_WRITE_BIT, compute, read | write);
@@ -424,10 +469,25 @@ struct EncoderGpu::Impl {
         dispatch(MbFlags, paired ? c.sliceCount : 0);
         if (paired) barrier(compute, write, compute, read | write);
         dispatchDeblock(c);
-        dispatch(MbEntropy, paired ? (mbCount + 31) / 32 : 0);
-        if (paired) barrier(compute, write, compute, read | write);
-        dispatch(Entropy, (c.sliceCount + 8) / 8);
+        dispatch(MbEntropy, parallelSlices ? (mbCount + 31) / 32 : 0);
+        if (parallelSlices) barrier(compute, write, compute, read | write);
+        // All parallel sub-passes are timed as part of the Entropy stage.
+        dispatch(Entropy, (c.sliceCount + 8) / 8, 1, false);
         barrier(compute, write, compute, read | write);
+        if (parallelSlices) {
+            std::uint32_t chunkGroups = (parallelSummaryWords(c.slotWords) + 63) / 64;
+            dispatchPipeline(sliceOffsets, c.sliceCount + 1);
+            barrier(compute, write, compute, read | write);
+            dispatchPipeline(sliceBodies, (mbCount + 63) / 64);
+            barrier(compute, write, compute, read | write);
+            dispatchPipeline(sliceEpb[0], chunkGroups, c.sliceCount + 1);
+            barrier(compute, write, compute, read | write);
+            dispatchPipeline(sliceEpb[1], 1, c.sliceCount + 1);
+            barrier(compute, write, compute, read | write);
+            dispatchPipeline(sliceEpb[2], chunkGroups, c.sliceCount + 1);
+            barrier(compute, write, compute, read | write);
+        }
+        if (timestamps) vkCmdWriteTimestamp(commands, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestamps, Entropy + 1);
         dispatch(Scan, 1);
         barrier(compute, write, compute, read | write);
         dispatch(Assemble, c.sliceCount + 1);

@@ -10,8 +10,11 @@ layout(local_size_x=32) in;
 void main() {
     uint mb = gl_GlobalInvocationID.x;
     if (mb >= pc.mbWidth * pc.mbHeight) return;
+    // SHADER: an IDR picture is one whole-frame slice.  It has no skipped
+    // macroblocks and encodes mb_type with a zero offset, unlike a P-slice.
+    bool wholeIntra = idrWholeFrame();
     uint flags = mbSyntax[mb].x;
-    if ((flags & mbSkipFlag) != 0u) {
+    if (!wholeIntra && (flags & mbSkipFlag) != 0u) {
         mbSyntax[mb].y = 0u;
         return;
     }
@@ -20,11 +23,24 @@ void main() {
     wordCount = pendingBits = accumulator = 0u;
     overflow = false;
     uint local = offsetInPair(mb);
-    uint skipRun = 0u;
-    for (uint i = 1u; i <= local && (mbSyntax[mb - i].x & mbSkipFlag) != 0u; ++i) ++skipRun;
-    ue(skipRun);
-    bool left = leftAvailable(mb, local), top = topAvailable(local);
-    bool intra = isIntraMb(mb);
+    uint pattern;
+    int qpDelta;
+    bool left, top;
+    if (wholeIntra) {
+        pattern = patterns(mb * mbCoefficients);
+        qpDelta = 0;
+        left = leftAvailable(mb, mb);
+        top = topAvailable(mb);
+    } else {
+        uint skipRun = 0u;
+        for (uint i = 1u; i <= local && (mbSyntax[mb - i].x & mbSkipFlag) != 0u; ++i) ++skipRun;
+        ue(skipRun);
+        pattern = flags & 63u;
+        qpDelta = mbQpDelta(flags);
+        left = leftAvailable(mb, local);
+        top = topAvailable(local);
+    }
+    bool intra = wholeIntra || isIntraMb(mb);
     if (!intra) {
         ue(0u); // P_L0_16x16
         uint ref = referenceIndex(mb);
@@ -35,7 +51,7 @@ void main() {
         ivec2 predictor = pairedPredictor(mb, local, int(ref), false);
         writeMvd(matches[mb * 5u].mv, predictor);
     }
-    writeMacroblock(mb * mbCoefficients, flags & 63u, intra, left, top, 5u, mbQpDelta(flags));
+    writeMacroblock(mb * mbCoefficients, pattern, intra, left, top, wholeIntra ? 0u : 5u, qpDelta);
     if (pendingBits != 0u) {
         if (wordCount < mbBodyWords) mbBody[mb * mbBodyWords + wordCount] = accumulator;
         else overflow = true;
