@@ -504,7 +504,10 @@ static int check_multiframe(const char *label, phx_param_t *p)
         /* encoder.c:3882 — only reference NALs advance frame_num. */
         int nh = nal_header_off(stream + offs[i]);     /* bitstream.c:63/73 */
         int ref_idc = nh > 0 ? (stream[offs[i] + nh] >> 5) & 3 : -1;
-        if (fn < prev_fn || (ref_idc && fn != prev_fn + 1 && i > 0)) {
+        /* encoder.c:3882 — frame_num advances only for reference pictures.
+         * A reference P immediately after a non-reference B legally REUSES
+         * the previous frame_num; reject only backwards or forward jumps. */
+        if (fn < prev_fn || (ref_idc && fn > prev_fn + 1 && i > 0)) {
             printf("FAIL %s: slice %d frame_num %d (prev %d, ref_idc %d)\n",
                    label, i, fn, prev_fn, ref_idc);
             ++fails;
