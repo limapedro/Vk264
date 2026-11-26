@@ -63,6 +63,12 @@ extern "C" {
 #define PHX_DPB_MAX_PICTURES 16   /* base.h:137 X264_REF_MAX */
 #define PHX_DPB_REF_MAX PHX_SLICE_REF_MAX /* same 16-entry slice ref arrays */
 
+/* common/common.h:571 / phx_encoder.h:47 — the encoder's reconstruction
+ * scratch stride is PER MB (32 bytes), not the coded picture width.  A store
+ * caller may pass h->recon + 64 with this stride; its MB (mb_x,mb_y) lives at
+ * mb_x*16 + mb_y*16*PHX_DPB_FDEC_STRIDE (encoder.c:1426 c->p_fdec). */
+#define PHX_DPB_FDEC_STRIDE 32
+
 /* Per-picture copy of the MB state that mvpred.c:183-441 reads from the
  * colocated frame (h->fref[1][0]).  Layouts and strides are x264's:
  *   mb_type/mb_partition/field [mb_count], indexed by i_mb_xy (mvpred.c:188,
@@ -126,9 +132,17 @@ void phx_dpb_free(phx_dpb_t *dpb);
  * alpha/beta offsets and chroma QP offset all zero). */
 typedef struct {
     const uint8_t *fdec_y;
-    int fdec_y_stride;           /* PHX_FDEC_STRIDE (32) in normal use */
-    const uint8_t *fdec_uv;      /* interleaved NV12 U/V */
-    int fdec_uv_stride;
+    /* Either PHX_DPB_FDEC_STRIDE (32) with MB-at-a-time placement, as the
+     * encoder's h->recon + 64 uses, or >= i_width with contiguous full rows. */
+    int fdec_y_stride;
+    /* 0 = encoder's literal c->p_fdec layout: mb_x*16 + mb_y*16*stride.
+     * For mb_width > 2 with stride 32 that layout overlaps consecutive MB
+     * rows (FDEC_STRIDE=32 holds only two MBs per row); set this flag to 1
+     * for an unambiguous MB-major scratch buffer:
+     * (mb_y*mb_width + mb_x)*16*stride + y*stride + x. */
+    int fdec_y_mb_major;
+    const uint8_t *fdec_uv;      /* interleaved NV12 U/V, full-picture rows */
+    int fdec_uv_stride;          /* >= i_width (NV12 row bytes = luma width) */
     const phx_mb_state_t *mb_state;
     /* phx_mb_state_t has no partition[] member; x264's fdec->mb_partition
      * (macroblock.c:1729/:1781, mvpred.c:189) must be supplied separately.
