@@ -183,6 +183,30 @@ So native CABAC cannot meet the >=100 fps loop gate on this GPU; the exact
 blocker is the per-slice serial arithmetic chain plus single-lane throughput.
 Baseline and ctest 45/46 restored.
 
+## Artifact-driven quantizer tuning (PR #501 accepted)
+
+Frame-level + 16x16-MB error maps on the 300f game clip showed the gap is
+fine detail, not blocking: boundary/mid-MB error ratios 1.075–1.097 match
+x264 (1.070–1.072) and NVENC (1.093); VIF scale0 and ADM2 carry the deficit;
+56% of P MBs were P-skip on the worst frames vs x264 ~16%, with flat plateaus
+on source edges. Tested zero-cost variants at matched bitrate:
+
+| Variant | 6000 VMAF | 8000 VMAF | Decision |
+|---|---:|---:|---|
+| baseline inter AC divisor 6 | 95.297 | 95.669 | — |
+| inter RD lambda 0.55→0.40/0.25/0.15 | 95.34/95.32/95.32 | 96.68/–/– | ABR absorbs, rejected |
+| coded-bits estimate −4 | 95.31 | 96.64 | rejected |
+| inter AC divisor 4 | 95.414 | 96.723 | small gain |
+| **inter AC divisor 3** | **95.390** | **96.777** | **accepted (PR #501)** |
+| inter AC divisor 2 | 95.204 | 96.557 | overshoot, rejected |
+| inter DC divisor 1 | 93.551 | 95.422 | rejected |
+| low-freq AC 2 / high-freq 4 | 95.250 | 96.694 | rejected |
+| P-skip factor 0.25/0.75/1.0 | 95.17/95.40/95.39 | –/96.75/96.73 | rejected |
+| flat-intra gate *9→*25 | 95.389 | 96.777 | neutral, reverted |
+
+Final at HEAD: 1080p/300f 6000k PSNR-Y 46.748 / VMAF 95.390 / 85 fps;
+8000k PSNR-Y 48.241 / VMAF 96.777. x264 97.898 / 98.259 VMAF. Speed unchanged.
+
 Also reverted: explicit x264 `ipratio=1.40` I-frame QP offset (-3) in
 `shaders/layout.glsl`. At matched rate it *reduced* VMAF 95.30 -> 95.00
 (6000) and 96.67 -> 96.47 (8000); the ABR controller already gives IDRs a
