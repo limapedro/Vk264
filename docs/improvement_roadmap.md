@@ -141,6 +141,27 @@ this clip with the current codec** — the ~4.6-point drop is inherent to the
 toolset, not the controller. The controller can at best trade rate accuracy
 for a smaller quality loss; 13 adaptive-floor variants confirmed this.
 
+## 3b-extra: x264/NVENC rate-control study (2026-11-27)
+
+Two literature studies are in limapedro/Vk264-CABAC-Lab:
+
+otes/RC_X264_DEEP.md (exact 1-pass ABR formulas from
+encoder/ratecontrol.c) and 
+otes/RC_NVENC_DEEP.md (VBV/token-bucket,
+feedforward complexity, 1-2 s windows). The key lesson: x264's integral is
+QP-normalised (cplxr_sum += bits*qscale/blurred^0.4) and driven by
+QP-independent complexity; our controller integrates raw bits and is
+therefore unstable on bimodal capture.
+
+Several host-side ports were prototyped from those formulas (faithful x264
+integral, calibrated rate factor, duplicate pinning, token bucket, cumulative
+mean-rate) and **all failed** when integrated: rates 13-60 Mb/s at 6000/8000
+targets on the two capture clips. All prototypes were reverted; the parent
+tree is clean and the opt-in QP-32 cap from PR #535 remains the shipped
+behaviour. This is an honest open blocker: rate control needs a calibrated
+QP-independent complexity signal at runtime, which our thumbnail SAD does
+not provide on this content.
+
 ## 3c. Parity scope decision (lab `notes/PARITY_ROADMAP.md`)
 
 The definitive x264-slow parity study is in the sibling lab repo
