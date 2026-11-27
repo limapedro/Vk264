@@ -9,6 +9,7 @@ layout(push_constant) uniform Frame {
     uint aq;
     uint fpsNumerator, fpsDenominator, videoSignal;
     uint idrWave; // whole-frame IDR residual diagonal wave index
+    uint smoothAbr; // opt-in smoothed rate controller
 } pc;
 
 layout(std430, binding=0) readonly buffer Source { uint source[]; };

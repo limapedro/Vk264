@@ -60,6 +60,7 @@ void usage() {
     std::cerr << "Usage: wx264 input.yuv output.h264 width height frames fps [--preset fast|medium|slow|veryslow]\n"
               << "             [--qp N] [--bitrate KBPS] [--satd-candidates N] [--ref N]\n"
               << "             [--gop N] [--search N] [--subpel 0|1] [--partitions 0|1] [--deblock 0|1|2]\n"
+ << "             [--smooth-abr 0|1] (opt-in smoothed rate controller)\n"
               << "             [--p-slice-rows 1|2] [--flat-intra 0|1] [--aq 0|1] [--recon padded.yuv]\n"
               << "             [--colorimetry bt709|smpte170m|bt470bg|bt2020-sdr] [--range limited|full]\n"
               << "             [--backend cavlc|vulkan] (vulkan uses CABAC and its own search configuration)\n"
@@ -86,6 +87,7 @@ int main(int argc, char** argv) try {
     bool useVulkanPort = false;
     bool useCavlc = false;
     bool qpExplicit = false;
+    bool smoothAbr = false;
     for (int i = 7; i < argc; i += 2) {
         std::string_view option = argv[i];
         if (option == "--timestamps") continue;
@@ -110,7 +112,8 @@ int main(int argc, char** argv) try {
         std::string_view option = argv[i];
         if (useVulkanPort && (option == "--preset" || option == "--search" || option == "--satd-candidates" ||
             option == "--ref" || option == "--subpel" || option == "--partitions" || option == "--deblock" ||
-            option == "--flat-intra" || option == "--aq" || option == "--p-slice-rows"))
+            option == "--flat-intra" || option == "--aq" || option == "--p-slice-rows" ||
+            option == "--smooth-abr"))
             throw std::runtime_error("The Vulkan port does not support " + std::string(option));
         if (option == "--preset" || option == "--backend") continue;
         if (option == "--entropy") {
@@ -133,6 +136,7 @@ int main(int argc, char** argv) try {
         else if (option == "--deblock") config.deblock = number(argv[i + 1], 0, 2, "deblocking mode");
         else if (option == "--flat-intra") config.flatIntra = number(argv[i + 1], 0, 1, "flat intra flag");
         else if (option == "--aq") config.aq = number(argv[i + 1], 0, 1, "adaptive quantization flag");
+        else if (option == "--smooth-abr") smoothAbr = number(argv[i + 1], 0, 1, "smoothed ABR flag") != 0u;
         else if (option == "--p-slice-rows") config.sliceRows = number(argv[i + 1], 1, 4, "P-slice row count");
         else if (option == "--bitrate") config.targetBits = bitsPerFrame(config, number(argv[i + 1], 1, 50000, "bitrate"));
         else if (option == "--colorimetry") {
@@ -154,6 +158,7 @@ int main(int argc, char** argv) try {
         else if (option == "--recon") reconPath = argv[i + 1];
         else throw std::runtime_error("Unknown option " + std::string(option));
     }
+    config.smoothAbr = smoothAbr ? 1u : 0u;
     auto requestedReferences = config.references;
     if (config.sliceRows < 2 || config.partitions) {
         config.references = 1;
@@ -168,7 +173,7 @@ int main(int argc, char** argv) try {
     // at 6 Mbps: initial 34 -> 14 raises PSNR-Y 51.28 -> 52.38 dB on one clip
     // and 55.10 -> 56.34 dB on another, both at ~6.2 Mb/s. Clamp only when
     // --bitrate was requested; fixed-QP mode keeps the caller's exact value.
-    if (qpExplicit && config.targetBits != 0u && config.initialQp > 14)
+    if (qpExplicit && config.targetBits != 0u && !smoothAbr && config.initialQp > 14)
         config.initialQp = 14;
     finalizeFrameConfig(config);
     fs::path inputPath = argv[1], outputPath = argv[2];

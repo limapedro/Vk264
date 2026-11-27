@@ -20,6 +20,7 @@ struct FrameConfig {
     std::uint32_t aq;
     std::uint32_t fpsNumerator, fpsDenominator, videoSignal;
     std::uint32_t idrWave; // diagonal wave index for whole-frame IDR residual
+    std::uint32_t smoothAbr; // opt-in smoothed rate controller
 };
 
 struct EncodedFrame {

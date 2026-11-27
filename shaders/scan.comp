@@ -49,6 +49,24 @@ void main() {
                            -int(allocation) / 4, int(allocation) / 4);
     int aim = clamp(allocation - correction, max(1, allocation / 2), allocation * 3 / 2);
     int actual = int(32u * total);
+    if (pc.smoothAbr != 0u) {
+        // Opt-in smoothed ABR: an EMA of frame bits over ~1 s averages out
+        // skip/burst alternation on duplicated-capture sources.  bitDebt is
+        // reused as the EMA state.  Asymmetric step: bursts raise QP quickly,
+        // easy frames lower it slowly to avoid a limit cycle.
+        int window = max(8, int(pc.fps));
+        int ema = rc.bitDebt + (actual - rc.bitDebt) / window;
+        rc.bitDebt = ema;
+        int qpNow = int(pc.initialQp) + rc.interQpOffset;
+        float smoothRatio = float(max(1, ema)) / float(max(1, budget));
+        int smoothStep = smoothRatio > 1.0
+            ? clamp(int(round(6.0 * log2(smoothRatio))), 0, 3)
+            : clamp(int(round(3.0 * log2(smoothRatio))), -1, 0);
+        int smoothQp = clamp(qpNow + smoothStep, pc.fps >= 50u ? 18 : 0, 51);
+        rc.interQpOffset = smoothQp - int(pc.initialQp);
+        rc.idrQpOffset = rc.interQpOffset;
+        return;
+    }
     rc.bitDebt = clamp(rc.bitDebt + actual - allocation, -budget * 30, budget * 30);
 
     float rateRatio = float(max(1, actual)) / float(aim);
