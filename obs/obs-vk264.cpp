@@ -93,6 +93,11 @@ void* encoder_create(obs_data_t* settings, obs_encoder_t* owner) {
         config.initialQp = static_cast<uint32_t>(qp);
         config.gop = framesForSeconds(config, static_cast<uint32_t>(keyint));
         config.targetBits = rate == "ABR" ? bitsPerFrame(config, static_cast<uint32_t>(bitrate)) : 0;
+        // Mirror the CLI: an explicit QP above 14 with ABR makes the first
+        // IDR far too coarse and permanently lowers mean quality at the same
+        // achieved bitrate.  Fixed QP keeps the caller's exact value.
+        if (config.targetBits != 0u && config.initialQp > 14u)
+            config.initialQp = 14u;
         config.videoSignal = colorSignal(1, 1, 1); // OBS adapter requests limited-range BT.709 I420 below
         finalizeFrameConfig(config);
         const auto* data_path = obs_get_module_data_path(obs_current_module());
