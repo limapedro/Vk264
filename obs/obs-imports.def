@@ -17,6 +17,9 @@ obs_properties_add_list
 obs_property_list_add_string
 obs_properties_add_int
 obs_properties_add_text
+obs_properties_get
+obs_property_set_visible
+obs_property_set_modified_callback
 obs_startup
 obs_shutdown
 obs_register_output_s
