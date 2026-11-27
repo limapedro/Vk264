@@ -74,7 +74,7 @@ kept for provenance.
 | 7 | **Block-level λ / perceptual (saliency/VIF) bit allocation** | M | +0.3–1.0 (published) | medium | per-MB VMAF-feature-driven QP; no AQ (measured negative); needs per-MB QP signalling in our syntax |
 | 8 | **Cheap learned/neural post-filter (H.264-conformant)** | L | +1–3 (if allowed to change decode path) | high | 516 MAC/px post-filter cited as only way past 95 without structure; would not be decodable by standard H.264 players unless applied outside bitstream |
 | 9 | **8x8 adaptive transform** | L | +0.15 | high | tried; decode breakage and entropy regression; would need full syntax path |
-| 10 | **CABAC** | XL | +0.18–0.34 +3% bits | very high | tried; ~23 fps due to serial per-slice arithmetic state (14 us/MB) |
+| 10 | **CABAC** | XL | +0.55 VMAF (veryslow ablation -0.552) +3% bits | very high | arithmetic state `low/range/queue/outstanding` + 460 contexts threaded through every bin; carry can retroactively edit previous byte (`cabac.c:53-181`). Only slice boundaries reset state (`encoder.c:2791-2804`); measured slice-parallel prototype ~23 fps, 14 us/MB, 117 ms/whole-frame IDR. Frame-parallel CABAC needs a new DPB/lookahead path; CPU-CABAC hybrid would add PCIe round-trip and serial bin stream, while x264-slow on this 12-core CPU already does 75-105 fps full encode. Not viable under 100 fps gate. |
 | 11 | **B-frames + lookahead + MB-tree** | XL | +0.5–0.69 | very high | needs dual-reference ABI, host DPB reorder, slicetype analysis; without lookahead B-frames LOSE 0.64 VMAF |
 | 12 | **AQ / psy-RD** | S | **negative** (−0.14 to −0.22) | low | tested and reverted; do not retry |
 
