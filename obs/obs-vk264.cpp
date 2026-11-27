@@ -179,7 +179,8 @@ void encoder_defaults(obs_data_t* settings) {
 // control mode is shown, so a CQP recording cannot be mistaken for a missed
 // bitrate target.
 bool rateControlChanged(obs_properties_t* props, obs_property_t*, obs_data_t* settings) {
-    const bool abr = std::string_view(obs_data_get_string(settings, "rate_control")) == "ABR";
+    const std::string_view mode = obs_data_get_string(settings, "rate_control");
+    const bool abr = mode == "ABR" || mode == "ABR-SMOOTH";
     obs_property_set_visible(obs_properties_get(props, "bitrate"), abr);
     obs_property_set_visible(obs_properties_get(props, "qp"), !abr);
     return true;

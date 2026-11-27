@@ -1,6 +1,10 @@
 LIBRARY obs.dll
 EXPORTS
 obs_register_encoder_s
+obs_properties_destroy
+obs_property_visible
+obs_properties_apply_settings
+obs_get_encoder_properties
 blog
 obs_encoder_get_width
 obs_encoder_get_height
