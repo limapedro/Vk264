@@ -42,7 +42,7 @@ struct Buffer {
 enum Stage { Pyramid, HalfPel, Motion, Spatial, OlderReferences, Residual, FlatIntra, MbFlags, Deblock, MbEntropy, Entropy, Scan, Assemble, StageCount };
 constexpr std::array<const char*, StageCount> shaderNames{"pyramid", "halfpel", "motion", "spatial", "older_references", "residual", "flat_intra", "mb_flags",
     "deblock", "mb_entropy", "entropy", "scan", "assemble"};
-static_assert(sizeof(FrameConfig) == 30 * sizeof(std::uint32_t));
+static_assert(sizeof(FrameConfig) == 32 * sizeof(std::uint32_t));
 
 std::uint32_t pairedSlotWords(const FrameConfig& c) {
     return macroblockSlotWords * c.mbWidth * c.sliceRows;

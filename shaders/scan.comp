@@ -27,7 +27,10 @@ void main() {
     outputWords[2] = uint(qp) | (selectedDepth << 8u);
     outputWords[3] = (intraBlocks << 16u) | olderBlocks;
 
-    if (pc.targetBits == 0u || overflow) return;
+    // In offline two-pass mode the planned QP already encodes the whole bit
+    // allocation; reading or writing rc state would reintroduce frame-to-frame
+    // feedback (and is unsafe with the async host ring).
+    if (pc.twoPass != 0u || pc.targetBits == 0u || overflow) return;
     // Reserve keyframe bits across the GOP. An IDR only updates the IDR
     // quantizer, so its entire cost cannot abruptly raise the next P-frame QP.
     int budget = int(pc.targetBits);

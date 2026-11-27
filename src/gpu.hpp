@@ -21,6 +21,9 @@ struct FrameConfig {
     std::uint32_t fpsNumerator, fpsDenominator, videoSignal;
     std::uint32_t idrWave; // diagonal wave index for whole-frame IDR residual
     std::uint32_t smoothAbr; // opt-in smoothed rate controller
+    // Offline two-pass planning. plannedQp is QP+1 so that 0 means "not set";
+    // twoPass tells scan.comp to skip all feedback rate-control state updates.
+    std::uint32_t plannedQp, twoPass;
 };
 
 struct EncodedFrame {

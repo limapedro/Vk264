@@ -94,7 +94,7 @@ def build_command(args, name, stream):
                               ("--partitions", args.partitions), ("--p-slice-rows", args.p_slice_rows),
                               ("--satd-candidates", args.satd_candidates), ("--ref", args.ref),
                               ("--deblock", args.deblock), ("--flat-intra", args.flat_intra), ("--aq", args.aq),
-                               ("--smooth-abr", args.smooth_abr)):
+                               ("--smooth-abr", args.smooth_abr), ("--twopass", args.twopass)):
             if value is not None:
                 command.extend([option, value])
         return command
@@ -161,6 +161,7 @@ def main():
     parser.add_argument("--flat-intra", type=int, choices=[0, 1], help="Test DC-only P-frame intra on flat dark blocks")
     parser.add_argument("--aq", type=int, choices=[0, 1], help="Toggle spatial adaptive quantization in Wx264")
     parser.add_argument("--smooth-abr", type=int, choices=[0, 1], help="Toggle smoothed ABR in Wx264")
+    parser.add_argument("--twopass", type=int, choices=[0, 1], help="Offline two-pass ABR in Wx264")
     parser.add_argument("--runs", default=1, type=int)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--encoders", nargs="+", choices=ENCODERS)
