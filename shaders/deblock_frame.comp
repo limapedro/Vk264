@@ -1,5 +1,7 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_vote : enable
 #define WX_RECONSTRUCTION_ACCESS coherent
 #include "layout.glsl"
 #include "transform.glsl"
@@ -11,7 +13,6 @@ layout(local_size_x=128) in;
 #include "deblock_filter.glsl"
 
 shared int segmentStrength[128];
-shared uint activeSegments[16];
 
 ivec3 innerWord(int word) {
     int plane = word < 64 ? 0 : (word < 80 ? 1 : 2);
@@ -31,7 +32,9 @@ void main() {
     if (qp < 16 && !aq) return;
     int lane = int(gl_LocalInvocationIndex & 31u);
     int team = int(gl_LocalInvocationIndex >> 5u);
-    if (gl_LocalInvocationIndex == 0u) {
+    // Each 32-lane team is its own subgroup; write the shared threshold table
+    // from every team leader so no cross-team visibility is required.
+    if ((gl_LocalInvocationIndex & 31u) == 0u) {
         thresholds[0] = deblockThresholds[qp];
         thresholds[1] = deblockThresholds[chromaQp(qp)];
     }
@@ -66,19 +69,13 @@ void main() {
         bool vertical = lane < 16;
         int directionEdge = (lane & 15) / 4;
         bool available = directionEdge != 0 || (vertical ? left : top);
-        segmentStrength[teamBase + lane] = valid && available
+        // PERF: a subgroup vote replaces the activeSegments shared round-trip
+        // and its two barriers. Each lane knows its own strength; the vote is
+        // exactly the OR of all 32 strengths that activeSegments aggregated.
+        int myStrength = valid && available
             ? strength(mb, lane & 3, directionEdge, vertical, intra) : 0;
-        barrier();
-        // Strength depends only on coded block metadata. Reuse it across
-        // luma and chroma, and leave the reconstruction alone for all-zero MBs.
-        if (lane < 4) {
-            uint mask = 0u;
-            for (int j = 0; j < 8; ++j) mask |= uint(segmentStrength[teamBase + 8*lane + j]);
-            activeSegments[team*4 + lane] = mask;
-        }
-        barrier();
-        bool needsFilter = (activeSegments[team*4] | activeSegments[team*4+1] |
-                            activeSegments[team*4+2] | activeSegments[team*4+3]) != 0u;
+        segmentStrength[teamBase + lane] = myStrength;
+        bool needsFilter = subgroupAny(myStrength != 0);
         if (needsFilter) {
             for (int i = lane; i < 96; i += 32) {
                 ivec3 word = innerWord(i);
@@ -87,16 +84,16 @@ void main() {
             if (left) loadWord(mb, plane, -4, along);
             if (top) loadWord(mb, plane, topX, topY);
         }
-        barrier();
+        subgroupBarrier();
         // Vertical edges are sequential within a row, then horizontal
         // edges are sequential within a column. Lanes own disjoint lines.
         int segment = along >> (plane == 0 ? 2 : 1);
         if (needsFilter) for (int edge = left ? 0 : 1; edge < 4; ++edge)
             filterEdgeWithStrength(plane, along, edge, true, segmentStrength[teamBase + 4*edge + segment]);
-        barrier();
+        subgroupBarrier();
         if (needsFilter) for (int edge = top ? 0 : 1; edge < 4; ++edge)
             filterEdgeWithStrength(plane, along, edge, false, segmentStrength[teamBase + 16 + 4*edge + segment]);
-        barrier();
+        subgroupBarrier();
         if (needsFilter) {
             if (left) saveWord(mb, plane, -4, along);
             if (top) saveWord(mb, plane, topX, topY);

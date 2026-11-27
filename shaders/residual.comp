@@ -362,9 +362,13 @@ void processMb(uint mb, bool intra, bool haveLeft, int qp) {
             reconstructed[offset] = p.x | (p.y << 8) | (p.z << 16) | (p.w << 24);
         }
     }
-    // SHADER: the next MB in this workgroup reads these reconstructed samples.
-    memoryBarrierBuffer();
-    barrier();
+    // PERF: only the non-whole-frame IDR path walks multiple MBs in one
+    // workgroup. P frames and whole-frame IDR waves dispatch one MB per
+    // workgroup, so the trailing cross-MB barrier has no reader.
+    if (idr() && !idrWholeFrame()) {
+        memoryBarrierBuffer();
+        barrier();
+    }
 }
 
 void main() {
