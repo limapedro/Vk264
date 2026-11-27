@@ -28,12 +28,16 @@ no CABAC, no trellis/RDO, no MB-tree, no lookahead.
 | 8000 | VMAF 97.11, PSNR 48.64, 8129 kb/s | 98.31 | 97.87 |
 
 ### Quality on the user's 1080p60 desktop-capture content
-| Target | wx264 ABR | x264-medium | wx264 fixed-QP ceiling |
-|---:|---:|---:|---:|
-| 2000 | 18.6 Mb/s (BROKEN) | 84.3 VMAF @2.07 Mb/s | 68.9 @1.95 Mb/s |
-| 4000 | 20.8 Mb/s (BROKEN) | 91.2 @4.15 | 87.2 @4.14 |
-| 6000 | 20.9 Mb/s (BROKEN) | 93.4 @6.22 | 92.1 @6.15 |
-| 8000 | 21.0 Mb/s (BROKEN) | 94.6 @8.19 | 93.7 @7.65 |
+`python harness/benchmark.py --input build/obs_new_src.yuv --out build/matrix_<br> --width 1920 --height 1080 --fps 60 --frames 300 --bitrate <br> --gop 120 --encoders wx264-medium x264-medium nvenc-p5 --vmaf`
+
+| Target | wx264 ABR | x264-medium | NVENC P5 | wx264 fixed-QP ceiling |
+|---:|---:|---:|---:|---:|
+| 2000 | 18.64 Mb/s, VMAF 96.63 ❌ | 2.07 Mb/s, **84.31** | 1.93 Mb/s, 80.19 | 1.95 Mb/s, 68.86 |
+| 4000 | 20.79 Mb/s, VMAF 96.93 ❌ | 4.15 Mb/s, **91.21** | 3.85 Mb/s, 89.11 | 4.14 Mb/s, 87.18 |
+| 6000 | 20.93 Mb/s, VMAF 96.98 ❌ | 6.22 Mb/s, **93.39** | 5.78 Mb/s, 91.77 | 6.15 Mb/s, 92.13 |
+| 8000 | 21.05 Mb/s, VMAF 97.00 ❌ | 8.19 Mb/s, **94.58** | 7.70 Mb/s, 93.54 | 7.65 Mb/s, 93.66 |
+
+wx264 process fps in this matrix: 107–116 fps (target-independent).
 
 **Dominant problem: the ABR controller, not the codec.** Fixed QP is within
 ~1 VMAF of x264 at 6000/8000, but ABR limit-cycles at QP 18/22 and never
