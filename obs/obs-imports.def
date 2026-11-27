@@ -4,6 +4,8 @@ obs_register_encoder_s
 obs_encoder_get_width
 obs_encoder_get_height
 obs_encoder_video
+obs_output_get_last_error
+obs_encoder_get_last_error
 obs_encoder_set_last_error
 video_output_get_info
 obs_data_get_int

@@ -27,3 +27,24 @@ add_executable(wx264_obs_smoke smoke.c)
 add_dependencies(wx264_obs_smoke wx_obs_import)
 target_include_directories(wx264_obs_smoke PRIVATE "${WX_OBS_HEADERS}")
 target_link_libraries(wx264_obs_smoke PRIVATE "${obs_import}")
+
+# Vk264/H.264: a separately named encoder so it can coexist with the
+# wx264 preview plugin in the same portable OBS installation.
+add_library(obs-vk264 MODULE obs-vk264.cpp ../src/gpu.cpp)
+add_dependencies(obs-vk264 wx264_shaders wx_obs_import)
+target_include_directories(obs-vk264 PRIVATE ../src "${WX_OBS_HEADERS}")
+target_compile_features(obs-vk264 PRIVATE cxx_std_17)
+target_compile_definitions(obs-vk264 PRIVATE WX_SHADER_DIR="${shader_dir}")
+target_link_libraries(obs-vk264 PRIVATE "${obs_import}" Vulkan::Vulkan)
+
+install(TARGETS obs-vk264 RUNTIME DESTINATION obs-vk264/bin/64bit
+                          LIBRARY DESTINATION obs-vk264/bin/64bit)
+install(FILES ${shaders} DESTINATION obs-vk264/data/shaders)
+install(FILES obs-vk264-locale.ini DESTINATION obs-vk264/data/locale RENAME en-US.ini)
+install(FILES README-vk264.md DESTINATION obs-vk264 RENAME README.md)
+install(FILES ../src/OPENH264_LICENSE.txt DESTINATION obs-vk264)
+
+add_executable(vk264_obs_smoke smoke-vk264.c)
+add_dependencies(vk264_obs_smoke wx_obs_import)
+target_include_directories(vk264_obs_smoke PRIVATE "${WX_OBS_HEADERS}")
+target_link_libraries(vk264_obs_smoke PRIVATE "${obs_import}")
