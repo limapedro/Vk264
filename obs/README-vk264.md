@@ -16,6 +16,10 @@ system-wide plugin directory.
        data/shaders/*.spv
        data/locale/en-US.ini
 
+   Portable OBS scans `plugins/<name>/*.dll` directly, so the DLL must sit at
+   the plugin root (not in `bin/64bit`). For a system-wide install, move it
+   into `obs-studio/plugins/obs-vk264/bin/64bit/` instead.
+
 3. Start portable OBS with its existing launcher (for example
    `Launch-Wx264-OBS.bat`, which starts `obs64.exe --portable --multi
    --disable-updater`). The new encoder appears independently of any
