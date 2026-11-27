@@ -39,6 +39,18 @@ no CABAC, no trellis/RDO, no MB-tree, no lookahead.
 
 wx264 process fps in this matrix: 107–116 fps (target-independent).
 
+Re-run with the merged `harness/matrix.py` and x264-slow instead of medium
+(`build/matrix_baseline_full/matrix.json`), same source and flags:
+
+| Target | wx264-slow | x264-slow | NVENC P5 |
+|---:|---:|---:|---:|
+| 2000 | 18.59 Mb/s, 96.64 | 2.07 Mb/s, **84.66** | 1.93 Mb/s, 80.19 |
+| 4000 | 20.51 Mb/s, 96.90 | 4.11 Mb/s, **91.48** | 3.85 Mb/s, 89.11 |
+| 6000 | 20.75 Mb/s, 96.95 | 6.12 Mb/s, **93.65** | 5.78 Mb/s, 91.77 |
+| 8000 | 20.83 Mb/s, 96.96 | 8.16 Mb/s, **94.76** | 7.70 Mb/s, 93.54 |
+
+wx264 loop fps 149–160 on this content; x264-slow process 75–105 fps.
+
 **Dominant problem: the ABR controller, not the codec.** Fixed QP is within
 ~1 VMAF of x264 at 6000/8000, but ABR limit-cycles at QP 18/22 and never
 converges to the QP 28 needed for 8000 on this content.
