@@ -15,7 +15,7 @@ int quantize(int value, int qp, int index, int extraShift, bool intra) {
     // 32-21 (inter) and 32-11 (intra)).  Use the narrow divisor for intra so
     // I16 residuals retain detail instead of being quantised away.
     // Inter AC keeps its wider dead zone to limit residual bitrate.
-    int divisor = intra ? 2 : (index == 0 ? 2 : 6);
+    int divisor = intra ? 2 : (index == 0 ? 2 : 3);
     int rounding = (1 << shift) / divisor;
     int magnitude = (abs(value) * quantScale[3 * (qp % 6) + category(index)] + rounding) >> shift;
     return value < 0 ? -magnitude : magnitude;
