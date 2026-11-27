@@ -313,3 +313,29 @@ Conclusion: the 1080p60 target at 6000/8000 kb/s is **not met**. At 60 fps the
 per-frame budget is 2.4x smaller than at 25 fps, exposing the missing
 B-frames/CABAC/RDO/MB-tree; the remaining gap is structural, not a parameter
 that can be tuned without a new encoder path.
+
+## 60 fps ABR ceiling (second audit)
+
+Tried a two-sided GOP-scaled debt controller (no +/-30-frame clamp, aim
+range 0.3x-3x allocation, debt window gop/2) in an isolated copy, gated to
+fps>=50 so the 25 fps breakthrough is untouched. True-60fps 840f trailer
+@6000: VMAF 60.93 / 6351 kb/s (with aim 0.3x-3x) and 63.00 / 6360 kb/s
+(with aim 0.5x-1.5x) — both WORSE than the clamped controller (72.30).
+Removing the correction clamp lets aim swing to extremes and destabilises
+QP further; reverted. The clamp is protective, not the root cause.
+
+Fixed-QP ceiling measured on the SAME sources (codec quality with perfect
+rate stability):
+- Trailer 840f @60fps: QP 40 = 5872 kb/s, VMAF 80.39 (x264 @6000 = 95.43).
+- Game 300f @60fps: QP 30 = 6121 kb/s, VMAF 91.57; QP 28 = 7551 kb/s,
+  VMAF 93.72 (x264 @6000 = 95.72). The ABR run reached 88.70 @6938 kb/s,
+  i.e. ~2.9 VMAF below its own fixed-QP ceiling.
+
+Conclusion: a perfect ABR would gain at most ~2.9 VMAF on game content and
+~8 VMAF on the trailer, but even that ceiling is 4 VMAF (game) to 15 VMAF
+(trailer) below x264. No rate-controller change can satisfy the stated
+>= x264-1.5 gate; the remaining gap is structural (no B-frames, CABAC,
+trellis/RDO or MB-tree). Those paths were previously attempted and blocked:
+B-frames need a dual-reference ABI and host DPB reordering; slice-parallel
+CABAC measured ~23 fps because each slice's arithmetic state is serial
+(14 us/MB). Re-attempting them requires a scope/speed-gate decision.
