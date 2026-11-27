@@ -1,5 +1,6 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
+#extension GL_KHR_shader_subgroup_arithmetic : enable
 #include "layout.glsl"
 #include "transform.glsl"
 
@@ -117,14 +118,19 @@ void main() {
 
     // Shortlist unique vectors using the cheap sampled SAD, then test each
     // against all sixteen luma transform blocks at full resolution.
-    if (lane == 0u) for (uint i = 0u; i < finalists; ++i) {
-        uint best = 0xffffffffu;
-        for (uint j = 0u; j < candidateCount; ++j) best = min(best, costs[j]);
-        uint pick = best == 0xffffffffu ? shortlist[0] : best & 31u;
-        shortlist[i] = pick;
+    // PERF: each lane keeps its own candidate cost in a register and uses one
+    // subgroupMin per finalist instead of lane 0 doing 23 dependent shared
+    // min + 23 dependent mask iterations. The (cost<<5)|lane encoding and the
+    // duplicate-mask condition are unchanged, so the picks are byte-identical.
+    uint myCost = lane < candidateCount ? costs[lane] : 0xffffffffu;
+    uint firstPick = 0u;
+    for (uint i = 0u; i < finalists; ++i) {
+        uint best = subgroupMin(myCost);
+        uint pick = best == 0xffffffffu ? firstPick : best & 31u;
+        if (i == 0u) firstPick = pick;
+        if (lane == 0u) shortlist[i] = pick;
         ivec2 mv = candidates[pick];
-        for (uint j = 0u; j < candidateCount; ++j)
-            if (all(equal(mv, candidates[j]))) costs[j] = 0xffffffffu;
+        if (lane < candidateCount && all(equal(mv, candidates[lane]))) myCost = 0xffffffffu;
     }
     barrier();
     for (uint item = lane; item < finalists * 16u; item += 64u) {
