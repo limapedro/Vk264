@@ -10,6 +10,8 @@ layout(push_constant) uniform Frame {
     uint fpsNumerator, fpsDenominator, videoSignal;
     uint idrWave; // whole-frame IDR residual diagonal wave index
     uint smoothAbr; // opt-in smoothed rate controller
+    uint plannedQp; // QP+1 chosen by the offline planner; 0 means unset
+    uint twoPass;   // offline two-pass: no feedback rate-control updates
 } pc;
 
 layout(std430, binding=0) readonly buffer Source { uint source[]; };
@@ -53,6 +55,9 @@ bool idr() { return (pc.frameIndex % pc.gop) == 0u; }
 bool idrWholeFrame() { return idr() && pc.gop > 1u; }
 bool separateIdrBudget() { return idr() && pc.gop > 1u; }
 int frameQp() {
+    // SHADER-ABI: the offline planner pushes every frame's QP up front, so no
+    // feedback between frames is needed (and the host ring may stay enabled).
+    if (pc.twoPass != 0u && pc.plannedQp != 0u) return int(pc.plannedQp) - 1;
     if (pc.targetBits == 0u) return int(pc.initialQp);
     int offset = separateIdrBudget() ? rc.idrQpOffset : rc.interQpOffset;
     return clamp(int(pc.initialQp) + offset, 0, 51);
