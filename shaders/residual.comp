@@ -371,8 +371,20 @@ void main() {
     uint index = gl_WorkGroupID.x;
     int qp = frameQp();
     if (idr()) {
-        uint first = firstMb(index), count = sliceLength(index);
-        for (uint i = 0; i < count; ++i) processMb(first + i, true, (first + i) % pc.mbWidth != 0u, qp);
+        if (idrWholeFrame()) {
+            // SHADER: diagonal wavefront over the whole-frame IDR slice.  One
+            // workgroup codes one MB; the host dispatches one wave of x+y=wave
+            // MBs at a time with a barrier between waves.  Left/above neighbours
+            // belong to an earlier wave, so reconstruction is identical to the
+            // original single-workgroup raster loop, byte for byte.
+            uint wave = residualWave();
+            uint x = (wave >= pc.mbHeight ? wave - pc.mbHeight + 1u : 0u) + index;
+            uint y = wave - x;
+            processMb(y * pc.mbWidth + x, true, x != 0u, qp);
+        } else {
+            uint first = firstMb(index), count = sliceLength(index);
+            for (uint i = 0; i < count; ++i) processMb(first + i, true, (first + i) % pc.mbWidth != 0u, qp);
+        }
     } else {
         processMb(index, false, false, qp);
     }
