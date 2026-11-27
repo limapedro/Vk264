@@ -90,6 +90,21 @@ int main(int argc,char **argv)
     if (video_output_open(&video,&vi)) return 4;
     obs_data_t *settings = obs_data_create();
     obs_data_set_string(settings, "preset", argv[5]);
+    // UI visibility contract: ABR modes show Target bitrate and hide QP.
+    {
+        obs_data_t *ui = obs_data_create();
+        obs_data_set_string(ui, "rate_control", "ABR-SMOOTH");
+        obs_properties_t *props = obs_get_encoder_properties("vk264_h264");
+        obs_properties_apply_settings(props, ui);
+        bool bitrateVisible = obs_property_visible(obs_properties_get(props, "bitrate"));
+        bool qpHidden = !obs_property_visible(obs_properties_get(props, "qp"));
+        obs_properties_destroy(props);
+        obs_data_release(ui);
+        if (!bitrateVisible || !qpHidden) {
+            fprintf(stderr, "UI visibility bug: bitrate=%d qp=%d\n", bitrateVisible, !qpHidden);
+            return 10;
+        }
+    }
     obs_encoder_t *enc = obs_video_encoder_create("vk264_h264","vk264-smoke",settings,NULL);
     if (!enc) return 5;
     obs_encoder_set_video(enc,video);
