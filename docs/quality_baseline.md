@@ -269,3 +269,47 @@ Rejected RC variants (measured, reverted): /3 clamp (+0.27 VMAF but only
 *increment* at one budget (+0.33 VMAF but +12 % rate); damping the QP step
 to max 1/gain 1.5 on top of the clamp (+0.01 VMAF but +1.3 % more rate).
 Starting QP 12 is worse; 14/16/18 are identical because --bitrate clamps to 14.
+
+## 1080p60 target audit (NOT MET)
+
+All earlier benchmarks used --fps 25. A true 60 fps source was located:
+E:\__PROJECTS__\Optim\Warzone120Plan\assets\video\trailerA.mp4
+(1920x1080, 60000/1001 fps, 840f), decoded losslessly to
+uild/native60_1080.yuv. Benchmarked with the exact harness command:
+
+`
+python harness/benchmark.py --input build/native60_1080.yuv --out build/q60_6000 \
+  --width 1920 --height 1080 --fps 60 --frames 840 --bitrate 6000 --gop 300 \
+  --encoders wx264-slow x264-slow nvenc-p4 --vmaf
+`
+
+| @6000, true 60 fps | wx264 | x264-slow | NVENC P4 |
+|---|---:|---:|---:|
+| VMAF | **72.30** | 95.43 | 93.80 |
+| PSNR-Y | 31.21 | 40.71 | 39.14 |
+| achieved kb/s | 7472 (+25 %) | 5614 | 6138 |
+| process fps | 90 | 78 | 383 |
+| encode-loop fps | 122 | — | — |
+
+Diagnosis: the ABR controller drifts to QP 51 on complex frames (frames
+400-600 mean VMAF 55.7, minimum 25.7) while the static intro frames 0-130
+sit at QP 12 / 511 B. Debt accumulated in the static section is discarded by
+the +/-30-frame clamp, and the 1.5x aim cap prevents spending it later.
+Fixed-QP encodes prove the codec itself is intact: QP 18/22/26 give VMAF
+99.21/98.95/98.41; QP 40 (=5872 kb/s, matched rate) gives VMAF 80.39.
+So the ABR instability costs ~8 VMAF at matched rate.
+
+Same game frames labelled 60 fps (300f, --gop 300):
+@6000 VMAF 88.70 / 6938 kb/s (+16 %) / 92 fps vs x264 95.72;
+@8000 VMAF 92.40 / 8704 kb/s (+9 %) / 92 fps vs x264 96.87.
+
+Rejected 60 fps RC variants (measured, reverted): longer debt window (30->120
+and 30->150 frames), wider aim cap (1.5x->4x), asymmetric correction clamp,
+QP-step damping (step 1/gain 1.5) and faster response (step 4/gain 6). All
+either left VMAF unchanged or increased rate overshoot. Process fps stays
+90-92 (<100); encode loop remains ~120 fps (>100).
+
+Conclusion: the 1080p60 target at 6000/8000 kb/s is **not met**. At 60 fps the
+per-frame budget is 2.4x smaller than at 25 fps, exposing the missing
+B-frames/CABAC/RDO/MB-tree; the remaining gap is structural, not a parameter
+that can be tuned without a new encoder path.
