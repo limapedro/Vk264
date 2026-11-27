@@ -164,3 +164,21 @@ caused 1-LSB recon mismatches. A serial I4 walk raised 1080p IDR residual from
 ~65.7 ms to ~352 ms. Reverted with zero gain; baseline hash and 45/46 ctest
 restored. Structural gaps remain: no B-frames/CABAC/trellis/MB-tree in the
 native path.
+
+## Negative native-CABAC feasibility result (reverted)
+
+Slice-level CABAC is *architecturally* parallel only at slice boundaries:
+`x264-vulkan/common/cabac.c:53-181` threads `low/range/queue/outstanding/p`
+plus 460 context states through every bin; carry can retroactively edit the
+previous byte (`:69-99`). Slice headers reset arithmetic state and contexts
+(`encoder.c:2791-2804`), so each slice can be one serial lane. Implemented with
+one workgroup per paired two-row slice, x264 tables and CABAC syntax, but
+reverted because:
+- FFmpeg `-err_detect explode` rejected MB 0 (`intra mode -1`, `cabac_init_idc`
+  overflow) — slice-header/bin integration not resolved.
+- Even with correct syntax, 320x180/240 MB cost ~3.45 ms (~14 us/MB); 1080p
+  whole-frame IDR would take ~117 ms/keyframe and P slices ~5-7 ms/frame.
+  Measured 1080p/20f probe: entropy 27.05 ms, loop 23 fps vs baseline 113.
+So native CABAC cannot meet the >=100 fps loop gate on this GPU; the exact
+blocker is the per-slice serial arithmetic chain plus single-lane throughput.
+Baseline and ctest 45/46 restored.
