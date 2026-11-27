@@ -1,11 +1,14 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_arithmetic : enable
 #include "layout.glsl"
 
 layout(local_size_x=32) in;
 shared uint costs[32];
 shared int samples[64];
 shared int lowSamples[16];
+shared uint sadParts[32]; // only used on devices with a non-32-wide subgroup
 
 uint score(ivec2 origin, ivec2 mv, uint lane, int pitch, int shift, bool integerOnly) {
     uint sad = 0;
@@ -20,6 +23,10 @@ uint score(ivec2 origin, ivec2 mv, uint lane, int pitch, int shift, bool integer
 }
 
 uint selectLane(uint lane, uint cost) {
+    // V1: a warp-wide min is associative and the lane tag makes every cost
+    // unique, so the winner is bit-for-bit the old tree reduction's winner.
+    // The subgroup reduction needs no shared memory and no barriers.
+    if (gl_SubgroupSize == 32u) return subgroupMin(cost);
     costs[lane] = cost;
     barrier();
     for (uint stride = 16u; stride != 0u; stride >>= 1u) {
@@ -65,7 +72,6 @@ ivec2 pyramidSeed(ivec2 origin, int radius, uint lane) {
         best = min(best, (cost << 10u) | cell);
     }
     uint winner = selectLane(lane, best) & 1023u;
-    barrier();
     return (16 << int(winner / cells)) * offsetAt(winner % cells, width);
 }
 
@@ -78,7 +84,6 @@ ivec2 refineInteger(ivec2 origin, ivec2 seed, int limit, uint lane, int pitch, i
         best = min(best, (cost << 6u) | cell);
     }
     uint winner = selectLane(lane, best) & 63u;
-    barrier();
     ivec2 candidate = winner < 49u ? seed + 4 * offsetAt(winner, 7u) : 4 * offsetAt(winner - 49u, 3u);
     return clamp(candidate, -limit, limit);
 }
@@ -109,17 +114,41 @@ void main() {
     } else {
         uint coarseWinner = selectLane(lane, lane < 25u ? score(origin, coarse(lane, radius), lane, pitch, shift, true) : 0xffffffffu);
         best = coarse(coarseWinner & 31u, radius);
-        barrier();
     }
     const ivec2 refine[9] = ivec2[9](ivec2(0,0),ivec2(-1,0),ivec2(1,0),ivec2(0,-1),ivec2(0,1),
         ivec2(-1,-1),ivec2(1,-1),ivec2(-1,1),ivec2(1,1));
+    // V3: all 32 lanes share the 64 SAD terms of each of the nine subpel
+    // candidates.  SAD is an exact integer sum, so a warp-add grouping gives
+    // the identical total; every lane then holds the same winning cost.
     uint winner = 0u;
     for (int step = hierarchical ? (pc.subpel != 0u ? 2 : 4) : 4; step >= (pc.subpel != 0u ? 1 : 4); step >>= 1) {
-        uint cost = 0xffffffffu;
-        if (lane < 9u) cost = score(origin, clamp(best + step * refine[lane], -limit, limit), lane, pitch, shift, step == 4);
-        winner = selectLane(lane, cost);
-        best = clamp(best + step * refine[winner & 31u], -limit, limit);
-        barrier();
+        uint bestCost = 0xffffffffu;
+        uint winnerCost = 0u;
+        for (uint c = 0u; c < 9u; ++c) {
+            ivec2 mv = clamp(best + step * refine[c], -limit, limit);
+            uint localSad = 0u;
+            for (int n = int(lane); n < pitch * pitch; n += 32) {
+                ivec2 xy = origin + 2 * ivec2(n & (pitch - 1), n >> shift);
+                localSad += uint(abs(samples[n] - lumaPrediction(xy, mv)));
+            }
+            uint sad;
+            if (gl_SubgroupSize == 32u) sad = subgroupAdd(localSad);
+            else {
+                sadParts[lane] = localSad;
+                barrier();
+                for (uint stride = 16u; stride != 0u; stride >>= 1u) {
+                    if (lane < stride) sadParts[lane] += sadParts[lane + stride];
+                    barrier();
+                }
+                sad = sadParts[0];
+                barrier();
+            }
+            uint penalty = uint(findMSB(uint(abs(mv.x) + 1)) + findMSB(uint(abs(mv.y) + 1)));
+            uint cost = 32u * (sad + 3u * penalty) + c;
+            if (cost < bestCost) { bestCost = cost; winnerCost = cost; }
+        }
+        best = clamp(best + step * refine[winnerCost & 31u], -limit, limit);
+        winner = winnerCost;
     }
     if (lane == 0u) matches[matchIndex] = MotionMatch(best, winner >> 5u, 0u);
 }
