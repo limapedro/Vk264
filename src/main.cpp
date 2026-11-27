@@ -133,7 +133,7 @@ int main(int argc, char** argv) try {
         else if (option == "--deblock") config.deblock = number(argv[i + 1], 0, 2, "deblocking mode");
         else if (option == "--flat-intra") config.flatIntra = number(argv[i + 1], 0, 1, "flat intra flag");
         else if (option == "--aq") config.aq = number(argv[i + 1], 0, 1, "adaptive quantization flag");
-        else if (option == "--p-slice-rows") config.sliceRows = number(argv[i + 1], 1, 2, "P-slice row count");
+        else if (option == "--p-slice-rows") config.sliceRows = number(argv[i + 1], 1, 4, "P-slice row count");
         else if (option == "--bitrate") config.targetBits = bitsPerFrame(config, number(argv[i + 1], 1, 50000, "bitrate"));
         else if (option == "--colorimetry") {
             std::string_view value = argv[i + 1];
@@ -155,7 +155,7 @@ int main(int argc, char** argv) try {
         else throw std::runtime_error("Unknown option " + std::string(option));
     }
     auto requestedReferences = config.references;
-    if (config.sliceRows != 2 || config.partitions) {
+    if (config.sliceRows < 2 || config.partitions) {
         config.references = 1;
         config.flatIntra = 0;
         config.aq = 0;

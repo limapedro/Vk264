@@ -44,7 +44,7 @@ void main() {
     if (!intra) {
         ue(0u); // P_L0_16x16
         uint ref = referenceIndex(mb);
-        uint slice = mb / (2u * pc.mbWidth);
+        uint slice = mb / (pc.sliceRows * pc.mbWidth);
         uint activeRefs = slices[slice + 1u].y & 31u;
         if (activeRefs == 2u) bits(1u - ref, 1);
         else if (activeRefs > 2u) ue(ref);

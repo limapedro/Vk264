@@ -15,7 +15,7 @@ const uint parallelFlagOverflow = 4u;
 
 // Must match Impl::parallelCapable in gpu.cpp: bodies are only allocated for
 // the two-row 16x16 mode.  Other modes keep the original inline entropy path.
-bool parallelCapable() { return pc.sliceRows == 2u && pc.partitions == 0u && pc.gop > 1u; }
+bool parallelCapable() { return pc.sliceRows >= 2u && pc.partitions == 0u && pc.gop > 1u; }
 
 uint parallelSlotCount() { return pc.sliceCount + 1u; }
 uint parallelSummaryWords() { return (pc.slotWords + 15u) / 16u; }
@@ -33,7 +33,7 @@ uint parallelOffsetBase() {
 
 uint parallelSlotForMb(uint mb) {
     if (idrWholeFrame()) return 1u;
-    if (pairedRows()) return mb / (2u * pc.mbWidth) + 1u;
+    if (pairedRows()) return mb / (pc.sliceRows * pc.mbWidth) + 1u;
     return 0u;
 }
 bool parallelActive(uint slot) { return slot != 0u && (scratchWords[parallelMetaBase(slot) + 4u] & parallelFlagActive) != 0u; }

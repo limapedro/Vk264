@@ -72,7 +72,10 @@ inline FrameConfig makeFrameConfig(std::uint32_t width, std::uint32_t height,
     config.subpel = 1;
     config.partitions = 0;
     config.deblock = 2;
-    config.sliceRows = 2;
+    // Four rows per P slice is the measured sweet spot at 1080p (+8-9%
+    // process fps, equal/better VMAF).  Keep the shared work array within
+    // maxPairedSliceMbs (512) for wider pictures.
+    config.sliceRows = std::min(4u, std::max(2u, 512u / config.mbWidth));
     config.flatIntra = 1;
     return config;
 }

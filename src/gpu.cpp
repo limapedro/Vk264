@@ -45,7 +45,7 @@ constexpr std::array<const char*, StageCount> shaderNames{"pyramid", "halfpel", 
 static_assert(sizeof(FrameConfig) == 29 * sizeof(std::uint32_t));
 
 std::uint32_t pairedSlotWords(const FrameConfig& c) {
-    return macroblockSlotWords * c.mbWidth * 2;
+    return macroblockSlotWords * c.mbWidth * c.sliceRows;
 }
 
 // SHADER-ABI: an IDR frame is emitted as one whole-picture slice so that
@@ -270,10 +270,10 @@ struct EncoderGpu::Impl {
         VkDeviceSize sourceSize = (VkDeviceSize(c.width) * c.height * 3 / 2 + 3) & ~VkDeviceSize(3);
         VkDeviceSize mbCount = VkDeviceSize(c.mbWidth) * c.mbHeight;
         VkDeviceSize scratchSize = VkDeviceSize(c.slotWords) * 4 * (c.sliceCount + 1);
-        bool paired = c.sliceRows == 2 && c.partitions == 0 && c.gop > 1;
+        bool paired = c.sliceRows >= 2 && c.partitions == 0 && c.gop > 1;
         parallelCapable = paired;
         if (paired)
-            scratchSize = std::max(scratchSize, VkDeviceSize(pairedSlotWords(c)) * 4 * ((c.mbHeight + 1) / 2 + 1));
+            scratchSize = std::max(scratchSize, VkDeviceSize(pairedSlotWords(c)) * 4 * ((c.mbHeight + c.sliceRows - 1) / c.sliceRows + 1));
         // SHADER-ABI: IDR frames collapse to one slice; reserve enough scratch
         // words for the whole frame in that one slot (two records: AUD/SPS/PPS
         // plus the picture slice).
@@ -282,7 +282,7 @@ struct EncoderGpu::Impl {
         if (parallelCapable) {
             scratchSize = std::max(scratchSize, parallelBytes(c, c.slotWords, c.sliceCount));
             if (paired)
-                scratchSize = std::max(scratchSize, parallelBytes(c, pairedSlotWords(c), (c.mbHeight + 1) / 2));
+                scratchSize = std::max(scratchSize, parallelBytes(c, pairedSlotWords(c), (c.mbHeight + c.sliceRows - 1) / c.sliceRows));
             if (c.gop > 1u) scratchSize = std::max(scratchSize, parallelBytes(c, idrSlotWords(c), 1));
         }
 #ifdef WX_RING
@@ -577,7 +577,7 @@ struct EncoderGpu::Impl {
         constexpr auto write = VK_ACCESS_SHADER_WRITE_BIT;
         constexpr auto read = VK_ACCESS_SHADER_READ_BIT;
         bool intra = c.frameIndex % c.gop == 0;
-        bool paired = !intra && c.sliceRows == 2 && c.partitions == 0;
+        bool paired = !intra && c.sliceRows >= 2 && c.partitions == 0;
         bool parallelSlices = parallelCapable && (paired || (intra && c.gop > 1u));
         // SHADER-ABI: see layout.glsl::idrWholeFrame().  One whole-frame slice
         // keeps intra prediction within the slice boundary (H.264 8.3.1).
@@ -587,7 +587,7 @@ struct EncoderGpu::Impl {
         }
         if (paired) {
             c.slotWords = pairedSlotWords(c);
-            c.sliceCount = (c.mbHeight + 1) / 2;
+            c.sliceCount = (c.mbHeight + c.sliceRows - 1) / c.sliceRows;
         }
 #ifdef WX_RING
         if (ringActive) RT("encode: ring selected");
