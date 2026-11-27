@@ -10,6 +10,10 @@ shared ivec2 candidates[candidateCount];
 shared uint shortlist[8];
 shared int samples[256];
 shared int blockSatd[128];
+// SHADER: the 23x64 cheap candidate-SAD terms are computed by all 64 lanes
+// instead of only the first 23, then summed in the original n order so the
+// arithmetic and tie-break bits stay byte-identical.
+shared int sadParts[candidateCount * 64u];
 
 ivec2 seed(ivec2 mb) {
     mb = clamp(mb, ivec2(0), ivec2(pc.mbWidth, pc.mbHeight) - 1);
@@ -88,12 +92,17 @@ void main() {
         int limit = hierarchicalMotionLimit();
         ivec2 mv = clamp(candidate(index, lane), -limit, limit);
         candidates[lane] = mv;
+    }
+    barrier();
+    ivec2 sampleXy = 2 * ivec2(int(lane & 7u), int(lane >> 3u));
+    for (uint c = 0u; c < candidateCount; ++c)
+        sadParts[int(c * 64u + lane)] = abs(samples[sampleXy.y * 16 + sampleXy.x] -
+                                            lumaPrediction(origin + sampleXy, candidates[c]));
+    barrier();
+    if (lane < candidateCount) {
         int sad = 0;
-        for (uint n = 0u; n < 64u; ++n) {
-            ivec2 xy = 2 * ivec2(n & 7u, n >> 3u);
-            sad += abs(samples[xy.y * 16 + xy.x] - lumaPrediction(origin + xy, mv));
-        }
-        costs[lane] = 32u * uint(sad + motionCost(mv, predictor, weight)) + lane;
+        for (uint n = 0u; n < 64u; ++n) sad += sadParts[lane * 64u + n];
+        costs[lane] = 32u * uint(sad + motionCost(candidates[lane], predictor, weight)) + lane;
     }
     barrier();
 
