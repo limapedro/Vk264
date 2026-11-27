@@ -141,6 +141,28 @@ this clip with the current codec** — the ~4.6-point drop is inherent to the
 toolset, not the controller. The controller can at best trade rate accuracy
 for a smaller quality loss; 13 adaptive-floor variants confirmed this.
 
+## 3c. Parity scope decision (lab `notes/PARITY_ROADMAP.md`)
+
+The definitive x264-slow parity study is in the sibling lab repo
+`limapedro/Vk264-CABAC-Lab`, `notes/PARITY_ROADMAP.md`. Its measured
+conclusion:
+
+- The 1080p60 gap is **structural**, not a parameter: on the user's brief
+  capture, wx264 fixed QP40 = 8.55 Mb/s / VMAF **76.38** vs x264-slow
+  **86.3** (~9.9 VMAF). On `obs_new_src.yuv`, wx264 fixed-QP ceiling
+  92.37 @7.65 Mb/s vs x264-slow 94.76 @8 Mb/s.
+- Realistic ceiling without a structural rewrite: **~93–94 game / ~76–80
+  capture**. Stacking the best conformant ≤2 ms ideas gives only +0.4…+0.9
+  VMAF, and x264 tool gains are non-additive.
+- CABAC is user-excluded; B-frames need a dual-reference ABI + DPB reorder;
+  frame-parallel N=8 gives 60–68 fps, N=16 at best 105–120 fps with ~3.8 GiB
+  scratch and N-frame RC lag that breaks bitstream identity.
+- Phases 0–2 (measurement hygiene, cheap conformant decisions, offline QP
+  plan) fit the current 100 fps gate. Phase 3 (structural) requires an
+  explicit decision to relax the speed gate or change hardware.
+
+This is a **scope gate**, not a technical blocker we can tune away.
+
 ## 4. Open items at time of writing
 Two sub-agents are still running and must be evaluated before items #1/#3
 are finalised:
