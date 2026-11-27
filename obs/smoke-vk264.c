@@ -1,5 +1,6 @@
 /* Real libobs integration: raw I420 -> plugin -> encoded OBS output.
- * No desktop settings, installed plugins, or live services are modified. */
+ * No desktop settings, installed plugins, or live services are modified.
+ * Extended with UI visibility / status-text / validation checks. */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <obs.h>
@@ -66,10 +67,72 @@ static struct obs_output_info sink_info = {
     .encoded_video_codecs="h264",
 };
 
+/* UI contract: one field per active rate-control mode, plus a mode-specific
+ * explanation and an effective-settings readout. */
+static int check_ui(const char *mode, bool wantBitrate, bool wantQp,
+                    const char *statusNeedle, const char *effectiveNeedle)
+{
+    obs_data_t *ui = obs_data_create();
+    obs_data_set_string(ui, "rate_control", mode);
+    obs_data_set_int(ui, "bitrate", 6000);
+    obs_data_set_int(ui, "qp", 34);
+    obs_data_set_int(ui, "keyint_sec", 5);
+    obs_data_set_string(ui, "preset", "slow");
+    obs_properties_t *props = obs_get_encoder_properties("vk264_h264");
+    obs_properties_apply_settings(props, ui);
+    const bool bitrateVisible = obs_property_visible(obs_properties_get(props, "bitrate"));
+    const bool qpVisible = obs_property_visible(obs_properties_get(props, "qp"));
+    const char *status = obs_property_description(obs_properties_get(props, "status"));
+    const char *effective = obs_property_description(obs_properties_get(props, "effective"));
+    const char *limits = obs_property_description(obs_properties_get(props, "limits"));
+    printf("UI mode=%-11s bitrate=%d qp=%d\n  status: %s\n  effective: %s\n",
+           mode, bitrateVisible, qpVisible, status, effective);
+    int ok = 1;
+    if (bitrateVisible != wantBitrate || qpVisible != wantQp) {
+        fprintf(stderr, "UI visibility bug: mode=%s bitrate=%d qp=%d\n",
+                mode, bitrateVisible, qpVisible);
+        ok = 0;
+    }
+    if (!status || !strstr(status, statusNeedle) ||
+        !effective || !strstr(effective, effectiveNeedle) ||
+        !limits || !strstr(limits, "no profile, tune or x264-options fields")) {
+        fprintf(stderr, "UI text bug: mode=%s\n", mode);
+        ok = 0;
+    }
+    obs_properties_destroy(props);
+    obs_data_release(ui);
+    return ok;
+}
+
+static int check_validation(video_t *video)
+{
+    obs_data_t *bad = obs_data_create();
+    obs_data_set_string(bad, "rate_control", "ABR");
+    obs_data_set_int(bad, "bitrate", 10);
+    obs_data_set_int(bad, "keyint_sec", 5);
+    obs_encoder_t *enc = obs_video_encoder_create("vk264_h264", "vk264-bad", bad, NULL);
+    if (!enc) { fprintf(stderr, "bad encoder not created\n"); return 0; }
+    obs_encoder_set_video(enc, video);
+    const char *saved = output_path;
+    output_path = "invalid-settings.h264";
+    obs_output_t *out = obs_output_create("vk264_smoke_sink", "bad-test", NULL, NULL);
+    obs_output_set_video_encoder(out, enc);
+    const bool started = obs_output_start(out);
+    const char *error = obs_encoder_get_last_error(enc);
+    printf("validation bitrate=10 rejected=%d error=%s\n", !started, error ? error : "(none)");
+    int ok = !started && error && strstr(error, "Target bitrate must be 64-50000");
+    if (started) obs_output_stop(out);
+    obs_output_release(out);
+    obs_encoder_release(enc);
+    obs_data_release(bad);
+    output_path = saved;
+    return ok;
+}
+
 int main(int argc,char **argv)
 {
-    if (argc != 7) {
-        fprintf(stderr, "Usage: vk264_obs_smoke plugin.dll data-dir input.yuv output.h264 preset i420|nv12\n");
+    if (argc != 7 && argc != 8) {
+        fprintf(stderr, "Usage: vk264_obs_smoke plugin.dll data-dir input.yuv output.h264 preset i420|nv12 [ABR|ABR-SMOOTH|CQP]\n");
         return 1;
     }
     bool nv12 = !strcmp(argv[6], "nv12");
@@ -88,23 +151,13 @@ int main(int argc,char **argv)
         .cache_size=8, .colorspace=VIDEO_CS_709, .range=VIDEO_RANGE_PARTIAL,
     };
     if (video_output_open(&video,&vi)) return 4;
+    if (!check_ui("ABR", true, false, "Average bitrate (ABR)", "target=6000 kbit/s")) return 10;
+    if (!check_ui("ABR-SMOOTH", true, false, "Smoothed ABR", "ABR-SMOOTH")) return 11;
+    if (!check_ui("CQP", false, true, "bitrate is ignored", "QP=34")) return 12;
+    if (!check_validation(video)) return 13;
     obs_data_t *settings = obs_data_create();
     obs_data_set_string(settings, "preset", argv[5]);
-    // UI visibility contract: ABR modes show Target bitrate and hide QP.
-    {
-        obs_data_t *ui = obs_data_create();
-        obs_data_set_string(ui, "rate_control", "ABR-SMOOTH");
-        obs_properties_t *props = obs_get_encoder_properties("vk264_h264");
-        obs_properties_apply_settings(props, ui);
-        bool bitrateVisible = obs_property_visible(obs_properties_get(props, "bitrate"));
-        bool qpHidden = !obs_property_visible(obs_properties_get(props, "qp"));
-        obs_properties_destroy(props);
-        obs_data_release(ui);
-        if (!bitrateVisible || !qpHidden) {
-            fprintf(stderr, "UI visibility bug: bitrate=%d qp=%d\n", bitrateVisible, !qpHidden);
-            return 10;
-        }
-    }
+    obs_data_set_string(settings, "rate_control", argc == 8 ? argv[7] : "ABR");
     obs_encoder_t *enc = obs_video_encoder_create("vk264_h264","vk264-smoke",settings,NULL);
     if (!enc) return 5;
     obs_encoder_set_video(enc,video);

@@ -3,7 +3,10 @@
 #include <util/base.h>
 #include "presets.hpp"
 
+#include <cstdio>
 #include <cstring>
+#include <initializer_list>
+#include <string>
 #include <vector>
 
 OBS_DECLARE_MODULE()
@@ -35,6 +38,61 @@ void removeNalPadding(const EncodedFrame& frame, std::vector<uint8_t>& packet) {
         nal = next;
     }
     if (packet.empty()) throw std::runtime_error("Vk264 received an empty encoded access unit");
+}
+
+const char* validateSettings(int bitrate, int qp, int keyint, std::string_view rate) {
+    if (rate != "ABR" && rate != "ABR-SMOOTH" && rate != "CQP")
+        return "Vk264: Rate control must be Average bitrate, Smoothed ABR or Constant QP";
+    // CQP ignores bitrate entirely (the UI hides it), so an out-of-range
+    // bitrate left over from a previous mode must not block a CQP encode.
+    if (rate == "CQP") {
+        if (qp < 0 || qp > 51) return "Vk264: QP must be 0-51 (lower is higher quality)";
+    } else if (bitrate < 64 || bitrate > 50000) {
+        return "Vk264: Target bitrate must be 64-50000 kbit/s";
+    }
+    if (keyint < 1 || keyint > 10)
+        return "Vk264: Keyframe interval must be 1-10 seconds";
+    return nullptr;
+}
+
+const char* statusText(std::string_view rate) {
+    if (rate == "CQP")
+        return "Constant QP (CQP): Target bitrate is ignored. QP fixes quality "
+               "(0 = lossless, lower = better); file size varies with content. "
+               "Restart the output to apply changes.";
+    if (rate == "ABR-SMOOTH")
+        return "Smoothed ABR: targets Target bitrate while averaging frame "
+               "activity to reduce short-term spikes. QP is not a target; ABR "
+               "starts at QP 14. Restart the output to apply changes.";
+    return "Average bitrate (ABR): targets Target bitrate. QP is not a target; "
+           "ABR starts at QP 14 to protect the first keyframe. "
+           "Restart the output to apply changes.";
+}
+
+// The properties panel has no reliable video_t handle (OBS video may not be
+// reset yet), so show the exact formula instead of a guessed frame count.
+const char* gopSummary() { return "GOP = keyint x fps"; }
+
+std::string effectiveText(obs_data_t* settings) {
+    const std::string_view rate = obs_data_get_string(settings, "rate_control");
+    const int bitrate = obs_data_get_int(settings, "bitrate");
+    const int qp = obs_data_get_int(settings, "qp");
+    const int keyint = obs_data_get_int(settings, "keyint_sec");
+    const char* preset = obs_data_get_string(settings, "preset");
+    const char* gop = gopSummary();
+    char text[512];
+    if (rate == "CQP") {
+        std::snprintf(text, sizeof(text),
+            "Effective: CQP | QP=%d (0=lossless) | bitrate ignored | "
+            "keyint=%d s -> %s | preset=%s", qp, keyint, gop, preset);
+    } else {
+        std::snprintf(text, sizeof(text),
+            "Effective: %s | target=%d kbit/s | starting QP=14 (capped) | "
+            "keyint=%d s -> %s | preset=%s",
+            rate == "ABR-SMOOTH" ? "ABR-SMOOTH" : "ABR", bitrate, keyint,
+            gop, preset);
+    }
+    return text;
 }
 
 struct Encoder {
@@ -84,11 +142,9 @@ void* encoder_create(obs_data_t* settings, obs_encoder_t* owner) {
         auto qp = obs_data_get_int(settings, "qp");
         auto keyint = obs_data_get_int(settings, "keyint_sec");
         std::string_view rate = obs_data_get_string(settings, "rate_control");
-        if (!vi) throw std::runtime_error("Vk264 could not read the OBS video format");
-        if (bitrate < 64 || bitrate > 50000 || qp < 0 || qp > 51 ||
-            keyint < 1 || keyint > 10 ||
-            (rate != "ABR" && rate != "ABR-SMOOTH" && rate != "CQP"))
-            throw std::runtime_error("Vk264 encoder settings are out of range");
+        if (!vi) throw std::runtime_error("Vk264 could not read the OBS video format (start the output after video is active)");
+        if (const char* error = validateSettings(bitrate, qp, keyint, rate))
+            throw std::runtime_error(error);
 
         auto config = makeFrameConfig(width, height, vi->fps_num, vi->fps_den,
                                       findPreset(obs_data_get_string(settings, "preset")));
@@ -115,6 +171,7 @@ void* encoder_create(obs_data_t* settings, obs_encoder_t* owner) {
             throw std::runtime_error("Vk264 module data path is missing");
         return new Encoder(owner, config, std::filesystem::u8path(data_path) / "shaders");
     } catch (const std::exception& error) {
+        blog(LOG_ERROR, "%s", error.what());
         obs_encoder_set_last_error(owner, error.what());
         return nullptr;
     }
@@ -177,36 +234,52 @@ void encoder_defaults(obs_data_t* settings) {
 
 // Mirror the x264 OBS plugin: only the field used by the selected rate
 // control mode is shown, so a CQP recording cannot be mistaken for a missed
-// bitrate target.
-bool rateControlChanged(obs_properties_t* props, obs_property_t*, obs_data_t* settings) {
+// bitrate target.  The mode-specific explanation and the effective-settings
+// readout are refreshed for every field, not just the mode selector.
+bool settingsChanged(obs_properties_t* props, obs_property_t*, obs_data_t* settings) {
     const std::string_view mode = obs_data_get_string(settings, "rate_control");
-    const bool abr = mode == "ABR" || mode == "ABR-SMOOTH";
+    const bool abr = mode != "CQP";
     obs_property_set_visible(obs_properties_get(props, "bitrate"), abr);
     obs_property_set_visible(obs_properties_get(props, "qp"), !abr);
+    obs_property_set_description(obs_properties_get(props, "status"), statusText(mode));
+    const std::string effective = effectiveText(settings);
+    obs_property_set_description(obs_properties_get(props, "effective"), effective.c_str());
     return true;
 }
 
 obs_properties_t* encoder_properties(void*) {
     auto* props = obs_properties_create();
-    auto* preset = obs_properties_add_list(props, "preset", "Preset",
-                                           OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+    auto* preset = obs_properties_add_list(props, "preset",
+        "Quality preset (Vk264 fixed search settings)",
+        OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
     for (const auto& item : presets)
         obs_property_list_add_string(preset, item.name.data(), item.name.data());
     auto* rate = obs_properties_add_list(props, "rate_control", "Rate control",
                                          OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-    obs_property_list_add_string(rate, "Average bitrate", "ABR");
-    obs_property_list_add_string(rate, "Constant QP", "CQP");
-    obs_property_list_add_string(rate, "Average bitrate (smoothed)", "ABR-SMOOTH");
-    obs_properties_add_int(props, "bitrate", "Target bitrate (kbps)", 64, 50000, 1);
-    obs_properties_add_int(props, "qp", "QP (Constant QP only)", 0, 51, 1);
-    obs_properties_add_int(props, "keyint_sec", "Keyframe interval (seconds)", 1, 10, 1);
-    obs_property_set_modified_callback(rate, rateControlChanged);
-    // Defaults select ABR; the callback reveals QP when CQP is chosen.
-    obs_property_set_visible(obs_properties_get(props, "qp"), false);
-    obs_properties_add_text(props, "status",
-        "ABR uses Target bitrate; Constant QP ignores it and uses QP. "
-        "Smoothed ABR averages frame activity to avoid bitrate spikes. "
-        "Restart the output to apply changes.", OBS_TEXT_INFO);
+    obs_property_list_add_string(rate, "Average bitrate (ABR)", "ABR");
+    obs_property_list_add_string(rate, "Smoothed average bitrate (ABR-SMOOTH)", "ABR-SMOOTH");
+    obs_property_list_add_string(rate, "Constant QP (CQP)", "CQP");
+    auto* bitrate = obs_properties_add_int(props, "bitrate", "Target bitrate (kbit/s, 64-50000)", 64, 50000, 1);
+    auto* qp = obs_properties_add_int(props, "qp", "Constant QP (0-51; lower = better; 0 = lossless)", 0, 51, 1);
+    auto* keyint = obs_properties_add_int(props, "keyint_sec", "Keyframe interval (seconds, 1-10)", 1, 10, 1);
+    obs_properties_add_text(props, "status", "", OBS_TEXT_INFO);
+    obs_properties_add_text(props, "effective", "", OBS_TEXT_INFO);
+    obs_properties_add_text(props, "limits",
+        "Fixed capabilities: High profile, 8-bit I420, BT.709 limited range, "
+        "CAVLC, no B-frames. The four quality presets are Vk264's own fixed "
+        "search settings (motion radius / SATD candidates / references), not "
+        "x264 presets; there are no profile, tune or x264-options fields "
+        "because this encoder does not implement them. Keyframe interval "
+        "defaults to 5 s for quality; use 2 s for services that need shorter GOPs.",
+        OBS_TEXT_INFO);
+    for (auto* field : {preset, rate, bitrate, qp, keyint})
+        obs_property_set_modified_callback(field, settingsChanged);
+    // Populate the info fields even when the host does not call
+    // obs_properties_apply_settings immediately after building the panel.
+    obs_data_t* initial = obs_data_create();
+    encoder_defaults(initial);
+    settingsChanged(props, nullptr, initial);
+    obs_data_release(initial);
     return props;
 }
 }
