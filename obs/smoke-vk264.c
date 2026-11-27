@@ -79,7 +79,7 @@ int main(int argc,char **argv)
     obs_module_t *plugin = NULL;
     if (obs_open_module(&plugin, argv[1], argv[2]) || !obs_init_module(plugin)) return 2;
     const char *name = obs_encoder_get_display_name("vk264_h264");
-    if (!name || strcmp(name, "Vk264/H.264")) return 3;
+    if (!name || strcmp(name, "Vk264:AVC")) return 3;
     obs_register_output(&sink_info);
     video_t *video = NULL;
     struct video_output_info vi = {
