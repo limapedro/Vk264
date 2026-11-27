@@ -54,7 +54,11 @@ void main() {
     float rateRatio = float(max(1, actual)) / float(aim);
     int maxStep = intraBudget ? 4 : 2;
     int step = clamp(int(round((intraBudget ? 5.0 : 3.0) * log2(rateRatio))), -maxStep, maxStep);
-    int offset = clamp(qp + step, 0, 51) - int(pc.initialQp);
+    // At >=50 fps, easy/desktop-capture content can drive QP to 0 and waste
+    // 4-6x the target bitrate for <1 VMAF gain (measured: 23.75 Mb/s -> 5.86 Mb/s
+    // at VMAF 97.40 -> 96.69).  Gaming content naturally uses QP >= 18, so a
+    // floor of 18 only constrains the pathological easy-content case.
+    int offset = clamp(qp + step, pc.fps >= 50u ? 18 : 0, 51) - int(pc.initialQp);
     if (intraBudget) rc.idrQpOffset = offset;
     else rc.interQpOffset = offset;
 }
