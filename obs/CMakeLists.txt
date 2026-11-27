@@ -37,8 +37,11 @@ target_compile_features(obs-vk264 PRIVATE cxx_std_17)
 target_compile_definitions(obs-vk264 PRIVATE WX_SHADER_DIR="${shader_dir}")
 target_link_libraries(obs-vk264 PRIVATE "${obs_import}" Vulkan::Vulkan)
 
-install(TARGETS obs-vk264 RUNTIME DESTINATION obs-vk264/bin/64bit
-                          LIBRARY DESTINATION obs-vk264/bin/64bit)
+# Portable OBS scans plugins/<name>/*.dll directly (system installs use
+# bin/64bit).  Put the DLL at the plugin root so a portable build needs no
+# restructuring; data/ is resolved relative to the module by libobs.
+install(TARGETS obs-vk264 RUNTIME DESTINATION obs-vk264
+                          LIBRARY DESTINATION obs-vk264)
 install(FILES ${shaders} DESTINATION obs-vk264/data/shaders)
 install(FILES obs-vk264-locale.ini DESTINATION obs-vk264/data/locale RENAME en-US.ini)
 install(FILES README-vk264.md DESTINATION obs-vk264 RENAME README.md)
