@@ -41,7 +41,7 @@ ivec2 approximateMvp(ivec2 index) {
     bool paired = pairedRows();
     bool haveLeft = (uint(index.x) % (paired ? pc.mbWidth : sliceWidth)) != 0u;
     ivec2 left = haveLeft ? seed(index + ivec2(-1,0)) : ivec2(0);
-    if (!paired || (index.y & 1) == 0) return left;
+    if (!paired || (uint(index.y) % pc.sliceRows) == 0u) return left;
 
     ivec2 above = seed(index + ivec2(0,-1));
     if (pc.mbWidth == 1u) return above;

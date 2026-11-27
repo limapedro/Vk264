@@ -34,7 +34,7 @@ layout(std430, binding=12) buffer MacroblockSyntax { uvec2 mbSyntax[]; }; // CBP
 layout(std430, binding=13) buffer MacroblockBodies { uint mbBody[]; };
 
 const uint sliceWidth = 64u;
-const uint maxPairedSliceMbs = 512u; // two rows of up to 256 macroblocks
+const uint maxPairedSliceMbs = 512u; // up to four rows of 128 macroblocks (or two of 256)
 const uint mbCoefficients = 432u; // 384 AC/ordinary, 16 Y DC, 8 UV DC, 24 nonzero counts
 const uint mbBodyWords = 768u;
 const uint mbSkipFlag = 64u;
@@ -57,25 +57,25 @@ int frameQp() {
     return clamp(int(pc.initialQp) + offset, 0, 51);
 }
 uint residualWave() { return pc.idrWave; }
-bool pairedRows() { return pc.sliceRows == 2u && !idr() && pc.partitions == 0u; }
+bool pairedRows() { return pc.sliceRows >= 2u && !idr() && pc.partitions == 0u; }
 bool pictureAq() { return pc.aq != 0u && pairedRows(); }
 int mbQp(uint mb) { return int(mbSyntax[mb].x >> 14u); }
 int mbQpDelta(uint flags) { return bitfieldExtract(int(flags), 7, 7); }
 uint firstMb(uint slice) {
     if (idrWholeFrame()) return 0u;
-    if (pairedRows()) return slice * 2u * pc.mbWidth;
+    if (pairedRows()) return slice * pc.sliceRows * pc.mbWidth;
     return (slice / pc.slicesPerRow) * pc.mbWidth + (slice % pc.slicesPerRow) * sliceWidth;
 }
 uint sliceLength(uint slice) {
     if (idrWholeFrame()) return pc.mbWidth * pc.mbHeight;
-    if (pairedRows()) return pc.mbWidth * min(2u, pc.mbHeight - 2u * slice);
+    if (pairedRows()) return pc.mbWidth * min(pc.sliceRows, pc.mbHeight - pc.sliceRows * slice);
     return min(sliceWidth, pc.mbWidth - (slice % pc.slicesPerRow) * sliceWidth);
 }
 bool leftAvailable(uint mb, uint inSlice) { return inSlice != 0u && mb % pc.mbWidth != 0u; }
 // SHADER: CAVLC nC uses the above neighbour whenever it is in the same slice.
 // IDR whole-frame slices make the row above available too.
 bool topAvailable(uint inSlice) { return (pairedRows() || idrWholeFrame()) && inSlice >= pc.mbWidth; }
-uint offsetInPair(uint mb) { return mb % (2u * pc.mbWidth); }
+uint offsetInPair(uint mb) { return mb % (pc.sliceRows * pc.mbWidth); }
 ivec2 medianMv(ivec2 a, ivec2 b, ivec2 c) { return min(max(a, b), max(min(a, b), c)); }
 bool spatialMotion() { return pc.partitions == 0u && pc.subpel != 0u && pc.motionRadius >= 4u; }
 int hierarchicalMotionLimit() { return int(pc.motionRadius) * (pc.satdCandidates >= 4u ? 16 : 8); }
