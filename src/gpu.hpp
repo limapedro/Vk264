@@ -19,6 +19,7 @@ struct FrameConfig {
     std::uint32_t references, levelIdc, referenceStrideWords, previousWords, deblockWave, flatIntra;
     std::uint32_t aq;
     std::uint32_t fpsNumerator, fpsDenominator, videoSignal;
+    std::uint32_t idrWave; // diagonal wave index for whole-frame IDR residual
 };
 
 struct EncodedFrame {

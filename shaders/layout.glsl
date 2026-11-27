@@ -8,6 +8,7 @@ layout(push_constant) uniform Frame {
     uint references, levelIdc, referenceStrideWords, previousWords, deblockWave, flatIntra;
     uint aq;
     uint fpsNumerator, fpsDenominator, videoSignal;
+    uint idrWave; // whole-frame IDR residual diagonal wave index
 } pc;
 
 layout(std430, binding=0) readonly buffer Source { uint source[]; };
@@ -55,6 +56,7 @@ int frameQp() {
     int offset = separateIdrBudget() ? rc.idrQpOffset : rc.interQpOffset;
     return clamp(int(pc.initialQp) + offset, 0, 51);
 }
+uint residualWave() { return pc.idrWave; }
 bool pairedRows() { return pc.sliceRows == 2u && !idr() && pc.partitions == 0u; }
 bool pictureAq() { return pc.aq != 0u && pairedRows(); }
 int mbQp(uint mb) { return int(mbSyntax[mb].x >> 14u); }

@@ -41,7 +41,7 @@ struct Buffer {
 enum Stage { Pyramid, HalfPel, Motion, Spatial, OlderReferences, Residual, FlatIntra, MbFlags, Deblock, MbEntropy, Entropy, Scan, Assemble, StageCount };
 constexpr std::array<const char*, StageCount> shaderNames{"pyramid", "halfpel", "motion", "spatial", "older_references", "residual", "flat_intra", "mb_flags",
     "deblock", "mb_entropy", "entropy", "scan", "assemble"};
-static_assert(sizeof(FrameConfig) == 28 * sizeof(std::uint32_t));
+static_assert(sizeof(FrameConfig) == 29 * sizeof(std::uint32_t));
 
 std::uint32_t pairedSlotWords(const FrameConfig& c) {
     return macroblockSlotWords * c.mbWidth * 2;
@@ -405,6 +405,28 @@ struct EncoderGpu::Impl {
         if (timestamps) vkCmdWriteTimestamp(commands, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestamps, Deblock + 1);
     }
 
+    // SHADER-ABI: a whole-frame IDR slice keeps intra prediction legal, but
+    // one workgroup would serially walk 8160 MBs at 1080p (~60 ms).  Diagonal
+    // waves (x+y=wave) are independent because every MB depends only on the
+    // MBs to its left and above, which the previous wave completed.  Barriers
+    // between waves reproduce raster-order reconstruction byte for byte.
+    void dispatchIdrWaves(const FrameConfig& c) {
+        constexpr auto compute = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        constexpr auto write = VK_ACCESS_SHADER_WRITE_BIT;
+        constexpr auto read = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[Residual]);
+        std::uint32_t waves = c.mbWidth + c.mbHeight - 1u;
+        for (std::uint32_t wave = 0u; wave < waves; ++wave) {
+            std::uint32_t first = wave >= c.mbHeight ? wave - c.mbHeight + 1u : 0u;
+            std::uint32_t last = std::min(c.mbWidth - 1u, wave);
+            vkCmdPushConstants(commands, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+                               offsetof(FrameConfig, idrWave), sizeof(wave), &wave);
+            vkCmdDispatch(commands, last - first + 1u, 1, 1);
+            if (wave + 1u < waves) barrier(compute, write, compute, read | write);
+        }
+        if (timestamps) vkCmdWriteTimestamp(commands, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestamps, Residual + 1);
+    }
+
     EncodedFrame encode(FrameConfig c) {
         constexpr auto compute = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
         constexpr auto transfer = VK_PIPELINE_STAGE_TRANSFER_BIT;
@@ -461,7 +483,8 @@ struct EncoderGpu::Impl {
         bool olderReferences = paired && c.references > 1 && c.frameIndex % c.gop > 1;
         dispatch(OlderReferences, olderReferences ? mbCount : 0);
         if (olderReferences) barrier(compute, write, compute, read | write);
-        dispatch(Residual, intra ? c.sliceCount : mbCount);
+        if (intra && c.gop > 1u) dispatchIdrWaves(c);
+        else dispatch(Residual, intra ? c.sliceCount : mbCount);
         barrier(compute, write, compute, read | write);
         bool flatIntra = paired && c.flatIntra;
         dispatch(FlatIntra, flatIntra ? c.sliceCount : 0);
