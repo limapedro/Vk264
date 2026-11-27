@@ -57,3 +57,5 @@ obs_module_load_locale
 text_lookup_getstr
 text_lookup_destroy
 obs_encoder_get_display_name
+obs_property_set_description
+obs_property_description
