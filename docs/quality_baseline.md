@@ -211,3 +211,27 @@ Also reverted: explicit x264 `ipratio=1.40` I-frame QP offset (-3) in
 `shaders/layout.glsl`. At matched rate it *reduced* VMAF 95.30 -> 95.00
 (6000) and 96.67 -> 96.47 (8000); the ABR controller already gives IDRs a
 separate budget and the extra offset only starved P frames.
+
+## Longer default GOP (PR #503)
+
+A 2 s GOP (50f @25fps) over-spends on IDRs: with the parallel CAVLC path an
+IDR is cheap in time (1.45 ms) but still expensive in bits, and P frames use
+the budget more efficiently. Default changed to 5 s (125f @25fps,
+300f @60fps); explicit --gop still overrides.
+
+| Case | GOP 50 | GOP 125 | Delta |
+|---|---:|---:|---:|
+| 1080p/300f 6000 PSNR-Y | 46.748 | 47.003 | +0.255 |
+| 1080p/300f 6000 VMAF | 95.390 | 95.719 | +0.329 |
+| 1080p/300f 6000 process fps | 85 | 89 | +4 |
+| 1080p/300f 6000 encode-loop fps | 112 | 120 | +8 |
+| 1080p/300f 8000 VMAF | 96.669 | 96.957 | +0.288 |
+| second 180f 1080p clip 6000 VMAF | 94.824 | 95.377 | +0.553 |
+
+Damping the ABR P-frame QP step (scan.comp maxStep 2->1, gain 3->1.5)
+was measured and reverted: VMAF 95.740 @6000 (+0.021) but 96.926 @8000
+(-0.031). Per-frame QP swings 14->28->17->32 are largely content-driven;
+damping did not improve matched-rate quality.
+
+Current HEAD state: 1080p/300f --gop 125 --qp 14 6000k VMAF 95.719,
+8000k VMAF 96.957; x264-slow at the same GOP ~97.9 / ~98.3. ctest 45/46.
