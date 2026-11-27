@@ -1,0 +1,120 @@
+# Vk264 improvement roadmap — ranked by effort vs expected VMAF gain
+
+Status: HEAD `d24dc87`. This document is the single source of truth for what
+has been measured, what has landed, what was tried and rejected, and what is
+worth doing next. Every number below comes from a command in
+`docs/quality_baseline.md`, this file, or the retained sub-agent reports under
+`C:\Users\multi\AppData\Local\Temp\opencode\`.
+
+## 1. Where we are now (measured)
+
+GTX 1660 SUPER, Vulkan compute-shader H.264 encoder, CAVLC, I/P only,
+5 refs, radius 24, paired 2-row P slices, whole-frame IDR, no B-frames,
+no CABAC, no trellis/RDO, no MB-tree, no lookahead.
+
+### Throughput (1080p, 300 frames, 6000 kb/s, `--gop 125 --qp 14`)
+| Metric | Value |
+|---|---:|
+| Encode loop | 132–140 fps (after PR #515 ring) |
+| End-to-end process | 93–103 fps (median ~99) |
+| GPU stage sum | 6.5–7.2 ms/frame |
+| IDR residual (single keyframe) | 1.9 ms (28x faster since PR #513) |
+| Entropy | ~0.08 ms/frame |
+
+### Quality on the 25 fps game clip (300f, `--gop 125 --qp 14`, VMAF v0)
+| Rate | wx264 | x264-slow | NVENC P5 |
+|---|---:|---:|---:|
+| 6000 | VMAF 96.15, PSNR 47.42, 6178 kb/s | 97.99 | 97.46 |
+| 8000 | VMAF 97.11, PSNR 48.64, 8129 kb/s | 98.31 | 97.87 |
+
+### Quality on the user's 1080p60 desktop-capture content
+| Target | wx264 ABR | x264-medium | wx264 fixed-QP ceiling |
+|---:|---:|---:|---:|
+| 2000 | 18.6 Mb/s (BROKEN) | 84.3 VMAF @2.07 Mb/s | 68.9 @1.95 Mb/s |
+| 4000 | 20.8 Mb/s (BROKEN) | 91.2 @4.15 | 87.2 @4.14 |
+| 6000 | 20.9 Mb/s (BROKEN) | 93.4 @6.22 | 92.1 @6.15 |
+| 8000 | 21.0 Mb/s (BROKEN) | 94.6 @8.19 | 93.7 @7.65 |
+
+**Dominant problem: the ABR controller, not the codec.** Fixed QP is within
+~1 VMAF of x264 at 6000/8000, but ABR limit-cycles at QP 18/22 and never
+converges to the QP 28 needed for 8000 on this content.
+
+---
+
+## 2. Ranked work list
+
+Ranking key: **E** = implementation effort (S/M/L/XL), **G** = expected VMAF
+gain at matched rate, **R** = risk to speed/conformance. "Landed" items are
+kept for provenance.
+
+| # | Item | E | G | R | Status / evidence |
+|---:|---|---|---|---|---|
+| 1 | **Adaptive QP floor to break the 18/22 limit cycle** | S | up to +4 at 6000 (fixes 21 Mb/s -> 6 Mb/s) | low | in progress (agent); a fixed floor of 18 already cut easy content 23.75->5.86 Mb/s at -0.70 VMAF (PR #516); gaming -0.09 VMAF |
+| 2 | **Gate/rollback the fixed floor if it regresses hard content** | S | protects +4 above | none | fallback if #1 fails: floor only when `actual < aim` for N frames |
+| 3 | **Content-adaptive preset selection (x264 autotuning analogue)** | S–M | +0.3–0.8 | low | published −11.6% BD-rate / +2.32 BD-VMAF on x264-veryslow (Disney 2024); our CLI knobs already expose preset; cheap host-side heuristic from preloaded SAD |
+| 4 | **Per-frame QP plan from preloaded source complexity (qcomp)** | M | +0.3–2.9 on ABR-broken clips | medium | tested 12 arms: fixed exponents failed rate on 6 masters; needs adaptive calibration (#1) first |
+| 5 | **Syntax overhead reduction (fewer P-slices, 4-byte start codes, AUD removal)** | M | +0.05 dB (~0.05 VMAF) | medium | prototyped byte-identical; 1.36% (25fps) / 3.07% (60fps) overhead; 34->9 slices saves ~1% at fixed QP; ABR re-spends most of it |
+| 6 | **Coefficient trellis/QNS with pruned bit counts** | M–L | +0.2–0.4 VMAF (x264 trellis ablation -0.650 when removed; our exact-CAVLC prototype +0.344) | medium | tried naive version; residual 1.8->2.7 ms broke gate before PR #513/#514 freed ~0.3 ms. Refined design: two roundings per coefficient, `J=ΔD+λ₂·R`, subband weights from the measured VIF deficit, <=16 block re-encodes + one exact-count final check, ~0.1-0.3 ms |
+| 7 | **Block-level λ / perceptual (saliency/VIF) bit allocation** | M | +0.3–1.0 (published) | medium | per-MB VMAF-feature-driven QP; no AQ (measured negative); needs per-MB QP signalling in our syntax |
+| 8 | **Cheap learned/neural post-filter (H.264-conformant)** | L | +1–3 (if allowed to change decode path) | high | 516 MAC/px post-filter cited as only way past 95 without structure; would not be decodable by standard H.264 players unless applied outside bitstream |
+| 9 | **8x8 adaptive transform** | L | +0.15 | high | tried; decode breakage and entropy regression; would need full syntax path |
+| 10 | **CABAC** | XL | +0.18–0.34 +3% bits | very high | tried; ~23 fps due to serial per-slice arithmetic state (14 us/MB) |
+| 11 | **B-frames + lookahead + MB-tree** | XL | +0.5–0.69 | very high | needs dual-reference ABI, host DPB reorder, slicetype analysis; without lookahead B-frames LOSE 0.64 VMAF |
+| 12 | **AQ / psy-RD** | S | **negative** (−0.14 to −0.22) | low | tested and reverted; do not retry |
+
+### Already landed (provenance, byte-identical where marked)
+- PR #513: IDR residual wavefront, 52–67 ms -> 1.9 ms, byte-identical.
+- PR #514: spatial SAD over 64 lanes, 1.22 -> 1.09 ms, byte-identical.
+- PR #515: command-buffer/fence ring + threaded input preload, loop 119 -> 132–140 fps, process 89 -> ~99 fps, byte-identical.
+- PR #516: QP floor 18 at >=50 fps, easy content 23.75 -> 5.86 Mb/s at -0.70 VMAF.
+- PR #511: OBS ABR starting-QP clamp.
+- PR #510: portable OBS DLL layout; PR #509: Vk264/H.264 plugin; PR #517: effective-settings logging.
+
+### Explicitly rejected (do not repeat without new evidence)
+larger debt window, wider aim cap, asymmetric clamp, step damping/faster gain,
+two-sided GOP-scaled controller, qcomp fixed exponents, QP ceiling 30/38,
+proportional/windowed controllers, exact-CAVLC RD at old speed budget,
+I4x4, 8x8 inter partitions, AQ, psy-RD, chroma QP offset, ipratio offset,
+SATD finalists, older-ref subpel, MV penalty, deblock variants, low/high AC
+divisor splits, more refs, veryslow preset as default.
+
+---
+
+## 3. Measurement protocol for every step
+
+```
+python harness/benchmark.py --input <master.yuv> --out <results> \
+  --width 1920 --height 1080 --fps {25|60} --frames 300 \
+  --bitrate {2000|4000|6000|8000} --gop {125|120|300} --qp 14 \
+  --encoders wx264-slow x264-slow nvenc-p5 --vmaf
+```
+Acceptance gates: VMAF >= baseline +0.3 OR PSNR +0.3 dB at matched rate;
+achieved bitrate within +/-5%; loop >=100 fps; process >=85 fps; ctest
+45/46 (only pre-existing `x264_cavlc_packet_parity`); `check.py` 13/13;
+`ffmpeg -err_detect explode` clean.
+
+Masters: `build/native1080_300.yuv` (25fps game), `build/obs_new_src.yuv`
+(user's hard 1080p60 capture), `build/obs_capture_src.yuv` (easy capture),
+and `C:\Users\multi\AppData\Local\Temp\opencode\corpus\masters\*.yuv`.
+
+## 4. Open items at time of writing
+Two sub-agents are still running and must be evaluated before items #1/#3
+are finalised:
+- `ses_de2d0752affe5g5VSsbM249e0J`: adaptive QP floor prototype.
+- `ses_de2c9edcfffexLMoKYnhDpeaoA`: x264-veryslow exact tool ablation on the
+  user's content.
+
+Completed and already folded into the ranking:
+- `ses_de2c9edcfffexLMoKYnhDpeaoA`: x264-veryslow exact tool ablation on the
+  user's content (`obs_new_src.yuv`, 300f/1080p60, 6000k, VMAF v0.6.1):
+  medium 93.426 @6155 kb/s -> veryslow 93.984 @5829 kb/s (+0.558). Removing
+  one tool from veryslow costs: mode-RD/subme -0.863, trellis -0.650,
+  CABAC -0.552, B-frames -0.411, 8x8dct -0.210, MB-tree -0.166, refs -0.147;
+  disabling AQ GAINS +0.241. Individual gains are non-additive (+0.279 vs
+  +0.558 actual). Only parallel-shader-transferable piece: coefficient-level
+  trellis/QNS, bounded at +0.2-0.4 VMAF.
+- `ses_de2ca16fdffeETOw8RAliZVe0T`: state-of-the-art codec math/tricks survey
+  (notes at `...\stateoftheart\RESEARCH.md`): even stacking feasible ideas
+  gives ~+1.5 VMAF (93.5–94), not 95; warns that Netflix VMAF v1 (June 2026)
+  can move scores 1–3 points and that some published VMAF gains are
+  sharpening/VIF exploits.
