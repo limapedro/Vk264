@@ -65,7 +65,7 @@ kept for provenance.
 
 | # | Item | E | G | R | Status / evidence |
 |---:|---|---|---|---|---|
-| 1 | **Adaptive QP floor to break the 18/22 limit cycle** | S | up to +4 at 6000 (fixes 21 Mb/s -> 6 Mb/s) | low | in progress (agent); a fixed floor of 18 already cut easy content 23.75->5.86 Mb/s at -0.70 VMAF (PR #516); gaming -0.09 VMAF |
+| 1 | **Adaptive QP floor to break the 18/22 limit cycle** | S | up to +4 at 6000 (fixes 21 Mb/s -> 6 Mb/s) | low | **CONFIRMED BLOCKED (13 variants, all reverted).** obs_new_src is 30->60 fps duplicated capture: ~25% of frames are 4x `aim`, the rest ~1/20 of it, so per-frame `rateRatio` is the wrong signal. Best variant v6 held +/-5% only on isolated cases and cost >10 VMAF on yt_forza/porsche. 25fps guard always passed. See results in `...\abfix2\measure\`. Fixed floor 18 (PR #516) remains the best rate-accuracy compromise |
 | 2 | **Gate/rollback the fixed floor if it regresses hard content** | S | protects +4 above | none | fallback if #1 fails: floor only when `actual < aim` for N frames |
 | 3 | **Content-adaptive preset selection (x264 autotuning analogue)** | S–M | +0.3–0.8 | low | published −11.6% BD-rate / +2.32 BD-VMAF on x264-veryslow (Disney 2024); our CLI knobs already expose preset; cheap host-side heuristic from preloaded SAD |
 | 4 | **Per-frame QP plan from preloaded source complexity (qcomp)** | M | +0.3–2.9 on ABR-broken clips | medium | tested 12 arms: fixed exponents failed rate on 6 masters; needs adaptive calibration (#1) first |
@@ -112,6 +112,15 @@ achieved bitrate within +/-5%; loop >=100 fps; process >=85 fps; ctest
 Masters: `build/native1080_300.yuv` (25fps game), `build/obs_new_src.yuv`
 (user's hard 1080p60 capture), `build/obs_capture_src.yuv` (easy capture),
 and `C:\Users\multi\AppData\Local\Temp\opencode\corpus\masters\*.yuv`.
+
+## 3b. Ceiling on the user's 1080p60 capture content
+
+Fixed QP28 (`wx264-medium`, no ABR) on `obs_new_src.yuv`: **7646.8 kb/s,
+VMAF 92.372** (slow preset: 7485.8 kb/s / 92.376). The baseline ABR at
+21 Mb/s reaches VMAF 96.996. Therefore **VMAF >=95 at 8 Mb/s is impossible on
+this clip with the current codec** — the ~4.6-point drop is inherent to the
+toolset, not the controller. The controller can at best trade rate accuracy
+for a smaller quality loss; 13 adaptive-floor variants confirmed this.
 
 ## 4. Open items at time of writing
 Two sub-agents are still running and must be evaluated before items #1/#3
