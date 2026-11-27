@@ -86,14 +86,16 @@ void* encoder_create(obs_data_t* settings, obs_encoder_t* owner) {
         std::string_view rate = obs_data_get_string(settings, "rate_control");
         if (!vi) throw std::runtime_error("Vk264 could not read the OBS video format");
         if (bitrate < 64 || bitrate > 50000 || qp < 0 || qp > 51 ||
-            keyint < 1 || keyint > 10 || (rate != "ABR" && rate != "CQP"))
+            keyint < 1 || keyint > 10 ||
+            (rate != "ABR" && rate != "ABR-SMOOTH" && rate != "CQP"))
             throw std::runtime_error("Vk264 encoder settings are out of range");
 
         auto config = makeFrameConfig(width, height, vi->fps_num, vi->fps_den,
                                       findPreset(obs_data_get_string(settings, "preset")));
         config.initialQp = static_cast<uint32_t>(qp);
         config.gop = framesForSeconds(config, static_cast<uint32_t>(keyint));
-        config.targetBits = rate == "ABR" ? bitsPerFrame(config, static_cast<uint32_t>(bitrate)) : 0;
+        config.targetBits = rate != "CQP" ? bitsPerFrame(config, static_cast<uint32_t>(bitrate)) : 0;
+        config.smoothAbr = rate == "ABR-SMOOTH" ? 1u : 0u;
         // Mirror the CLI: an explicit QP above 14 with ABR makes the first
         // IDR far too coarse and permanently lowers mean quality at the same
         // achieved bitrate.  Fixed QP keeps the caller's exact value.
@@ -193,6 +195,7 @@ obs_properties_t* encoder_properties(void*) {
                                          OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
     obs_property_list_add_string(rate, "Average bitrate", "ABR");
     obs_property_list_add_string(rate, "Constant QP", "CQP");
+    obs_property_list_add_string(rate, "Average bitrate (smoothed)", "ABR-SMOOTH");
     obs_properties_add_int(props, "bitrate", "Target bitrate (kbps)", 64, 50000, 1);
     obs_properties_add_int(props, "qp", "QP (Constant QP only)", 0, 51, 1);
     obs_properties_add_int(props, "keyint_sec", "Keyframe interval (seconds)", 1, 10, 1);
@@ -201,6 +204,7 @@ obs_properties_t* encoder_properties(void*) {
     obs_property_set_visible(obs_properties_get(props, "qp"), false);
     obs_properties_add_text(props, "status",
         "ABR uses Target bitrate; Constant QP ignores it and uses QP. "
+        "Smoothed ABR averages frame activity to avoid bitrate spikes. "
         "Restart the output to apply changes.", OBS_TEXT_INFO);
     return props;
 }
