@@ -1,6 +1,7 @@
 LIBRARY obs.dll
 EXPORTS
 obs_register_encoder_s
+blog
 obs_encoder_get_width
 obs_encoder_get_height
 obs_encoder_video
