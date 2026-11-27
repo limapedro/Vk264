@@ -93,7 +93,8 @@ def build_command(args, name, stream):
         for option, value in (("--search", args.search), ("--subpel", args.subpel),
                               ("--partitions", args.partitions), ("--p-slice-rows", args.p_slice_rows),
                               ("--satd-candidates", args.satd_candidates), ("--ref", args.ref),
-                              ("--deblock", args.deblock), ("--flat-intra", args.flat_intra), ("--aq", args.aq)):
+                              ("--deblock", args.deblock), ("--flat-intra", args.flat_intra), ("--aq", args.aq),
+                               ("--smooth-abr", args.smooth_abr)):
             if value is not None:
                 command.extend([option, value])
         return command
@@ -159,6 +160,7 @@ def main():
     parser.add_argument("--deblock", type=int, choices=[0, 1, 2], help="Wx264 filter: off, within slices, or full frame")
     parser.add_argument("--flat-intra", type=int, choices=[0, 1], help="Test DC-only P-frame intra on flat dark blocks")
     parser.add_argument("--aq", type=int, choices=[0, 1], help="Toggle spatial adaptive quantization in Wx264")
+    parser.add_argument("--smooth-abr", type=int, choices=[0, 1], help="Toggle smoothed ABR in Wx264")
     parser.add_argument("--runs", default=1, type=int)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--encoders", nargs="+", choices=ENCODERS)

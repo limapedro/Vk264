@@ -62,7 +62,12 @@ void main() {
         int smoothStep = smoothRatio > 1.0
             ? clamp(int(round(6.0 * log2(smoothRatio))), 0, 3)
             : clamp(int(round(3.0 * log2(smoothRatio))), -1, 0);
-        int smoothQp = clamp(qpNow + smoothStep, pc.fps >= 50u ? 18 : 0, 51);
+        // Measured failure on bimodal 60 fps capture: the EMA ratchets QP to
+        // 51 while still undershooting the target, starving fine detail.
+        // Cap the opt-in smoothed controller at 32 for >=50 fps; low-frame-rate
+        // opt-in keeps the original 51 ceiling.  Default ABR is unaffected.
+        int smoothQp = clamp(qpNow + smoothStep, pc.fps >= 50u ? 18 : 0,
+                             pc.fps >= 50u ? 32 : 51);
         rc.interQpOffset = smoothQp - int(pc.initialQp);
         rc.idrQpOffset = rc.interQpOffset;
         return;
