@@ -182,3 +182,8 @@ reverted because:
 So native CABAC cannot meet the >=100 fps loop gate on this GPU; the exact
 blocker is the per-slice serial arithmetic chain plus single-lane throughput.
 Baseline and ctest 45/46 restored.
+
+Also reverted: explicit x264 `ipratio=1.40` I-frame QP offset (-3) in
+`shaders/layout.glsl`. At matched rate it *reduced* VMAF 95.30 -> 95.00
+(6000) and 96.67 -> 96.47 (8000); the ABR controller already gives IDRs a
+separate budget and the extra offset only starved P frames.
