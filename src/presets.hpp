@@ -61,7 +61,11 @@ inline FrameConfig makeFrameConfig(std::uint32_t width, std::uint32_t height,
     config.sliceCount = config.slicesPerRow * config.mbHeight;
     config.slotWords = singleSliceWidth * macroblockSlotWords;
     config.initialQp = 30;
-    config.gop = framesForSeconds(config, 2);
+    // A 2 s GOP spends too many frames on IDRs: the parallel CAVLC path makes
+    // IDRs cheap in time but they still cost bits that P frames use more
+    // efficiently. 5 s (250f at 50fps) matches x264 keyint practice and
+    // measured +0.33 VMAF at 6000 kb/s plus higher throughput.
+    config.gop = framesForSeconds(config, 5);
     config.motionRadius = preset.motionRadius;
     config.satdCandidates = preset.satdCandidates;
     config.references = preset.references;
