@@ -1,5 +1,6 @@
 /* Vk264/H.264 OBS encoder adapter.  Uses the same Vulkan shaders and presets as the Vk264 CLI encoder. */
 #include <obs-module.h>
+#include <util/base.h>
 #include "presets.hpp"
 
 #include <cstring>
@@ -99,6 +100,13 @@ void* encoder_create(obs_data_t* settings, obs_encoder_t* owner) {
         if (config.targetBits != 0u && config.initialQp > 14u)
             config.initialQp = 14u;
         config.videoSignal = colorSignal(1, 1, 1); // OBS adapter requests limited-range BT.709 I420 below
+        // Log the EFFECTIVE settings so a UI/saved-settings mismatch is visible
+        // in the OBS log instead of silently producing an unexpected bitrate.
+        blog(LOG_INFO, "Vk264: settings rate=%s bitrate=%d qp=%d keyint=%d preset=%s "
+             "-> initialQp=%u gop=%u targetBits=%u",
+             obs_data_get_string(settings, "rate_control"), bitrate, qp, keyint,
+             obs_data_get_string(settings, "preset"), config.initialQp, config.gop,
+             config.targetBits);
         finalizeFrameConfig(config);
         const auto* data_path = obs_get_module_data_path(obs_current_module());
         if (!data_path || !*data_path)
