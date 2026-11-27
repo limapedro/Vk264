@@ -160,6 +160,16 @@ void encoder_defaults(obs_data_t* settings) {
     obs_data_set_default_int(settings, "keyint_sec", 5);
 }
 
+// Mirror the x264 OBS plugin: only the field used by the selected rate
+// control mode is shown, so a CQP recording cannot be mistaken for a missed
+// bitrate target.
+bool rateControlChanged(obs_properties_t* props, obs_property_t*, obs_data_t* settings) {
+    const bool abr = std::string_view(obs_data_get_string(settings, "rate_control")) == "ABR";
+    obs_property_set_visible(obs_properties_get(props, "bitrate"), abr);
+    obs_property_set_visible(obs_properties_get(props, "qp"), !abr);
+    return true;
+}
+
 obs_properties_t* encoder_properties(void*) {
     auto* props = obs_properties_create();
     auto* preset = obs_properties_add_list(props, "preset", "Preset",
@@ -171,9 +181,14 @@ obs_properties_t* encoder_properties(void*) {
     obs_property_list_add_string(rate, "Average bitrate", "ABR");
     obs_property_list_add_string(rate, "Constant QP", "CQP");
     obs_properties_add_int(props, "bitrate", "Target bitrate (kbps)", 64, 50000, 1);
-    obs_properties_add_int(props, "qp", "QP / starting QP", 0, 51, 1);
+    obs_properties_add_int(props, "qp", "QP (Constant QP only)", 0, 51, 1);
     obs_properties_add_int(props, "keyint_sec", "Keyframe interval (seconds)", 1, 10, 1);
-    obs_properties_add_text(props, "status", "Restart the output to apply changes.", OBS_TEXT_INFO);
+    obs_property_set_modified_callback(rate, rateControlChanged);
+    // Defaults select ABR; the callback reveals QP when CQP is chosen.
+    obs_property_set_visible(obs_properties_get(props, "qp"), false);
+    obs_properties_add_text(props, "status",
+        "ABR uses Target bitrate; Constant QP ignores it and uses QP. "
+        "Restart the output to apply changes.", OBS_TEXT_INFO);
     return props;
 }
 }

@@ -29,6 +29,11 @@ system-wide plugin directory.
 5. Settings > Output > Advanced > Recording: choose **Vk264/H.264** as the
    video encoder. Start with `slow`, ABR 6000 kbps and a 5 s keyframe
    interval. Stop and restart the output after changing settings.
+   Like the x264 plugin, the settings panel shows only the field used by the
+   selected rate control: **Target bitrate** for ABR, **QP** for Constant QP.
+   In Constant QP mode the bitrate is ignored, so the resulting file size
+   depends entirely on the content and QP (QP 34 at 1080p is typically far
+   below 6000 kbps).
 6. Watch View > Stats for encoding lag while recording.
 
 OBS converts the source to 8-bit I420 before passing it to Vk264. A Vulkan
