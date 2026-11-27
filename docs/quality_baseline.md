@@ -235,3 +235,37 @@ damping did not improve matched-rate quality.
 
 Current HEAD state: 1080p/300f --gop 125 --qp 14 6000k VMAF 95.719,
 8000k VMAF 96.957; x264-slow at the same GOP ~97.9 / ~98.3. ctest 45/46.
+
+## ABR debt-clamp breakthrough (PR #505)
+
+The largest remaining quality loss was **not** a missing codec tool: it was
+single-pass ABR debt starvation after a scene cut. On the 1080p game clip the
+hard cut at frame 206 costs ~596 kB (20x a per-frame allocation). The old
+scan.comp:42 fed the whole debt into correction = bitDebt / (fps/2),
+driving im to its floor and ramping QP by +2/frame through the rest of the
+GOP. Frames 218-227 were coded at QP 33-34 with PSNR-Y 43.98 dB / VMAF 91.41,
+while x264 held QP ~19-22 and PSNR ~52 dB.
+
+Fix: cap the per-frame correction at +/-allocation/4. Debt is repaid
+gradually; no extra shader work (scan stage 0.006 ms).
+
+| Metric @6000, 300f, --gop 125 | Before | After |
+|---|---:|---:|
+| PSNR-Y (all 300f) | 47.003 | 47.416 |
+| VMAF (all 300f) | 95.719 | **96.149** |
+| PSNR-Y frames 218-227 | 43.98 | 45.93 |
+| VMAF frames 218-227 | 91.41 | **96.05** |
+| Max per-frame QP in that range | 34 | 29 |
+| Achieved kb/s | 6082 | 6178 (+1.6 %) |
+| Encode-loop fps | 118.8 | 118.7 |
+| Process fps | 89 | 89 |
+
+@8000: VMAF 96.957 -> 97.113, PSNR-Y 48.409 -> 48.643, kb/s 8104 -> 8129.
+Remaining gap to x264-slow at matched GOP: 1.84 VMAF @6000 (was 2.6),
+1.20 VMAF @8000 (was 1.35). ctest 45/46, check.py 13/13, decode clean.
+
+Rejected RC variants (measured, reverted): /3 clamp (+0.27 VMAF but only
++0.05 % rate); /6 clamp (+0.55 VMAF but +3.8 % rate); capping the debt
+*increment* at one budget (+0.33 VMAF but +12 % rate); damping the QP step
+to max 1/gain 1.5 on top of the clamp (+0.01 VMAF but +1.3 % more rate).
+Starting QP 12 is worse; 14/16/18 are identical because --bitrate clamps to 14.
