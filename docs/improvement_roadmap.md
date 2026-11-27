@@ -113,6 +113,25 @@ Masters: `build/native1080_300.yuv` (25fps game), `build/obs_new_src.yuv`
 (user's hard 1080p60 capture), `build/obs_capture_src.yuv` (easy capture),
 and `C:\Users\multi\AppData\Local\Temp\opencode\corpus\masters\*.yuv`.
 
+## 3a. Cumulative improvement (evidence trail)
+
+| Change | Before | After | PR |
+|---|---:|---:|---:|
+| Parallel CAVLC slice assembly | entropy 9.84 ms/f, loop 49 fps | 0.09 ms/f, loop 88-91 fps | #494 |
+| YUV preload (host) | loop 88 -> 100-108 | (superseded by ring) | #495 |
+| IDR QP clamp / ABR start | 640p 48.13 dB | 51.35 dB | #489 |
+| Inter AC rounding 6->3 @25fps | VMAF 95.390 | 96.149 | #501, #505 |
+| 5 s default GOP | VMAF 95.390 | 95.719 (+8 fps) | #503 |
+| ABR debt clamp @25fps | VMAF 95.719 | 96.149 | #505 |
+| IDR residual wavefront | 52-67 ms/keyframe | 1.9 ms | #513 |
+| Spatial SAD over 64 lanes | 1.22 ms | 1.09 ms | #514 |
+| Host ring + threaded preload | loop 119, process 89 | loop 132-140, process 93-103 | #515 |
+| 60 fps QP floor 18 (easy content) | 23.75 Mb/s, VMAF 97.40 | 5.86 Mb/s, VMAF 96.69 | #516 |
+| 4-row P slices | 34 slices, 91.6/101.0 fps | 17 slices, 98.9/110.2 fps | #524 |
+
+Net on 25 fps game clip: VMAF 95.390 -> 96.179 @6000; loop 49 -> 137 fps.
+OBS plugin built and verified at each ABI change (PRs #509-#512, #517).
+
 ## 3b. Ceiling on the user's 1080p60 capture content
 
 Fixed QP28 (`wx264-medium`, no ABR) on `obs_new_src.yuv`: **7646.8 kb/s,
