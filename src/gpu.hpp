@@ -31,11 +31,18 @@ struct EncodedFrame {
 
 class EncoderGpu {
 public:
-    EncoderGpu(const FrameConfig& config, bool readRecon, std::filesystem::path shaderDirectory = {});
+    EncoderGpu(const FrameConfig& config, bool readRecon, std::filesystem::path shaderDirectory = {}, bool timestamps = false);
     ~EncoderGpu();
     char* input();
+    char* input(std::uint32_t frameIndex);
+    void beginFrame(std::uint32_t frameIndex);
     EncodedFrame encode(const FrameConfig& config);
     std::string deviceName() const;
+#ifdef WX_RING
+    bool ringEnabled() const;
+    unsigned ringDepth() const;
+    std::vector<EncodedFrame> drainAll(std::uint32_t frameCount);
+#endif
 
 private:
     struct Impl;

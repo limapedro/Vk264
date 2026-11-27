@@ -1,5 +1,6 @@
 #include "gpu.hpp"
 #include "cavlc_codes.hpp"
+#include "profile.hpp"
 
 #include <vulkan/vulkan.h>
 
@@ -83,6 +84,7 @@ struct EncoderGpu::Impl {
     VkDescriptorPool descriptorPool{};
     std::vector<VkDescriptorSet> sets;
     VkDeviceSize frameBytes{}, referenceStride{};
+    std::uint32_t referenceSlots{};
     std::array<VkPipeline, StageCount> pipelines{};
     VkPipeline frameDeblock{};
     VkPipeline sliceOffsets{}, sliceBodies{}, sliceEpb[3]{};
@@ -95,10 +97,25 @@ struct EncoderGpu::Impl {
     enum Resource { Upload, Source, Recon, Coefficients, Slices, Records, Output, Rate, Tables,
                     Vectors, Filtered, QuarterLuma, Syntax, Bodies, ReadRecon, ResourceCount };
     std::array<Buffer, ResourceCount> buffers{};
+#ifdef WX_RING
+    static constexpr unsigned ringSlots = 3;
+    bool ringActive = false;
+    std::vector<Buffer> ringUploads, ringSources, ringOutputs;
+    std::vector<VkCommandBuffer> ringCommands;
+    std::vector<VkFence> ringFences;
+    std::vector<char> deferredCopy;
+    EncodedFrame deferred{};
+    bool haveDeferred = false;
+    unsigned ringIndex = 0;
+#endif
 
     ~Impl() {
         if (device) {
             vkDeviceWaitIdle(device);
+#ifdef WX_RING
+            if (ringActive) for (auto f : ringFences) if (f) vkDestroyFence(device, f, nullptr);
+            else
+#endif
             if (fence) vkDestroyFence(device, fence, nullptr);
             if (timestamps) vkDestroyQueryPool(device, timestamps, nullptr);
             if (commandPool) vkDestroyCommandPool(device, commandPool, nullptr);
@@ -110,11 +127,25 @@ struct EncoderGpu::Impl {
             if (descriptorPool) vkDestroyDescriptorPool(device, descriptorPool, nullptr);
             if (pipelineLayout) vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
             if (setLayout) vkDestroyDescriptorSetLayout(device, setLayout, nullptr);
-            for (const auto& b : buffers) {
+            for (std::size_t i = 0; i < buffers.size(); ++i) {
+#ifdef WX_RING
+                if (ringActive && (i == Upload || i == Source || i == Output)) continue;
+#endif
+                const auto& b = buffers[i];
                 if (b.mapped) vkUnmapMemory(device, b.memory);
                 if (b.handle) vkDestroyBuffer(device, b.handle, nullptr);
                 if (b.memory) vkFreeMemory(device, b.memory, nullptr);
             }
+#ifdef WX_RING
+            if (ringActive) {
+                for (auto* group : {&ringUploads, &ringSources, &ringOutputs})
+                    for (const auto& b : *group) {
+                        if (b.mapped) vkUnmapMemory(device, b.memory);
+                        if (b.handle) vkDestroyBuffer(device, b.handle, nullptr);
+                        if (b.memory) vkFreeMemory(device, b.memory, nullptr);
+                    }
+            }
+#endif
             vkDestroyDevice(device, nullptr);
         }
         if (instance) vkDestroyInstance(instance, nullptr);
@@ -211,7 +242,13 @@ struct EncoderGpu::Impl {
         return pipeline;
     }
 
-    void init(const FrameConfig& c, bool readRecon) {
+    void init(const FrameConfig& c, bool readRecon, bool timestampsEnabled) {
+#ifdef WX_RING
+        // The ring shares scratch buffers across frames and reuses query storage,
+        // so it is only safe for the plain, untimed, no-reconstruction path.
+        ringActive = !readRecon && !timestampsEnabled;
+        RT("init: ringActive");
+#endif
         auto app = info<VkApplicationInfo>(VK_STRUCTURE_TYPE_APPLICATION_INFO);
         app.pApplicationName = "Wx264";
         app.apiVersion = VK_API_VERSION_1_1;
@@ -248,8 +285,24 @@ struct EncoderGpu::Impl {
                 scratchSize = std::max(scratchSize, parallelBytes(c, pairedSlotWords(c), (c.mbHeight + 1) / 2));
             if (c.gop > 1u) scratchSize = std::max(scratchSize, parallelBytes(c, idrSlotWords(c), 1));
         }
-        createBuffer(Upload, sourceSize, transferSrc, hostMemory);
-        createBuffer(Source, sourceSize, storage | transferDst, deviceMemory);
+#ifdef WX_RING
+        auto createRing = [&](Resource r, std::vector<Buffer>& out, VkDeviceSize size,
+                              VkBufferUsageFlags usage, VkMemoryPropertyFlags flags) {
+            for (unsigned i = 0; i < ringSlots; ++i) {
+                createBuffer(r, size, usage, flags);
+                out.push_back(buffers[r]);
+            }
+            buffers[r] = out[0];
+        };
+        if (ringActive) {
+            createRing(Upload, ringUploads, sourceSize, transferSrc, hostMemory);
+            createRing(Source, ringSources, sourceSize, storage | transferDst, deviceMemory);
+        } else
+#endif
+        {
+            createBuffer(Upload, sourceSize, transferSrc, hostMemory);
+            createBuffer(Source, sourceSize, storage | transferDst, deviceMemory);
+        }
         frameBytes = mbCount * 384;
         auto alignment = std::max<VkDeviceSize>(4, properties.limits.minStorageBufferOffsetAlignment);
         referenceStride = ((frameBytes + alignment - 1) / alignment) * alignment;
@@ -260,7 +313,14 @@ struct EncoderGpu::Impl {
         createBuffer(Coefficients, mbCount * 432 * 4, storage, deviceMemory);
         createBuffer(Slices, scratchSize, storage | transferDst, deviceMemory);
         createBuffer(Records, 8 * (c.sliceCount + 1), storage, deviceMemory);
-        createBuffer(Output, scratchSize + 16, storage, hostMemory);
+#ifdef WX_RING
+        if (ringActive) createRing(Output, ringOutputs, scratchSize + 16, storage, hostMemory);
+        else
+#endif
+        {
+            createBuffer(Output, scratchSize + 16, storage, hostMemory);
+        }
+        RT("init: buffers done");
         createBuffer(Rate, 12, storage | transferDst, deviceMemory);
         createBuffer(Tables, sizeof(cavlcCodes), storage, hostMemory);
         createBuffer(Vectors, mbCount * 6 * 16, storage, deviceMemory);
@@ -287,20 +347,27 @@ struct EncoderGpu::Impl {
         pipeLayout.pPushConstantRanges = &push;
         check(vkCreatePipelineLayout(device, &pipeLayout, nullptr, &pipelineLayout), "vkCreatePipelineLayout");
         std::uint32_t slotCount = c.references + 1;
-        VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, slotCount * bindings};
+        referenceSlots = slotCount;
+        std::uint32_t setTotal = slotCount;
+#ifdef WX_RING
+        if (ringActive) setTotal *= ringSlots;
+#endif
+        VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, setTotal * bindings};
         auto poolInfo = info<VkDescriptorPoolCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);
-        poolInfo.maxSets = slotCount;
+        poolInfo.maxSets = setTotal;
         poolInfo.poolSizeCount = 1;
         poolInfo.pPoolSizes = &poolSize;
         check(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool), "vkCreateDescriptorPool");
-        std::vector<VkDescriptorSetLayout> layouts(slotCount, setLayout);
-        sets.resize(slotCount);
+        std::vector<VkDescriptorSetLayout> layouts(setTotal, setLayout);
+        sets.resize(setTotal);
         auto setInfo = info<VkDescriptorSetAllocateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
         setInfo.descriptorPool = descriptorPool;
-        setInfo.descriptorSetCount = slotCount;
+        setInfo.descriptorSetCount = setTotal;
         setInfo.pSetLayouts = layouts.data();
         check(vkAllocateDescriptorSets(device, &setInfo, sets.data()), "vkAllocateDescriptorSets");
-        for (std::uint32_t i = 0; i < slotCount; ++i) updateDescriptors(i);
+        RT("init: descriptors begin");
+        for (std::uint32_t i = 0; i < setTotal; ++i) updateDescriptors(i);
+        RT("init: descriptors done");
         for (int i = 0; i < StageCount; ++i) {
             if ((i == FlatIntra && !c.flatIntra) || (i == Deblock && c.deblock != 1)) continue;
             pipelines[i] = makePipeline(shaderNames[i]);
@@ -315,33 +382,77 @@ struct EncoderGpu::Impl {
             }
         }
 
+        RT("init: pipelines done");
         auto commandPoolInfo = info<VkCommandPoolCreateInfo>(VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO);
         commandPoolInfo.queueFamilyIndex = queueFamily;
+#ifdef WX_RING
+        if (ringActive) commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+#endif
         check(vkCreateCommandPool(device, &commandPoolInfo, nullptr, &commandPool), "vkCreateCommandPool");
         auto commandInfo = info<VkCommandBufferAllocateInfo>(VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO);
         commandInfo.commandPool = commandPool;
         commandInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+#ifdef WX_RING
+        commandInfo.commandBufferCount = ringActive ? ringSlots : 1;
+        ringCommands.resize(commandInfo.commandBufferCount);
+        check(vkAllocateCommandBuffers(device, &commandInfo, ringCommands.data()), "vkAllocateCommandBuffers");
+        commands = ringCommands[0];
+#else
         commandInfo.commandBufferCount = 1;
         check(vkAllocateCommandBuffers(device, &commandInfo, &commands), "vkAllocateCommandBuffers");
+#endif
         auto fenceInfo = info<VkFenceCreateInfo>(VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);
-        check(vkCreateFence(device, &fenceInfo, nullptr, &fence), "vkCreateFence");
-        if (timestampBits) {
+#ifdef WX_RING
+        if (ringActive) {
+            fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+            ringFences.resize(ringSlots);
+            for (auto& f : ringFences) check(vkCreateFence(device, &fenceInfo, nullptr, &f), "vkCreateFence");
+            fence = ringFences[0];
+        } else
+#endif
+        {
+            check(vkCreateFence(device, &fenceInfo, nullptr, &fence), "vkCreateFence");
+        }
+        if (timestampBits && timestampsEnabled) {
             auto queryInfo = info<VkQueryPoolCreateInfo>(VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO);
             queryInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
             queryInfo.queryCount = StageCount + 1;
             check(vkCreateQueryPool(device, &queryInfo, nullptr, &timestamps), "vkCreateQueryPool");
         }
+        RT("init: done");
     }
 
     void updateDescriptors(unsigned index) {
         const Resource order[] = {Source, Recon, Recon, Coefficients, Slices, Records, Output, Rate, Tables,
                                   Vectors, Filtered, QuarterLuma, Syntax, Bodies};
+#ifdef WX_RING
+        const unsigned slots = referenceSlots;
+        const unsigned slot = ringActive ? index % slots : index;
+        const unsigned ri = ringActive ? index / slots : 0;
+#else
+        const unsigned slot = index;
+        const unsigned ri = 0;
+#endif
         std::array<VkDescriptorBufferInfo, bindings> desc{};
         std::array<VkWriteDescriptorSet, bindings> writes{};
         for (std::uint32_t i = 0; i < bindings; ++i) {
-            const auto& b = buffers[order[i]];
+            Resource resource = order[i];
+#ifdef WX_RING
+            if (ringActive && resource == Source) {
+                const auto& b = ringSources[ri];
+                desc[i] = {b.handle, 0, b.size};
+            } else if (ringActive && resource == Output) {
+                const auto& b = ringOutputs[ri];
+                desc[i] = {b.handle, 0, b.size};
+            } else {
+                const auto& b = buffers[resource];
+                desc[i] = {b.handle, 0, b.size};
+            }
+#else
+            const auto& b = buffers[resource];
             desc[i] = {b.handle, 0, b.size};
-            if (i == 2) desc[i] = {b.handle, referenceStride * index, frameBytes};
+#endif
+            if (i == 2) desc[i] = {buffers[Recon].handle, referenceStride * slot, frameBytes};
             writes[i] = info<VkWriteDescriptorSet>(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);
             writes[i].dstSet = sets[index];
             writes[i].dstBinding = i;
@@ -405,6 +516,38 @@ struct EncoderGpu::Impl {
         if (timestamps) vkCmdWriteTimestamp(commands, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestamps, Deblock + 1);
     }
 
+#ifdef WX_RING
+    // Must be called before the host writes into the frame's Upload buffer:
+    // the wait retires the submission that previously owned this ring slot.
+    void beginFrame(std::uint32_t frameIndex) {
+        if (!ringActive) return;
+        ringIndex = frameIndex % ringSlots;
+        auto& slotFence = ringFences[ringIndex];
+        if (frameIndex >= ringSlots) {
+            check(vkWaitForFences(device, 1, &slotFence, VK_TRUE,
+                                  std::numeric_limits<std::uint64_t>::max()), "ring vkWaitForFences");
+            auto* previous = static_cast<const std::uint32_t*>(ringOutputs[ringIndex].mapped);
+            if (previous[1] || previous[0] > ringOutputs[ringIndex].size - 16)
+                throw std::runtime_error("Slice syntax or capacity error at ring frame " + std::to_string(frameIndex - ringSlots));
+            deferredCopy.resize(16 + previous[0]);
+            std::memcpy(deferredCopy.data(), previous, deferredCopy.size());
+            auto* out = reinterpret_cast<const std::uint32_t*>(deferredCopy.data());
+            deferred = EncodedFrame{deferredCopy.data() + 16, out[0],
+                                    out[2] & 255u, out[3] & 65535u, out[2] >> 8u, out[3] >> 16u, nullptr, {}};
+            haveDeferred = true;
+        } else {
+            deferred = EncodedFrame{};
+            deferred.annexB = static_cast<const char*>(ringOutputs[ringIndex].mapped);
+            haveDeferred = false;
+        }
+        commands = ringCommands[ringIndex];
+        fence = slotFence;
+        buffers[Upload] = ringUploads[ringIndex];
+        buffers[Source] = ringSources[ringIndex];
+        buffers[Output] = ringOutputs[ringIndex];
+    }
+#endif
+
     // SHADER-ABI: a whole-frame IDR slice keeps intra prediction legal, but
     // one workgroup would serially walk 8160 MBs at 1080p (~60 ms).  Diagonal
     // waves (x+y=wave) are independent because every MB depends only on the
@@ -428,6 +571,7 @@ struct EncoderGpu::Impl {
     }
 
     EncodedFrame encode(FrameConfig c) {
+        RT("encode: enter");
         constexpr auto compute = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
         constexpr auto transfer = VK_PIPELINE_STAGE_TRANSFER_BIT;
         constexpr auto write = VK_ACCESS_SHADER_WRITE_BIT;
@@ -445,8 +589,18 @@ struct EncoderGpu::Impl {
             c.slotWords = pairedSlotWords(c);
             c.sliceCount = (c.mbHeight + 1) / 2;
         }
+#ifdef WX_RING
+        if (ringActive) RT("encode: ring selected");
+#endif
+        WX_PROF_START(reset);
+#ifdef WX_RING
+        if (ringActive) check(vkResetCommandBuffer(commands, 0), "vkResetCommandBuffer");
+        else
+#endif
         check(vkResetCommandPool(device, commandPool, 0), "vkResetCommandPool");
         check(vkResetFences(device, 1, &fence), "vkResetFences");
+        WX_PROF_ADD(reset);
+        WX_PROF_START(record);
         auto begin = info<VkCommandBufferBeginInfo>(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);
         begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         check(vkBeginCommandBuffer(commands, &begin), "vkBeginCommandBuffer");
@@ -467,7 +621,12 @@ struct EncoderGpu::Impl {
         auto previousSlot = (slot + slotCount - 1) % slotCount;
         c.referenceStrideWords = static_cast<std::uint32_t>(referenceStride / 4);
         c.previousWords = previousSlot * c.referenceStrideWords;
-        vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &sets[slot], 0, nullptr);
+#ifdef WX_RING
+        auto setIndex = ringActive ? ringIndex * referenceSlots + slot : slot;
+#else
+        auto setIndex = slot;
+#endif
+        vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &sets[setIndex], 0, nullptr);
         vkCmdPushConstants(commands, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(c), &c);
         auto mbCount = c.mbWidth * c.mbHeight;
         bool pyramid = !intra && c.motionRadius >= 4;
@@ -520,18 +679,37 @@ struct EncoderGpu::Impl {
         }
         barrier(compute | transfer, write | VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT);
         check(vkEndCommandBuffer(commands), "vkEndCommandBuffer");
+        RT("encode: recorded");
+        WX_PROF_ADD(record);
+        WX_PROF_START(submit);
         auto submit = info<VkSubmitInfo>(VK_STRUCTURE_TYPE_SUBMIT_INFO);
         submit.commandBufferCount = 1;
         submit.pCommandBuffers = &commands;
         check(vkQueueSubmit(queue, 1, &submit, fence), "vkQueueSubmit");
+        RT("encode: submitted");
+        WX_PROF_ADD(submit);
+        WX_PROF_START(wait);
+#ifdef WX_RING
+        if (ringActive) {
+            // The current submission is still in flight; its output is read
+            // when this ring slot is reused (or during drain).
+            WX_PROF_INC_FRAMES();
+            (void)haveDeferred;
+            return deferred;
+        }
+#endif
         check(vkWaitForFences(device, 1, &fence, VK_TRUE, std::numeric_limits<std::uint64_t>::max()), "vkWaitForFences");
+        WX_PROF_ADD(wait);
 
+        WX_PROF_START(outParse);
         auto* output = static_cast<const std::uint32_t*>(buffers[Output].mapped);
         if (output[1] || output[0] > buffers[Output].size - 16)
             throw std::runtime_error("Slice syntax or capacity error at frame " + std::to_string(c.frameIndex));
         EncodedFrame result{reinterpret_cast<const char*>(output + 4), output[0], output[2] & 255u,
                             output[3] & 65535u, output[2] >> 8u, output[3] >> 16u,
                             static_cast<const char*>(buffers[ReadRecon].mapped), {}};
+        WX_PROF_ADD(outParse);
+        WX_PROF_START(query);
         if (timestamps) {
             std::array<std::uint64_t, StageCount + 1> ticks{};
             check(vkGetQueryPoolResults(device, timestamps, 0, StageCount + 1, sizeof(ticks), ticks.data(),
@@ -540,17 +718,59 @@ struct EncoderGpu::Impl {
             for (int i = 0; i < StageCount; ++i)
                 result.gpuMilliseconds[i] = double((ticks[i + 1] - ticks[i]) & mask) * properties.limits.timestampPeriod / 1e6;
         }
+        WX_PROF_ADD(query);
+        WX_PROF_INC_FRAMES();
         return result;
     }
+
+#ifdef WX_RING
+    std::vector<EncodedFrame> drainAllImpl(std::uint32_t frameCount) {
+        std::vector<EncodedFrame> result;
+        if (!ringActive) return result;
+        result.reserve(ringSlots);
+        for (unsigned k = 0; k < ringSlots; ++k) {
+            std::uint32_t index = frameCount + k;
+            unsigned ri = index % ringSlots;
+            check(vkWaitForFences(device, 1, &ringFences[ri], VK_TRUE,
+                                  std::numeric_limits<std::uint64_t>::max()), "drain vkWaitForFences");
+            auto* out = static_cast<const std::uint32_t*>(ringOutputs[ri].mapped);
+            if (out[1] || out[0] > ringOutputs[ri].size - 16)
+                throw std::runtime_error("Slice syntax or capacity error at drained frame " + std::to_string(index));
+            result.push_back(EncodedFrame{reinterpret_cast<const char*>(out + 4), out[0],
+                                          out[2] & 255u, out[3] & 65535u, out[2] >> 8u, out[3] >> 16u,
+                                          nullptr, {}});
+        }
+        return result;
+    }
+#endif
 };
 
-EncoderGpu::EncoderGpu(const FrameConfig& c, bool readRecon, std::filesystem::path shaderDirectory)
+EncoderGpu::EncoderGpu(const FrameConfig& c, bool readRecon, std::filesystem::path shaderDirectory, bool timestamps)
     : impl_(std::make_unique<Impl>()) {
     impl_->shaderDirectory = shaderDirectory.empty() ? std::filesystem::path(WX_SHADER_DIR)
                                                       : std::move(shaderDirectory);
-    impl_->init(c, readRecon);
+    impl_->init(c, readRecon, timestamps);
 }
 EncoderGpu::~EncoderGpu() = default;
 char* EncoderGpu::input() { return static_cast<char*>(impl_->buffers[Impl::Upload].mapped); }
+char* EncoderGpu::input(std::uint32_t frameIndex) {
+#ifdef WX_RING
+    if (impl_->ringActive)
+        return static_cast<char*>(impl_->ringUploads[frameIndex % Impl::ringSlots].mapped);
+#endif
+    return input();
+}
+void EncoderGpu::beginFrame(std::uint32_t frameIndex) {
+#ifdef WX_RING
+    impl_->beginFrame(frameIndex);
+#else
+    (void)frameIndex;
+#endif
+}
 EncodedFrame EncoderGpu::encode(const FrameConfig& c) { return impl_->encode(c); }
 std::string EncoderGpu::deviceName() const { return impl_->properties.deviceName; }
+#ifdef WX_RING
+bool EncoderGpu::ringEnabled() const { return impl_->ringActive; }
+unsigned EncoderGpu::ringDepth() const { return Impl::ringSlots; }
+std::vector<EncodedFrame> EncoderGpu::drainAll(std::uint32_t frameCount) { return impl_->drainAllImpl(frameCount); }
+#endif

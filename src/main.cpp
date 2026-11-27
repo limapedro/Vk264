@@ -1,17 +1,20 @@
 #include "presets.hpp"
 #include "encoder_backend.hpp"
 #include "cavlc_codes.hpp"
+#include "profile.hpp"
 
 #include <algorithm>
 #include <charconv>
 #include <chrono>
 #include <cctype>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -61,13 +64,22 @@ void usage() {
               << "             [--colorimetry bt709|smpte170m|bt470bg|bt2020-sdr] [--range limited|full]\n"
               << "             [--backend cavlc|vulkan] (vulkan uses CABAC and its own search configuration)\n"
               << "             [--entropy cabac|cavlc] (Vulkan backend only)\n"
-              << "       wx264 --list-presets\n";
+              << "             [--timestamps] (enable GPU timestamp queries; off by default)\n"
+               << "       wx264 --list-presets\n";
 }
 }
 
 int main(int argc, char** argv) try {
     if (argc == 2 && std::string_view(argv[1]) == "--help") { usage(); return 0; }
     if (argc == 2 && std::string_view(argv[1]) == "--list-presets") { listPresets(); return 0; }
+    bool useTimestamps = false;
+    {
+        int out = 7;
+        for (int i = 7; i < argc; ++i)
+            if (std::string_view(argv[i]) == "--timestamps") useTimestamps = true;
+            else argv[out++] = argv[i];
+        argc = out;
+    }
     if (argc < 7 || (argc - 7) % 2 != 0) { usage(); return 1; }
 
     Preset preset = defaultPreset;
@@ -76,6 +88,7 @@ int main(int argc, char** argv) try {
     bool qpExplicit = false;
     for (int i = 7; i < argc; i += 2) {
         std::string_view option = argv[i];
+        if (option == "--timestamps") continue;
         if (option == "--preset") preset = findPreset(argv[i + 1]);
         if (option == "--backend") {
             std::string_view backend = argv[i + 1];
@@ -186,16 +199,37 @@ int main(int argc, char** argv) try {
                   << ",\"max_qp\":" << result.maxQp << ",\"inter_8x8_blocks\":" << result.inter8x8Blocks << "}\n";
         return 0;
     }
-    std::ifstream input(inputPath, std::ios::binary);
-    if (!input) throw std::runtime_error("Could not open input");
     // Read the whole source once: per-frame ifstream::read of multi-MB frames
     // shows up as host overhead between GPU submissions at 1080p.
     std::vector<char> source(static_cast<std::size_t>(frameCount) * frameBytes);
-    if (!input.read(source.data(), static_cast<std::streamsize>(source.size())))
-        throw std::runtime_error("Could not read source frames");
+#ifdef WX_BG_PRELOAD
+    std::exception_ptr loadError;
+    std::thread loader([&] {
+        try {
+            std::ifstream input(inputPath, std::ios::binary);
+            if (!input) throw std::runtime_error("Could not open input");
+            if (!input.read(source.data(), static_cast<std::streamsize>(source.size())))
+                throw std::runtime_error("Could not read source frames");
+        } catch (...) {
+            loadError = std::current_exception();
+        }
+    });
+#else
+    {
+        std::ifstream input(inputPath, std::ios::binary);
+        if (!input) throw std::runtime_error("Could not open input");
+        if (!input.read(source.data(), static_cast<std::streamsize>(source.size())))
+            throw std::runtime_error("Could not read source frames");
+    }
+#endif
     auto init = Clock::now();
-    EncoderGpu gpu(config, !reconPath.empty());
+    EncoderGpu gpu(config, !reconPath.empty(), {}, useTimestamps);
+    RT("main: gpu constructed");
     double initSeconds = seconds(init);
+#ifdef WX_BG_PRELOAD
+    loader.join();
+    if (loadError) std::rethrow_exception(loadError);
+#endif
     std::ofstream output(outputPath, std::ios::binary);
     if (!output) throw std::runtime_error("Could not open H.264 output");
     std::ofstream recon;
@@ -209,15 +243,8 @@ int main(int argc, char** argv) try {
     std::vector<double> frameMs;
     frameMs.reserve(frameCount);
     unsigned minQp = 51, maxQp = 0, selectedReferenceDepth = 0;
-    auto loop = Clock::now();
-    for (config.frameIndex = 0; config.frameIndex < frameCount; ++config.frameIndex) {
-        auto start = Clock::now();
-        std::copy_n(source.data() + static_cast<std::size_t>(config.frameIndex) * frameBytes,
-                    frameBytes, gpu.input());
-        auto frame = gpu.encode(config);
-        if (!output.write(frame.annexB, frame.bytes)) throw std::runtime_error("Could not write H.264 frame");
-        if (frame.reconstruction && !recon.write(frame.reconstruction, reconBytes))
-            throw std::runtime_error("Could not write reconstruction frame");
+    auto account = [&](const EncodedFrame& frame) {
+        if (!frame.bytes) return;
         bytes += frame.bytes;
         olderReferenceBlocks += frame.olderReferenceBlocks;
         flatIntraBlocks += frame.flatIntraBlocks;
@@ -225,8 +252,47 @@ int main(int argc, char** argv) try {
         minQp = std::min(minQp, frame.qp);
         maxQp = std::max(maxQp, frame.qp);
         for (std::size_t i = 0; i < stageMs.size(); ++i) stageMs[i] += frame.gpuMilliseconds[i];
+    };
+    auto loop = Clock::now();
+    for (config.frameIndex = 0; config.frameIndex < frameCount; ++config.frameIndex) {
+        auto start = Clock::now();
+#ifdef WX_RING
+        gpu.beginFrame(config.frameIndex);
+#endif
+        WX_PROF_START(copyIn);
+        std::copy_n(source.data() + static_cast<std::size_t>(config.frameIndex) * frameBytes,
+                    frameBytes,
+#ifdef WX_RING
+                    gpu.input(config.frameIndex)
+#else
+                    gpu.input()
+#endif
+        );
+        WX_PROF_ADD(copyIn);
+        auto frame = gpu.encode(config);
+        RT("main: encoded");
+        WX_PROF_START(h264Write);
+#ifdef WX_RING
+        if (frame.bytes && !output.write(frame.annexB, frame.bytes)) throw std::runtime_error("Could not write H.264 frame");
+#else
+        if (!output.write(frame.annexB, frame.bytes)) throw std::runtime_error("Could not write H.264 frame");
+#endif
+        WX_PROF_ADD(h264Write);
+        WX_PROF_START(reconWrite);
+        if (frame.reconstruction && !recon.write(frame.reconstruction, reconBytes))
+            throw std::runtime_error("Could not write reconstruction frame");
+        WX_PROF_ADD(reconWrite);
+        account(frame);
         frameMs.push_back(seconds(start) * 1000);
     }
+#ifdef WX_RING
+    for (const auto& frame : gpu.drainAll(frameCount)) {
+        WX_PROF_START(h264Write);
+        if (!output.write(frame.annexB, frame.bytes)) throw std::runtime_error("Could not write drained H.264 frame");
+        WX_PROF_ADD(h264Write);
+        account(frame);
+    }
+#endif
     output.close();
     if (recon.is_open()) recon.close();
     if (!output || !recon) throw std::runtime_error("Could not finalize output files");
@@ -268,6 +334,7 @@ int main(int argc, char** argv) try {
               << ",\"mb_flags\":" << stageMs[7] / frameCount << ",\"deblock\":" << stageMs[8] / frameCount
               << ",\"mb_entropy\":" << stageMs[9] / frameCount << ",\"entropy\":" << stageMs[10] / frameCount
               << ",\"scan\":" << stageMs[11] / frameCount << ",\"assemble\":" << stageMs[12] / frameCount << "}}\n";
+    profileDump();
     return 0;
 } catch (const std::exception& error) {
     std::cerr << "wx264: " << error.what() << '\n';
