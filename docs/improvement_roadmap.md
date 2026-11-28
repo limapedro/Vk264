@@ -71,6 +71,15 @@ and the build/test baseline. Concrete fixes landed in the working tree:
 | Zero-motion skip penalised on source edges (BS stays spec-correct); deblock mode 1 forced to mode 2 on one-row/partition slices; subgroup optimisation guarded for non-32-lane GPUs | Conservative penalty 0.004. A 0.03 penalty was measured and rejected: VMAF 59.46 -> 57.88 on `latest_src`. Default 2-row/4-row path unchanged in seam metric (h 3.449 -> 3.460, v 3.308 -> 3.332).
 | Harness: `matrix.py` forwards all two-pass flags; `summary.json` labels two-pass/smoothed ABR correctly | `harness/benchmark.py --twopass 1` now self-describes. |
 
+OBS packaging (2026-11-28): both plugins rebuilt and installed into `dist/`.
+`obs-vk264` now exposes deblock mode (2 default / 1 within-slice / 0 off) and
+the flat-DC intra toggle as artifact A/B controls; the Effective readout logs
+both plus the real ABR starting QP. Missing/old saved keys default to
+full-frame deblocking and flat-intra on. `obs-wx264` ABR now also starts at QP 14.
+The stale `dist/obs-vk264/bin/64bit/obs-vk264.dll` was refreshed so both the
+portable (root DLL) and system-wide layouts carry the new code. libobs smoke
+tests: 240 submitted / 240 encoded packets, exit 0 for both plugins.
+
 Measured A/B against a clean HEAD worktree, 300f 1080p25 @6000, `--gop 125 --qp 14`:
 baseline 6172.0 kb/s / PSNR-Y 47.4476 / VMAF 96.179, patched 6174.7 kb/s /
 47.4523 / 96.177. ctest 45/46 (only the pre-existing `x264_cavlc_packet_parity`),
