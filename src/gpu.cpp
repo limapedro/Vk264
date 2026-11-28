@@ -727,10 +727,15 @@ struct EncoderGpu::Impl {
     std::vector<EncodedFrame> drainAllImpl(std::uint32_t frameCount) {
         std::vector<EncodedFrame> result;
         if (!ringActive) return result;
-        result.reserve(ringSlots);
-        for (unsigned k = 0; k < ringSlots; ++k) {
-            std::uint32_t index = frameCount + k;
-            unsigned ri = index % ringSlots;
+        // Only slots that were actually submitted hold output.  Draining all
+        // ringSlots for a clip shorter than the ring reads uninitialised slots
+        // and makes the caller record frames at negative (unsigned-wrapped)
+        // indices.
+        const unsigned count = std::min<unsigned>(ringSlots, frameCount);
+        result.reserve(count);
+        for (unsigned k = 0; k < count; ++k) {
+            const std::uint32_t index = frameCount - count + k;
+            const unsigned ri = index % ringSlots;
             check(vkWaitForFences(device, 1, &ringFences[ri], VK_TRUE,
                                   std::numeric_limits<std::uint64_t>::max()), "drain vkWaitForFences");
             auto* out = static_cast<const std::uint32_t*>(ringOutputs[ri].mapped);

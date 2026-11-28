@@ -73,7 +73,8 @@ void usage() {
               << "             [--gop N] [--search N] [--subpel 0|1] [--partitions 0|1] [--deblock 0|1|2]\n"
  << "             [--smooth-abr 0|1] (opt-in smoothed rate controller)\n"
  << "             [--twopass 1] (opt-in offline two-pass ABR; requires --bitrate)\n"
- << "             [--twopass-alpha X] [--twopass-slope X] [--twopass-smooth N] [--twopass-idr-boost X] [--twopass-dither 0|1]\n"
+ << "             [--twopass-alpha X (0.3-1.0, default 1.0; lower varies QP but overshoots rate)]\n"
+  << "             [--twopass-slope X] [--twopass-smooth N] [--twopass-idr-boost X] [--twopass-dither 0|1]\n"
               << "             [--p-slice-rows 1|2] [--flat-intra 0|1] [--aq 0|1] [--recon padded.yuv]\n"
               << "             [--colorimetry bt709|smpte170m|bt470bg|bt2020-sdr] [--range limited|full]\n"
               << "             [--backend cavlc|vulkan] (vulkan uses CABAC and its own search configuration)\n"
@@ -99,9 +100,14 @@ int main(int argc, char** argv) try {
     Preset preset = defaultPreset;
     bool useVulkanPort = false;
     bool useCavlc = false;
-    bool qpExplicit = false;
     bool smoothAbr = false;
     bool twoPass = false;
+    // alpha=1.0 makes the plan a constant-QP allocation at the target rate.
+    // Lower exponents do vary QP with complexity, but on this CAVLC I/P
+    // pipeline the mixed-QP stream costs 10-17% more than the sum of the
+    // per-frame fixed-QP probe predictions (12 such variants were measured
+    // and rejected in docs/improvement_roadmap.md).  Keep 1.0 as the
+    // rate-accurate default; lower values remain available for experiments.
     double twoPassAlpha = 1.0, twoPassIdrBoost = 1.0, twoPassSlope = 6.0;
     std::uint32_t twoPassSmooth = 0, twoPassDither = 1;
     for (int i = 7; i < argc; i += 2) {
@@ -141,10 +147,8 @@ int main(int argc, char** argv) try {
             useCavlc = entropy == "cavlc";
             continue;
         }
-        if (option == "--qp") {
+        if (option == "--qp")
             config.initialQp = number(argv[i + 1], 0, 51, "QP");
-            qpExplicit = true;
-        }
         else if (option == "--gop") config.gop = number(argv[i + 1], 1, 65536, "GOP length");
         else if (option == "--search") config.motionRadius = number(argv[i + 1], 0, 32, "motion search radius");
         else if (option == "--satd-candidates") config.satdCandidates = number(argv[i + 1], 0, 8, "SATD candidate count");
@@ -194,6 +198,10 @@ int main(int argc, char** argv) try {
         config.references = 1;
         config.flatIntra = 0;
         config.aq = 0;
+        // With one-row slices top-neighbour availability is false inside a
+        // slice, so deblock mode 1 (within-slice only) filters no horizontal
+        // macroblock boundaries at all and leaves a visible 16-pixel grid.
+        if (config.deblock == 1) config.deblock = 2;
     }
     if (useVulkanPort) config.references = 1;
     // In average-rate mode a high --qp is only a STARTING point: the shader
@@ -203,7 +211,11 @@ int main(int argc, char** argv) try {
     // at 6 Mbps: initial 34 -> 14 raises PSNR-Y 51.28 -> 52.38 dB on one clip
     // and 55.10 -> 56.34 dB on another, both at ~6.2 Mb/s. Clamp only when
     // --bitrate was requested; fixed-QP mode keeps the caller's exact value.
-    if (qpExplicit && config.targetBits != 0u && !smoothAbr && config.initialQp > 14)
+    // Without an explicit --qp the preset leaves initialQp at 30, which would
+    // start ABR far too coarse: the documented and OBS behaviour is QP 14.
+    // --smooth-abr deliberately keeps the caller's start QP (it has its own
+    // EMA controller) and two-pass ignores initialQp entirely.
+    if (config.targetBits != 0u && !smoothAbr && !twoPass && config.initialQp > 14)
         config.initialQp = 14;
     finalizeFrameConfig(config);
     fs::path inputPath = argv[1], outputPath = argv[2];
@@ -269,7 +281,7 @@ int main(int argc, char** argv) try {
     // effective rate slope for this clip, then plan every frame's QP offline.
     // The final pass has no feedback, so the async host ring stays enabled.
     std::vector<std::uint32_t> plannedQp;
-    double probeSeconds = 0.0, fittedSlope = 0.0;
+    double probeSeconds = 0.0, fittedSlope = 0.0, sumA = 0.0, sumB = 0.0, predictedFinal = 0.0;
     std::uint64_t probeBytes = 0;
     std::uint32_t calibrationQp = 0;
     if (twoPass) {
@@ -327,9 +339,10 @@ int main(int argc, char** argv) try {
 #ifdef WX_RING
             if (ring) {
                 auto drained = probeGpu.drainAll(frameCount);
-                if (drained.size() != ringDepth) throw std::runtime_error("Unexpected probe ring drain size");
+                const auto expected = std::min<std::uint32_t>(ringDepth, frameCount);
+                if (drained.size() != expected) throw std::runtime_error("Unexpected probe ring drain size");
                 for (std::uint32_t k = 0; k < drained.size(); ++k)
-                    record(drained[k], frameCount - ringDepth + k);
+                    record(drained[k], frameCount - std::uint32_t(drained.size()) + k);
             }
 #endif
             probeOutput.close();
@@ -340,7 +353,6 @@ int main(int argc, char** argv) try {
         const double targetTotal = double(config.targetBits) * frameCount;
         std::vector<std::uint32_t> bitsA, bitsB;
         probeBytes = runProbe(baseQp, bitsA);
-        double sumA = 0.0;
         for (std::uint32_t value : bitsA) sumA += double(std::max(value, 1u));
         if (!(sumA > 0.0)) throw std::runtime_error("QP34 probe produced no measurable complexity");
         double estimate = double(baseQp) - twoPassSlope * std::log2(targetTotal / sumA);
@@ -349,11 +361,26 @@ int main(int argc, char** argv) try {
         else bitsB = bitsA;
         probeSeconds = seconds(probeStart);
 
-        double sumB = 0.0;
         for (std::uint32_t value : bitsB) sumB += double(std::max(value, 1u));
         fittedSlope = twoPassSlope;
         if (calibrationQp != baseQp && sumB > 0.0 && sumA > 0.0) {
-            double ratio = std::log2(sumB / sumA);
+            // Parameter sets, AUD and SEI do not scale with QP.  Fit the
+            // slope on the most complex quartile only, where that fixed
+            // overhead is negligible compared with quantizer-dependent bits.
+            // Fitting all frames biases the slope upward and then underpredicts
+            // the bit cost of lowering QP on cheap frames.
+            std::vector<std::uint32_t> order(frameCount);
+            std::iota(order.begin(), order.end(), 0u);
+            std::partial_sort(order.begin(), order.begin() + std::max<std::size_t>(1, frameCount / 4),
+                              order.end(), [&](std::uint32_t a, std::uint32_t b) {
+                                  return bitsA[a] > bitsA[b];
+                              });
+            double signalA = 0.0, signalB = 0.0;
+            for (std::size_t k = 0; k < std::max<std::size_t>(1, frameCount / 4); ++k) {
+                signalA += double(std::max(bitsA[order[k]], 1u));
+                signalB += double(std::max(bitsB[order[k]], 1u));
+            }
+            double ratio = std::log2(signalB / signalA);
             if (std::abs(ratio) > 0.01) {
                 // A lower QP probe produces MORE bits; both directions gives
                 // the same positive QP-per-doubling slope.
@@ -363,14 +390,18 @@ int main(int argc, char** argv) try {
         }
 
         // ---- Fit the rate model and plan one QP per frame -----------------
+        // Complexity blur was tried here (x264's cplxblur): at alpha=1.0 it
+        // introduces QP variation and overshoots the rate by ~12%, and at
+        // alpha=0.6 by ~17-20%.  Measured and reverted; see the roadmap's
+        // rejected qcomp arms.  Duplicate pinning below is the cheap version
+        // that keeps identical pictures at identical QP without that cost.
         std::vector<double> weight(frameCount), qp(frameCount);
         double totalWeight = 0.0;
         for (std::uint32_t i = 0; i < frameCount; ++i) {
-            double bits = double(std::max(bitsB[i], 1u));
             // x264 2pass uses complexity^0.6; the pure rate model is ^1.0.
             // IDR frames get an optional extra share, paid for by P frames
             // through the global scale.
-            weight[i] = std::pow(bits, twoPassAlpha) * ((i % config.gop == 0u) ? twoPassIdrBoost : 1.0);
+            weight[i] = std::pow(bitsB[i], twoPassAlpha) * ((i % config.gop == 0u) ? twoPassIdrBoost : 1.0);
             totalWeight += weight[i];
         }
         if (!(totalWeight > 0.0) || !std::isfinite(totalWeight))
@@ -381,52 +412,116 @@ int main(int argc, char** argv) try {
             qp[i] = std::clamp(double(calibrationQp) - fittedSlope * std::log2(scale * weight[i] / bits),
                                0.0, 51.0);
         }
+        // Duplicate-cadence pinning.  30->60 duplicated capture alternates
+        // between near-identical frames that cost ~4x and ~1/20 of the per
+        // frame budget.  A repeated picture carries no new information, so
+        // assigning it a different QP only makes the plan chase that
+        // alternation.  Compare a 16x16 luma grid; exact duplicates average 0.
+        if (frameCount > 1) {
+            constexpr int grid = 16;
+            for (std::uint32_t i = 1; i < frameCount; ++i) {
+                const char* prev = source.data() + std::size_t(i - 1) * frameBytes;
+                const char* cur = source.data() + std::size_t(i) * frameBytes;
+                double diff = 0.0;
+                for (int gy = 0; gy < grid; ++gy) {
+                    const std::size_t y = std::size_t((2 * gy + 1) * height / (2 * grid));
+                    for (int gx = 0; gx < grid; ++gx) {
+                        const std::size_t x = std::size_t((2 * gx + 1) * width / (2 * grid));
+                        const std::size_t pos = y * width + x;
+                        diff += std::abs(int(static_cast<unsigned char>(prev[pos])) -
+                                         int(static_cast<unsigned char>(cur[pos])));
+                    }
+                }
+                if (diff <= 2.0 * grid * grid) qp[i] = qp[i - 1];
+            }
+        }
         if (twoPassSmooth) {
             double step = double(twoPassSmooth);
             for (std::uint32_t i = 1; i < frameCount; ++i)
                 qp[i] = std::clamp(qp[i], std::max(0.0, qp[i - 1] - step),
                                             std::min(51.0, qp[i - 1] + step));
         }
+        // Per-frame bit model from the two fixed-QP probes.  A single global
+        // exponential misses that high QP turns more blocks into P-skip, so
+        // the bit-vs-QP curve is much steeper above the operating point than
+        // below it; interpolating the two measured points per frame fixes the
+        // rate without adding a third encode.  Clamp the extrapolation to a
+        // physically plausible 4..14 QP per factor-of-two range.
+        const double qa = double(std::min(baseQp, calibrationQp));
+        const double qb = double(std::max(baseQp, calibrationQp));
+        auto bitsAt = [&](std::uint32_t i, double q) {
+            const double lowProbe = calibrationQp < baseQp
+                ? std::log2(double(std::max(bitsB[i], 1u)))
+                : std::log2(double(std::max(bitsA[i], 1u)));
+            const double highProbe = calibrationQp < baseQp
+                ? std::log2(double(std::max(bitsA[i], 1u)))
+                : std::log2(double(std::max(bitsB[i], 1u)));
+            double slope = qb > qa && std::abs(highProbe - lowProbe) > 0.02
+                ? (highProbe - lowProbe) / (qb - qa) : -1.0 / fittedSlope;
+            slope = std::clamp(slope, -1.0 / 4.0, -1.0 / 14.0);
+            return std::exp2(lowProbe + slope * (q - qa));
+        };
         // Clamping and smoothing distort the sum of predicted bits; rebalance
         // with a uniform QP shift (still no per-frame feedback in pass 2).
         for (int pass = 0; pass < 2; ++pass) {
             double predicted = 0.0;
-            for (std::uint32_t i = 0; i < frameCount; ++i)
-                predicted += double(std::max(bitsB[i], 1u)) *
-                             std::exp2(-(qp[i] - double(calibrationQp)) / fittedSlope);
+            for (std::uint32_t i = 0; i < frameCount; ++i) predicted += bitsAt(i, qp[i]);
             if (!(predicted > 0.0) || !std::isfinite(predicted)) break;
             double correction = -fittedSlope * std::log2(targetTotal / predicted);
             for (std::uint32_t i = 0; i < frameCount; ++i)
                 qp[i] = std::clamp(qp[i] + correction, 0.0, 51.0);
         }
+        predictedFinal = 0.0;
+        for (std::uint32_t i = 0; i < frameCount; ++i) predictedFinal += bitsAt(i, qp[i]);
         plannedQp.resize(frameCount);
         if (twoPassDither) {
             // Integer QPs can leave several percent of rate on the table (a
             // single step is ~1.4x bits). Spend the fractional part by giving
             // a lower QP to the frames with the largest bit savings, and
             // round up the cheap ones until the modelled total matches.
-            std::vector<double> lowBits(frameCount), saving(frameCount);
-            double lowTotal = 0.0, totalSaving = 0.0;
+            std::vector<double> lowBits(frameCount), saving(frameCount), gain(frameCount);
+            std::vector<std::uint32_t> qpFloor(frameCount);
+            double lowTotal = 0.0, totalSaving = 0.0, totalGain = 0.0;
             for (std::uint32_t i = 0; i < frameCount; ++i) {
-                double base = std::clamp(std::floor(qp[i]), 0.0, 50.0);
-                double bits = double(std::max(bitsB[i], 1u));
-                lowBits[i] = bits * std::exp2(-(base - double(calibrationQp)) / fittedSlope);
-                saving[i] = lowBits[i] * (1.0 - std::exp2(-1.0 / fittedSlope));
+                // A frame clamped to the H.264 QP ceiling must stay there:
+                // flooring it to 50 would spend ~14% more bits than planned.
+                qpFloor[i] = qp[i] >= 51.0 ? 51u
+                          : static_cast<std::uint32_t>(std::clamp(std::floor(qp[i]), 0.0, 50.0));
+                lowBits[i] = bitsAt(i, double(qpFloor[i]));
+                saving[i] = qpFloor[i] >= 51u ? 0.0 : lowBits[i] - bitsAt(i, double(qpFloor[i]) + 1.0);
+                gain[i] = qpFloor[i] <= 0u ? 0.0 : bitsAt(i, double(qpFloor[i]) - 1.0) - lowBits[i];
                 lowTotal += lowBits[i];
                 totalSaving += saving[i];
+                totalGain += gain[i];
             }
-            double remove = std::clamp(lowTotal - targetTotal, 0.0, totalSaving);
+            std::vector<std::uint32_t> chosen(qpFloor);
             std::vector<std::uint32_t> order(frameCount);
             std::iota(order.begin(), order.end(), 0u);
-            std::stable_sort(order.begin(), order.end(), [&](std::uint32_t a, std::uint32_t b) {
-                return saving[a] < saving[b];
-            });
-            std::vector<std::uint32_t> chosen(frameCount);
-            for (std::uint32_t index : order) {
-                chosen[index] = static_cast<std::uint32_t>(std::clamp(std::floor(qp[index]), 0.0, 50.0));
-                if (remove > 0.0) {
+            if (lowTotal > targetTotal) {
+                // Spend the fractional budget: raise QP on the frames that
+                // save the fewest bits first.
+                double remove = std::clamp(lowTotal - targetTotal, 0.0, totalSaving);
+                std::stable_sort(order.begin(), order.end(), [&](std::uint32_t a, std::uint32_t b) {
+                    return saving[a] < saving[b];
+                });
+                for (std::uint32_t index : order) {
+                    if (remove <= 0.0) break;
+                    if (saving[index] <= 0.0) continue;
                     chosen[index] += 1u;
                     remove -= saving[index];
+                }
+            } else if (lowTotal < targetTotal) {
+                // Symmetric case: the floor left us short of the target, so
+                // lower QP on the frames that add the fewest bits first.
+                double add = std::clamp(targetTotal - lowTotal, 0.0, totalGain);
+                std::stable_sort(order.begin(), order.end(), [&](std::uint32_t a, std::uint32_t b) {
+                    return gain[a] < gain[b];
+                });
+                for (std::uint32_t index : order) {
+                    if (add <= 0.0) break;
+                    if (gain[index] <= 0.0) continue;
+                    chosen[index] -= 1u;
+                    add -= gain[index];
                 }
             }
             plannedQp.swap(chosen);
@@ -551,6 +646,8 @@ int main(int argc, char** argv) try {
               << ",\"probe_seconds\":" << probeSeconds << ",\"probe_bytes\":" << probeBytes
               << ",\"planner\":{\"alpha\":" << twoPassAlpha << ",\"slope\":" << twoPassSlope
               << ",\"fitted_slope\":" << fittedSlope << ",\"calibration_qp\":" << calibrationQp
+               << ",\"probe_sum_qp34_bytes\":" << (sumA / 8.0) << ",\"probe_sum_cal_bytes\":" << (sumB / 8.0)
+               << ",\"predicted_bytes\":" << (predictedFinal / 8.0)
               << ",\"idr_boost\":" << twoPassIdrBoost << ",\"smooth\":" << twoPassSmooth
               << ",\"dither\":" << twoPassDither << "}"
               << ",\"gpu_stages_mean_ms\":{\"pyramid\":" << stageMs[0] / frameCount

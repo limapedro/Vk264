@@ -58,6 +58,8 @@ The default suite encodes the same source frames with Wx264, x264 `slow`, NVENC 
 
 x264 uses single-pass ABR with VBV and NVENC uses CBR. Both references use a two-second buffer. Wx264 reserves keyframe bits across the GOP and adapts the IDR and P-frame QPs separately. Its average-rate feedback can exceed the target over short windows. The harness records actual rates and exact commands in `summary.json`.
 
+Wx264 has three local-file rate-control modes. The default `--bitrate` path is single-pass average-rate feedback (start QP 14). `--smooth-abr 1` opts into an EMA controller that is capped at QP 32 on 50 fps and higher sources. `--twopass 1 --bitrate N` is an offline planner for local files: it makes two fixed-QP probe encodes, fits a per-frame bit/QP curve, pins duplicate frames to the same QP, and dithers a constant-QP plan to the target with no frame-to-frame feedback. It adds roughly two encodes of setup time, so process fps falls below the live OBS gate; it is not exposed in OBS. Lowering `--twopass-alpha` below 1.0 varies QP with complexity but overshoots the target rate by 10-20% on this CAVLC I/P pipeline and is therefore experimental. See `docs/improvement_roadmap.md` for the measurements and rejected variants.
+
 ### Measured on the GTX 1660 SUPER
 
 Each run used 600 frames at 1920×1080 and 60 fps, targeting 6 Mbps with 120-frame GOPs. PSNR-Y is measured against the supplied YUV masters, which came from compressed gameplay captures.

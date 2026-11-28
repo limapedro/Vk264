@@ -13,6 +13,7 @@ layout(local_size_x=128) in;
 #include "deblock_filter.glsl"
 
 shared int segmentStrength[128];
+shared uint teamActive[WX_DEBLOCK_TILES];
 
 ivec3 innerWord(int word) {
     int plane = word < 64 ? 0 : (word < 80 ? 1 : 2);
@@ -75,7 +76,26 @@ void main() {
         int myStrength = valid && available
             ? strength(mb, lane & 3, directionEdge, vertical, intra) : 0;
         segmentStrength[teamBase + lane] = myStrength;
-        bool needsFilter = subgroupAny(myStrength != 0);
+        bool needsFilter;
+        if (gl_SubgroupSize == 32u) {
+            // Fast path: each 32-lane team is exactly one hardware subgroup.
+            needsFilter = subgroupAny(myStrength != 0);
+        } else {
+            // subgroupAny/subgroupBarrier only span the hardware subgroup,
+            // which is 16 or 64 lanes on some devices.  A team then crosses
+            // subgroup boundaries and a partial vote would make some lanes
+            // read tile[] words nobody loaded.  Fall back to workgroup-wide
+            // shared reduction and full barriers in that case.
+            barrier();
+            if (lane == 0) {
+                uint any = 0u;
+                for (int i = 0; i < 32; ++i)
+                    if (segmentStrength[teamBase + i] != 0) { any = 1u; break; }
+                teamActive[team] = any;
+            }
+            barrier();
+            needsFilter = teamActive[team] != 0u;
+        }
         if (needsFilter) {
             for (int i = lane; i < 96; i += 32) {
                 ivec3 word = innerWord(i);
@@ -84,16 +104,16 @@ void main() {
             if (left) loadWord(mb, plane, -4, along);
             if (top) loadWord(mb, plane, topX, topY);
         }
-        subgroupBarrier();
+        if (gl_SubgroupSize == 32u) subgroupBarrier(); else barrier();
         // Vertical edges are sequential within a row, then horizontal
         // edges are sequential within a column. Lanes own disjoint lines.
         int segment = along >> (plane == 0 ? 2 : 1);
         if (needsFilter) for (int edge = left ? 0 : 1; edge < 4; ++edge)
             filterEdgeWithStrength(plane, along, edge, true, segmentStrength[teamBase + 4*edge + segment]);
-        subgroupBarrier();
+        if (gl_SubgroupSize == 32u) subgroupBarrier(); else barrier();
         if (needsFilter) for (int edge = top ? 0 : 1; edge < 4; ++edge)
             filterEdgeWithStrength(plane, along, edge, false, segmentStrength[teamBase + 16 + 4*edge + segment]);
-        subgroupBarrier();
+        if (gl_SubgroupSize == 32u) subgroupBarrier(); else barrier();
         if (needsFilter) {
             if (left) saveWord(mb, plane, -4, along);
             if (top) saveWord(mb, plane, topX, topY);

@@ -94,7 +94,11 @@ def build_command(args, name, stream):
                               ("--partitions", args.partitions), ("--p-slice-rows", args.p_slice_rows),
                               ("--satd-candidates", args.satd_candidates), ("--ref", args.ref),
                               ("--deblock", args.deblock), ("--flat-intra", args.flat_intra), ("--aq", args.aq),
-                               ("--smooth-abr", args.smooth_abr), ("--twopass", args.twopass)):
+                               ("--smooth-abr", args.smooth_abr), ("--twopass", args.twopass),
+                               ("--twopass-alpha", args.twopass_alpha), ("--twopass-slope", args.twopass_slope),
+                               ("--twopass-smooth", args.twopass_smooth),
+                               ("--twopass-idr-boost", args.twopass_idr_boost),
+                               ("--twopass-dither", args.twopass_dither)):
             if value is not None:
                 command.extend([option, value])
         return command
@@ -162,6 +166,11 @@ def main():
     parser.add_argument("--aq", type=int, choices=[0, 1], help="Toggle spatial adaptive quantization in Wx264")
     parser.add_argument("--smooth-abr", type=int, choices=[0, 1], help="Toggle smoothed ABR in Wx264")
     parser.add_argument("--twopass", type=int, choices=[0, 1], help="Offline two-pass ABR in Wx264")
+    parser.add_argument("--twopass-alpha", type=float, help="Two-pass qcomp exponent (default 1.0)")
+    parser.add_argument("--twopass-slope", type=float, help="Two-pass QP per bit doubling")
+    parser.add_argument("--twopass-smooth", type=int, help="Two-pass QP smoothing step")
+    parser.add_argument("--twopass-idr-boost", type=float, help="Two-pass IDR bit share multiplier")
+    parser.add_argument("--twopass-dither", type=int, choices=[0, 1], help="Two-pass integer QP dithering")
     parser.add_argument("--runs", default=1, type=int)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--encoders", nargs="+", choices=ENCODERS)
@@ -186,7 +195,9 @@ def main():
     args.out.mkdir(parents=True)
     summary = {"input": str(args.input), "width": args.width, "height": args.height, "frames": args.frames,
                "fps": args.fps, "gop_frames": args.gop, "target_kbps": args.bitrate,
-               "wx264_rate_control": "average-rate feedback", "reference_buffer_kbits": 2 * args.bitrate,
+               "wx264_rate_control": ("two-pass offline" if args.twopass else
+                                      "smoothed ABR" if args.smooth_abr else "average-rate feedback"),
+               "reference_buffer_kbits": 2 * args.bitrate,
                "results": []}
     for name in args.encoders:
         codec, _, preset = name.partition("-")
