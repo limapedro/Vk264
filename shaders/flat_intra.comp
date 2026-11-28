@@ -147,7 +147,10 @@ void decide(uint mb, uint local, int qp) {
 void main() {
     uint slice = gl_WorkGroupID.x, lane = gl_LocalInvocationID.x;
     int qp = frameQp();
-    if (qp < 20) return;
+    // Deblocking is a no-op for QP<=15 (alpha=beta=0), but the DC-only intra
+    // candidate still removes quantization noise in dark flat areas.  Low-QP
+    // ABR frames (14-19) previously got no candidate at all.
+    if (qp < 14) return;
     uint first = firstMb(slice), count = sliceLength(slice);
     for (uint i = lane; i < count; i += 32u) work[i] = uint(candidate(first + i));
     barrier();

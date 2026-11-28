@@ -1,6 +1,7 @@
 # Vk264 improvement roadmap — ranked by effort vs expected VMAF gain
 
-Status: HEAD `d24dc87`. This document is the single source of truth for what
+Status: HEAD `0451b2d` plus the local rate-control/artifact fixes described in
+section 1a. This document is the single source of truth for what
 has been measured, what has landed, what was tried and rejected, and what is
 worth doing next. Every number below comes from a command in
 `docs/quality_baseline.md`, this file, or the retained sub-agent reports under
@@ -54,6 +55,29 @@ wx264 loop fps 149–160 on this content; x264-slow process 75–105 fps.
 **Dominant problem: the ABR controller, not the codec.** Fixed QP is within
 ~1 VMAF of x264 at 6000/8000, but ABR limit-cycles at QP 18/22 and never
 converges to the QP 28 needed for 8000 on this content.
+
+---
+
+## 1a. Rate-control and blocking fixes (2026-11-28, local uncommitted)
+
+Four sub-agents audited rate control, deblocking/block artifacts, the literature,
+and the build/test baseline. Concrete fixes landed in the working tree:
+
+| Fix | Evidence / result |
+|---|---|
+| Offline planner: per-frame bit/QP curve from the two probes replaces one global exponential; QP-51 frames stay at 51 in dithering; slope fit uses the complex quartile; duplicate frames pinned to the same QP | 120f 1080p60 `latest_src.yuv` @6000: planned 1,500,000 B vs achieved 1,565,556 B (6262 kb/s, +4.4%); previously 6291 kb/s with constant QP. Tiny 2f clip no longer reads uninitialised ring slots (`drainAll` now drains `min(ringSlots, frameCount)`). |
+| CLI ABR without `--qp` starts at QP 14, matching OBS; OBS no longer clamps ABR-SMOOTH where the CLI deliberately does not | `wx264 smoke 2f --bitrate 100` reports `initial_qp:14`. |
+| Flat-DC intra candidate enabled at QP 14-19 (was QP>=20) | Conformant; recon parity 13/13. On the tested clips no dark flat QP<20 blocks, so no aggregate change - keep for the reported Warzone dark-region case. |
+| Zero-motion skip penalised on source edges (BS stays spec-correct); deblock mode 1 forced to mode 2 on one-row/partition slices; subgroup optimisation guarded for non-32-lane GPUs | Conservative penalty 0.004. A 0.03 penalty was measured and rejected: VMAF 59.46 -> 57.88 on `latest_src`. Default 2-row/4-row path unchanged in seam metric (h 3.449 -> 3.460, v 3.308 -> 3.332).
+| Harness: `matrix.py` forwards all two-pass flags; `summary.json` labels two-pass/smoothed ABR correctly | `harness/benchmark.py --twopass 1` now self-describes. |
+
+Measured A/B against a clean HEAD worktree, 300f 1080p25 @6000, `--gop 125 --qp 14`:
+baseline 6172.0 kb/s / PSNR-Y 47.4476 / VMAF 96.179, patched 6174.7 kb/s /
+47.4523 / 96.177. ctest 45/46 (only the pre-existing `x264_cavlc_packet_parity`),
+`check.py` 13/13. The honest conclusion is unchanged: the remaining block
+pattern is prediction/RD structure, not a deblocking bug, and closing it needs
+B-frames/CABAC/trellis/RDO or finer partitions - all previously measured and
+blocked. Do not retry AQ, psy-RD, trellis/QNS, cplxblur, or large skip penalties.
 
 ---
 

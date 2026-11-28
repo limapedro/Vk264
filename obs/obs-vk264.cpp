@@ -62,8 +62,9 @@ const char* statusText(std::string_view rate) {
                "Restart the output to apply changes.";
     if (rate == "ABR-SMOOTH")
         return "Smoothed ABR: targets Target bitrate while averaging frame "
-               "activity to reduce short-term spikes. QP is not a target; ABR "
-               "starts at QP 14. Restart the output to apply changes.";
+               "activity to reduce short-term spikes. Like the CLI, it starts "
+               "at the stored QP (default 34) and its EMA clamps itself to "
+               "QP 18-32 on 50 fps sources. Restart the output to apply changes.";
     return "Average bitrate (ABR): targets Target bitrate. QP is not a target; "
            "ABR starts at QP 14 to protect the first keyframe. "
            "Restart the output to apply changes.";
@@ -155,7 +156,9 @@ void* encoder_create(obs_data_t* settings, obs_encoder_t* owner) {
         // Mirror the CLI: an explicit QP above 14 with ABR makes the first
         // IDR far too coarse and permanently lowers mean quality at the same
         // achieved bitrate.  Fixed QP keeps the caller's exact value.
-        if (config.targetBits != 0u && config.initialQp > 14u)
+        // ABR-SMOOTH deliberately keeps the caller's QP on the CLI; mirror
+        // that here so the two entry points behave identically.
+        if (config.targetBits != 0u && config.smoothAbr == 0u && config.initialQp > 14u)
             config.initialQp = 14u;
         config.videoSignal = colorSignal(1, 1, 1); // OBS adapter requests limited-range BT.709 I420 below
         // Log the EFFECTIVE settings so a UI/saved-settings mismatch is visible

@@ -23,6 +23,13 @@ def main():
     ap.add_argument("--gop", type=int, default=120)
     ap.add_argument("--qp", type=int, default=14)
     ap.add_argument("--preset", default="slow")
+    ap.add_argument("--twopass", type=int, choices=[0, 1])
+    ap.add_argument("--smooth-abr", type=int, choices=[0, 1])
+    ap.add_argument("--twopass-alpha", type=float)
+    ap.add_argument("--twopass-slope", type=float)
+    ap.add_argument("--twopass-smooth", type=int)
+    ap.add_argument("--twopass-idr-boost", type=float)
+    ap.add_argument("--twopass-dither", type=int, choices=[0, 1])
     ap.add_argument("--frames", type=int, default=300)
     ap.add_argument("--rates", nargs="+", type=int, default=[2000, 4000, 6000, 8000])
     ap.add_argument("--encoders", nargs="+",
@@ -40,6 +47,11 @@ def main():
                "--fps", str(a.fps), "--frames", str(a.frames),
                "--bitrate", str(rate), "--gop", str(a.gop), "--qp", str(a.qp),
                "--encoders", *a.encoders, "--vmaf"]
+        for option in ("twopass", "smooth_abr", "twopass_alpha", "twopass_slope",
+                       "twopass_smooth", "twopass_idr_boost", "twopass_dither"):
+            value = getattr(a, option)
+            if value is not None:
+                cmd.extend(["--" + option.replace("_", "-"), str(value)])
         print("+", " ".join(cmd), flush=True)
         subprocess.run(cmd, cwd=ROOT, check=True)
         summary = json.loads((out / "summary.json").read_text())

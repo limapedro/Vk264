@@ -20,6 +20,7 @@ shared int chromaMode; // 0: prediction only, 1: DC, 2: DC and AC
 shared bool skipMb;
 shared bool partitioned;
 shared uvec2 lumaActivity[16];
+shared int lumaEdgeEnergy[16];
 shared int adaptiveQp;
 
 // SHADER: source-aligned I16x16 prediction (x264 common/predict.c:67-159,
@@ -74,6 +75,20 @@ void processMb(uint mb, bool intra, bool haveLeft, int qp) {
         }
         barrier();
         qp = adaptiveQp;
+    }
+    // Source edge energy for the skip decision.  Zero-motion P-skip gets
+    // BS=0 from the decoder, so skipping a block that sits on a real source
+    // edge leaves a hard plateau and a visible block grid (56% of P MBs were
+    // skip here vs x264's ~16%).  We cannot raise BS without decoder drift;
+    // penalising skip at edges is conformant because the mode is signalled.
+    if (!intra && !pictureAq() && lane < 16) {
+        ivec2 origin = mbOrigin(mb, 0) + ivec2(lane % 4, lane / 4) * 4;
+        int g = 0;
+        for (int y = 0; y < 4; ++y)
+            g += abs(srcPixel(0, origin + ivec2(0, y)) - srcPixel(0, origin + ivec2(3, y)));
+        for (int x = 0; x < 4; ++x)
+            g += abs(srcPixel(0, origin + ivec2(x, 0)) - srcPixel(0, origin + ivec2(x, 3)));
+        lumaEdgeEnergy[lane] = g;
     }
     int cqp = chromaQp(qp);
 
@@ -339,7 +354,13 @@ void processMb(uint mb, bool intra, bool haveLeft, int qp) {
             chromaCost = fullCost;
         }
         interCost += chromaCost;
-        skipMb = qp > 0 && 0.5 * float(skipDistortion) <= interCost;
+        int edgeEnergy = 0;
+        if (!pictureAq()) for (int i = 0; i < 16; ++i) edgeEnergy += lumaEdgeEnergy[i];
+        float skipCost = 0.5 * float(skipDistortion);
+        const int edgeThreshold = 16 * 96;
+        if (edgeEnergy > edgeThreshold)
+            skipCost += lambda * float(edgeEnergy - edgeThreshold) * 0.004;
+        skipMb = qp > 0 && skipCost <= interCost;
         if (skipMb) matches[matchBase].mv = ivec2(0);
         matches[matchBase].mode = skipMb ? 0u : (ref << 1u) | uint(partitioned);
     }
