@@ -41,8 +41,8 @@ void removeNalPadding(const EncodedFrame& frame, std::vector<uint8_t>& packet) {
 }
 
 const char* validateSettings(int bitrate, int qp, int keyint, std::string_view rate) {
-    if (rate != "ABR" && rate != "ABR-SMOOTH" && rate != "CQP")
-        return "Vk264: Rate control must be Average bitrate, Smoothed ABR or Constant QP";
+    if (rate != "ABR" && rate != "ABR-SMOOTH" && rate != "CBR" && rate != "CQP")
+        return "Vk264: Rate control must be ABR, ABR-SMOOTH, CBR or Constant QP";
     // CQP ignores bitrate entirely (the UI hides it), so an out-of-range
     // bitrate left over from a previous mode must not block a CQP encode.
     if (rate == "CQP") {
@@ -61,10 +61,16 @@ const char* statusText(std::string_view rate) {
                "(0 = lossless, lower = better); file size varies with content. "
                "Restart the output to apply changes.";
     if (rate == "ABR-SMOOTH")
-        return "Smoothed ABR: targets Target bitrate while averaging frame "
-               "activity to reduce short-term spikes. Like the CLI, it starts "
-               "at the stored QP (default 34) and its EMA clamps itself to "
-               "QP 18-32 on 50 fps sources. Restart the output to apply changes.";
+        return "Smoothed ABR: at 60 fps this uses the same duplicate-aware "
+               "target-tracking controller as ABR (the old EMA is disabled on "
+               "50 fps sources because it overshot the target). Restart the "
+               "output to apply changes.";
+    if (rate == "CBR")
+        return "CBR-like target tracking: holds the long-term average near "
+               "Target bitrate with a QP-normalized complexity model. No "
+               "filler NALs or HRD signalling, so static content may fall "
+               "below target and this is not a broadcast CBR guarantee. "
+               "Restart the output to apply changes.";
     return "Average bitrate (ABR): targets Target bitrate. QP is not a target; "
            "ABR starts at QP 14 to protect the first keyframe. "
            "Restart the output to apply changes.";
@@ -96,8 +102,8 @@ std::string effectiveText(obs_data_t* settings) {
         std::snprintf(text, sizeof(text),
             "Effective: %s | target=%d kbit/s | starting QP=%s | "
             "keyint=%d s -> %s | preset=%s | deblock=%d | flat-intra=%s",
-            rate == "ABR-SMOOTH" ? "ABR-SMOOTH" : "ABR", bitrate,
-            rate == "ABR-SMOOTH" ? "stored QP (EMA clamped)" : "14 (capped)",
+            rate == "CBR" ? "CBR-like" : rate == "ABR-SMOOTH" ? "ABR-SMOOTH" : "ABR", bitrate,
+            rate == "CBR" || rate == "ABR-SMOOTH" ? "rate-derived (capped)" : "14 (capped)",
             keyint, gop, preset, deblock, flatIntra ? "on" : "off");
     }
     return text;
@@ -109,6 +115,9 @@ struct Encoder {
     EncoderGpu gpu;
     std::vector<uint8_t> headers;
     std::vector<uint8_t> packetBytes;
+    std::array<unsigned char, 256> thumbnail{}, previousThumbnail{};
+    bool haveThumbnail = false;
+    std::uint32_t duplicateCount = 0;
 
     Encoder(obs_encoder_t* owner, FrameConfig config, const std::filesystem::path& shaders)
         : owner(owner), config(config), gpu(config, false, shaders) {
@@ -159,7 +168,10 @@ void* encoder_create(obs_data_t* settings, obs_encoder_t* owner) {
         config.initialQp = static_cast<uint32_t>(qp);
         config.gop = framesForSeconds(config, static_cast<uint32_t>(keyint));
         config.targetBits = rate != "CQP" ? bitsPerFrame(config, static_cast<uint32_t>(bitrate)) : 0;
-        config.smoothAbr = rate == "ABR-SMOOTH" ? 1u : 0u;
+        // The old EMA controller overshot the target on 50/60 fps capture;
+        // those sources use the duplicate-aware model controller for every
+        // bitrate mode.  Keep the EMA only for low frame rates.
+        config.smoothAbr = (rate == "ABR-SMOOTH" && config.fps < 50u) ? 1u : 0u;
         // Exposed so the artifact fixes can be A/B tested without leaving OBS:
         // 2 = full-frame filtering, 1 = within slices, 0 = off; flat-intra
         // adds the DC-only Intra16 candidate for dark flat macroblocks.
@@ -175,6 +187,8 @@ void* encoder_create(obs_data_t* settings, obs_encoder_t* owner) {
         // that here so the two entry points behave identically.
         if (config.targetBits != 0u && config.smoothAbr == 0u && config.initialQp > 14u)
             config.initialQp = 14u;
+        if (config.targetBits != 0u && config.fps >= 50u)
+            config.initialQp = estimateAbrInitialQp(config);
         config.videoSignal = colorSignal(1, 1, 1); // OBS adapter requests limited-range BT.709 I420 below
         // Log the EFFECTIVE settings so a UI/saved-settings mismatch is visible
         // in the OBS log instead of silently producing an unexpected bitrate.
@@ -212,7 +226,22 @@ bool encoder_encode(void* data, struct encoder_frame* frame, struct encoder_pack
                 input += width;
             }
         }
-        const auto result = encoder.gpu.encode(config);
+        // Causal duplicate-cadence signal (no preload, no lookahead): compare
+        // a 16x16 luma thumbnail with the previous frame as the CLI does.
+        sampleThumbnail(reinterpret_cast<const unsigned char*>(frame->data[0]),
+                        frame->linesize[0], config.width, config.height, encoder.thumbnail);
+        const bool duplicate = encoder.haveThumbnail
+                            && thumbnailDuplicate(encoder.previousThumbnail, encoder.thumbnail);
+        encoder.previousThumbnail = encoder.thumbnail;
+        encoder.haveThumbnail = true;
+        if (duplicate) ++encoder.duplicateCount;
+        FrameConfig frameConfig = config;
+        frameConfig.aq |= duplicate ? duplicateFrameFlag : 0u;
+        const auto result = encoder.gpu.encode(frameConfig);
+        if (encoder.config.frameIndex % 120u == 0u)
+            blog(LOG_INFO, "Vk264 RC: frame=%u duplicates=%u current=%s qp=%u",
+                 encoder.config.frameIndex, encoder.duplicateCount,
+                 (frameConfig.aq & duplicateFrameFlag) ? "still" : "moving", result.qp);
         removeNalPadding(result, encoder.packetBytes);
         packet->data = encoder.packetBytes.data();
         packet->size = encoder.packetBytes.size();
@@ -278,6 +307,7 @@ obs_properties_t* encoder_properties(void*) {
                                          OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
     obs_property_list_add_string(rate, "Average bitrate (ABR)", "ABR");
     obs_property_list_add_string(rate, "Smoothed average bitrate (ABR-SMOOTH)", "ABR-SMOOTH");
+    obs_property_list_add_string(rate, "CBR-like (target tracking, no padding)", "CBR");
     obs_property_list_add_string(rate, "Constant QP (CQP)", "CQP");
     auto* bitrate = obs_properties_add_int(props, "bitrate", "Target bitrate (kbit/s, 64-50000)", 64, 50000, 1);
     auto* qp = obs_properties_add_int(props, "qp", "Constant QP (0-51; lower = better; 0 = lossless)", 0, 51, 1);

@@ -71,6 +71,24 @@ and the build/test baseline. Concrete fixes landed in the working tree:
 | Zero-motion skip penalised on source edges (BS stays spec-correct); deblock mode 1 forced to mode 2 on one-row/partition slices; subgroup optimisation guarded for non-32-lane GPUs | Conservative penalty 0.004. A 0.03 penalty was measured and rejected: VMAF 59.46 -> 57.88 on `latest_src`. Default 2-row/4-row path unchanged in seam metric (h 3.449 -> 3.460, v 3.308 -> 3.332).
 | Harness: `matrix.py` forwards all two-pass flags; `summary.json` labels two-pass/smoothed ABR correctly | `harness/benchmark.py --twopass 1` now self-describes. |
 
+Rate-control follow-up (2026-11-28 evening): the OBS path stayed on the legacy
+controller because `RateState` (a storage buffer) was never zero-initialized;
+Vulkan left `dupMode` undefined so the model latch never engaged. Fixed by
+making it host-visible and memsetting it. ABR-SMOOTH additionally bypassed the
+model via its EMA branch; the EMA is now disabled at >=50 fps. A fixed anchor
+band of +/-2 QP pinned hard content to QP 32 and left a noisy 1080p60 clip at
+10.3 Mb/s against an 8 Mb/s target; the band is now widened and shifted by
+accumulated rate debt. Verified by driving OBS over obs-websocket with a
+1920x1080 canvas and a synthetic bimodal high-bitrate clip, 18 s recordings:
+CBR-like 8.042 Mb/s, ABR-SMOOTH 8.040 Mb/s, ABR 8.047 Mb/s at an 8000 target
+(+/-0.6%). CLI on the original capture master: 7.448 Mb/s (-6.9%). check.py
+13/13, ctest 45/46. Three upstream projects were forked and studied
+(`limapedro/bc250-encoding-decoding-fix`, `limapedro/x264-GPU-accelerated`,
+`limapedro/pixelforge`); none offers a path to veryslow parity, but the BC-250
+still/moving model and the x264-GPU candidate-generation pattern informed this
+fix. NVENC-style exact CBR is impossible without filler NALs and HRD SEI, so
+the new OBS mode is labelled CBR-like.
+
 OBS packaging (2026-11-28): both plugins rebuilt and installed into `dist/`.
 `obs-vk264` now exposes deblock mode (2 default / 1 within-slice / 0 off) and
 the flat-DC intra toggle as artifact A/B controls; the Effective readout logs

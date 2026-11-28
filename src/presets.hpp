@@ -2,9 +2,39 @@
 
 #include "gpu.hpp"
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
 #include <numeric>
 #include <stdexcept>
 #include <string_view>
+
+// Causal duplicate-cadence signal: compare a 16x16 luma thumbnail of the
+// CURRENT frame with the previous one.  OBS supplies the current frame in its
+// encode callback, so this needs no source preload and no lookahead.  It is
+// packed into the unused high bit of FrameConfig::aq (bit 0 remains the AQ
+// toggle), preserving the 128-byte push-constant ABI.
+inline constexpr std::uint32_t duplicateFrameFlag = 1u << 16;
+
+inline void sampleThumbnail(const unsigned char* luma, std::size_t stride,
+                            std::uint32_t width, std::uint32_t height,
+                            std::array<unsigned char, 256>& out) {
+    for (unsigned gy = 0; gy < 16; ++gy) {
+        const std::size_t y = std::size_t((2 * gy + 1) * height / 32);
+        for (unsigned gx = 0; gx < 16; ++gx) {
+            const std::size_t x = std::size_t((2 * gx + 1) * width / 32);
+            out[gy * 16 + gx] = luma[y * stride + x];
+        }
+    }
+}
+
+inline bool thumbnailDuplicate(const std::array<unsigned char, 256>& previous,
+                               const std::array<unsigned char, 256>& current) {
+    unsigned diff = 0;
+    for (std::size_t i = 0; i < current.size(); ++i)
+        diff += previous[i] > current[i] ? previous[i] - current[i] : current[i] - previous[i];
+    return diff <= 2 * 256; // matches the offline planner's 16x16 threshold
+}
 
 struct Preset {
     std::string_view name;
@@ -78,6 +108,19 @@ inline FrameConfig makeFrameConfig(std::uint32_t width, std::uint32_t height,
     config.sliceRows = std::min(4u, std::max(2u, 512u / config.mbWidth));
     config.flatIntra = 1;
     return config;
+}
+
+// Starting QP for the model rate controller at >=50 fps.  Calibrated on
+// wx264's own two-pass operating points (8000 kbit/s/60 fps -> QP 30,
+// 6000 kbit/s/60 fps -> QP 33-34): starting at QP 14 overspends the first
+// second on duplicated capture, starving the rest of the stream at the same
+// aggregate rate (-1.9 VMAF at 6000).  No source preload is involved: this
+// uses only the requested bits per pixel.
+inline std::uint32_t estimateAbrInitialQp(const FrameConfig& config) {
+    const double pixels = double(config.width) * double(config.height);
+    const double bpp = pixels > 0.0 ? double(config.targetBits) / pixels : 0.1;
+    const double qp = -3.0 - 8.43 * std::log2(bpp > 0.0 ? bpp : 0.001);
+    return static_cast<std::uint32_t>(std::clamp(static_cast<double>(std::lround(qp)), 0.0, 51.0));
 }
 
 inline void finalizeFrameConfig(FrameConfig& config) {

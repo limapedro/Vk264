@@ -131,10 +131,12 @@ static int check_validation(video_t *video)
 
 int main(int argc,char **argv)
 {
-    if (argc != 7 && argc != 8) {
-        fprintf(stderr, "Usage: vk264_obs_smoke plugin.dll data-dir input.yuv output.h264 preset i420|nv12 [ABR|ABR-SMOOTH|CQP]\n");
+    if (argc < 7 || argc > 10) {
+        fprintf(stderr, "Usage: vk264_obs_smoke plugin.dll data-dir input.yuv output.h264 preset i420|nv12 [ABR|ABR-SMOOTH|CQP] [frames] [bitrate]\n");
         return 1;
     }
+    const int frames = argc >= 9 ? atoi(argv[8]) : 240;
+    const int bitrate = argc >= 10 ? atoi(argv[9]) : 6000;
     bool nv12 = !strcmp(argv[6], "nv12");
     output_path = argv[4];
     if (!obs_startup("en-US", NULL, NULL)) return 1;
@@ -157,7 +159,8 @@ int main(int argc,char **argv)
     if (!check_validation(video)) return 13;
     obs_data_t *settings = obs_data_create();
     obs_data_set_string(settings, "preset", argv[5]);
-    obs_data_set_string(settings, "rate_control", argc == 8 ? argv[7] : "ABR");
+    obs_data_set_string(settings, "rate_control", argc >= 8 ? argv[7] : "ABR");
+    obs_data_set_int(settings, "bitrate", bitrate);
     obs_encoder_t *enc = obs_video_encoder_create("vk264_h264","vk264-smoke",settings,NULL);
     if (!enc) return 5;
     obs_encoder_set_video(enc,video);
@@ -178,7 +181,7 @@ int main(int argc,char **argv)
     QueryPerformanceFrequency(&frequency);QueryPerformanceCounter(&start);
     if (!raw || !timer) return 8;
     int submitted=0;
-    for (int i=0;i<240;i++) {
+    for (int i=0;i<frames;i++) {
         if (fread(raw, 1, pixels*3/2, ref) != pixels*3/2) return 8;
         struct video_frame frame;
         if (video_output_lock_frame(video,&frame,1,UINT64_C(1000000000)+(uint64_t)i*UINT64_C(1000000000)/60)) {
@@ -216,5 +219,5 @@ int main(int argc,char **argv)
     obs_shutdown();
     int packet_count = InterlockedCompareExchange(&packets, 0, 0);
     printf("submitted=%d packets=%d\n",submitted,packet_count);
-    return packet_count == submitted && packet_count == 240 ? 0 : 9;
+    return packet_count == submitted && packet_count == frames ? 0 : 9;
 }

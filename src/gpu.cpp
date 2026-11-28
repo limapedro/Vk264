@@ -321,7 +321,13 @@ struct EncoderGpu::Impl {
             createBuffer(Output, scratchSize + 16, storage, hostMemory);
         }
         RT("init: buffers done");
-        createBuffer(Rate, 12, storage | transferDst, deviceMemory);
+        // SHADER-ABI: RateState grew from 3 to 9 ints for the QP-normalised
+        // complexity controller; it is a storage buffer, so FrameConfig and
+        // the 128-byte push-constant ABI are unchanged.
+        // RateState must start zeroed: dupMode/complexity trackers are
+        // cumulative shader state and Vulkan does not initialise memory.
+        // Keep it host-visible so it can be cleared deterministically.
+        createBuffer(Rate, 9 * sizeof(std::int32_t), storage, hostMemory);
         createBuffer(Tables, sizeof(cavlcCodes), storage, hostMemory);
         createBuffer(Vectors, mbCount * 6 * 16, storage, deviceMemory);
         createBuffer(Filtered, VkDeviceSize(c.mbWidth * 16 + 8) * (c.mbHeight * 16 + 8) * 4, storage, deviceMemory);
@@ -330,6 +336,7 @@ struct EncoderGpu::Impl {
         createBuffer(Bodies, paired ? mbCount * macroblockSlotWords * 4 : 4, storage, deviceMemory);
         if (readRecon) createBuffer(ReadRecon, frameBytes, transferDst, hostMemory);
         std::memset(buffers[Upload].mapped, 0, static_cast<std::size_t>(sourceSize));
+        std::memset(buffers[Rate].mapped, 0, 9 * sizeof(std::int32_t));
         std::memcpy(buffers[Tables].mapped, cavlcCodes, sizeof(cavlcCodes));
 
         std::array<VkDescriptorSetLayoutBinding, bindings> layout{};

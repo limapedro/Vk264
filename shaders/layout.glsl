@@ -24,7 +24,21 @@ layout(std430, binding=3) buffer Residual { int coefficients[]; };
 layout(std430, binding=4) buffer SliceStorage { uint scratchWords[]; };
 layout(std430, binding=5) buffer SliceRecords { uvec2 slices[]; }; // words, offset
 layout(std430, binding=6) buffer Output { uint outputWords[]; };  // 4 words of metadata, then Annex B
-layout(std430, binding=7) buffer RateState { int interQpOffset, bitDebt, idrQpOffset; } rc;
+// SHADER-ABI: this is a storage buffer (not a push constant), so it can grow
+// without touching the 128-byte FrameConfig ABI.  The extra words implement
+// a model rate controller: QP-normalised complexity trackers for moving P,
+// still/repeated P and I pictures, a still-share EMA, and the last P/still
+// QPs (packed in qpState).  A 74/26 duplicate/new cadence cannot be
+// controlled from a single per-frame rate ratio.
+layout(std430, binding=7) buffer RateState {
+    int interQpOffset, bitDebt, idrQpOffset;
+    int cplxMoving, cplxStill, cplxI, stillShare;
+    int qpState, dupMode; // qpState: low byte last moving P QP, high byte last still QP
+} rc;
+float loadCplx(int word) { return intBitsToFloat(word); }
+int storeCplx(float value) { return floatBitsToInt(value); }
+int lastMovingQp() { return rc.qpState & 255; }
+int lastStillQp() { return (rc.qpState >> 8) & 255; }
 layout(std430, binding=8) readonly buffer CodeTables { uint codes[]; };
 struct MotionMatch { ivec2 mv; uint cost; uint mode; };
 #ifndef WX_MOTION_ACCESS
@@ -65,7 +79,10 @@ int frameQp() {
 }
 uint residualWave() { return pc.idrWave; }
 bool pairedRows() { return pc.sliceRows >= 2u && !idr() && pc.partitions == 0u; }
-bool pictureAq() { return pc.aq != 0u && pairedRows(); }
+// SHADER-ABI: bit 0 is the AQ toggle; bit 16 carries the host's causal
+// duplicate-frame signal (see presets.hpp).  No new push-constant field.
+bool pictureAq() { return (pc.aq & 1u) != 0u && pairedRows(); }
+bool duplicateFrame() { return (pc.aq & (1u << 16)) != 0u; }
 int mbQp(uint mb) { return int(mbSyntax[mb].x >> 14u); }
 int mbQpDelta(uint flags) { return bitfieldExtract(int(flags), 7, 7); }
 uint firstMb(uint slice) {
