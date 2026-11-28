@@ -17,6 +17,7 @@ obs_data_get_int
 obs_data_get_bool
 obs_data_get_default_int
 obs_data_get_default_bool
+obs_data_has_user_value
 obs_data_get_string
 obs_data_set_default_int
 obs_data_set_default_bool
