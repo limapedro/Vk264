@@ -31,35 +31,132 @@ void main() {
     // allocation; reading or writing rc state would reintroduce frame-to-frame
     // feedback (and is unsafe with the async host ring).
     if (pc.twoPass != 0u || pc.targetBits == 0u || overflow) return;
-    // Reserve keyframe bits across the GOP. An IDR only updates the IDR
-    // quantizer, so its entire cost cannot abruptly raise the next P-frame QP.
     int budget = int(pc.targetBits);
+    int actual = int(32u * total);
+
+    // Latch model-based mode from the host's causal 16x16 luma thumbnail
+    // comparison against the PREVIOUS frame (no preload, no lookahead; OBS
+    // has the current frame in its encode callback).  Gate to >=50 fps:
+    // that is where the 30->60 duplicated-capture pathology lives, and the
+    // 25 fps legacy controller already tracks its target within +4%.
+    if (pc.fps >= 50u && duplicateFrame() && rc.dupMode < 4) ++rc.dupMode;
+
+    if (rc.dupMode >= 4) {
+        // Model rate control (adapted from the BC-250 rc_model_* algorithm):
+        // complexity is QP-normalised, moving/still pictures have separate
+        // trackers and bit shares, and still pictures may never be refined
+        // more than 6 QP below the moving pictures.  This is what stops the
+        // 14.4 Mb/s overshoot at an 8 Mb/s target on duplicated capture.
+        const float qpHalf = 5.0;
+        const int stillRange = 6;
+        const int maxStep = 2;
+        const int iBoost = 2;
+        bool intra = separateIdrBudget();
+        bool still = !intra && duplicateFrame();
+        int floorQp = pc.fps >= 50u ? 18 : 0;
+
+        rc.bitDebt = clamp(rc.bitDebt + actual - budget, -budget * 30, budget * 30);
+        if (!intra) {
+            float s = loadCplx(rc.stillShare) * (15.0 / 16.0) + (still ? 1.0 / 16.0 : 0.0);
+            rc.stillShare = storeCplx(s);
+        }
+        float share = float(budget);
+        float stillShare = loadCplx(rc.stillShare);
+        float capped = min(stillShare, 0.5);
+        float bpf = share;
+        if (!intra && !still) bpf = share / max(0.5, 1.0 - capped);
+        else if (!intra && stillShare > 0.0) {
+            bpf = (share - (1.0 - stillShare) * share / max(0.5, 1.0 - capped)) / stillShare;
+            bpf = max(bpf, share / 64.0);
+        }
+        float horizon = float(max(2, int(pc.fps))); // VBR: repay over ~1 s
+        float want = bpf - float(rc.bitDebt) / horizon;
+        want = clamp(want, bpf / 8.0, bpf * 4.0);
+
+        float cMoving = loadCplx(rc.cplxMoving);
+        float cStill = loadCplx(rc.cplxStill);
+        float cI = loadCplx(rc.cplxI);
+        int lastP = lastMovingQp();
+        int lastS = lastStillQp();
+        bool useStill = still && lastP > 0;
+        int newQp;
+        if (cMoving > 0.0) {
+            float k = useStill && cStill > 0.0 ? cStill : cMoving;
+            int last = useStill && lastS > 0 ? lastS : lastP;
+            float exact = 12.0 + qpHalf * log2(max(k, 1.0) / max(want, 1.0));
+            newQp = int(round(exact));
+            if (last > 0 && abs(exact - float(last)) < 1.0) newQp = last;
+            if (last > 0) newQp = clamp(newQp, last - maxStep, last + maxStep);
+            // A repeated picture may only be refined a little; otherwise a
+            // still stretch walks QP to the floor and the next moving frame
+            // costs many shares (that was the original 20x overshoot).
+            if (useStill) newQp = clamp(newQp, lastP - stillRange, lastP);
+            if (intra) newQp -= iBoost;
+        } else if (cI > 0.0) {
+            newQp = int(round(12.0 + qpHalf * log2(max(cI / 4.0, 1.0) / max(want, 1.0))));
+            if (intra) newQp -= iBoost;
+        } else {
+            float bpp = share / float(max(1, pc.width * pc.height));
+            newQp = int(round(36.0 - qpHalf * log2(max(bpp, 0.001) / 0.1))) - (intra ? iBoost : 0);
+        }
+        // wx264's rate-accurate solution is an essentially constant QP; the
+        // model still adapts, but confine it to a narrow band around the
+        // rate-derived start.  Wide excursions cost ~1-2 VMAF at matched
+        // rate because the stream then pays for duplicate refinement instead
+        // of moving detail.
+        // Shift the operating point from the accumulated rate debt so hard
+        // content can climb and easy/duplicate-heavy content can spend more,
+        // instead of a fixed band that only fits the calibration master.
+        int anchorAdj = clamp(int(round(8.0 * float(rc.bitDebt) /
+                                         float(max(1, budget * 10)))), -10, 6);
+        int anchor = int(pc.initialQp) + anchorAdj;
+        // Allow the model to climb well above the rate-derived start when the
+        // content is costlier than the calibration anchor (noisy capture,
+        // 30->60 bursts).  A +/-2 band pinned QP to 32 at an 8M target and
+        // left hard content at 10+ Mb/s.  Per-frame step and the still guard
+        // below keep the trajectory smooth; only the upper bound is widened.
+        newQp = clamp(newQp, max(floorQp, anchor - 2), min(51, anchor + 8));
+
+        // Feed actual encoded size back as QP-independent complexity.  Still
+        // pictures teach only cplxStill, never the moving-picture tracker;
+        // a 16x jump (scene cut) restarts the log-average.
+        float c = float(max(1, actual)) * exp2(float(qp - 12) / qpHalf);
+        if (intra) {
+            float k = cI > 0.0 && c < cI * 16.0 && c > cI / 16.0
+                    ? exp(0.75 * log(cI) + 0.25 * log(c)) : c;
+            rc.cplxI = storeCplx(k);
+            rc.idrQpOffset = newQp - int(pc.initialQp);
+        } else if (useStill) {
+            float k = cStill > 0.0 && c < cStill * 16.0 && c > cStill / 16.0
+                    ? exp(0.75 * log(cStill) + 0.25 * log(c)) : c;
+            rc.cplxStill = storeCplx(k);
+            lastS = newQp;
+            rc.interQpOffset = newQp - int(pc.initialQp);
+        } else {
+            float k = cMoving > 0.0 && c < cMoving * 16.0 && c > cMoving / 16.0
+                    ? exp(0.75 * log(cMoving) + 0.25 * log(c)) : c;
+            rc.cplxMoving = storeCplx(k);
+            lastP = newQp;
+            lastS = 0;
+            rc.interQpOffset = newQp - int(pc.initialQp);
+        }
+        rc.qpState = lastP | (lastS << 8);
+        return;
+    }
+
+    // Legacy controller for normal (non-duplicated) sources.  It already
+    // tracks 6000 kb/s within +4% on the 25 fps game clip; replacing it there
+    // would regress rate accuracy, so only duplicate cadence gets the model.
     int interFrames = int(pc.gop) - 1;
     int idrExtra = budget * min(5, interFrames / 8);
     bool intraBudget = separateIdrBudget();
-    // Distribute the remainder too, so the per-picture targets sum to the GOP target.
     int share = idrExtra / max(1, interFrames);
     int remainder = idrExtra % max(1, interFrames);
     int allocation = intraBudget ? budget + idrExtra
-                                : budget - share - int(int(pc.frameIndex % pc.gop) <= remainder && remainder != 0);
-    // SHADER: a scene cut can spike one frame to ~20x the per-frame budget.
-    // Without a bound the debt correction drives im to its floor and the
-    // ABR controller then ramps QP by +2/frame for the rest of the GOP,
-    // starving clean frames (measured: QP 33-34, PSNR 42.9 dB, VMAF 91.3 on
-    // frames 218-227 of the game clip). Cap the per-frame correction so the
-    // debt is repaid gradually instead of crushing the following pictures.
-    int correction = clamp(rc.bitDebt / max(8, int(pc.fps) / 2),
-                           -int(allocation) / 4, int(allocation) / 4);
-    // correction is already bounded to +/-allocation/4, so aim lies in
-    // [0.75*allocation, 1.25*allocation].  The former 0.5x..1.5x clamp was
-    // unreachable; keeping it only obscured the real +/-25% bound.
+                                 : budget - share - int(int(pc.frameIndex % pc.gop) <= remainder && remainder != 0);
+    int correction = clamp(rc.bitDebt / max(8, int(pc.fps) / 2), -int(allocation) / 4, int(allocation) / 4);
     int aim = allocation - correction;
-    int actual = int(32u * total);
     if (pc.smoothAbr != 0u) {
-        // Opt-in smoothed ABR: an EMA of frame bits over ~1 s averages out
-        // skip/burst alternation on duplicated-capture sources.  bitDebt is
-        // reused as the EMA state.  Asymmetric step: bursts raise QP quickly,
-        // easy frames lower it slowly to avoid a limit cycle.
         int window = max(8, int(pc.fps));
         int ema = rc.bitDebt + (actual - rc.bitDebt) / window;
         rc.bitDebt = ema;
@@ -68,10 +165,6 @@ void main() {
         int smoothStep = smoothRatio > 1.0
             ? clamp(int(round(6.0 * log2(smoothRatio))), 0, 3)
             : clamp(int(round(3.0 * log2(smoothRatio))), -1, 0);
-        // Measured failure on bimodal 60 fps capture: the EMA ratchets QP to
-        // 51 while still undershooting the target, starving fine detail.
-        // Cap the opt-in smoothed controller at 32 for >=50 fps; low-frame-rate
-        // opt-in keeps the original 51 ceiling.  Default ABR is unaffected.
         int smoothQp = clamp(qpNow + smoothStep, pc.fps >= 50u ? 18 : 0,
                              pc.fps >= 50u ? 32 : 51);
         rc.interQpOffset = smoothQp - int(pc.initialQp);
@@ -79,14 +172,9 @@ void main() {
         return;
     }
     rc.bitDebt = clamp(rc.bitDebt + actual - allocation, -budget * 30, budget * 30);
-
     float rateRatio = float(max(1, actual)) / float(aim);
     int maxStep = intraBudget ? 4 : 2;
     int step = clamp(int(round((intraBudget ? 5.0 : 3.0) * log2(rateRatio))), -maxStep, maxStep);
-    // At >=50 fps, easy/desktop-capture content can drive QP to 0 and waste
-    // 4-6x the target bitrate for <1 VMAF gain (measured: 23.75 Mb/s -> 5.86 Mb/s
-    // at VMAF 97.40 -> 96.69).  Gaming content naturally uses QP >= 18, so a
-    // floor of 18 only constrains the pathological easy-content case.
     int offset = clamp(qp + step, pc.fps >= 50u ? 18 : 0, 51) - int(pc.initialQp);
     if (intraBudget) rc.idrQpOffset = offset;
     else rc.interQpOffset = offset;

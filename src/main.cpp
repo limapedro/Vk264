@@ -217,6 +217,11 @@ int main(int argc, char** argv) try {
     // EMA controller) and two-pass ignores initialQp entirely.
     if (config.targetBits != 0u && !smoothAbr && !twoPass && config.initialQp > 14)
         config.initialQp = 14;
+    // At >=50 fps the model controller uses a causal duplicate signal; start
+    // from the rate-appropriate QP so the first second does not consume a
+    // disproportionate share of the budget on repeated frames.
+    if (config.targetBits != 0u && !twoPass && config.fps >= 50u)
+        config.initialQp = estimateAbrInitialQp(config);
     finalizeFrameConfig(config);
     fs::path inputPath = argv[1], outputPath = argv[2];
     fs::path probePath = twoPass ? fs::path(outputPath.string() + ".probe34.h264") : fs::path{};
@@ -563,6 +568,11 @@ int main(int argc, char** argv) try {
         for (std::size_t i = 0; i < stageMs.size(); ++i) stageMs[i] += frame.gpuMilliseconds[i];
     };
     auto loop = Clock::now();
+    // Causal duplicate detection: only the current and previous source frames
+    // are needed, so this works in OBS just as it does in the CLI.
+    std::array<unsigned char, 256> thumbnail{}, previousThumbnail{};
+    bool haveThumbnail = false;
+    const std::uint32_t baseAq = config.aq;
     for (config.frameIndex = 0; config.frameIndex < frameCount; ++config.frameIndex) {
         auto start = Clock::now();
         if (twoPass) {
@@ -573,6 +583,13 @@ int main(int argc, char** argv) try {
 #ifdef WX_RING
         gpu.beginFrame(config.frameIndex);
 #endif
+        const auto* luma = reinterpret_cast<const unsigned char*>(
+            source.data() + static_cast<std::size_t>(config.frameIndex) * frameBytes);
+        sampleThumbnail(luma, config.width, config.width, config.height, thumbnail);
+        const bool duplicate = haveThumbnail && thumbnailDuplicate(previousThumbnail, thumbnail);
+        previousThumbnail = thumbnail;
+        haveThumbnail = true;
+        config.aq = baseAq | (duplicate ? duplicateFrameFlag : 0u);
         WX_PROF_START(copyIn);
         std::copy_n(source.data() + static_cast<std::size_t>(config.frameIndex) * frameBytes,
                     frameBytes,
@@ -628,7 +645,7 @@ int main(int argc, char** argv) try {
               << ",\"requested_reference_frames\":" << requestedReferences
               << ",\"reference_frames\":" << config.references << ",\"level_idc\":" << config.levelIdc
               << ",\"b_frames\":0,\"lookahead_frames\":0"
-              << ",\"entropy\":\"cavlc\",\"aq\":" << config.aq << ",\"trellis\":0,\"vbv\":0"
+              << ",\"entropy\":\"cavlc\",\"aq\":" << (config.aq & 1u) << ",\"trellis\":0,\"vbv\":0"
               << ",\"gop\":" << config.gop << ",\"initial_qp\":" << config.initialQp
               << ",\"rate_control\":\"" << (twoPass ? "two-pass offline"
                                                     : config.targetBits ? "average-rate" : "fixed-qp") << "\"}"

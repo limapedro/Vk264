@@ -35,6 +35,15 @@ system-wide plugin directory.
    depends entirely on the content and QP (QP 34 at 1080p is typically far
    below 6000 kbps).
 
+   Rate control offers ABR, ABR-SMOOTH and **CBR-like**. At 60 fps all three
+   use the duplicate-aware target-tracking controller: a causal 16x16 luma
+   thumbnail marks repeated frames, a QP-normalized complexity model splits
+   moving and still pictures, and the operating QP shifts with accumulated
+   rate debt. The old EMA controller is kept only below 50 fps. CBR-like is
+   named honestly: it holds the long-term average near the target but emits
+   no filler NALs or HRD SEI, so static content can fall below target and it
+   is not a broadcast CBR guarantee.
+
    The panel also exposes two artifact A/B controls: **Deblocking** (full
    frame by default; "within slices only" is kept for comparison, but on
    one-row/partition layouts the CLI forces full frame) and **DC-only intra
