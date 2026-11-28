@@ -34,6 +34,15 @@ system-wide plugin directory.
    In Constant QP mode the bitrate is ignored, so the resulting file size
    depends entirely on the content and QP (QP 34 at 1080p is typically far
    below 6000 kbps).
+
+   The panel also exposes two artifact A/B controls: **Deblocking** (full
+   frame by default; "within slices only" is kept for comparison, but on
+   one-row/partition layouts the CLI forces full frame) and **DC-only intra
+   for dark flat blocks** (on by default, now active from QP 14). The
+   "Effective" readout logs both values plus the actual ABR starting QP, so
+   a saved-settings mismatch is visible in the log. ABR starts at QP 14;
+   ABR-SMOOTH keeps its stored QP and its EMA clamps itself to QP 18-32 on
+   50 fps sources.
 6. Watch View > Stats for encoding lag while recording.
 
 OBS converts the source to 8-bit I420 before passing it to Vk264. A Vulkan

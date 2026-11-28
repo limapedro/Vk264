@@ -81,17 +81,22 @@ std::string effectiveText(obs_data_t* settings) {
     const int keyint = obs_data_get_int(settings, "keyint_sec");
     const char* preset = obs_data_get_string(settings, "preset");
     const char* gop = gopSummary();
+    const int deblockValue = obs_data_get_int(settings, "deblock");
+    const int deblock = (deblockValue >= 0 && deblockValue <= 2) ? deblockValue : 2;
+    const bool flatIntra = obs_data_get_bool(settings, "flat_intra");
     char text[512];
     if (rate == "CQP") {
         std::snprintf(text, sizeof(text),
             "Effective: CQP | QP=%d (0=lossless) | bitrate ignored | "
-            "keyint=%d s -> %s | preset=%s", qp, keyint, gop, preset);
+            "keyint=%d s -> %s | preset=%s | deblock=%d | flat-intra=%s",
+            qp, keyint, gop, preset, deblock, flatIntra ? "on" : "off");
     } else {
         std::snprintf(text, sizeof(text),
-            "Effective: %s | target=%d kbit/s | starting QP=14 (capped) | "
-            "keyint=%d s -> %s | preset=%s",
-            rate == "ABR-SMOOTH" ? "ABR-SMOOTH" : "ABR", bitrate, keyint,
-            gop, preset);
+            "Effective: %s | target=%d kbit/s | starting QP=%s | "
+            "keyint=%d s -> %s | preset=%s | deblock=%d | flat-intra=%s",
+            rate == "ABR-SMOOTH" ? "ABR-SMOOTH" : "ABR", bitrate,
+            rate == "ABR-SMOOTH" ? "stored QP (EMA clamped)" : "14 (capped)",
+            keyint, gop, preset, deblock, flatIntra ? "on" : "off");
     }
     return text;
 }
@@ -153,6 +158,12 @@ void* encoder_create(obs_data_t* settings, obs_encoder_t* owner) {
         config.gop = framesForSeconds(config, static_cast<uint32_t>(keyint));
         config.targetBits = rate != "CQP" ? bitsPerFrame(config, static_cast<uint32_t>(bitrate)) : 0;
         config.smoothAbr = rate == "ABR-SMOOTH" ? 1u : 0u;
+        // Exposed so the artifact fixes can be A/B tested without leaving OBS:
+        // 2 = full-frame filtering, 1 = within slices, 0 = off; flat-intra
+        // adds the DC-only Intra16 candidate for dark flat macroblocks.
+        const int deblock = obs_data_get_int(settings, "deblock");
+        config.deblock = (deblock >= 0 && deblock <= 2) ? static_cast<uint32_t>(deblock) : 2u;
+        config.flatIntra = obs_data_get_bool(settings, "flat_intra") ? 1u : 0u;
         // Mirror the CLI: an explicit QP above 14 with ABR makes the first
         // IDR far too coarse and permanently lowers mean quality at the same
         // achieved bitrate.  Fixed QP keeps the caller's exact value.
@@ -233,6 +244,8 @@ void encoder_defaults(obs_data_t* settings) {
     obs_data_set_default_string(settings, "preset", defaultPreset.name.data());
     obs_data_set_default_int(settings, "bitrate", 6000);
     obs_data_set_default_int(settings, "keyint_sec", 5);
+    obs_data_set_default_int(settings, "deblock", 2);
+    obs_data_set_default_bool(settings, "flat_intra", true);
 }
 
 // Mirror the x264 OBS plugin: only the field used by the selected rate
@@ -265,6 +278,13 @@ obs_properties_t* encoder_properties(void*) {
     auto* bitrate = obs_properties_add_int(props, "bitrate", "Target bitrate (kbit/s, 64-50000)", 64, 50000, 1);
     auto* qp = obs_properties_add_int(props, "qp", "Constant QP (0-51; lower = better; 0 = lossless)", 0, 51, 1);
     auto* keyint = obs_properties_add_int(props, "keyint_sec", "Keyframe interval (seconds, 1-10)", 1, 10, 1);
+    auto* deblock = obs_properties_add_list(props, "deblock", "Deblocking (artifact A/B test)",
+        OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+    obs_property_list_add_int(deblock, "Full frame (default, filters slice seams)", 2);
+    obs_property_list_add_int(deblock, "Within slices only", 1);
+    obs_property_list_add_int(deblock, "Off", 0);
+    auto* flatIntra = obs_properties_add_bool(props, "flat_intra",
+        "DC-only intra for dark flat blocks (QP 14+)");
     obs_properties_add_text(props, "status", "", OBS_TEXT_INFO);
     obs_properties_add_text(props, "effective", "", OBS_TEXT_INFO);
     obs_properties_add_text(props, "limits",
@@ -275,7 +295,7 @@ obs_properties_t* encoder_properties(void*) {
         "because this encoder does not implement them. Keyframe interval "
         "defaults to 5 s for quality; use 2 s for services that need shorter GOPs.",
         OBS_TEXT_INFO);
-    for (auto* field : {preset, rate, bitrate, qp, keyint})
+    for (auto* field : {preset, rate, bitrate, qp, keyint, deblock, flatIntra})
         obs_property_set_modified_callback(field, settingsChanged);
     // Populate the info fields even when the host does not call
     // obs_properties_apply_settings immediately after building the panel.
