@@ -81,9 +81,11 @@ std::string effectiveText(obs_data_t* settings) {
     const int keyint = obs_data_get_int(settings, "keyint_sec");
     const char* preset = obs_data_get_string(settings, "preset");
     const char* gop = gopSummary();
-    const int deblockValue = obs_data_get_int(settings, "deblock");
+    const bool hasDeblock = obs_data_has_user_value(settings, "deblock");
+    const int deblockValue = hasDeblock ? obs_data_get_int(settings, "deblock") : 2;
     const int deblock = (deblockValue >= 0 && deblockValue <= 2) ? deblockValue : 2;
-    const bool flatIntra = obs_data_get_bool(settings, "flat_intra");
+    const bool flatIntra = obs_data_has_user_value(settings, "flat_intra")
+        ? obs_data_get_bool(settings, "flat_intra") : true;
     char text[512];
     if (rate == "CQP") {
         std::snprintf(text, sizeof(text),
@@ -161,9 +163,11 @@ void* encoder_create(obs_data_t* settings, obs_encoder_t* owner) {
         // Exposed so the artifact fixes can be A/B tested without leaving OBS:
         // 2 = full-frame filtering, 1 = within slices, 0 = off; flat-intra
         // adds the DC-only Intra16 candidate for dark flat macroblocks.
-        const int deblock = obs_data_get_int(settings, "deblock");
+        const bool hasDeblock = obs_data_has_user_value(settings, "deblock");
+        const int deblock = hasDeblock ? obs_data_get_int(settings, "deblock") : 2;
         config.deblock = (deblock >= 0 && deblock <= 2) ? static_cast<uint32_t>(deblock) : 2u;
-        config.flatIntra = obs_data_get_bool(settings, "flat_intra") ? 1u : 0u;
+        config.flatIntra = (obs_data_has_user_value(settings, "flat_intra")
+                            && !obs_data_get_bool(settings, "flat_intra")) ? 0u : 1u;
         // Mirror the CLI: an explicit QP above 14 with ABR makes the first
         // IDR far too coarse and permanently lowers mean quality at the same
         // achieved bitrate.  Fixed QP keeps the caller's exact value.
